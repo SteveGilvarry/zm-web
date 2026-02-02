@@ -1,0 +1,210 @@
+import { Link, useRouterState } from '@tanstack/react-router';
+import {
+  LayoutDashboard,
+  Monitor,
+  Video,
+  Calendar,
+  Settings,
+  Shield,
+  HardDrive,
+  Users,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+} from 'lucide-react';
+import { useState } from 'react';
+import { clsx } from 'clsx';
+import { useAuthStore } from '@/stores/auth';
+
+interface NavItem {
+  label: string;
+  icon: React.ReactNode;
+  path: string;
+  badge?: number;
+}
+
+const navItems: NavItem[] = [
+  { label: 'Console', icon: <LayoutDashboard size={20} />, path: '/' },
+  { label: 'Monitors', icon: <Monitor size={20} />, path: '/monitors' },
+  { label: 'Events', icon: <Video size={20} />, path: '/events' },
+  { label: 'Montage', icon: <Calendar size={20} />, path: '/montage' },
+];
+
+const settingsItems: NavItem[] = [
+  { label: 'Settings', icon: <Settings size={20} />, path: '/settings' },
+  { label: 'Storage', icon: <HardDrive size={20} />, path: '/settings/storage' },
+  { label: 'Users', icon: <Users size={20} />, path: '/settings/users' },
+];
+
+export function Sidebar() {
+  const [collapsed, setCollapsed] = useState(false);
+  const router = useRouterState();
+  const currentPath = router.location.pathname;
+  const { user, clearAuth } = useAuthStore();
+
+  const handleLogout = () => {
+    clearAuth();
+    window.location.href = '/login';
+  };
+
+  return (
+    <aside
+      className={clsx(
+        'fixed left-0 top-0 z-40 h-screen flex flex-col',
+        'bg-surface border-r border-border-subtle',
+        'transition-all duration-300 ease-out-expo',
+        collapsed ? 'w-16' : 'w-56'
+      )}
+    >
+      {/* Logo */}
+      <div className="h-14 flex items-center justify-between px-4 border-b border-border-subtle">
+        {!collapsed && (
+          <div className="flex items-center gap-2">
+            <Shield className="text-cyan" size={24} />
+            <span className="font-mono font-semibold text-cyan tracking-tight">
+              ZM<span className="text-text-secondary">dash</span>
+            </span>
+          </div>
+        )}
+        {collapsed && <Shield className="text-cyan mx-auto" size={24} />}
+      </div>
+
+      {/* Collapse toggle */}
+      <button
+        onClick={() => setCollapsed(!collapsed)}
+        className={clsx(
+          'absolute -right-3 top-20 z-50',
+          'w-6 h-6 rounded-full',
+          'bg-panel border border-border',
+          'flex items-center justify-center',
+          'text-text-muted hover:text-text-primary',
+          'transition-colors duration-fast',
+          'hover:bg-elevated'
+        )}
+      >
+        {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+      </button>
+
+      {/* Main navigation */}
+      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+        <div className="space-y-1">
+          {navItems.map((item) => (
+            <NavLink
+              key={item.path}
+              item={item}
+              isActive={currentPath === item.path}
+              collapsed={collapsed}
+            />
+          ))}
+        </div>
+
+        <div className="my-4 mx-2 border-t border-border-subtle" />
+
+        <div className="space-y-1">
+          {settingsItems.map((item) => (
+            <NavLink
+              key={item.path}
+              item={item}
+              isActive={currentPath.startsWith(item.path)}
+              collapsed={collapsed}
+            />
+          ))}
+        </div>
+      </nav>
+
+      {/* User section */}
+      <div className="p-2 border-t border-border-subtle">
+        <div
+          className={clsx(
+            'flex items-center gap-3 px-3 py-2 rounded-lg',
+            'bg-panel/50'
+          )}
+        >
+          <div className="w-8 h-8 rounded-full bg-cyan/20 flex items-center justify-center">
+            <span className="text-cyan font-medium text-sm">
+              {user?.user?.charAt(0).toUpperCase() || '?'}
+            </span>
+          </div>
+          {!collapsed && (
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-medium text-text-primary truncate">
+                {user?.user || 'Unknown'}
+              </p>
+            </div>
+          )}
+          <button
+            onClick={handleLogout}
+            className="p-1.5 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+            title="Logout"
+          >
+            <LogOut size={16} />
+          </button>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function NavLink({
+  item,
+  isActive,
+  collapsed,
+}: {
+  item: NavItem;
+  isActive: boolean;
+  collapsed: boolean;
+}) {
+  return (
+    <Link
+      to={item.path}
+      className={clsx(
+        'flex items-center gap-3 px-3 py-2.5 rounded-lg',
+        'transition-all duration-fast',
+        'group relative',
+        isActive
+          ? 'bg-cyan/10 text-cyan'
+          : 'text-text-secondary hover:text-text-primary hover:bg-panel'
+      )}
+    >
+      {/* Active indicator */}
+      {isActive && (
+        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan rounded-r" />
+      )}
+
+      <span
+        className={clsx(
+          'flex-shrink-0',
+          isActive ? 'text-cyan' : 'text-text-muted group-hover:text-text-secondary'
+        )}
+      >
+        {item.icon}
+      </span>
+
+      {!collapsed && (
+        <span className="font-medium text-sm">{item.label}</span>
+      )}
+
+      {!collapsed && item.badge !== undefined && item.badge > 0 && (
+        <span className="ml-auto px-2 py-0.5 text-xs font-mono bg-crimson/20 text-crimson rounded">
+          {item.badge}
+        </span>
+      )}
+
+      {/* Tooltip for collapsed state */}
+      {collapsed && (
+        <div
+          className={clsx(
+            'absolute left-full ml-2 px-2 py-1 rounded',
+            'bg-elevated text-text-primary text-sm font-medium',
+            'opacity-0 invisible group-hover:opacity-100 group-hover:visible',
+            'transition-all duration-fast',
+            'whitespace-nowrap z-50',
+            'shadow-elevated'
+          )}
+        >
+          {item.label}
+        </div>
+      )}
+    </Link>
+  );
+}
