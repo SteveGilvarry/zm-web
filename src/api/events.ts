@@ -23,19 +23,56 @@ export async function deleteEvent(id: number): Promise<void> {
   return apiDelete(`/events/${id}`);
 }
 
-export async function getEventCounts(): Promise<{ total: number; today: number; week: number; month: number }> {
-  return apiGet('/events/counts');
+export interface HourlyCount {
+  count: number;
+  date: string;
 }
 
-export async function getEventCountsByMonitor(): Promise<{ monitor_id: number; count: number }[]> {
-  return apiGet('/events/counts/by-monitor');
+export interface EventCountsResponse {
+  counts: HourlyCount[];
+  hours: number;
 }
 
-// Event playback URLs
-export function getEventVideoUrl(eventId: number): string {
-  return `/api/v3/events/${eventId}/playback/video`;
+export interface EventCounts {
+  total: number;
+  hourly: HourlyCount[];
 }
 
-export function getEventThumbnailUrl(eventId: number): string {
-  return `/api/v3/events/${eventId}/playback/thumbnail`;
+export async function getEventCounts(hours: number = 24): Promise<EventCounts> {
+  const response = await apiGet<EventCountsResponse>(`/events/counts/${hours}`);
+  const total = response.counts.reduce((sum, item) => sum + item.count, 0);
+  return {
+    total,
+    hourly: response.counts,
+  };
+}
+
+export interface EventCountByMonitor {
+  monitor_id: number;
+  count: number;
+}
+
+export async function getEventCountsByMonitor(hours: number = 24): Promise<EventCountByMonitor[]> {
+  return apiGet(`/events/counts-by-monitor/${hours}`);
+}
+
+// Event playback URLs - token param for media elements that can't send headers
+export function getEventVideoUrl(eventId: number, token?: string): string {
+  const base = `/api/v3/events/${eventId}/video`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+export function getEventThumbnailUrl(eventId: number, token?: string): string {
+  const base = `/api/v3/events/${eventId}/thumbnail`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+export function getEventStreamUrl(eventId: number, token?: string): string {
+  const base = `/api/v3/events/${eventId}/stream/video.mp4`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+export function getEventPlaylistUrl(eventId: number, token?: string): string {
+  const base = `/api/v3/events/${eventId}/stream/playlist.m3u8`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }

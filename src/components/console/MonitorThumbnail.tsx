@@ -1,13 +1,16 @@
 import { clsx } from 'clsx';
 import { Video, VideoOff, AlertTriangle, Circle } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import type { Monitor, MonitorFunction } from '@/types';
+import type { Monitor, MonitorFunction, StreamProtocol } from '@/types';
+import { getMonitorFunction } from '@/types';
+import { StreamCell } from '@/components/common/StreamCell';
 
 interface MonitorThumbnailProps {
   monitor: Monitor;
   isStreaming?: boolean;
   hasMotion?: boolean;
   hasAlarm?: boolean;
+  liveProtocol?: StreamProtocol | null;
 }
 
 const functionColors: Record<MonitorFunction, string> = {
@@ -33,8 +36,10 @@ export function MonitorThumbnail({
   isStreaming = false,
   hasMotion = false,
   hasAlarm = false,
+  liveProtocol = null,
 }: MonitorThumbnailProps) {
-  const isEnabled = monitor.enabled && monitor.function !== 'None';
+  const monitorFn = getMonitorFunction(monitor.function);
+  const isEnabled = monitor.enabled === 1 && monitorFn !== 'None';
 
   return (
     <Link
@@ -50,9 +55,34 @@ export function MonitorThumbnail({
     >
       {/* Video placeholder / thumbnail */}
       <div className="aspect-video relative bg-void">
-        {isEnabled ? (
+        {isEnabled && liveProtocol ? (
           <>
-            {/* Placeholder for actual video - in real implementation, this would be a snapshot or HLS player */}
+            {/* Live video stream */}
+            <StreamCell
+              protocol={liveProtocol}
+              monitorId={monitor.id}
+              autoStart
+              compact
+            />
+
+            {/* Motion/Alarm indicator (on top of stream) */}
+            {(hasMotion || hasAlarm) && (
+              <div
+                className={clsx(
+                  'absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded z-10',
+                  hasAlarm ? 'bg-crimson/80' : 'bg-amber/80'
+                )}
+              >
+                <AlertTriangle size={12} className="text-white" />
+                <span className="text-xs font-bold text-white">
+                  {hasAlarm ? 'ALARM' : 'MOTION'}
+                </span>
+              </div>
+            )}
+          </>
+        ) : isEnabled ? (
+          <>
+            {/* Static placeholder */}
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-text-dim">
                 {isStreaming ? (
@@ -129,10 +159,10 @@ export function MonitorThumbnail({
             className={clsx(
               'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded',
               'bg-black/40',
-              functionColors[monitor.function]
+              functionColors[monitorFn]
             )}
           >
-            {functionLabels[monitor.function]}
+            {functionLabels[monitorFn]}
           </span>
         </div>
 

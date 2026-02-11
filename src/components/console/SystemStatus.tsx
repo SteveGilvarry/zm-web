@@ -7,13 +7,15 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
+  MemoryStick,
 } from 'lucide-react';
 import type { DaemonStatus } from '@/types';
+import type { SystemStats } from '@/api/system';
 
 interface SystemStatusProps {
   daemons?: DaemonStatus[];
-  cpuLoad?: number[];
-  diskUsage?: { path: string; percent: number }[];
+  isRunning?: boolean;
+  stats?: SystemStats;
   isLoading?: boolean;
 }
 
@@ -64,10 +66,18 @@ function DaemonItem({ daemon }: { daemon: DaemonStatus }) {
   );
 }
 
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
 export function SystemStatus({
   daemons = [],
-  cpuLoad = [],
-  diskUsage = [],
+  isRunning,
+  stats,
   isLoading,
 }: SystemStatusProps) {
   if (isLoading) {
@@ -83,96 +93,150 @@ export function SystemStatus({
     );
   }
 
+  const memoryUsedPercent = stats && stats.total_mem > 0
+    ? ((stats.total_mem - stats.free_mem) / stats.total_mem) * 100
+    : 0;
+
   return (
     <div className="space-y-4">
-      {/* CPU Load */}
+      {/* ZoneMinder Status */}
       <div>
         <div className="flex items-center gap-2 mb-2">
-          <Cpu size={14} className="text-cyan" />
-          <span className="text-xs font-medium text-text-secondary">CPU Load</span>
+          <Server size={14} className="text-cyan" />
+          <span className="text-xs font-medium text-text-secondary">ZoneMinder</span>
         </div>
-        <div className="grid grid-cols-3 gap-2">
-          {cpuLoad.length > 0 ? (
-            cpuLoad.slice(0, 3).map((load, i) => (
-              <div key={i} className="text-center">
-                <div className="text-lg font-mono font-bold text-text-primary">
-                  {load.toFixed(1)}
-                </div>
-                <div className="text-[10px] text-text-muted">
-                  {i === 0 ? '1m' : i === 1 ? '5m' : '15m'}
-                </div>
-                <LoadBar value={load} max={4} />
-              </div>
-            ))
+        <div className="flex items-center justify-center py-2">
+          {isRunning !== undefined ? (
+            <div className={clsx(
+              'flex items-center gap-2 px-3 py-1.5 rounded-lg',
+              isRunning ? 'bg-emerald/20 text-emerald' : 'bg-crimson/20 text-crimson'
+            )}>
+              {isRunning ? <CheckCircle size={14} /> : <XCircle size={14} />}
+              <span className="text-sm font-medium">{isRunning ? 'Running' : 'Stopped'}</span>
+            </div>
           ) : (
-            <div className="col-span-3 text-xs text-text-muted text-center py-2">
+            <div className="text-xs text-text-muted text-center py-2">
               No data
             </div>
           )}
         </div>
       </div>
 
-      {/* Disk Usage */}
+      {/* CPU Usage */}
       <div>
-        <div className="flex items-center gap-2 mb-2">
-          <HardDrive size={14} className="text-amber" />
-          <span className="text-xs font-medium text-text-secondary">Storage</span>
-        </div>
-        <div className="space-y-2">
-          {diskUsage.length > 0 ? (
-            diskUsage.slice(0, 3).map((disk, i) => (
-              <div key={i}>
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-text-muted truncate max-w-[120px]">
-                    {disk.path}
-                  </span>
-                  <span
-                    className={clsx(
-                      'text-xs font-mono',
-                      disk.percent > 90
-                        ? 'text-crimson'
-                        : disk.percent > 70
-                          ? 'text-amber'
-                          : 'text-text-secondary'
-                    )}
-                  >
-                    {disk.percent}%
-                  </span>
-                </div>
-                <LoadBar value={disk.percent} />
-              </div>
-            ))
-          ) : (
-            <div className="text-xs text-text-muted text-center py-2">No data</div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Cpu size={14} className="text-amber" />
+            <span className="text-xs font-medium text-text-secondary">CPU</span>
+          </div>
+          {stats && stats.cpu_usage_percent > 0 && (
+            <span className={clsx(
+              'text-xs font-mono',
+              stats.cpu_usage_percent > 90 ? 'text-crimson' :
+              stats.cpu_usage_percent > 70 ? 'text-amber' : 'text-text-secondary'
+            )}>
+              {stats.cpu_usage_percent.toFixed(1)}%
+            </span>
           )}
         </div>
+        {stats && stats.cpu_usage_percent > 0 ? (
+          <LoadBar value={stats.cpu_usage_percent} />
+        ) : (
+          <div className="text-xs text-text-muted text-center py-1">No data</div>
+        )}
+        {stats && stats.cpu_load > 0 && (
+          <div className="text-[10px] text-text-muted mt-1">
+            Load: {stats.cpu_load.toFixed(2)}
+          </div>
+        )}
+      </div>
+
+      {/* Memory Usage */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <MemoryStick size={14} className="text-purple" />
+            <span className="text-xs font-medium text-text-secondary">Memory</span>
+          </div>
+          {stats && stats.total_mem > 0 && (
+            <span className={clsx(
+              'text-xs font-mono',
+              memoryUsedPercent > 90 ? 'text-crimson' :
+              memoryUsedPercent > 70 ? 'text-amber' : 'text-text-secondary'
+            )}>
+              {memoryUsedPercent.toFixed(1)}%
+            </span>
+          )}
+        </div>
+        {stats && stats.total_mem > 0 ? (
+          <>
+            <LoadBar value={memoryUsedPercent} />
+            <div className="text-[10px] text-text-muted mt-1">
+              {formatBytes(stats.total_mem - stats.free_mem)} / {formatBytes(stats.total_mem)}
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-text-muted text-center py-1">No data</div>
+        )}
+      </div>
+
+      {/* Disk Usage */}
+      <div>
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <HardDrive size={14} className="text-emerald" />
+            <span className="text-xs font-medium text-text-secondary">Storage</span>
+          </div>
+          {stats && stats.disk_usage_percent > 0 && (
+            <span className={clsx(
+              'text-xs font-mono',
+              stats.disk_usage_percent > 90 ? 'text-crimson' :
+              stats.disk_usage_percent > 70 ? 'text-amber' : 'text-text-secondary'
+            )}>
+              {stats.disk_usage_percent.toFixed(1)}%
+            </span>
+          )}
+        </div>
+        {stats && stats.total_disk > 0 ? (
+          <>
+            <LoadBar value={stats.disk_usage_percent} />
+            <div className="text-[10px] text-text-muted mt-1">
+              {formatBytes(stats.used_disk)} / {formatBytes(stats.total_disk)}
+            </div>
+          </>
+        ) : (
+          <div className="text-xs text-text-muted text-center py-1">No data</div>
+        )}
       </div>
 
       {/* Daemons */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <Server size={14} className="text-emerald" />
-          <span className="text-xs font-medium text-text-secondary">Daemons</span>
-          <span className="ml-auto text-[10px] text-text-dim">
-            {daemons.filter((d) => d.status === 'running').length}/{daemons.length}
-          </span>
-        </div>
-        <div className="divide-y divide-border-subtle">
-          {daemons.length > 0 ? (
-            daemons.slice(0, 6).map((daemon) => (
+      {daemons.length > 0 && (
+        <div>
+          <div className="flex items-center gap-2 mb-2">
+            <Activity size={14} className="text-cyan" />
+            <span className="text-xs font-medium text-text-secondary">Daemons</span>
+            <span className="ml-auto text-[10px] text-text-dim">
+              {daemons.filter((d) => d.status === 'running').length}/{daemons.length}
+            </span>
+          </div>
+          <div className="divide-y divide-border-subtle">
+            {daemons.slice(0, 6).map((daemon) => (
               <DaemonItem key={daemon.name} daemon={daemon} />
-            ))
-          ) : (
-            <div className="text-xs text-text-muted text-center py-2">No data</div>
-          )}
+            ))}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* System Activity */}
       <div className="pt-2 border-t border-border-subtle">
-        <div className="flex items-center justify-center gap-2 text-emerald">
-          <Activity size={14} className="animate-pulse" />
-          <span className="text-xs font-mono">SYSTEM OPERATIONAL</span>
+        <div className={clsx(
+          'flex items-center justify-center gap-2',
+          isRunning ? 'text-emerald' : 'text-amber'
+        )}>
+          <Activity size={14} className={isRunning ? 'animate-pulse' : ''} />
+          <span className="text-xs font-mono">
+            {isRunning ? 'SYSTEM OPERATIONAL' : 'SYSTEM OFFLINE'}
+          </span>
         </div>
       </div>
     </div>

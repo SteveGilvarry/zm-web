@@ -3,7 +3,7 @@ import {
   LayoutDashboard,
   Monitor,
   Video,
-  Calendar,
+  LayoutGrid,
   Settings,
   Shield,
   HardDrive,
@@ -27,7 +27,7 @@ const navItems: NavItem[] = [
   { label: 'Console', icon: <LayoutDashboard size={20} />, path: '/' },
   { label: 'Monitors', icon: <Monitor size={20} />, path: '/monitors' },
   { label: 'Events', icon: <Video size={20} />, path: '/events' },
-  { label: 'Montage', icon: <Calendar size={20} />, path: '/montage' },
+  { label: 'Montage', icon: <LayoutGrid size={20} />, path: '/montage' },
 ];
 
 const settingsItems: NavItem[] = [

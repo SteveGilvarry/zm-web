@@ -6,9 +6,14 @@ import {
   Play,
   Pause,
   RefreshCw,
+  Wifi,
+  Radio,
+  VideoOff,
 } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
+import { useState } from 'react';
 import { clsx } from 'clsx';
+import type { StreamProtocol } from '@/types';
 
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
@@ -28,6 +33,7 @@ export const Route = createFileRoute('/')({
 
 function ConsolePage() {
   const { isAuthenticated } = useAuthStore();
+  const [liveProtocol, setLiveProtocol] = useState<StreamProtocol | null>('webrtc');
 
   // Fetch monitors
   const { data: monitorsData, isLoading: monitorsLoading } = useQuery({
@@ -53,10 +59,10 @@ function ConsolePage() {
     refetchInterval: 15000,
   });
 
-  // Fetch event counts
+  // Fetch event counts (last 24 hours)
   const { data: eventCounts } = useQuery({
-    queryKey: ['eventCounts'],
-    queryFn: getEventCounts,
+    queryKey: ['eventCounts', 24],
+    queryFn: () => getEventCounts(24),
     enabled: isAuthenticated,
     refetchInterval: 60000,
   });
@@ -77,30 +83,14 @@ function ConsolePage() {
     refetchInterval: 10000,
   });
 
-  const monitors = monitorsData?.data || [];
-  const events = eventsData?.data || [];
+  const monitors = monitorsData?.items || [];
+  const events = eventsData?.items || [];
   const daemons = daemonsData?.daemons || [];
 
-  const activeMonitors = monitors.filter((m) => m.enabled && m.function !== 'None');
-  const recordingMonitors = monitors.filter((m) => ['Record', 'Mocord'].includes(m.function));
+  const activeMonitors = monitors.filter((m) => m.enabled === 1 && m.function !== 'None');
+  const recordingMonitors = monitors.filter((m) => m.enabled === 1 && ['Record', 'Mocord'].includes(m.function));
 
-  // If not authenticated, show login prompt
-  if (!isAuthenticated) {
-    return (
-      <div className="min-h-screen bg-void flex items-center justify-center">
-        <div className="text-center">
-          <h1 className="text-2xl font-bold text-text-primary mb-4">Please Login</h1>
-          <p className="text-text-muted mb-6">You need to authenticate to access the dashboard.</p>
-          <a
-            href="/login"
-            className="px-6 py-3 bg-cyan text-void font-medium rounded-lg hover:bg-cyan-dim transition-colors"
-          >
-            Go to Login
-          </a>
-        </div>
-      </div>
-    );
-  }
+  if (!isAuthenticated) return null;
 
   return (
     <div className="min-h-screen bg-void">
@@ -120,15 +110,11 @@ function ConsolePage() {
               subtitle={`${activeMonitors.length} active`}
             />
             <StatCard
-              label="Events Today"
-              value={eventCounts?.today || 0}
+              label="Events (24h)"
+              value={eventCounts?.total ?? 0}
               icon={<Video size={20} />}
               variant="amber"
-              trend={
-                eventCounts
-                  ? { value: 12, label: 'vs yesterday' }
-                  : undefined
-              }
+              subtitle="events"
             />
             <StatCard
               label="Recording"
@@ -154,9 +140,47 @@ function ConsolePage() {
                 title="Monitors"
                 icon={<Monitor size={16} />}
                 action={
-                  <button className="p-1.5 rounded hover:bg-panel text-text-muted hover:text-text-primary transition-colors">
-                    <RefreshCw size={14} />
-                  </button>
+                  <div className="flex items-center gap-1 bg-surface rounded p-0.5 border border-border-subtle">
+                    <button
+                      onClick={() => setLiveProtocol('webrtc')}
+                      className={clsx(
+                        'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
+                        liveProtocol === 'webrtc'
+                          ? 'bg-cyan/20 text-cyan'
+                          : 'text-text-muted hover:text-text-primary',
+                      )}
+                      title="WebRTC live thumbnails"
+                    >
+                      <Wifi size={10} />
+                      RTC
+                    </button>
+                    <button
+                      onClick={() => setLiveProtocol('hls')}
+                      className={clsx(
+                        'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
+                        liveProtocol === 'hls'
+                          ? 'bg-cyan/20 text-cyan'
+                          : 'text-text-muted hover:text-text-primary',
+                      )}
+                      title="HLS live thumbnails"
+                    >
+                      <Radio size={10} />
+                      HLS
+                    </button>
+                    <button
+                      onClick={() => setLiveProtocol(null)}
+                      className={clsx(
+                        'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
+                        liveProtocol === null
+                          ? 'bg-text-muted/20 text-text-secondary'
+                          : 'text-text-muted hover:text-text-primary',
+                      )}
+                      title="Static thumbnails (no streaming)"
+                    >
+                      <VideoOff size={10} />
+                      Off
+                    </button>
+                  </div>
                 }
               >
                 {monitorsLoading ? (
@@ -180,6 +204,7 @@ function ConsolePage() {
                         key={monitor.id}
                         monitor={monitor}
                         isStreaming={liveSessions.includes(monitor.id)}
+                        liveProtocol={liveProtocol}
                       />
                     ))}
                   </div>
@@ -204,8 +229,8 @@ function ConsolePage() {
               <Panel title="System" icon={<Activity size={16} />}>
                 <SystemStatus
                   daemons={daemons}
-                  cpuLoad={systemStatusData?.cpu_load}
-                  diskUsage={[]}
+                  isRunning={systemStatusData?.running}
+                  stats={systemStatusData?.stats}
                 />
               </Panel>
 

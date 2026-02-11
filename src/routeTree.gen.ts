@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
+import { Route as MontageIndexRouteImport } from './routes/montage/index'
 import { Route as MonitorsIndexRouteImport } from './routes/monitors/index'
 import { Route as EventsIndexRouteImport } from './routes/events/index'
 import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
@@ -24,6 +25,11 @@ const LoginRoute = LoginRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MontageIndexRoute = MontageIndexRouteImport.update({
+  id: '/montage/',
+  path: '/montage/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MonitorsIndexRoute = MonitorsIndexRouteImport.update({
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
   '/events/': typeof EventsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
+  '/montage/': typeof MontageIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
   '/events': typeof EventsIndexRoute
   '/monitors': typeof MonitorsIndexRoute
+  '/montage': typeof MontageIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
   '/events/': typeof EventsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
+  '/montage/': typeof MontageIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/events/'
     | '/monitors/'
+    | '/montage/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/events'
     | '/monitors'
+    | '/montage'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/events/'
     | '/monitors/'
+    | '/montage/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   MonitorsMonitorIdRoute: typeof MonitorsMonitorIdRoute
   EventsIndexRoute: typeof EventsIndexRoute
   MonitorsIndexRoute: typeof MonitorsIndexRoute
+  MontageIndexRoute: typeof MontageIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -122,6 +135,13 @@ declare module '@tanstack/react-router' {
       path: '/'
       fullPath: '/'
       preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/montage/': {
+      id: '/montage/'
+      path: '/montage'
+      fullPath: '/montage/'
+      preLoaderRoute: typeof MontageIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/monitors/': {
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   MonitorsMonitorIdRoute: MonitorsMonitorIdRoute,
   EventsIndexRoute: EventsIndexRoute,
   MonitorsIndexRoute: MonitorsIndexRoute,
+  MontageIndexRoute: MontageIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

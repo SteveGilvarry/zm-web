@@ -21,7 +21,7 @@ export function Header({ title }: HeaderProps) {
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        const response = await fetch('/api/v3/health', { method: 'GET' });
+        const response = await fetch('/api/v3/server/health_check', { method: 'GET' });
         setIsConnected(response.ok);
       } catch {
         setIsConnected(false);

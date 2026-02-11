@@ -107,12 +107,12 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
             <div className="flex items-center gap-3 mt-0.5">
               <span className="text-xs text-text-muted flex items-center gap-1">
                 <Clock size={10} />
-                {formatTimeAgo(event.start_datetime)}
+                {event.start_date_time ? formatTimeAgo(event.start_date_time) : 'Unknown'}
               </span>
               <span className="text-xs text-text-muted">
                 {formatDuration(event.length)}
               </span>
-              {event.max_score !== undefined && (
+              {event.max_score != null && (
                 <span
                   className={clsx(
                     'text-xs font-mono',

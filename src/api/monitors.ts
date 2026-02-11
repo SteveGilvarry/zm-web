@@ -1,4 +1,4 @@
-import { apiGet, apiPost, apiPatch, apiDelete } from './client';
+import { apiGet, apiPatch, apiDelete } from './client';
 import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, StartLiveResponse, LiveStats } from '@/types';
 
 export async function getMonitors(params?: PaginationParams): Promise<PaginatedResponse<Monitor>> {
@@ -17,13 +17,34 @@ export async function deleteMonitor(id: number): Promise<void> {
   return apiDelete(`/monitors/${id}`);
 }
 
-// Live streaming
+// Live streaming — no auth required on start/stop endpoints
 export async function startLiveStream(monitorId: number, options?: StartLiveRequest): Promise<StartLiveResponse> {
-  return apiPost<StartLiveRequest, StartLiveResponse>(`/live/${monitorId}/start`, options || { enable_hls: true });
+  const response = await fetch(`/api/v3/live/${monitorId}/start`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(options || { enable_hls: true }),
+  });
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      message = body.error_message || body.message || body.error || message;
+    } catch {
+      // Response wasn't JSON
+    }
+    throw new Error(message);
+  }
+  return response.json();
 }
 
 export async function stopLiveStream(monitorId: number): Promise<void> {
-  return apiDelete(`/live/${monitorId}/stop`);
+  const response = await fetch(`/api/v3/live/${monitorId}/stop`, {
+    method: 'DELETE',
+  });
+  if (!response.ok && response.status !== 404) {
+    const text = await response.text();
+    throw new Error(text || `HTTP ${response.status}`);
+  }
 }
 
 export async function getLiveStats(monitorId: number): Promise<LiveStats> {
@@ -34,7 +55,12 @@ export async function getLiveSessions(): Promise<number[]> {
   return apiGet<number[]>('/live/sessions');
 }
 
-// Helper to build HLS URL
+// Helper URLs for live streaming
 export function getHlsPlaylistUrl(monitorId: number): string {
-  return `/api/v3/live/${monitorId}/hls/live.m3u8`;
+  return `/api/v3/live/${monitorId}/hls/master.m3u8`;
+}
+
+export function getWebRtcWebsocketUrl(monitorId: number): string {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${protocol}//${window.location.host}/api/v3/live/${monitorId}/webrtc/ws`;
 }

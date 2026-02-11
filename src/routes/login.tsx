@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Shield, Eye, EyeOff, Loader2, AlertCircle } from 'lucide-react';
 import { clsx } from 'clsx';
 import { login } from '@/api/auth';
@@ -20,10 +20,11 @@ function LoginPage() {
   const [error, setError] = useState<string | null>(null);
 
   // Redirect if already authenticated
-  if (isAuthenticated) {
-    navigate({ to: '/' });
-    return null;
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      navigate({ to: '/' });
+    }
+  }, [isAuthenticated, navigate]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
