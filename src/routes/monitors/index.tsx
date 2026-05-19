@@ -8,8 +8,6 @@ import {
   Grid3X3,
   List,
   RefreshCw,
-  Video,
-  VideoOff,
   Circle,
   ChevronLeft,
   ChevronRight,
@@ -18,10 +16,10 @@ import {
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { Panel } from '@/components/common/Panel';
-import { getMonitors, getLiveSessions, getMonitorSnapshotUrl } from '@/api/monitors';
+import { MonitorPreview } from '@/components/monitors/MonitorPreview';
+import { getMonitors, getLiveSessions } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import type { Monitor as MonitorType } from '@/types';
-import { getOrientationStyle } from '@/types';
 
 export const Route = createFileRoute('/monitors/')({
   component: MonitorsPage,
@@ -43,7 +41,7 @@ const capturingLabels: Record<string, string> = {
 };
 
 function MonitorsPage() {
-  const { isAuthenticated, accessToken } = useAuthStore();
+  const { isAuthenticated } = useAuthStore();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -216,7 +214,6 @@ function MonitorsPage() {
                   key={monitor.id}
                   monitor={monitor}
                   isStreaming={liveSessions.includes(monitor.id)}
-                  token={accessToken}
                 />
               ))}
             </div>
@@ -227,7 +224,6 @@ function MonitorsPage() {
                   key={monitor.id}
                   monitor={monitor}
                   isStreaming={liveSessions.includes(monitor.id)}
-                  token={accessToken}
                 />
               ))}
             </div>
@@ -307,11 +303,9 @@ function MonitorsPage() {
 function MonitorCard({
   monitor,
   isStreaming,
-  token,
 }: {
   monitor: MonitorType;
   isStreaming: boolean;
-  token: string | null;
 }) {
   const isActive = monitor.capturing !== 'None';
 
@@ -328,48 +322,29 @@ function MonitorCard({
     >
       {/* Thumbnail */}
       <div className="aspect-video relative bg-abyss">
-        {isActive ? (
-          <>
-            {/* Fallback icon */}
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Video size={32} className="text-text-dim" />
-            </div>
+        <MonitorPreview
+          monitorId={monitor.id}
+          monitorName={monitor.name}
+          orientation={monitor.orientation}
+          isActive={isActive}
+          enableLivePreview
+        />
 
-            {/* Snapshot image overlays fallback when loaded */}
-            <img
-              src={getMonitorSnapshotUrl(monitor.id, token || undefined)}
-              alt={monitor.name}
-              className="absolute inset-0 w-full h-full object-contain"
-              style={getOrientationStyle(monitor.orientation)}
-              loading="lazy"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-
-            <div className="absolute inset-0 scanlines pointer-events-none" />
-
-            {isStreaming && (
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60">
-                <span className="relative flex h-2 w-2">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
-                  <span className="relative inline-flex rounded-full h-2 w-2 bg-crimson" />
-                </span>
-                <span className="text-xs font-mono font-bold text-white">LIVE</span>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <VideoOff size={32} className="text-text-dim" />
+        {isStreaming && (
+          <div className="absolute top-2 left-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 pointer-events-none">
+            <span className="relative flex h-2 w-2">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
+              <span className="relative inline-flex rounded-full h-2 w-2 bg-crimson" />
+            </span>
+            <span className="text-xs font-mono font-bold text-white">LIVE</span>
           </div>
         )}
 
-        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent" />
+        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
       </div>
 
       {/* Info */}
-      <div className="absolute inset-x-0 bottom-0 p-3">
+      <div className="absolute inset-x-0 bottom-0 p-3 z-10 pointer-events-none">
         <div className="flex items-center justify-between mb-1">
           <div className="flex items-center gap-2 min-w-0">
             <span
@@ -408,11 +383,9 @@ function MonitorCard({
 function MonitorListItem({
   monitor,
   isStreaming,
-  token,
 }: {
   monitor: MonitorType;
   isStreaming: boolean;
-  token: string | null;
 }) {
   const isActive = monitor.capturing !== 'None';
 
@@ -429,34 +402,20 @@ function MonitorListItem({
     >
       {/* Thumbnail */}
       <div className="w-32 aspect-video relative rounded-lg overflow-hidden bg-abyss flex-shrink-0">
-        {isActive ? (
-          <>
-            <div className="absolute inset-0 flex items-center justify-center">
-              <Video size={20} className="text-text-dim" />
-            </div>
-            <img
-              src={getMonitorSnapshotUrl(monitor.id, token || undefined)}
-              alt={monitor.name}
-              className="absolute inset-0 w-full h-full object-contain"
-              style={getOrientationStyle(monitor.orientation)}
-              loading="lazy"
-              onError={(e) => {
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-            {isStreaming && (
-              <div className="absolute top-1 left-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60">
-                <span className="relative flex h-1.5 w-1.5">
-                  <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
-                  <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-crimson" />
-                </span>
-                <span className="text-[10px] font-mono font-bold text-white">LIVE</span>
-              </div>
-            )}
-          </>
-        ) : (
-          <div className="absolute inset-0 flex items-center justify-center">
-            <VideoOff size={20} className="text-text-dim" />
+        <MonitorPreview
+          monitorId={monitor.id}
+          monitorName={monitor.name}
+          orientation={monitor.orientation}
+          isActive={isActive}
+          compact
+        />
+        {isStreaming && (
+          <div className="absolute top-1 left-1 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 pointer-events-none">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
+              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-crimson" />
+            </span>
+            <span className="text-[10px] font-mono font-bold text-white">LIVE</span>
           </div>
         )}
       </div>
