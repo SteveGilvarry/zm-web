@@ -4,8 +4,6 @@ import {
   Video,
   Activity,
   Play,
-  Pause,
-  RefreshCw,
   Wifi,
   Radio,
   VideoOff,
@@ -249,36 +247,6 @@ function ConsolePage() {
             </div>
           </div>
 
-          {/* Quick Actions Bar */}
-          <div className="mt-6">
-            <Panel noPadding>
-              <div className="flex items-center justify-between px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-text-muted">
-                    Quick Actions
-                  </span>
-                </div>
-                <div className="flex items-center gap-2">
-                  <QuickActionButton
-                    icon={<Play size={14} />}
-                    label="Start All"
-                    onClick={() => {}}
-                  />
-                  <QuickActionButton
-                    icon={<Pause size={14} />}
-                    label="Stop All"
-                    onClick={() => {}}
-                    variant="danger"
-                  />
-                  <QuickActionButton
-                    icon={<RefreshCw size={14} />}
-                    label="Restart ZM"
-                    onClick={() => {}}
-                  />
-                </div>
-              </div>
-            </Panel>
-          </div>
         </main>
       </div>
 
@@ -290,31 +258,3 @@ function ConsolePage() {
   );
 }
 
-function QuickActionButton({
-  icon,
-  label,
-  onClick,
-  variant = 'default',
-}: {
-  icon: React.ReactNode;
-  label: string;
-  onClick: () => void;
-  variant?: 'default' | 'danger';
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className={clsx(
-        'flex items-center gap-2 px-3 py-1.5 rounded-lg',
-        'text-sm font-medium transition-all duration-fast',
-        'border',
-        variant === 'danger'
-          ? 'border-crimson/30 text-crimson hover:bg-crimson/10'
-          : 'border-border text-text-secondary hover:text-text-primary hover:bg-panel'
-      )}
-    >
-      {icon}
-      {label}
-    </button>
-  );
-}

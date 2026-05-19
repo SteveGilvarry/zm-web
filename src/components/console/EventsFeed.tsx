@@ -1,6 +1,8 @@
 import { clsx } from 'clsx';
 import { Link } from '@tanstack/react-router';
 import { Video, Clock, AlertTriangle } from 'lucide-react';
+import { getEventThumbnailUrl } from '@/api/events';
+import { getAuthToken } from '@/api/client';
 import type { ZmEvent } from '@/types';
 
 interface EventsFeedProps {
@@ -74,11 +76,24 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
           )}
           style={{ animationDelay: `${index * 50}ms` }}
         >
-          {/* Thumbnail placeholder */}
+          {/* Thumbnail */}
           <div className="relative w-16 h-10 rounded bg-abyss overflow-hidden flex-shrink-0">
+            {/* Fallback icon — shown if the thumbnail fails to load */}
             <div className="absolute inset-0 flex items-center justify-center">
               <Video size={16} className="text-text-dim" />
             </div>
+            <img
+              src={getEventThumbnailUrl(event.id, getAuthToken() ?? undefined)}
+              alt={event.name}
+              className="absolute inset-0 w-full h-full object-cover"
+              loading="lazy"
+              onLoad={(e) => {
+                (e.target as HTMLImageElement).style.visibility = 'visible';
+              }}
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.visibility = 'hidden';
+              }}
+            />
             {/* Score indicator */}
             {event.max_score && event.max_score > 50 && (
               <div className="absolute top-0.5 right-0.5">

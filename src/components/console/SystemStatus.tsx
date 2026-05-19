@@ -226,19 +226,6 @@ export function SystemStatus({
           </div>
         </div>
       )}
-
-      {/* System Activity */}
-      <div className="pt-2 border-t border-border-subtle">
-        <div className={clsx(
-          'flex items-center justify-center gap-2',
-          isRunning ? 'text-emerald' : 'text-amber'
-        )}>
-          <Activity size={14} className={isRunning ? 'animate-pulse' : ''} />
-          <span className="text-xs font-mono">
-            {isRunning ? 'SYSTEM OPERATIONAL' : 'SYSTEM OFFLINE'}
-          </span>
-        </div>
-      </div>
     </div>
   );
 }

@@ -1,4 +1,4 @@
-import { Bell, Search, Activity, Wifi, WifiOff } from 'lucide-react';
+import { Wifi, WifiOff } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
 
@@ -11,13 +11,11 @@ export function Header({ title }: HeaderProps) {
   const [isConnected, setIsConnected] = useState(true);
 
   useEffect(() => {
-    const timer = setInterval(() => {
-      setCurrentTime(new Date());
-    }, 1000);
+    const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
 
-  // Simple connectivity check
+  // Connectivity check against the API health endpoint
   useEffect(() => {
     const checkConnection = async () => {
       try {
@@ -42,33 +40,8 @@ export function Header({ title }: HeaderProps) {
         )}
       </div>
 
-      {/* Center: Search (optional) */}
-      <div className="flex-1 max-w-md mx-8">
-        <div className="relative">
-          <Search
-            className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted"
-            size={16}
-          />
-          <input
-            type="text"
-            placeholder="Search monitors, events..."
-            className={clsx(
-              'w-full pl-10 pr-4 py-2 rounded-lg',
-              'bg-panel border border-border-subtle',
-              'text-text-primary placeholder:text-text-muted',
-              'focus:outline-none focus:border-cyan/50 focus:ring-1 focus:ring-cyan/20',
-              'transition-all duration-fast'
-            )}
-          />
-          <kbd className="absolute right-3 top-1/2 -translate-y-1/2 px-1.5 py-0.5 text-[10px] font-mono text-text-dim bg-abyss rounded">
-            ⌘K
-          </kbd>
-        </div>
-      </div>
-
-      {/* Right: Status + Time + Notifications */}
+      {/* Right: Connection status + Time */}
       <div className="flex items-center gap-4">
-        {/* Connection status */}
         <div
           className={clsx(
             'flex items-center gap-2 px-3 py-1.5 rounded-lg',
@@ -88,13 +61,6 @@ export function Header({ title }: HeaderProps) {
           )}
         </div>
 
-        {/* System activity indicator */}
-        <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-panel">
-          <Activity className="text-cyan animate-pulse" size={14} />
-          <span className="text-xs font-mono text-text-secondary">SYSTEM OK</span>
-        </div>
-
-        {/* Time display */}
         <div className="flex flex-col items-end">
           <span className="text-sm font-mono text-text-primary tabular-nums">
             {currentTime.toLocaleTimeString('en-US', {
@@ -112,19 +78,6 @@ export function Header({ title }: HeaderProps) {
             })}
           </span>
         </div>
-
-        {/* Notifications */}
-        <button
-          className={clsx(
-            'relative p-2 rounded-lg',
-            'text-text-muted hover:text-text-primary',
-            'hover:bg-panel transition-colors'
-          )}
-        >
-          <Bell size={20} />
-          {/* Notification badge */}
-          <span className="absolute top-1 right-1 w-2 h-2 bg-crimson rounded-full animate-pulse-live" />
-        </button>
       </div>
     </header>
   );
