@@ -93,3 +93,7 @@ export async function getServerStats(): Promise<ServerStats[]> {
 export async function getHealthCheck(): Promise<{ status: string }> {
   return apiGet('/server/health_check');
 }
+
+export async function systemLogRotate(): Promise<void> {
+  return apiPost('/system/log_rotate');
+}

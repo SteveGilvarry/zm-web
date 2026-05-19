@@ -21,7 +21,7 @@ function RootComponent() {
   return (
     <>
       <Outlet />
-      {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" />}
+      {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" toggleButtonProps={{ style: { transform: 'translateX(-4rem)' } }} />}
     </>
   );
 }

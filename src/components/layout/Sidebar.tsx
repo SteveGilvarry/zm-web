@@ -12,9 +12,9 @@ import {
   ChevronLeft,
   ChevronRight,
 } from 'lucide-react';
-import { useState } from 'react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 
 interface NavItem {
   label: string;
@@ -37,7 +37,7 @@ const settingsItems: NavItem[] = [
 ];
 
 export function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+  const { sidebarCollapsed: collapsed, toggleSidebar } = useUiStore();
   const router = useRouterState();
   const currentPath = router.location.pathname;
   const { user, clearAuth } = useAuthStore();
@@ -71,7 +71,7 @@ export function Sidebar() {
 
       {/* Collapse toggle */}
       <button
-        onClick={() => setCollapsed(!collapsed)}
+        onClick={toggleSidebar}
         className={clsx(
           'absolute -right-3 top-20 z-50',
           'w-6 h-6 rounded-full',
@@ -105,7 +105,11 @@ export function Sidebar() {
             <NavLink
               key={item.path}
               item={item}
-              isActive={currentPath.startsWith(item.path)}
+              isActive={
+                item.path === '/settings'
+                  ? currentPath === '/settings' || currentPath === '/settings/'
+                  : currentPath.startsWith(item.path)
+              }
               collapsed={collapsed}
             />
           ))}
