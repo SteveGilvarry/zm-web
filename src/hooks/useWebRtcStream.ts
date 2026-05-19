@@ -29,6 +29,10 @@ export function useWebRtcStream(monitorId: number): StreamHookResult {
   const reconnectTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionIdRef = useRef<string | null>(null);
   const intentionalStopRef = useRef(false);
+  // Safari throws InvalidStateError if addIceCandidate() runs before
+  // setRemoteDescription() resolves — buffer early candidates and flush them.
+  const remoteReadyRef = useRef(false);
+  const pendingCandidatesRef = useRef<WebRtcSignalMessage[]>([]);
 
   const [state, setState] = useState<StreamConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
@@ -71,6 +75,8 @@ export function useWebRtcStream(monitorId: number): StreamHookResult {
     setError(null);
     setState('connecting');
     intentionalStopRef.current = false;
+    remoteReadyRef.current = false;
+    pendingCandidatesRef.current = [];
 
     const wsUrl = getWebRtcWebsocketUrl(monitorId);
     const ws = new WebSocket(wsUrl);
@@ -143,6 +149,23 @@ export function useWebRtcStream(monitorId: number): StreamHookResult {
               sdp: msg.sdp,
             }));
 
+            // Remote description is set — safe to add ICE candidates now.
+            // Flush any that arrived during negotiation (Safari would have
+            // thrown if we'd added them earlier).
+            remoteReadyRef.current = true;
+            for (const c of pendingCandidatesRef.current) {
+              try {
+                await pc.addIceCandidate(new RTCIceCandidate({
+                  candidate: c.candidate,
+                  sdpMid: c.sdpMid,
+                  sdpMLineIndex: c.sdpMLineIndex,
+                }));
+              } catch {
+                // Non-fatal
+              }
+            }
+            pendingCandidatesRef.current = [];
+
             const answer = await pc.createAnswer();
             await pc.setLocalDescription(answer);
 
@@ -161,16 +184,20 @@ export function useWebRtcStream(monitorId: number): StreamHookResult {
         }
 
         case 'icecandidate': {
-          if (pcRef.current) {
-            try {
-              await pcRef.current.addIceCandidate(new RTCIceCandidate({
-                candidate: msg.candidate,
-                sdpMid: msg.sdpMid,
-                sdpMLineIndex: msg.sdpMLineIndex,
-              }));
-            } catch {
-              // Non-fatal: ICE candidate could be for an already-resolved path
-            }
+          // Buffer candidates that arrive before setRemoteDescription has
+          // resolved — Safari throws InvalidStateError if added too early.
+          if (!remoteReadyRef.current || !pcRef.current) {
+            pendingCandidatesRef.current.push(msg);
+            break;
+          }
+          try {
+            await pcRef.current.addIceCandidate(new RTCIceCandidate({
+              candidate: msg.candidate,
+              sdpMid: msg.sdpMid,
+              sdpMLineIndex: msg.sdpMLineIndex,
+            }));
+          } catch {
+            // Non-fatal: ICE candidate could be for an already-resolved path
           }
           break;
         }

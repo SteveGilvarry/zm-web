@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Hls from 'hls.js';
 import { startLiveStream, stopLiveStream, getHlsPlaylistUrl } from '@/api/monitors';
+import { getAuthToken } from '@/api/client';
 import type { StreamConnectionState } from '@/types';
 
 export interface StreamHookResult {
@@ -15,11 +16,17 @@ export interface StreamHookResult {
 export function useHlsStream(monitorId: number): StreamHookResult {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
+  const loadDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const mediaRecoveryAttempts = useRef(0);
   const [state, setState] = useState<StreamConnectionState>('idle');
   const [error, setError] = useState<string | null>(null);
   const [hasAudio, setHasAudio] = useState(false);
 
   const destroyHls = useCallback(() => {
+    if (loadDelayRef.current) {
+      clearTimeout(loadDelayRef.current);
+      loadDelayRef.current = null;
+    }
     if (hlsRef.current) {
       hlsRef.current.destroy();
       hlsRef.current = null;
@@ -45,6 +52,7 @@ export function useHlsStream(monitorId: number): StreamHookResult {
 
     setError(null);
     setState('connecting');
+    mediaRecoveryAttempts.current = 0;
 
     startLiveStream(monitorId, { enable_hls: true })
       .then(() => {
@@ -64,9 +72,17 @@ export function useHlsStream(monitorId: number): StreamHookResult {
             liveMaxLatencyDuration: 10,
             liveDurationInfinity: true,
             backBufferLength: 30,
+            // Tolerate initially empty playlists while transcoder produces first segment
+            levelLoadingMaxRetry: 10,
+            levelLoadingRetryDelay: 1000,
+            // HLS playlist + segment endpoints require a Bearer token.
+            // hls.js fetches them via XHR, so attach the header here.
+            xhrSetup: (xhr) => {
+              const token = getAuthToken();
+              if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+            },
           });
 
-          hls.loadSource(playlistUrl);
           hls.attachMedia(videoRef.current!);
 
           hls.on(Hls.Events.MANIFEST_PARSED, (_event, data) => {
@@ -83,9 +99,19 @@ export function useHlsStream(monitorId: number): StreamHookResult {
                   hls.startLoad();
                   break;
                 case Hls.ErrorTypes.MEDIA_ERROR:
-                  setError('Media error - recovering...');
-                  hls.recoverMediaError();
-                  videoRef.current?.play().catch(() => {});
+                  mediaRecoveryAttempts.current++;
+                  if (mediaRecoveryAttempts.current === 1) {
+                    setError('Media error - recovering...');
+                    hls.recoverMediaError();
+                  } else if (mediaRecoveryAttempts.current === 2) {
+                    setError('Media error - switching codec...');
+                    hls.swapAudioCodec();
+                    hls.recoverMediaError();
+                  } else {
+                    setState('failed');
+                    setError('Media playback failed');
+                    destroyHls();
+                  }
                   break;
                 default:
                   setState('failed');
@@ -96,24 +122,38 @@ export function useHlsStream(monitorId: number): StreamHookResult {
             }
           });
 
-          // Clear non-fatal error toast once playback resumes
-          hls.on(Hls.Events.FRAG_LOADED, () => {
-            if (error) setError(null);
+          // Once data is buffered, ensure video is playing and clear errors
+          hls.on(Hls.Events.FRAG_BUFFERED, () => {
+            mediaRecoveryAttempts.current = 0;
+            setError((prev) => prev ? null : prev);
+            if (videoRef.current?.paused) {
+              videoRef.current.play().catch(() => {});
+            }
           });
 
           hlsRef.current = hls;
+
+          // Delay source loading to give transcoder time to produce first segment
+          loadDelayRef.current = setTimeout(() => {
+            loadDelayRef.current = null;
+            hls.loadSource(playlistUrl);
+          }, 2000);
         } else if (videoRef.current!.canPlayType('application/vnd.apple.mpegurl')) {
-          // Safari native HLS
-          videoRef.current!.src = playlistUrl;
-          videoRef.current!.addEventListener('loadedmetadata', () => {
-            setState('connected');
-            setHasAudio(true); // Assume audio present for native HLS
-            videoRef.current?.play().catch(() => {});
-          }, { once: true });
-          videoRef.current!.addEventListener('error', () => {
-            setState('failed');
-            setError('Stream playback error');
-          }, { once: true });
+          // Safari native HLS — also delay for transcoder startup.
+          // <video> src cannot send headers, so authenticate via ?token=.
+          const nativeUrl = getHlsPlaylistUrl(monitorId, true);
+          setTimeout(() => {
+            videoRef.current!.src = nativeUrl;
+            videoRef.current!.addEventListener('loadedmetadata', () => {
+              setState('connected');
+              setHasAudio(true);
+              videoRef.current?.play().catch(() => {});
+            }, { once: true });
+            videoRef.current!.addEventListener('error', () => {
+              setState('failed');
+              setError('Stream playback error');
+            }, { once: true });
+          }, 2000);
         } else {
           setState('failed');
           setError('HLS not supported in this browser');

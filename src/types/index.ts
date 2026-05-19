@@ -34,14 +34,10 @@ export interface UserClaims {
 // Monitor Types
 // ============================================
 
-// Monitor function as string (API returns string, but these are the valid values)
-export type MonitorFunction =
-  | 'None'
-  | 'Monitor'
-  | 'Modect'
-  | 'Record'
-  | 'Mocord'
-  | 'Nodect';
+// Granular monitor mode types (ZM 1.38+)
+export type CapturingMode = 'None' | 'Ondemand' | 'Always';
+export type AnalysingMode = 'None' | 'Always';
+export type RecordingMode = 'None' | 'OnMotion' | 'Always';
 
 export type MonitorStatus =
   | 'Unknown'
@@ -383,8 +379,84 @@ export function toBool(value: number | undefined | null): boolean {
   return value === 1;
 }
 
-// Get monitor function as typed value
-export function getMonitorFunction(fn: string): MonitorFunction {
-  const valid: MonitorFunction[] = ['None', 'Monitor', 'Modect', 'Record', 'Mocord', 'Nodect'];
-  return valid.includes(fn as MonitorFunction) ? (fn as MonitorFunction) : 'None';
+
+// ============================================
+// Config Types
+// ============================================
+
+export interface ZmConfig {
+  id: number;
+  name: string;
+  value: string;
+  type: string;
+  category: string;
+  readonly: number;
+  private: number;
+  system: number;
+  default_value?: string | null;
+  help?: string | null;
+  hint?: string | null;
+  prompt?: string | null;
+}
+
+// ============================================
+// Storage Types
+// ============================================
+
+export interface ZmStorage {
+  id: number;
+  name: string;
+  path: string;
+  type: string;
+  enabled: number;
+}
+
+// ============================================
+// User Types
+// ============================================
+
+export interface User {
+  id: number;
+  username: string;
+  name: string;
+  email: string;
+  enabled: number;
+  system: string;
+  stream: string;
+  events: string;
+  control: string;
+  monitors: string;
+  groups: string;
+  devices: string;
+  snapshots: string;
+}
+
+// Orientation values from API
+export type Orientation = 'Rotate0' | 'Rotate90' | 'Rotate180' | 'Rotate270' | 'FlipHori' | 'FlipVert';
+
+// Get CSS transform for a monitor/event orientation.
+// API returns UPPERCASE_UNDERSCORE format (ROTATE_90, FLIP_HORI, etc.).
+// For 90°/270° rotation the video is scaled to fit within its 16:9 container
+// (scale factor = 9/16 ≈ 0.5625) so the rotated content is fully visible
+// with pillarboxing rather than being clipped.
+export function getOrientationStyle(orientation?: string | null): React.CSSProperties | undefined {
+  if (!orientation) return undefined;
+  // Normalize: strip underscores/spaces and lowercase for matching
+  const norm = orientation.replace(/[_\s]/g, '').toLowerCase();
+  switch (norm) {
+    case 'rotate90':
+      return { transform: 'rotate(90deg) scale(0.5625)', transformOrigin: 'center center' };
+    case 'rotate180':
+      return { transform: 'rotate(180deg)' };
+    case 'rotate270':
+      return { transform: 'rotate(270deg) scale(0.5625)', transformOrigin: 'center center' };
+    case 'fliphori':
+    case 'fliphorizontal':
+      return { transform: 'scaleX(-1)' };
+    case 'flipvert':
+    case 'flipvertical':
+      return { transform: 'scaleY(-1)' };
+    default:
+      return undefined;
+  }
 }

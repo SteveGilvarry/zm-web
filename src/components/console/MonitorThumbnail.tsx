@@ -1,8 +1,7 @@
 import { clsx } from 'clsx';
 import { Video, VideoOff, AlertTriangle, Circle } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
-import type { Monitor, MonitorFunction, StreamProtocol } from '@/types';
-import { getMonitorFunction } from '@/types';
+import type { Monitor, StreamProtocol } from '@/types';
 import { StreamCell } from '@/components/common/StreamCell';
 
 interface MonitorThumbnailProps {
@@ -13,24 +12,6 @@ interface MonitorThumbnailProps {
   liveProtocol?: StreamProtocol | null;
 }
 
-const functionColors: Record<MonitorFunction, string> = {
-  None: 'text-text-muted',
-  Monitor: 'text-cyan',
-  Modect: 'text-amber',
-  Record: 'text-crimson',
-  Mocord: 'text-purple',
-  Nodect: 'text-text-secondary',
-};
-
-const functionLabels: Record<MonitorFunction, string> = {
-  None: 'OFF',
-  Monitor: 'MON',
-  Modect: 'MOD',
-  Record: 'REC',
-  Mocord: 'MRC',
-  Nodect: 'NOD',
-};
-
 export function MonitorThumbnail({
   monitor,
   isStreaming = false,
@@ -38,8 +19,7 @@ export function MonitorThumbnail({
   hasAlarm = false,
   liveProtocol = null,
 }: MonitorThumbnailProps) {
-  const monitorFn = getMonitorFunction(monitor.function);
-  const isEnabled = monitor.enabled === 1 && monitorFn !== 'None';
+  const isEnabled = monitor.capturing !== 'None';
 
   return (
     <Link
@@ -57,13 +37,16 @@ export function MonitorThumbnail({
       <div className="aspect-video relative bg-void">
         {isEnabled && liveProtocol ? (
           <>
-            {/* Live video stream */}
-            <StreamCell
-              protocol={liveProtocol}
-              monitorId={monitor.id}
-              autoStart
-              compact
-            />
+            {/* Live video stream — absolute to fill aspect-video parent */}
+            <div className="absolute inset-0">
+              <StreamCell
+                protocol={liveProtocol}
+                monitorId={monitor.id}
+                orientation={monitor.orientation}
+                autoStart
+                compact
+              />
+            </div>
 
             {/* Motion/Alarm indicator (on top of stream) */}
             {(hasMotion || hasAlarm) && (
@@ -154,16 +137,6 @@ export function MonitorThumbnail({
             </span>
           </div>
 
-          {/* Function badge */}
-          <span
-            className={clsx(
-              'text-[10px] font-mono font-bold px-1.5 py-0.5 rounded',
-              'bg-black/40',
-              functionColors[monitorFn]
-            )}
-          >
-            {functionLabels[monitorFn]}
-          </span>
         </div>
 
         {/* Resolution (shown on hover) */}

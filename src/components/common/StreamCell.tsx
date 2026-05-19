@@ -4,12 +4,14 @@ import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useWebRtcStream } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
 import type { StreamProtocol } from '@/types';
+import { getOrientationStyle } from '@/types';
 import type { StreamHookResult } from '@/hooks/useWebRtcStream';
 
 interface StreamCellProps {
   protocol: StreamProtocol;
   monitorId: number;
   monitorName?: string;
+  orientation?: string | null;
   autoStart?: boolean;
   compact?: boolean;
   showControls?: boolean;
@@ -21,6 +23,7 @@ export function StreamCell({
   protocol,
   monitorId,
   monitorName,
+  orientation,
   autoStart = false,
   compact = false,
   showControls = false,
@@ -35,6 +38,7 @@ export function StreamCell({
       <WebRtcStreamInner
         monitorId={monitorId}
         monitorName={monitorName}
+        orientation={orientation}
         autoStart={autoStart}
         compact={compact}
         showControls={showControls}
@@ -47,6 +51,7 @@ export function StreamCell({
     <HlsStreamInner
       monitorId={monitorId}
       monitorName={monitorName}
+      orientation={orientation}
       autoStart={autoStart}
       compact={compact}
       showControls={showControls}
@@ -59,6 +64,7 @@ export function StreamCell({
 interface StreamInnerProps {
   monitorId: number;
   monitorName?: string;
+  orientation?: string | null;
   autoStart: boolean;
   compact: boolean;
   showControls: boolean;
@@ -85,6 +91,7 @@ function StreamVideo({
   stream,
   protocol,
   monitorName,
+  orientation,
   autoStart,
   compact,
   showControls,
@@ -97,9 +104,14 @@ function StreamVideo({
   const isIdle = stream.state === 'idle';
 
   useEffect(() => {
-    if (autoStart && isIdle) {
-      stream.start();
-    }
+    if (!autoStart) return;
+    // Small delay to survive React StrictMode double-mount and stagger connections
+    const timer = setTimeout(() => {
+      if (stream.state === 'idle') {
+        stream.start();
+      }
+    }, 100 + Math.random() * 500);
+    return () => clearTimeout(timer);
   }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleRetry = (e: React.MouseEvent) => {
@@ -121,6 +133,7 @@ function StreamVideo({
           'w-full h-full object-contain bg-black',
           isIdle && 'hidden',
         )}
+        style={getOrientationStyle(orientation)}
         autoPlay
         muted
         playsInline

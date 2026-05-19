@@ -87,8 +87,8 @@ function ConsolePage() {
   const events = eventsData?.items || [];
   const daemons = daemonsData?.daemons || [];
 
-  const activeMonitors = monitors.filter((m) => m.enabled === 1 && m.function !== 'None');
-  const recordingMonitors = monitors.filter((m) => m.enabled === 1 && ['Record', 'Mocord'].includes(m.function));
+  const activeMonitors = monitors.filter((m) => m.capturing !== 'None');
+  const recordingMonitors = monitors.filter((m) => ['OnMotion', 'Always'].includes(m.recording));
 
   if (!isAuthenticated) return null;
 

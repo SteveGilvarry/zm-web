@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiDelete } from './client';
+import { apiGet, apiPatch, apiDelete, getAuthToken } from './client';
 import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, StartLiveResponse, LiveStats } from '@/types';
 
 export async function getMonitors(params?: PaginationParams): Promise<PaginatedResponse<Monitor>> {
@@ -17,11 +17,16 @@ export async function deleteMonitor(id: number): Promise<void> {
   return apiDelete(`/monitors/${id}`);
 }
 
-// Live streaming — no auth required on start/stop endpoints
+// Live streaming — endpoints are protected by Feature::Stream + monitor ACL,
+// so a Bearer token is required (header is accepted; query fallback also works).
 export async function startLiveStream(monitorId: number, options?: StartLiveRequest): Promise<StartLiveResponse> {
+  const token = getAuthToken();
   const response = await fetch(`/api/v3/live/${monitorId}/start`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
     body: JSON.stringify(options || { enable_hls: true }),
   });
   if (!response.ok) {
@@ -38,8 +43,10 @@ export async function startLiveStream(monitorId: number, options?: StartLiveRequ
 }
 
 export async function stopLiveStream(monitorId: number): Promise<void> {
+  const token = getAuthToken();
   const response = await fetch(`/api/v3/live/${monitorId}/stop`, {
     method: 'DELETE',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!response.ok && response.status !== 404) {
     const text = await response.text();
@@ -55,12 +62,30 @@ export async function getLiveSessions(): Promise<number[]> {
   return apiGet<number[]>('/live/sessions');
 }
 
-// Helper URLs for live streaming
-export function getHlsPlaylistUrl(monitorId: number): string {
-  return `/api/v3/live/${monitorId}/hls/master.m3u8`;
+// Snapshot — returns JPEG, requires auth token as query param for <img> use
+export function getMonitorSnapshotUrl(monitorId: number, token?: string): string {
+  const base = `/api/v3/monitors/${monitorId}/snapshot`;
+  return token ? `${base}?token=${encodeURIComponent(token)}` : base;
+}
+
+// Helper URLs for live streaming.
+// HLS playlist/segments are auth-protected. hls.js fetches them via XHR, so the
+// token is attached as an Authorization header in useHlsStream's xhrSetup — this
+// bare URL is correct for that path. Pass withToken=true only for the Safari
+// native-HLS fallback, where <video> src cannot carry headers.
+export function getHlsPlaylistUrl(monitorId: number, withToken = false): string {
+  const url = `/api/v3/live/${monitorId}/hls/master.m3u8`;
+  if (!withToken) return url;
+  const token = getAuthToken();
+  // Token is base64url-safe — pass raw, the backend's monitor ACL guard does not
+  // percent-decode the query param.
+  return token ? `${url}?token=${token}` : url;
 }
 
 export function getWebRtcWebsocketUrl(monitorId: number): string {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${protocol}//${window.location.host}/api/v3/live/${monitorId}/webrtc/ws`;
+  const base = `${protocol}//${window.location.host}/api/v3/live/${monitorId}/webrtc/ws`;
+  // Browser WebSocket cannot send headers — the JWT must go via ?token=.
+  const token = getAuthToken();
+  return token ? `${base}?token=${token}` : base;
 }

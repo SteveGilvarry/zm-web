@@ -26,6 +26,7 @@ import { Panel } from '@/components/common/Panel';
 import { getEvent, getEventVideoUrl, getEventThumbnailUrl, deleteEvent } from '@/api/events';
 import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { getOrientationStyle } from '@/types';
 
 export const Route = createFileRoute('/events/$eventId')({
   component: EventDetailPage,
@@ -211,6 +212,7 @@ function EventDetailPage() {
                     src={videoUrl}
                     poster={thumbnailUrl}
                     className="w-full h-full object-contain"
+                    style={getOrientationStyle(event.orientation)}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onPlay={() => setIsPlaying(true)}

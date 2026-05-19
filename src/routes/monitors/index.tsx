@@ -7,7 +7,6 @@ import {
   Search,
   Grid3X3,
   List,
-  Filter,
   RefreshCw,
   Video,
   VideoOff,
@@ -19,42 +18,34 @@ import {
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { Panel } from '@/components/common/Panel';
-import { getMonitors, getLiveSessions } from '@/api/monitors';
+import { getMonitors, getLiveSessions, getMonitorSnapshotUrl } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
-import type { Monitor as MonitorType, MonitorFunction } from '@/types';
-import { getMonitorFunction } from '@/types';
+import type { Monitor as MonitorType } from '@/types';
+import { getOrientationStyle } from '@/types';
 
 export const Route = createFileRoute('/monitors/')({
   component: MonitorsPage,
 });
 
 type ViewMode = 'grid' | 'list';
-type FunctionFilter = 'all' | MonitorFunction;
-type StatusFilter = 'all' | 'enabled' | 'disabled' | 'streaming';
+type StatusFilter = 'all' | 'active' | 'inactive' | 'streaming';
 
-const functionColors: Record<MonitorFunction, string> = {
+const capturingColors: Record<string, string> = {
+  Always: 'bg-cyan/20 text-cyan',
+  Ondemand: 'bg-amber/20 text-amber',
   None: 'bg-text-muted/20 text-text-muted',
-  Monitor: 'bg-cyan/20 text-cyan',
-  Modect: 'bg-amber/20 text-amber',
-  Record: 'bg-crimson/20 text-crimson',
-  Mocord: 'bg-purple/20 text-purple',
-  Nodect: 'bg-text-secondary/20 text-text-secondary',
 };
 
-const functionLabels: Record<MonitorFunction, string> = {
+const capturingLabels: Record<string, string> = {
+  Always: 'Always',
+  Ondemand: 'On Demand',
   None: 'None',
-  Monitor: 'Monitor',
-  Modect: 'Motion Detect',
-  Record: 'Record',
-  Mocord: 'Motion + Record',
-  Nodect: 'No Detect',
 };
 
 function MonitorsPage() {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, accessToken } = useAuthStore();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
-  const [functionFilter, setFunctionFilter] = useState<FunctionFilter>('all');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
   const pageSize = 24;
@@ -83,16 +74,11 @@ function MonitorsPage() {
         return false;
       }
 
-      // Function filter
-      if (functionFilter !== 'all' && monitor.function !== functionFilter) {
-        return false;
-      }
-
       // Status filter
-      if (statusFilter === 'enabled' && monitor.enabled !== 1) {
+      if (statusFilter === 'active' && monitor.capturing === 'None') {
         return false;
       }
-      if (statusFilter === 'disabled' && monitor.enabled === 1) {
+      if (statusFilter === 'inactive' && monitor.capturing !== 'None') {
         return false;
       }
       if (statusFilter === 'streaming' && !liveSessions.includes(monitor.id)) {
@@ -101,7 +87,7 @@ function MonitorsPage() {
 
       return true;
     });
-  }, [monitors, searchQuery, functionFilter, statusFilter, liveSessions]);
+  }, [monitors, searchQuery, statusFilter, liveSessions]);
 
   if (!isAuthenticated) return null;
 
@@ -134,33 +120,9 @@ function MonitorsPage() {
                 />
               </div>
 
-              {/* Function Filter */}
-              <div className="relative">
-                <select
-                  value={functionFilter}
-                  onChange={(e) => setFunctionFilter(e.target.value as FunctionFilter)}
-                  className={clsx(
-                    'pl-3 pr-8 py-2 appearance-none',
-                    'bg-surface border border-border-subtle rounded-lg',
-                    'text-text-primary',
-                    'focus:outline-none focus:border-cyan/50',
-                    'transition-colors cursor-pointer'
-                  )}
-                >
-                  <option value="all">All Functions</option>
-                  <option value="None">None</option>
-                  <option value="Monitor">Monitor</option>
-                  <option value="Modect">Motion Detect</option>
-                  <option value="Record">Record</option>
-                  <option value="Mocord">Motion + Record</option>
-                  <option value="Nodect">No Detect</option>
-                </select>
-                <Filter className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-              </div>
-
               {/* Status Filter */}
               <div className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
-                {(['all', 'enabled', 'disabled', 'streaming'] as StatusFilter[]).map((status) => (
+                {(['all', 'active', 'inactive', 'streaming'] as StatusFilter[]).map((status) => (
                   <button
                     key={status}
                     onClick={() => setStatusFilter(status)}
@@ -254,6 +216,7 @@ function MonitorsPage() {
                   key={monitor.id}
                   monitor={monitor}
                   isStreaming={liveSessions.includes(monitor.id)}
+                  token={accessToken}
                 />
               ))}
             </div>
@@ -264,6 +227,7 @@ function MonitorsPage() {
                   key={monitor.id}
                   monitor={monitor}
                   isStreaming={liveSessions.includes(monitor.id)}
+                  token={accessToken}
                 />
               ))}
             </div>
@@ -343,12 +307,13 @@ function MonitorsPage() {
 function MonitorCard({
   monitor,
   isStreaming,
+  token,
 }: {
   monitor: MonitorType;
   isStreaming: boolean;
+  token: string | null;
 }) {
-  const monitorFn = getMonitorFunction(monitor.function);
-  const isEnabled = monitor.enabled === 1 && monitorFn !== 'None';
+  const isActive = monitor.capturing !== 'None';
 
   return (
     <Link
@@ -361,24 +326,26 @@ function MonitorCard({
         'hover:border-cyan/50 hover:shadow-lg hover:shadow-cyan/10'
       )}
     >
-      {/* Video placeholder */}
+      {/* Thumbnail */}
       <div className="aspect-video relative bg-abyss">
-        {isEnabled ? (
+        {isActive ? (
           <>
+            {/* Fallback icon */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-text-dim">
-                {isStreaming ? (
-                  <div className="relative">
-                    <Video size={32} className="text-cyan/40" />
-                    <div className="absolute inset-0 flex items-center justify-center">
-                      <Circle className="w-2 h-2 fill-crimson text-crimson animate-pulse" />
-                    </div>
-                  </div>
-                ) : (
-                  <Video size={32} />
-                )}
-              </div>
+              <Video size={32} className="text-text-dim" />
             </div>
+
+            {/* Snapshot image overlays fallback when loaded */}
+            <img
+              src={getMonitorSnapshotUrl(monitor.id, token || undefined)}
+              alt={monitor.name}
+              className="absolute inset-0 w-full h-full object-contain"
+              style={getOrientationStyle(monitor.orientation)}
+              loading="lazy"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
 
             <div className="absolute inset-0 scanlines pointer-events-none" />
 
@@ -408,7 +375,7 @@ function MonitorCard({
             <span
               className={clsx(
                 'flex-shrink-0 w-2 h-2 rounded-full',
-                isEnabled ? 'bg-emerald' : 'bg-text-muted'
+                isActive ? 'bg-emerald' : 'bg-text-muted'
               )}
             />
             <span className="text-sm font-medium text-white truncate">
@@ -424,10 +391,10 @@ function MonitorCard({
           <span
             className={clsx(
               'text-[10px] font-mono font-medium px-1.5 py-0.5 rounded',
-              functionColors[monitorFn]
+              capturingColors[monitor.capturing] || capturingColors['None']
             )}
           >
-            {functionLabels[monitorFn]}
+            {capturingLabels[monitor.capturing] || monitor.capturing}
           </span>
           <span className="text-[10px] font-mono text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
             {monitor.width}x{monitor.height}
@@ -441,12 +408,13 @@ function MonitorCard({
 function MonitorListItem({
   monitor,
   isStreaming,
+  token,
 }: {
   monitor: MonitorType;
   isStreaming: boolean;
+  token: string | null;
 }) {
-  const monitorFn = getMonitorFunction(monitor.function);
-  const isEnabled = monitor.enabled === 1 && monitorFn !== 'None';
+  const isActive = monitor.capturing !== 'None';
 
   return (
     <Link
@@ -461,11 +429,21 @@ function MonitorListItem({
     >
       {/* Thumbnail */}
       <div className="w-32 aspect-video relative rounded-lg overflow-hidden bg-abyss flex-shrink-0">
-        {isEnabled ? (
+        {isActive ? (
           <>
             <div className="absolute inset-0 flex items-center justify-center">
               <Video size={20} className="text-text-dim" />
             </div>
+            <img
+              src={getMonitorSnapshotUrl(monitor.id, token || undefined)}
+              alt={monitor.name}
+              className="absolute inset-0 w-full h-full object-contain"
+              style={getOrientationStyle(monitor.orientation)}
+              loading="lazy"
+              onError={(e) => {
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
             {isStreaming && (
               <div className="absolute top-1 left-1 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60">
                 <span className="relative flex h-1.5 w-1.5">
@@ -489,7 +467,7 @@ function MonitorListItem({
           <span
             className={clsx(
               'w-2 h-2 rounded-full',
-              isEnabled ? 'bg-emerald' : 'bg-text-muted'
+              isActive ? 'bg-emerald' : 'bg-text-muted'
             )}
           />
           <h3 className="font-medium text-text-primary truncate">
@@ -504,10 +482,10 @@ function MonitorListItem({
           <span
             className={clsx(
               'text-xs font-mono font-medium px-2 py-0.5 rounded',
-              functionColors[monitorFn]
+              capturingColors[monitor.capturing] || capturingColors['None']
             )}
           >
-            {functionLabels[monitorFn]}
+            {capturingLabels[monitor.capturing] || monitor.capturing}
           </span>
           <span className="font-mono text-text-muted">
             {monitor.width}x{monitor.height}
@@ -526,11 +504,9 @@ function MonitorListItem({
             <span className="text-xs font-mono">Streaming</span>
           </div>
         )}
-        {monitor.enabled === 1 ? (
-          <span className="text-xs text-emerald">Enabled</span>
-        ) : (
-          <span className="text-xs text-text-muted">Disabled</span>
-        )}
+        <span className={clsx('text-xs', isActive ? 'text-emerald' : 'text-text-muted')}>
+          {isActive ? 'Active' : 'Inactive'}
+        </span>
       </div>
     </Link>
   );

@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useCallback } from 'react';
+import { useRef, useCallback, useEffect } from 'react';
 import { clsx } from 'clsx';
 import {
   Play,
@@ -18,6 +18,7 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useMontageStore } from '@/stores/montage';
+import { useUiStore } from '@/stores/ui';
 import type { GridLayout } from '@/types';
 
 export const Route = createFileRoute('/montage/')({
@@ -37,6 +38,7 @@ function getGridCols(layout: GridLayout): number {
 
 function MontagePage() {
   const { isAuthenticated } = useAuthStore();
+  const { sidebarCollapsed } = useUiStore();
   const navigate = useNavigate();
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -64,13 +66,15 @@ function MontagePage() {
 
   const monitors = monitorsData?.items || [];
   const enabledMonitors = monitors.filter(
-    (m) => m.enabled === 1 && m.function !== 'None'
+    (m) => m.capturing !== 'None'
   );
 
-  // Auto-populate selectedMonitorIds if empty
-  if (selectedMonitorIds.length === 0 && enabledMonitors.length > 0) {
-    setSelectedMonitorIds(enabledMonitors.slice(0, totalCells).map((m) => m.id));
-  }
+  // Auto-populate selectedMonitorIds when monitors load
+  useEffect(() => {
+    if (selectedMonitorIds.length === 0 && enabledMonitors.length > 0) {
+      setSelectedMonitorIds(enabledMonitors.slice(0, totalCells).map((m) => m.id));
+    }
+  }, [enabledMonitors.length, selectedMonitorIds.length, totalCells, setSelectedMonitorIds]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Get monitors to show in grid (limited to totalCells)
   const gridMonitors = selectedMonitorIds
@@ -137,7 +141,10 @@ function MontagePage() {
     <div className="min-h-screen bg-void">
       <Sidebar />
 
-      <div className="ml-56 min-h-screen flex flex-col">
+      <div className={clsx(
+        'min-h-screen flex flex-col transition-all duration-300 ease-out',
+        sidebarCollapsed ? 'ml-16' : 'ml-56',
+      )}>
         <Header title="Montage" />
 
         <main className="flex-1 p-6 overflow-auto flex flex-col">
@@ -282,6 +289,7 @@ function MontagePage() {
                     protocol={protocol}
                     monitorId={monitor.id}
                     monitorName={monitor.name}
+                    orientation={monitor.orientation}
                     autoStart={isStreamingAll}
                     compact={cols >= 3}
                     showControls={cols <= 2}

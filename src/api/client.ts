@@ -39,8 +39,13 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+/** Current JWT access token, or null if unauthenticated/expired. */
+export function getAuthToken(): string | null {
+  return useAuthStore.getState().getAccessToken();
+}
+
 function getAuthHeaders(): HeadersInit {
-  const token = useAuthStore.getState().getAccessToken();
+  const token = getAuthToken();
   if (token) {
     return {
       Authorization: `Bearer ${token}`,
@@ -87,6 +92,19 @@ export async function apiPost<T, R = T>(endpoint: string, data?: T): Promise<R> 
 export async function apiPatch<T, R = T>(endpoint: string, data: T): Promise<R> {
   const response = await fetch(`${API_BASE}${endpoint}`, {
     method: 'PATCH',
+    headers: {
+      'Content-Type': 'application/json',
+      ...getAuthHeaders(),
+    },
+    body: JSON.stringify(data),
+  });
+
+  return handleResponse<R>(response);
+}
+
+export async function apiPut<T, R = T>(endpoint: string, data: T): Promise<R> {
+  const response = await fetch(`${API_BASE}${endpoint}`, {
+    method: 'PUT',
     headers: {
       'Content-Type': 'application/json',
       ...getAuthHeaders(),

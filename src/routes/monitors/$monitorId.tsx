@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { clsx } from 'clsx';
 import {
   ArrowLeft,
@@ -18,7 +18,6 @@ import {
   HardDrive,
   Layers,
   AlertTriangle,
-  Circle,
   ChevronRight,
   Loader2,
   Wifi,
@@ -35,32 +34,14 @@ import {
 } from '@/api/monitors';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
-import type { MonitorFunction, StreamProtocol } from '@/types';
-import { getMonitorFunction } from '@/types';
+import type { StreamProtocol, CapturingMode, AnalysingMode, RecordingMode } from '@/types';
+import { getOrientationStyle } from '@/types';
 import { useWebRtcStream } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
 
 export const Route = createFileRoute('/monitors/$monitorId')({
   component: MonitorDetailPage,
 });
-
-const functionColors: Record<MonitorFunction, string> = {
-  None: 'bg-text-muted/20 text-text-muted border-text-muted/30',
-  Monitor: 'bg-cyan/20 text-cyan border-cyan/30',
-  Modect: 'bg-amber/20 text-amber border-amber/30',
-  Record: 'bg-crimson/20 text-crimson border-crimson/30',
-  Mocord: 'bg-purple/20 text-purple border-purple/30',
-  Nodect: 'bg-text-secondary/20 text-text-secondary border-text-secondary/30',
-};
-
-const functionDescriptions: Record<MonitorFunction, string> = {
-  None: 'Monitor is disabled',
-  Monitor: 'Passive monitoring only',
-  Modect: 'Motion detection enabled',
-  Record: 'Continuous recording',
-  Mocord: 'Motion detection with recording',
-  Nodect: 'Recording without detection',
-};
 
 function MonitorDetailPage() {
   const { monitorId } = Route.useParams();
@@ -97,6 +78,21 @@ function MonitorDetailPage() {
     refetchInterval: 5000,
   });
 
+  // Auto-start stream once monitor data confirms it's capturing
+  const autoStarted = useRef(false);
+  useEffect(() => {
+    if (!monitor || autoStarted.current) return;
+    const isCapturing = monitor.capturing !== 'None';
+    if (isCapturing && activeStream.state === 'idle') {
+      // Delay for StrictMode: set flag inside callback so canceled timers don't block retry
+      const timer = setTimeout(() => {
+        autoStarted.current = true;
+        activeStream.start();
+      }, 150);
+      return () => clearTimeout(timer);
+    }
+  }, [monitor, activeStream]);
+
   // Fetch recent events for this monitor
   const { data: eventsData } = useQuery({
     queryKey: ['monitorEvents', id],
@@ -107,20 +103,12 @@ function MonitorDetailPage() {
 
   // Update monitor mutation
   const updateMonitorMutation = useMutation({
-    mutationFn: (data: { enabled?: number; function?: string }) => updateMonitor(id, data),
+    mutationFn: (data: { capturing?: string; analysing?: string; recording?: string }) => updateMonitor(id, data),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['monitor', id] });
       queryClient.invalidateQueries({ queryKey: ['monitors'] });
     },
   });
-
-  const handleToggleEnabled = () => {
-    updateMonitorMutation.mutate({ enabled: monitor?.enabled === 1 ? 0 : 1 });
-  };
-
-  const handleFunctionChange = (newFunction: MonitorFunction) => {
-    updateMonitorMutation.mutate({ function: newFunction });
-  };
 
   const handleStartStream = () => {
     activeStream.start();
@@ -213,8 +201,7 @@ function MonitorDetailPage() {
     );
   }
 
-  const monitorFn = getMonitorFunction(monitor.function);
-  const isEnabled = monitor.enabled === 1 && monitorFn !== 'None';
+  const isEnabled = monitor.capturing !== 'None';
   const events = eventsData?.items || [];
 
   return (
@@ -244,137 +231,139 @@ function MonitorDetailPage() {
               {/* Video Player */}
               <Panel noPadding className="overflow-hidden">
                 <div className="relative aspect-video bg-abyss">
-                  {isActive || isStreaming ? (
-                    <>
-                      <video
-                        ref={activeStream.videoRef}
-                        className="w-full h-full object-contain bg-black"
-                        autoPlay
-                        muted={isMuted}
-                        playsInline
-                      />
+                  {/* Video element — always rendered so ref is available for HLS attachment */}
+                  <video
+                    ref={activeStream.videoRef}
+                    className={clsx(
+                      'w-full h-full object-contain bg-black',
+                      !(isActive || isStreaming) && 'hidden',
+                    )}
+                    style={getOrientationStyle(monitor.orientation)}
+                    autoPlay
+                    muted={isMuted}
+                    playsInline
+                  />
 
-                      {/* Connecting overlay */}
-                      {isConnecting && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                          <div className="text-center">
-                            <Loader2 size={40} className="mx-auto mb-3 text-cyan animate-spin" />
-                            <p className="text-sm font-medium text-white">
-                              {activeStream.state === 'signaling' ? 'Negotiating...' : 'Connecting...'}
-                            </p>
-                            <p className="text-xs text-text-muted mt-1">
-                              {protocol === 'webrtc' ? 'WebRTC' : 'HLS'} stream
-                            </p>
+                  {/* Connecting overlay */}
+                  {isConnecting && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                      <div className="text-center">
+                        <Loader2 size={40} className="mx-auto mb-3 text-cyan animate-spin" />
+                        <p className="text-sm font-medium text-white">
+                          {activeStream.state === 'signaling' ? 'Negotiating...' : 'Connecting...'}
+                        </p>
+                        <p className="text-xs text-text-muted mt-1">
+                          {protocol === 'webrtc' ? 'WebRTC' : 'HLS'} stream
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Stream controls overlay */}
+                  {(isActive || isStreaming) && (
+                    <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 to-transparent z-10">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          {/* Live indicator with protocol */}
+                          <div className="flex items-center gap-1.5">
+                            <span className="relative flex h-2 w-2">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
+                              <span className="relative inline-flex rounded-full h-2 w-2 bg-crimson" />
+                            </span>
+                            <span className="text-xs font-mono font-bold text-white">
+                              LIVE {isStreaming && <>&middot; {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}</>}
+                            </span>
                           </div>
+
+                          {/* Stats */}
+                          {liveStats && (
+                            <span className="text-xs font-mono text-text-muted">
+                              {liveStats.packets_processed} packets
+                            </span>
+                          )}
                         </div>
-                      )}
 
-                      {/* Stream controls overlay */}
-                      <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 to-transparent z-10">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-3">
-                            {/* Live indicator with protocol */}
-                            <div className="flex items-center gap-1.5">
-                              <span className="relative flex h-2 w-2">
-                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
-                                <span className="relative inline-flex rounded-full h-2 w-2 bg-crimson" />
-                              </span>
-                              <span className="text-xs font-mono font-bold text-white">
-                                LIVE {isStreaming && <>&middot; {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}</>}
-                              </span>
-                            </div>
-
-                            {/* Stats */}
-                            {liveStats && (
-                              <span className="text-xs font-mono text-text-muted">
-                                {liveStats.packets_processed} packets
-                              </span>
-                            )}
-                          </div>
-
-                          <div className="flex items-center gap-2">
-                            {activeStream.hasAudio && (
-                              <button
-                                onClick={handleToggleMute}
-                                className="p-2 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors"
-                              >
-                                {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
-                              </button>
-                            )}
+                        <div className="flex items-center gap-2">
+                          {activeStream.hasAudio && (
                             <button
-                              onClick={handleToggleFullscreen}
+                              onClick={handleToggleMute}
                               className="p-2 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors"
                             >
-                              <Maximize2 size={16} />
+                              {isMuted ? <VolumeX size={16} /> : <Volume2 size={16} />}
                             </button>
-                            <button
-                              onClick={handleStopStream}
-                              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-crimson/80 text-white hover:bg-crimson transition-colors"
-                            >
-                              <Pause size={14} />
-                              <span className="text-sm font-medium">Stop</span>
-                            </button>
-                          </div>
+                          )}
+                          <button
+                            onClick={handleToggleFullscreen}
+                            className="p-2 rounded-lg bg-black/50 text-white hover:bg-black/70 transition-colors"
+                          >
+                            <Maximize2 size={16} />
+                          </button>
+                          <button
+                            onClick={handleStopStream}
+                            className="flex items-center gap-2 px-3 py-2 rounded-lg bg-crimson/80 text-white hover:bg-crimson transition-colors"
+                          >
+                            <Pause size={14} />
+                            <span className="text-sm font-medium">Stop</span>
+                          </button>
                         </div>
                       </div>
+                    </div>
+                  )}
 
-                      {/* Error overlay */}
-                      {activeStream.error && activeStream.state === 'failed' && (
-                        <div className="absolute inset-0 flex items-center justify-center bg-black/60">
-                          <div className="text-center">
-                            <AlertTriangle size={32} className="mx-auto mb-2 text-amber" />
-                            <p className="text-sm text-white mb-3">{activeStream.error}</p>
-                            <button
-                              onClick={handleRetry}
-                              className="flex items-center gap-2 px-4 py-2 mx-auto rounded-lg bg-cyan text-void font-medium hover:bg-cyan-dim transition-colors"
-                            >
-                              <RefreshCw size={14} />
-                              Retry
-                            </button>
-                          </div>
-                        </div>
-                      )}
-
-                      {/* Non-fatal error toast */}
-                      {activeStream.error && activeStream.state !== 'failed' && (
-                        <div className="absolute top-4 left-1/2 -translate-x-1/2">
-                          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber/90 text-void text-xs font-medium">
-                            <AlertTriangle size={12} />
-                            {activeStream.error}
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  ) : (
-                    <>
-                      {/* Not streaming placeholder */}
-                      <div className="absolute inset-0 flex flex-col items-center justify-center">
-                        {isEnabled ? (
-                          <>
-                            <Video size={64} className="mb-4 text-text-dim" />
-                            <p className="text-text-muted mb-6">Stream not active</p>
-                            <button
-                              onClick={handleStartStream}
-                              className={clsx(
-                                'flex items-center gap-2 px-6 py-3 rounded-lg',
-                                'bg-cyan text-void font-medium',
-                                'hover:bg-cyan-dim transition-colors',
-                              )}
-                            >
-                              <Play size={18} />
-                              Start Stream
-                            </button>
-                          </>
-                        ) : (
-                          <>
-                            <VideoOff size={64} className="mb-4 text-text-dim" />
-                            <p className="text-text-muted">Monitor is disabled</p>
-                          </>
-                        )}
+                  {/* Error overlay */}
+                  {activeStream.error && activeStream.state === 'failed' && (
+                    <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+                      <div className="text-center">
+                        <AlertTriangle size={32} className="mx-auto mb-2 text-amber" />
+                        <p className="text-sm text-white mb-3">{activeStream.error}</p>
+                        <button
+                          onClick={handleRetry}
+                          className="flex items-center gap-2 px-4 py-2 mx-auto rounded-lg bg-cyan text-void font-medium hover:bg-cyan-dim transition-colors"
+                        >
+                          <RefreshCw size={14} />
+                          Retry
+                        </button>
                       </div>
+                    </div>
+                  )}
 
+                  {/* Non-fatal error toast */}
+                  {activeStream.error && activeStream.state !== 'failed' && (
+                    <div className="absolute top-4 left-1/2 -translate-x-1/2">
+                      <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber/90 text-void text-xs font-medium">
+                        <AlertTriangle size={12} />
+                        {activeStream.error}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Not streaming placeholder */}
+                  {!(isActive || isStreaming) && (
+                    <div className="absolute inset-0 flex flex-col items-center justify-center">
+                      {isEnabled ? (
+                        <>
+                          <Video size={64} className="mb-4 text-text-dim" />
+                          <p className="text-text-muted mb-6">Stream not active</p>
+                          <button
+                            onClick={handleStartStream}
+                            className={clsx(
+                              'flex items-center gap-2 px-6 py-3 rounded-lg',
+                              'bg-cyan text-void font-medium',
+                              'hover:bg-cyan-dim transition-colors',
+                            )}
+                          >
+                            <Play size={18} />
+                            Start Stream
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <VideoOff size={64} className="mb-4 text-text-dim" />
+                          <p className="text-text-muted">Monitor is disabled</p>
+                        </>
+                      )}
                       <div className="absolute inset-0 scanlines pointer-events-none" />
-                    </>
+                    </div>
                   )}
                 </div>
               </Panel>
@@ -475,55 +464,76 @@ function MonitorDetailPage() {
                     </p>
                   </div>
 
-                  {/* Enable Toggle */}
+                  {/* Capturing */}
                   <div>
-                    <label className="text-sm text-text-secondary mb-2 block">Monitor State</label>
-                    <button
-                      onClick={handleToggleEnabled}
-                      disabled={updateMonitorMutation.isPending}
-                      className={clsx(
-                        'w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg',
-                        'font-medium transition-all duration-fast',
-                        'disabled:opacity-50 disabled:cursor-not-allowed',
-                        monitor.enabled === 1
-                          ? 'bg-emerald/20 text-emerald border border-emerald/30 hover:bg-emerald/30'
-                          : 'bg-text-muted/20 text-text-muted border border-text-muted/30 hover:bg-text-muted/30'
-                      )}
-                    >
-                      {updateMonitorMutation.isPending ? (
-                        <RefreshCw size={16} className="animate-spin" />
-                      ) : (
-                        <Circle className={clsx('w-3 h-3', monitor.enabled === 1 ? 'fill-emerald' : 'fill-text-muted')} />
-                      )}
-                      {monitor.enabled === 1 ? 'Enabled' : 'Disabled'}
-                    </button>
-                  </div>
-
-                  {/* Function Selector */}
-                  <div>
-                    <label className="text-sm text-text-secondary mb-2 block">Function</label>
-                    <div className="grid grid-cols-2 gap-2">
-                      {(['None', 'Monitor', 'Modect', 'Record', 'Mocord', 'Nodect'] as MonitorFunction[]).map((fn) => (
+                    <label className="text-sm text-text-secondary mb-2 block">Capturing</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['None', 'Ondemand', 'Always'] as CapturingMode[]).map((mode) => (
                         <button
-                          key={fn}
-                          onClick={() => handleFunctionChange(fn)}
+                          key={mode}
+                          onClick={() => updateMonitorMutation.mutate({ capturing: mode })}
                           disabled={updateMonitorMutation.isPending}
                           className={clsx(
                             'px-3 py-2 rounded-lg text-xs font-medium border',
                             'transition-all duration-fast',
                             'disabled:opacity-50 disabled:cursor-not-allowed',
-                            monitorFn === fn
-                              ? functionColors[fn]
+                            monitor.capturing === mode
+                              ? 'bg-cyan/20 text-cyan border-cyan/30'
                               : 'bg-surface/50 text-text-muted border-border hover:border-text-muted/50'
                           )}
                         >
-                          {fn}
+                          {mode}
                         </button>
                       ))}
                     </div>
-                    <p className="text-xs text-text-muted mt-2">
-                      {functionDescriptions[monitorFn]}
-                    </p>
+                  </div>
+
+                  {/* Analysing */}
+                  <div>
+                    <label className="text-sm text-text-secondary mb-2 block">Analysing</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {(['None', 'Always'] as AnalysingMode[]).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => updateMonitorMutation.mutate({ analysing: mode })}
+                          disabled={updateMonitorMutation.isPending}
+                          className={clsx(
+                            'px-3 py-2 rounded-lg text-xs font-medium border',
+                            'transition-all duration-fast',
+                            'disabled:opacity-50 disabled:cursor-not-allowed',
+                            monitor.analysing === mode
+                              ? 'bg-amber/20 text-amber border-amber/30'
+                              : 'bg-surface/50 text-text-muted border-border hover:border-text-muted/50'
+                          )}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Recording */}
+                  <div>
+                    <label className="text-sm text-text-secondary mb-2 block">Recording</label>
+                    <div className="grid grid-cols-3 gap-2">
+                      {(['None', 'OnMotion', 'Always'] as RecordingMode[]).map((mode) => (
+                        <button
+                          key={mode}
+                          onClick={() => updateMonitorMutation.mutate({ recording: mode })}
+                          disabled={updateMonitorMutation.isPending}
+                          className={clsx(
+                            'px-3 py-2 rounded-lg text-xs font-medium border',
+                            'transition-all duration-fast',
+                            'disabled:opacity-50 disabled:cursor-not-allowed',
+                            monitor.recording === mode
+                              ? 'bg-crimson/20 text-crimson border-crimson/30'
+                              : 'bg-surface/50 text-text-muted border-border hover:border-text-muted/50'
+                          )}
+                        >
+                          {mode}
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               </Panel>
