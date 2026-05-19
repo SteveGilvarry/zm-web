@@ -434,6 +434,15 @@ export interface User {
 // Orientation values from API
 export type Orientation = 'Rotate0' | 'Rotate90' | 'Rotate180' | 'Rotate270' | 'FlipHori' | 'FlipVert';
 
+// Whether an orientation swaps the displayed width and height — i.e. a
+// landscape sensor mounted sideways. Accepts both formats the API may
+// return (Rotate90 / ROTATE_90).
+export function isOrientationRotated(orientation?: string | null): boolean {
+  if (!orientation) return false;
+  const norm = orientation.replace(/[_\s]/g, '').toLowerCase();
+  return norm === 'rotate90' || norm === 'rotate270';
+}
+
 // Get CSS transform for a monitor/event orientation.
 // API returns UPPERCASE_UNDERSCORE format (ROTATE_90, FLIP_HORI, etc.).
 // For 90°/270° rotation the video is scaled to fit within its 16:9 container
