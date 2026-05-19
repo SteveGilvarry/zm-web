@@ -105,11 +105,11 @@ function StreamVideo({
 
   useEffect(() => {
     if (!autoStart) return;
-    // Small delay to survive React StrictMode double-mount and stagger connections
+    // Small delay to stagger many simultaneous connections (console/montage).
+    // start() is reference-counted and idempotent per hook instance, so it is
+    // safe to call even when the shared stream is already running.
     const timer = setTimeout(() => {
-      if (stream.state === 'idle') {
-        stream.start();
-      }
+      stream.start();
     }, 100 + Math.random() * 500);
     return () => clearTimeout(timer);
   }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps

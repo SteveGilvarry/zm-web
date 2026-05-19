@@ -83,8 +83,10 @@ function MonitorDetailPage() {
   useEffect(() => {
     if (!monitor || autoStarted.current) return;
     const isCapturing = monitor.capturing !== 'None';
-    if (isCapturing && activeStream.state === 'idle') {
-      // Delay for StrictMode: set flag inside callback so canceled timers don't block retry
+    if (isCapturing) {
+      // Always call start() so this view registers as a stream consumer —
+      // even when the shared WebRTC stream is already running (navigated in
+      // from the console). start() is reference-counted and idempotent.
       const timer = setTimeout(() => {
         autoStarted.current = true;
         activeStream.start();
