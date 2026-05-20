@@ -14,7 +14,7 @@ interface ClassicShellProps {
  */
 export function ClassicShell({ children }: ClassicShellProps) {
   return (
-    <div className="min-h-screen bg-zinc-100 text-zinc-900">
+    <div className="classic-theme min-h-screen bg-zinc-100 text-zinc-900">
       <ClassicTopNav />
       <ClassicStatBar />
       {children}
