@@ -5,6 +5,8 @@ import type { ZmEvent } from '@/types';
 interface ClassicEventsTableProps {
   events: ZmEvent[];
   monitorLookup: Record<number, string>;
+  selectedIds: Set<number>;
+  onToggleSelected: (id: number) => void;
 }
 
 /**
@@ -14,7 +16,9 @@ interface ClassicEventsTableProps {
  * the modern card layout shows, but packed into a single dense table — the
  * way veteran ZM users navigate their event history.
  */
-export function ClassicEventsTable({ events, monitorLookup }: ClassicEventsTableProps) {
+export function ClassicEventsTable({
+  events, monitorLookup, selectedIds, onToggleSelected,
+}: ClassicEventsTableProps) {
   if (events.length === 0) {
     return (
       <div className="bg-white border border-zinc-300 rounded p-12 text-center text-zinc-500">
@@ -23,11 +27,29 @@ export function ClassicEventsTable({ events, monitorLookup }: ClassicEventsTable
     );
   }
 
+  const allSelected = events.length > 0 && events.every((e) => selectedIds.has(e.id));
+  const toggleAll = () => {
+    if (allSelected) {
+      events.forEach((e) => onToggleSelected(e.id));
+    } else {
+      events.filter((e) => !selectedIds.has(e.id)).forEach((e) => onToggleSelected(e.id));
+    }
+  };
+
   return (
     <div className="bg-white border border-zinc-300 rounded overflow-hidden">
       <table className="w-full text-sm text-zinc-800">
         <thead className="bg-zinc-100 border-b border-zinc-300 text-[11px] uppercase tracking-wider">
           <tr>
+            <th className="px-3 py-2 w-8 text-left">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                aria-label="Select all events"
+                className="cursor-pointer"
+              />
+            </th>
             <Th>ID</Th>
             <Th>Monitor</Th>
             <Th>Name</Th>
@@ -45,7 +67,13 @@ export function ClassicEventsTable({ events, monitorLookup }: ClassicEventsTable
         </thead>
         <tbody>
           {events.map((e) => (
-            <Row key={e.id} event={e} monitorName={monitorLookup[e.monitor_id]} />
+            <Row
+              key={e.id}
+              event={e}
+              monitorName={monitorLookup[e.monitor_id]}
+              isSelected={selectedIds.has(e.id)}
+              onToggleSelected={() => onToggleSelected(e.id)}
+            />
           ))}
         </tbody>
       </table>
@@ -75,14 +103,32 @@ function Th({
 function Row({
   event,
   monitorName,
+  isSelected,
+  onToggleSelected,
 }: {
   event: ZmEvent;
   monitorName?: string;
+  isSelected: boolean;
+  onToggleSelected: () => void;
 }) {
   const start = event.start_date_time ? new Date(event.start_date_time) : null;
   const duration = event.length ? Math.round(Number(event.length)) : null;
   return (
-    <tr className="border-b border-zinc-200 hover:bg-zinc-50 transition-colors">
+    <tr
+      className={
+        'border-b border-zinc-200 transition-colors ' +
+        (isSelected ? 'bg-cyan-50' : 'hover:bg-zinc-50')
+      }
+    >
+      <td className="px-3 py-1.5 w-8">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={onToggleSelected}
+          aria-label={`Select event ${event.id}`}
+          className="cursor-pointer"
+        />
+      </td>
       <td className="px-3 py-1.5 font-mono text-zinc-500 whitespace-nowrap">
         <Link
           to="/events/$eventId"

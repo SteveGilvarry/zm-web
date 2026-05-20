@@ -1,5 +1,17 @@
-import { apiGet, apiDelete } from './client';
+import { apiGet, apiDelete, apiPatch } from './client';
 import type { ZmEvent, PaginatedResponse } from '@/types';
+
+export interface EventUpdatePayload {
+  name?: string | null;
+  cause?: string | null;
+  notes?: string | null;
+  archived?: boolean | null;
+  locked?: boolean | null;
+}
+
+export async function updateEvent(id: number, payload: EventUpdatePayload): Promise<ZmEvent> {
+  return apiPatch<EventUpdatePayload, ZmEvent>(`/events/${id}`, payload);
+}
 
 export interface EventQueryParams {
   page?: number;

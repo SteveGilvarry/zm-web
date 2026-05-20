@@ -25,6 +25,7 @@ import { listTags } from '@/api/tags';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
+import { BulkActionBar } from '@/features/events/BulkActionBar';
 import type { ZmEvent } from '@/types';
 
 interface EventsSearchParams {
@@ -50,6 +51,16 @@ function EventsPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [notesQuery, setNotesQuery] = useState('');
   const [tagFilter, setTagFilter] = useState<number | 'all'>('all');
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+
+  const toggleSelected = (id: number) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
   const [monitorFilter, setMonitorFilter] = useState<number | 'all'>(
     searchParams.monitor_id || 'all'
   );
@@ -337,7 +348,12 @@ function EventsPage() {
               </div>
             </Panel>
           ) : skin === 'classic' ? (
-            <ClassicEventsTable events={filteredEvents} monitorLookup={monitorLookup} />
+            <ClassicEventsTable
+              events={filteredEvents}
+              monitorLookup={monitorLookup}
+              selectedIds={selectedIds}
+              onToggleSelected={toggleSelected}
+            />
           ) : (
             <div className="space-y-3 stagger-children">
               {filteredEvents.map((event) => (
@@ -346,10 +362,18 @@ function EventsPage() {
                   event={event}
                   monitorName={monitorLookup[event.monitor_id] || `Monitor ${event.monitor_id}`}
                   token={accessToken}
+                  isSelected={selectedIds.has(event.id)}
+                  onToggleSelected={() => toggleSelected(event.id)}
                 />
               ))}
             </div>
           )}
+
+          {/* Bulk action bar — mounts only when selection is non-empty */}
+          <BulkActionBar
+            selectedIds={selectedIds}
+            onClear={() => setSelectedIds(new Set())}
+          />
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -420,10 +444,14 @@ function EventCard({
   event,
   monitorName,
   token,
+  isSelected,
+  onToggleSelected,
 }: {
   event: ZmEvent;
   monitorName: string;
   token?: string | null;
+  isSelected: boolean;
+  onToggleSelected: () => void;
 }) {
   const startTime = event.start_date_time ? new Date(event.start_date_time) : null;
   const endTime = event.end_date_time ? new Date(event.end_date_time) : null;
@@ -438,17 +466,38 @@ function EventCard({
   };
 
   return (
-    <Link
-      to="/events/$eventId"
-      params={{ eventId: String(event.id) }}
+    <div
       className={clsx(
-        'flex items-center gap-4 p-4',
-        'bg-surface border border-border-subtle rounded-xl',
+        'flex items-center gap-3 p-4 group',
+        'bg-surface border rounded-xl',
         'transition-all duration-base',
-        'hover:border-cyan/50 hover:shadow-lg hover:shadow-cyan/10'
+        isSelected
+          ? 'border-cyan/60 shadow-lg shadow-cyan/10'
+          : 'border-border-subtle hover:border-cyan/50 hover:shadow-lg hover:shadow-cyan/10',
       )}
     >
-      {/* Thumbnail */}
+      {/* Selection checkbox — opt-in, doesn't compete with the Link target */}
+      <button
+        type="button"
+        onClick={(e) => { e.stopPropagation(); onToggleSelected(); }}
+        aria-label={isSelected ? 'Deselect event' : 'Select event'}
+        className={clsx(
+          'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0',
+          'transition-all',
+          isSelected
+            ? 'border-cyan bg-cyan/20'
+            : 'border-border opacity-0 group-hover:opacity-100 hover:border-cyan',
+        )}
+      >
+        {isSelected && <span className="text-cyan text-xs leading-none">✓</span>}
+      </button>
+
+      <Link
+        to="/events/$eventId"
+        params={{ eventId: String(event.id) }}
+        className="flex items-center gap-4 flex-1 min-w-0"
+      >
+        {/* Thumbnail */}
       <div className="w-40 aspect-video relative rounded-lg overflow-hidden bg-abyss flex-shrink-0">
         <img
           src={getEventThumbnailUrl(event.id, token || undefined)}
@@ -561,6 +610,7 @@ function EventCard({
           </div>
         )}
       </div>
-    </Link>
+      </Link>
+    </div>
   );
 }
