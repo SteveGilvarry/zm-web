@@ -23,6 +23,8 @@ import { getEvents, getEventThumbnailUrl } from '@/api/events';
 import { getMonitors } from '@/api/monitors';
 import { listTags } from '@/api/tags';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
+import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
 import type { ZmEvent } from '@/types';
 
 interface EventsSearchParams {
@@ -42,6 +44,7 @@ export const Route = createFileRoute('/events/')({
 
 function EventsPage() {
   const { isAuthenticated, accessToken } = useAuthStore();
+  const skin = useUiStore((s) => s.skin);
   const searchParams = useSearch({ from: '/events/' });
 
   const [searchQuery, setSearchQuery] = useState('');
@@ -315,7 +318,7 @@ function EventsPage() {
             Showing {filteredEvents.length} of {eventsData?.total || 0} events
           </div>
 
-          {/* Events List */}
+          {/* Events List — table in classic skin, card list in modern */}
           {isLoading ? (
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
@@ -333,6 +336,8 @@ function EventsPage() {
                 <p className="text-sm mt-1">Try adjusting your filters</p>
               </div>
             </Panel>
+          ) : skin === 'classic' ? (
+            <ClassicEventsTable events={filteredEvents} monitorLookup={monitorLookup} />
           ) : (
             <div className="space-y-3 stagger-children">
               {filteredEvents.map((event) => (

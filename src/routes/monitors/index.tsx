@@ -18,6 +18,8 @@ import { Panel } from '@/components/common/Panel';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { getMonitors, getLiveSessions } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
+import { ClassicMonitorsTable } from '@/features/monitors/ClassicMonitorsTable';
 import type { Monitor as MonitorType } from '@/types';
 
 export const Route = createFileRoute('/monitors/')({
@@ -41,6 +43,7 @@ const capturingLabels: Record<string, string> = {
 
 function MonitorsPage() {
   const { isAuthenticated } = useAuthStore();
+  const skin = useUiStore((s) => s.skin);
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
@@ -201,6 +204,11 @@ function MonitorsPage() {
                 <p className="text-sm mt-1">Try adjusting your filters</p>
               </div>
             </Panel>
+          ) : skin === 'classic' ? (
+            <ClassicMonitorsTable
+              monitors={filteredMonitors}
+              liveSessionIds={new Set(liveSessions)}
+            />
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-4 gap-4 stagger-children">
               {filteredMonitors.map((monitor) => (
