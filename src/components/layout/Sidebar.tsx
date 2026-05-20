@@ -4,6 +4,7 @@ import {
   Monitor,
   Video,
   LayoutGrid,
+  Film,
   Settings,
   Shield,
   HardDrive,
@@ -28,6 +29,7 @@ const navItems: NavItem[] = [
   { label: 'Monitors', icon: <Monitor size={20} />, path: '/monitors' },
   { label: 'Events', icon: <Video size={20} />, path: '/events' },
   { label: 'Montage', icon: <LayoutGrid size={20} />, path: '/montage' },
+  { label: 'Review', icon: <Film size={20} />, path: '/montagereview' },
 ];
 
 const settingsItems: NavItem[] = [

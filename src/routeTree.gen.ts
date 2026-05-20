@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as MontagereviewIndexRouteImport } from './routes/montagereview/index'
 import { Route as MontageIndexRouteImport } from './routes/montage/index'
 import { Route as MonitorsIndexRouteImport } from './routes/monitors/index'
 import { Route as EventsIndexRouteImport } from './routes/events/index'
@@ -33,6 +34,11 @@ const IndexRoute = IndexRouteImport.update({
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MontagereviewIndexRoute = MontagereviewIndexRouteImport.update({
+  id: '/montagereview/',
+  path: '/montagereview/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MontageIndexRoute = MontageIndexRouteImport.update({
@@ -81,6 +87,7 @@ export interface FileRoutesByFullPath {
   '/events/': typeof EventsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
   '/montage/': typeof MontageIndexRoute
+  '/montagereview/': typeof MontagereviewIndexRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -93,6 +100,7 @@ export interface FileRoutesByTo {
   '/events': typeof EventsIndexRoute
   '/monitors': typeof MonitorsIndexRoute
   '/montage': typeof MontageIndexRoute
+  '/montagereview': typeof MontagereviewIndexRoute
   '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -106,6 +114,7 @@ export interface FileRoutesById {
   '/events/': typeof EventsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
   '/montage/': typeof MontageIndexRoute
+  '/montagereview/': typeof MontagereviewIndexRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -120,6 +129,7 @@ export interface FileRouteTypes {
     | '/events/'
     | '/monitors/'
     | '/montage/'
+    | '/montagereview/'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -132,6 +142,7 @@ export interface FileRouteTypes {
     | '/events'
     | '/monitors'
     | '/montage'
+    | '/montagereview'
     | '/settings'
   id:
     | '__root__'
@@ -144,6 +155,7 @@ export interface FileRouteTypes {
     | '/events/'
     | '/monitors/'
     | '/montage/'
+    | '/montagereview/'
     | '/settings/'
   fileRoutesById: FileRoutesById
 }
@@ -157,6 +169,7 @@ export interface RootRouteChildren {
   EventsIndexRoute: typeof EventsIndexRoute
   MonitorsIndexRoute: typeof MonitorsIndexRoute
   MontageIndexRoute: typeof MontageIndexRoute
+  MontagereviewIndexRoute: typeof MontagereviewIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
@@ -181,6 +194,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/montagereview/': {
+      id: '/montagereview/'
+      path: '/montagereview'
+      fullPath: '/montagereview/'
+      preLoaderRoute: typeof MontagereviewIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/montage/': {
@@ -245,6 +265,7 @@ const rootRouteChildren: RootRouteChildren = {
   EventsIndexRoute: EventsIndexRoute,
   MonitorsIndexRoute: MonitorsIndexRoute,
   MontageIndexRoute: MontageIndexRoute,
+  MontagereviewIndexRoute: MontagereviewIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 export const routeTree = rootRouteImport
