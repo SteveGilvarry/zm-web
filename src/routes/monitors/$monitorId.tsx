@@ -23,6 +23,7 @@ import {
   Wifi,
   Radio,
   Joystick,
+  Square,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -40,6 +41,7 @@ import { useWebRtcStream } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
 import { usePtzCapabilities } from '@/features/ptz/usePtz';
 import { PtzControls } from '@/features/ptz/PtzControls';
+import { ZoneEditor } from '@/features/zones/ZoneEditor';
 
 export const Route = createFileRoute('/monitors/$monitorId')({
   component: MonitorDetailPage,
@@ -718,6 +720,21 @@ function MonitorDetailPage() {
     </Panel>
   );
 
+  // Motion-detection polygons. Editor lives below the operations row so the
+  // operator can refer to the live picture while drawing zones.
+  const zonesPanel = monitor.width && monitor.height ? (
+    <Panel
+      title="Motion zones"
+      icon={<Square size={16} />}
+    >
+      <ZoneEditor
+        monitorId={monitor.id}
+        width={monitor.width}
+        height={monitor.height}
+      />
+    </Panel>
+  ) : null;
+
   // Only mount the PTZ panel when the backend reports real capabilities;
   // non-PTZ monitors get no empty panel at all.
   const ptzPanel = ptzState.status === 'ready' ? (
@@ -770,6 +787,7 @@ function MonitorDetailPage() {
                 {statusPanel}
                 {connectionPanel}
                 {eventsPanel}
+                {zonesPanel}
               </div>
             </div>
           ) : (
@@ -793,6 +811,7 @@ function MonitorDetailPage() {
                 {connectionPanel}
                 {eventsPanel}
               </div>
+              {zonesPanel}
             </div>
           )}
       </main>
