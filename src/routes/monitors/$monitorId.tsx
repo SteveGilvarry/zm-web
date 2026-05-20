@@ -24,6 +24,7 @@ import {
   Radio,
   Joystick,
   Square,
+  Pencil,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -42,6 +43,7 @@ import { useHlsStream } from '@/hooks/useHlsStream';
 import { usePtzCapabilities } from '@/features/ptz/usePtz';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
+import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
 
 export const Route = createFileRoute('/monitors/$monitorId')({
   component: MonitorDetailPage,
@@ -55,6 +57,7 @@ function MonitorDetailPage() {
   const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [editorOpen, setEditorOpen] = useState(false);
 
   // Track fullscreen so the rotated-video styling can switch between the
   // portrait-container fit (inline) and the 16:9-screen fit (fullscreen).
@@ -756,17 +759,26 @@ function MonitorDetailPage() {
   return (
     <AppShell title={monitor.name}>
       <main className="flex-1 p-6 overflow-auto">
-        {/* Breadcrumb */}
-          <div className="flex items-center gap-2 mb-6 text-sm">
-            <Link
-              to="/monitors"
-              className="flex items-center gap-1 text-text-muted hover:text-cyan transition-colors"
+        {/* Breadcrumb + Edit affordance */}
+          <div className="flex items-center justify-between mb-6">
+            <div className="flex items-center gap-2 text-sm">
+              <Link
+                to="/monitors"
+                className="flex items-center gap-1 text-text-muted hover:text-cyan transition-colors"
+              >
+                <ArrowLeft size={14} />
+                Monitors
+              </Link>
+              <ChevronRight size={14} className="text-text-muted" />
+              <span className="text-text-primary">{monitor.name}</span>
+            </div>
+            <button
+              onClick={() => setEditorOpen(true)}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 transition-colors text-xs font-medium"
             >
-              <ArrowLeft size={14} />
-              Monitors
-            </Link>
-            <ChevronRight size={14} className="text-text-muted" />
-            <span className="text-text-primary">{monitor.name}</span>
+              <Pencil size={12} />
+              Edit configuration
+            </button>
           </div>
 
           {layout === 'side' ? (
@@ -815,6 +827,13 @@ function MonitorDetailPage() {
             </div>
           )}
       </main>
+
+      {editorOpen && (
+        <MonitorEditor
+          monitor={monitor}
+          onClose={() => setEditorOpen(false)}
+        />
+      )}
     </AppShell>
   );
 }
