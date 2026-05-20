@@ -5,6 +5,7 @@ import {
   Video,
   LayoutGrid,
   Film,
+  RefreshCcw,
   Settings,
   Shield,
   HardDrive,
@@ -30,6 +31,7 @@ const navItems: NavItem[] = [
   { label: 'Events', icon: <Video size={20} />, path: '/events' },
   { label: 'Montage', icon: <LayoutGrid size={20} />, path: '/montage' },
   { label: 'Review', icon: <Film size={20} />, path: '/montagereview' },
+  { label: 'Cycle', icon: <RefreshCcw size={20} />, path: '/cycle' },
 ];
 
 const settingsItems: NavItem[] = [
