@@ -14,12 +14,14 @@ import {
   ChevronLeft,
   ChevronRight,
   Archive,
+  Tag as TagIcon,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { getEvents, getEventThumbnailUrl } from '@/api/events';
 import { getMonitors } from '@/api/monitors';
+import { listTags } from '@/api/tags';
 import { useAuthStore } from '@/stores/auth';
 import type { ZmEvent } from '@/types';
 
@@ -43,6 +45,8 @@ function EventsPage() {
   const searchParams = useSearch({ from: '/events/' });
 
   const [searchQuery, setSearchQuery] = useState('');
+  const [notesQuery, setNotesQuery] = useState('');
+  const [tagFilter, setTagFilter] = useState<number | 'all'>('all');
   const [monitorFilter, setMonitorFilter] = useState<number | 'all'>(
     searchParams.monitor_id || 'all'
   );
@@ -58,6 +62,14 @@ function EventsPage() {
     queryFn: () => getMonitors({ page: 1, page_size: 100 }),
     enabled: isAuthenticated,
   });
+
+  // Fetch tags for filter dropdown
+  const { data: tagsData } = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => listTags({ page: 1, page_size: 200 }),
+    enabled: isAuthenticated,
+  });
+  const tags = tagsData?.items ?? [];
 
   // Fetch events
   const { data: eventsData, isLoading, refetch } = useQuery({
@@ -96,17 +108,30 @@ function EventsPage() {
     return lookup;
   }, [monitors]);
 
-  // Filter by search query
+  // Filter by search query, notes substring, and tag attachment. Backend
+  // doesn't yet support notes/tags as query params, so these filters run
+  // client-side over the current page — fine for typical event volumes,
+  // and clearly labelled in the UI.
   const filteredEvents = useMemo(() => {
-    if (!searchQuery) return events;
-    const query = searchQuery.toLowerCase();
-    return events.filter(
-      (event) =>
-        event.name.toLowerCase().includes(query) ||
-        event.cause?.toLowerCase().includes(query) ||
-        monitorLookup[event.monitor_id]?.toLowerCase().includes(query)
-    );
-  }, [events, searchQuery, monitorLookup]);
+    const query = searchQuery.trim().toLowerCase();
+    const notes = notesQuery.trim().toLowerCase();
+    return events.filter((event) => {
+      if (query) {
+        const matches =
+          event.name.toLowerCase().includes(query) ||
+          event.cause?.toLowerCase().includes(query) ||
+          monitorLookup[event.monitor_id]?.toLowerCase().includes(query);
+        if (!matches) return false;
+      }
+      if (notes) {
+        if (!event.notes?.toLowerCase().includes(notes)) return false;
+      }
+      if (tagFilter !== 'all') {
+        if (!event.tags?.some((t) => t.id === tagFilter)) return false;
+      }
+      return true;
+    });
+  }, [events, searchQuery, notesQuery, tagFilter, monitorLookup]);
 
   // Get unique causes for filter
   const causes = useMemo(() => {
@@ -210,6 +235,48 @@ function EventsPage() {
                     'transition-colors'
                   )}
                 />
+              </div>
+
+              {/* Notes substring filter — client-side until backend exposes it */}
+              <input
+                type="text"
+                placeholder="Notes contain…"
+                value={notesQuery}
+                onChange={(e) => setNotesQuery(e.target.value)}
+                className={clsx(
+                  'px-3 py-2 w-44',
+                  'bg-surface border border-border-subtle rounded-lg',
+                  'text-text-primary placeholder:text-text-muted text-sm',
+                  'focus:outline-none focus:border-cyan/50',
+                  'transition-colors',
+                )}
+              />
+
+              {/* Tag Filter */}
+              <div className="relative">
+                <select
+                  value={tagFilter}
+                  onChange={(e) => {
+                    setTagFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value));
+                    setPage(1);
+                  }}
+                  className={clsx(
+                    'pl-3 pr-8 py-2 appearance-none',
+                    'bg-surface border border-border-subtle rounded-lg',
+                    'text-text-primary',
+                    'focus:outline-none focus:border-cyan/50',
+                    'transition-colors cursor-pointer',
+                  )}
+                >
+                  <option value="all">All Tags</option>
+                  {tags.map((t) => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                      {t.event_count != null ? ` (${t.event_count})` : ''}
+                    </option>
+                  ))}
+                </select>
+                <TagIcon className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
               </div>
 
               {/* Archived Filter */}
@@ -409,7 +476,7 @@ function EventCard({
           )}
         </div>
 
-        <div className="flex items-center gap-4 text-sm text-text-secondary mb-2">
+        <div className="flex items-center gap-4 text-sm text-text-secondary mb-2 flex-wrap">
           <span className="flex items-center gap-1.5">
             <Monitor size={14} className="text-text-muted" />
             {monitorName}
@@ -422,6 +489,19 @@ function EventCard({
               )}
             >
               {event.cause}
+            </span>
+          )}
+          {event.tags && event.tags.length > 0 && (
+            <span className="flex items-center gap-1 flex-wrap">
+              {event.tags.map((t) => (
+                <span
+                  key={t.id}
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan/15 border border-cyan/30 text-cyan text-[10px]"
+                >
+                  <TagIcon size={9} />
+                  {t.name}
+                </span>
+              ))}
             </span>
           )}
         </div>
@@ -444,23 +524,35 @@ function EventCard({
       </div>
 
       {/* Stats */}
-      <div className="flex items-center gap-6 text-right">
-        {event.frames && (
+      <div className="flex items-center gap-5 text-right">
+        {event.frames != null && event.frames > 0 && (
           <div>
             <p className="text-lg font-mono font-medium text-text-primary">{event.frames}</p>
             <p className="text-xs text-text-muted">Frames</p>
           </div>
         )}
-        {event.alarm_frames && (
+        {event.alarm_frames != null && event.alarm_frames > 0 && (
           <div>
             <p className="text-lg font-mono font-medium text-crimson">{event.alarm_frames}</p>
             <p className="text-xs text-text-muted">Alarm</p>
           </div>
         )}
-        {event.max_score && (
+        {event.tot_score != null && event.tot_score > 0 && (
+          <div>
+            <p className="text-lg font-mono font-medium text-text-primary">{event.tot_score}</p>
+            <p className="text-xs text-text-muted">Tot</p>
+          </div>
+        )}
+        {event.avg_score != null && event.avg_score > 0 && (
+          <div>
+            <p className="text-lg font-mono font-medium text-cyan">{event.avg_score}</p>
+            <p className="text-xs text-text-muted">Avg</p>
+          </div>
+        )}
+        {event.max_score != null && event.max_score > 0 && (
           <div>
             <p className="text-lg font-mono font-medium text-amber">{event.max_score}</p>
-            <p className="text-xs text-text-muted">Max Score</p>
+            <p className="text-xs text-text-muted">Max</p>
           </div>
         )}
       </div>

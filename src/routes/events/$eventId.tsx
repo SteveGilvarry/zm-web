@@ -18,6 +18,7 @@ import {
   Activity,
   SkipBack,
   SkipForward,
+  Tag as TagIcon,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -26,6 +27,8 @@ import { getEvent, getEventVideoUrl, getEventThumbnailUrl, deleteEvent } from '@
 import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { getOrientationStyle } from '@/types';
+import { TagChips } from '@/features/events/TagChips';
+import { FrameScrubber } from '@/features/events/FrameScrubber';
 
 export const Route = createFileRoute('/events/$eventId')({
   component: EventDetailPage,
@@ -286,8 +289,23 @@ function EventDetailPage() {
                 </div>
               </Panel>
 
-              {/* Stats Cards */}
-              <div className="grid grid-cols-4 gap-4">
+              {/* Frame Scrubber — per-frame stepper, score-graded ticks */}
+              <Panel>
+                <FrameScrubber
+                  eventId={event.id}
+                  durationSec={duration || Number(event.length) || 0}
+                  currentTimeSec={currentTime}
+                  onSeek={(t) => {
+                    if (videoRef.current) {
+                      videoRef.current.currentTime = t;
+                      setCurrentTime(t);
+                    }
+                  }}
+                />
+              </Panel>
+
+              {/* Stats Cards — five cells so Total Score gets its own readout */}
+              <div className="grid grid-cols-5 gap-4">
                 <Panel>
                   <div className="text-center">
                     <p className="text-2xl font-mono font-bold text-text-primary">
@@ -308,19 +326,28 @@ function EventDetailPage() {
 
                 <Panel>
                   <div className="text-center">
-                    <p className="text-2xl font-mono font-bold text-amber">
-                      {event.max_score || 0}
+                    <p className="text-2xl font-mono font-bold text-text-primary">
+                      {event.tot_score ?? 0}
                     </p>
-                    <p className="text-xs text-text-muted mt-1">Max Score</p>
+                    <p className="text-xs text-text-muted mt-1">Tot Score</p>
                   </div>
                 </Panel>
 
                 <Panel>
                   <div className="text-center">
                     <p className="text-2xl font-mono font-bold text-cyan">
-                      {event.avg_score || 0}
+                      {event.avg_score ?? 0}
                     </p>
                     <p className="text-xs text-text-muted mt-1">Avg Score</p>
+                  </div>
+                </Panel>
+
+                <Panel>
+                  <div className="text-center">
+                    <p className="text-2xl font-mono font-bold text-amber">
+                      {event.max_score ?? 0}
+                    </p>
+                    <p className="text-xs text-text-muted mt-1">Max Score</p>
                   </div>
                 </Panel>
               </div>
@@ -437,6 +464,11 @@ function EventDetailPage() {
                     </div>
                   )}
                 </div>
+              </Panel>
+
+              {/* Tags — chips + inline editor */}
+              <Panel title="Tags" icon={<TagIcon size={16} />}>
+                <TagChips eventId={event.id} currentTags={event.tags ?? []} />
               </Panel>
 
               {/* Notes */}
