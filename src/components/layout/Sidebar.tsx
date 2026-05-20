@@ -12,6 +12,9 @@ import {
   Users,
   UsersRound,
   ScrollText,
+  Filter as FilterIcon,
+  FileText,
+  ShieldCheck,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -35,6 +38,9 @@ const navItems: NavItem[] = [
   { label: 'Review', icon: <Film size={20} />, path: '/montagereview' },
   { label: 'Cycle', icon: <RefreshCcw size={20} />, path: '/cycle' },
   { label: 'Groups', icon: <UsersRound size={20} />, path: '/groups' },
+  { label: 'Filters', icon: <FilterIcon size={20} />, path: '/filters' },
+  { label: 'Reports', icon: <FileText size={20} />, path: '/reports' },
+  { label: 'Audit', icon: <ShieldCheck size={20} />, path: '/audit' },
   { label: 'Log', icon: <ScrollText size={20} />, path: '/logs' },
 ];
 

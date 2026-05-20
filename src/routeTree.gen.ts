@@ -12,13 +12,16 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as ReportsIndexRouteImport } from './routes/reports/index'
 import { Route as MontagereviewIndexRouteImport } from './routes/montagereview/index'
 import { Route as MontageIndexRouteImport } from './routes/montage/index'
 import { Route as MonitorsIndexRouteImport } from './routes/monitors/index'
 import { Route as LogsIndexRouteImport } from './routes/logs/index'
 import { Route as GroupsIndexRouteImport } from './routes/groups/index'
+import { Route as FiltersIndexRouteImport } from './routes/filters/index'
 import { Route as EventsIndexRouteImport } from './routes/events/index'
 import { Route as CycleIndexRouteImport } from './routes/cycle/index'
+import { Route as AuditIndexRouteImport } from './routes/audit/index'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
 import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
 import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
@@ -37,6 +40,11 @@ const IndexRoute = IndexRouteImport.update({
 const SettingsIndexRoute = SettingsIndexRouteImport.update({
   id: '/settings/',
   path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsIndexRoute = ReportsIndexRouteImport.update({
+  id: '/reports/',
+  path: '/reports/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MontagereviewIndexRoute = MontagereviewIndexRouteImport.update({
@@ -64,6 +72,11 @@ const GroupsIndexRoute = GroupsIndexRouteImport.update({
   path: '/groups/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const FiltersIndexRoute = FiltersIndexRouteImport.update({
+  id: '/filters/',
+  path: '/filters/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const EventsIndexRoute = EventsIndexRouteImport.update({
   id: '/events/',
   path: '/events/',
@@ -72,6 +85,11 @@ const EventsIndexRoute = EventsIndexRouteImport.update({
 const CycleIndexRoute = CycleIndexRouteImport.update({
   id: '/cycle/',
   path: '/cycle/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuditIndexRoute = AuditIndexRouteImport.update({
+  id: '/audit/',
+  path: '/audit/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const SettingsUsersRoute = SettingsUsersRouteImport.update({
@@ -102,13 +120,16 @@ export interface FileRoutesByFullPath {
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
+  '/audit/': typeof AuditIndexRoute
   '/cycle/': typeof CycleIndexRoute
   '/events/': typeof EventsIndexRoute
+  '/filters/': typeof FiltersIndexRoute
   '/groups/': typeof GroupsIndexRoute
   '/logs/': typeof LogsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
   '/montage/': typeof MontageIndexRoute
   '/montagereview/': typeof MontagereviewIndexRoute
+  '/reports/': typeof ReportsIndexRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRoutesByTo {
@@ -118,13 +139,16 @@ export interface FileRoutesByTo {
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
+  '/audit': typeof AuditIndexRoute
   '/cycle': typeof CycleIndexRoute
   '/events': typeof EventsIndexRoute
+  '/filters': typeof FiltersIndexRoute
   '/groups': typeof GroupsIndexRoute
   '/logs': typeof LogsIndexRoute
   '/monitors': typeof MonitorsIndexRoute
   '/montage': typeof MontageIndexRoute
   '/montagereview': typeof MontagereviewIndexRoute
+  '/reports': typeof ReportsIndexRoute
   '/settings': typeof SettingsIndexRoute
 }
 export interface FileRoutesById {
@@ -135,13 +159,16 @@ export interface FileRoutesById {
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
+  '/audit/': typeof AuditIndexRoute
   '/cycle/': typeof CycleIndexRoute
   '/events/': typeof EventsIndexRoute
+  '/filters/': typeof FiltersIndexRoute
   '/groups/': typeof GroupsIndexRoute
   '/logs/': typeof LogsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
   '/montage/': typeof MontageIndexRoute
   '/montagereview/': typeof MontagereviewIndexRoute
+  '/reports/': typeof ReportsIndexRoute
   '/settings/': typeof SettingsIndexRoute
 }
 export interface FileRouteTypes {
@@ -153,13 +180,16 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/settings/storage'
     | '/settings/users'
+    | '/audit/'
     | '/cycle/'
     | '/events/'
+    | '/filters/'
     | '/groups/'
     | '/logs/'
     | '/monitors/'
     | '/montage/'
     | '/montagereview/'
+    | '/reports/'
     | '/settings/'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -169,13 +199,16 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/settings/storage'
     | '/settings/users'
+    | '/audit'
     | '/cycle'
     | '/events'
+    | '/filters'
     | '/groups'
     | '/logs'
     | '/monitors'
     | '/montage'
     | '/montagereview'
+    | '/reports'
     | '/settings'
   id:
     | '__root__'
@@ -185,13 +218,16 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/settings/storage'
     | '/settings/users'
+    | '/audit/'
     | '/cycle/'
     | '/events/'
+    | '/filters/'
     | '/groups/'
     | '/logs/'
     | '/monitors/'
     | '/montage/'
     | '/montagereview/'
+    | '/reports/'
     | '/settings/'
   fileRoutesById: FileRoutesById
 }
@@ -202,13 +238,16 @@ export interface RootRouteChildren {
   MonitorsMonitorIdRoute: typeof MonitorsMonitorIdRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
+  AuditIndexRoute: typeof AuditIndexRoute
   CycleIndexRoute: typeof CycleIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
+  FiltersIndexRoute: typeof FiltersIndexRoute
   GroupsIndexRoute: typeof GroupsIndexRoute
   LogsIndexRoute: typeof LogsIndexRoute
   MonitorsIndexRoute: typeof MonitorsIndexRoute
   MontageIndexRoute: typeof MontageIndexRoute
   MontagereviewIndexRoute: typeof MontagereviewIndexRoute
+  ReportsIndexRoute: typeof ReportsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
 }
 
@@ -233,6 +272,13 @@ declare module '@tanstack/react-router' {
       path: '/settings'
       fullPath: '/settings/'
       preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/': {
+      id: '/reports/'
+      path: '/reports'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof ReportsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/montagereview/': {
@@ -270,6 +316,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GroupsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/filters/': {
+      id: '/filters/'
+      path: '/filters'
+      fullPath: '/filters/'
+      preLoaderRoute: typeof FiltersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/events/': {
       id: '/events/'
       path: '/events'
@@ -282,6 +335,13 @@ declare module '@tanstack/react-router' {
       path: '/cycle'
       fullPath: '/cycle/'
       preLoaderRoute: typeof CycleIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/audit/': {
+      id: '/audit/'
+      path: '/audit'
+      fullPath: '/audit/'
+      preLoaderRoute: typeof AuditIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/settings/users': {
@@ -322,13 +382,16 @@ const rootRouteChildren: RootRouteChildren = {
   MonitorsMonitorIdRoute: MonitorsMonitorIdRoute,
   SettingsStorageRoute: SettingsStorageRoute,
   SettingsUsersRoute: SettingsUsersRoute,
+  AuditIndexRoute: AuditIndexRoute,
   CycleIndexRoute: CycleIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
+  FiltersIndexRoute: FiltersIndexRoute,
   GroupsIndexRoute: GroupsIndexRoute,
   LogsIndexRoute: LogsIndexRoute,
   MonitorsIndexRoute: MonitorsIndexRoute,
   MontageIndexRoute: MontageIndexRoute,
   MontagereviewIndexRoute: MontagereviewIndexRoute,
+  ReportsIndexRoute: ReportsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
 }
 export const routeTree = rootRouteImport
