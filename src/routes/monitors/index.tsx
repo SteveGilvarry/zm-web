@@ -17,9 +17,13 @@ import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { getMonitors, getLiveSessions } from '@/api/monitors';
+import { cloneMonitor, deleteMonitor } from '@/api/monitors-crud';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { ClassicMonitorsTable } from '@/features/monitors/ClassicMonitorsTable';
+import { AddMonitorDialog } from '@/features/monitors/AddMonitorDialog';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { Plus } from 'lucide-react';
 import type { Monitor as MonitorType } from '@/types';
 
 export const Route = createFileRoute('/monitors/')({
@@ -44,7 +48,18 @@ const capturingLabels: Record<string, string> = {
 function MonitorsPage() {
   const { isAuthenticated } = useAuthStore();
   const skin = useUiStore((s) => s.skin);
+  const qc = useQueryClient();
   const [viewMode, setViewMode] = useState<ViewMode>('grid');
+  const [showAdd, setShowAdd] = useState(false);
+
+  const cloneMutation = useMutation({
+    mutationFn: (id: number) => cloneMonitor(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['monitors'] }),
+  });
+  const deleteMutation = useMutation({
+    mutationFn: (id: number) => deleteMonitor(id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['monitors'] }),
+  });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<StatusFilter>('all');
   const [page, setPage] = useState(1);
@@ -135,6 +150,15 @@ function MonitorsPage() {
             </div>
 
             <div className="flex items-center gap-3">
+              {/* Add monitor */}
+              <button
+                onClick={() => setShowAdd(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan/15 border border-cyan/40 text-cyan hover:bg-cyan/25 transition-colors text-sm font-medium"
+              >
+                <Plus size={14} />
+                Add monitor
+              </button>
+
               {/* Refresh */}
               <button
                 onClick={() => refetch()}
@@ -208,6 +232,13 @@ function MonitorsPage() {
             <ClassicMonitorsTable
               monitors={filteredMonitors}
               liveSessionIds={new Set(liveSessions)}
+              onClone={(id) => cloneMutation.mutate(id)}
+              onDelete={(id, name) => {
+                if (confirm(`Delete monitor "${name}"? This removes its config and any future captures; existing event recordings are kept until storage is reclaimed.`)) {
+                  deleteMutation.mutate(id);
+                }
+              }}
+              busy={cloneMutation.isPending || deleteMutation.isPending}
             />
           ) : viewMode === 'grid' ? (
             <div className="grid grid-cols-4 gap-4 stagger-children">
@@ -292,6 +323,8 @@ function MonitorsPage() {
             </div>
           )}
       </main>
+
+      <AddMonitorDialog open={showAdd} onClose={() => setShowAdd(false)} />
     </AppShell>
   );
 }

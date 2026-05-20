@@ -1,11 +1,14 @@
 import { Link } from '@tanstack/react-router';
-import { Circle } from 'lucide-react';
+import { Circle, Copy, Trash2 } from 'lucide-react';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import type { Monitor } from '@/types';
 
 interface ClassicMonitorsTableProps {
   monitors: Monitor[];
   liveSessionIds: Set<number>;
+  onClone?: (id: number) => void;
+  onDelete?: (id: number, name: string) => void;
+  busy?: boolean;
 }
 
 /**
@@ -14,7 +17,9 @@ interface ClassicMonitorsTableProps {
  * source, resolution, status. Sortable / searchable / paginated is handled
  * outside; this component renders the rows.
  */
-export function ClassicMonitorsTable({ monitors, liveSessionIds }: ClassicMonitorsTableProps) {
+export function ClassicMonitorsTable({
+  monitors, liveSessionIds, onClone, onDelete, busy,
+}: ClassicMonitorsTableProps) {
   if (monitors.length === 0) {
     return (
       <div className="bg-white border border-zinc-300 rounded p-12 text-center text-zinc-500">
@@ -35,6 +40,7 @@ export function ClassicMonitorsTable({ monitors, liveSessionIds }: ClassicMonito
             <th className="px-3 py-2 text-left font-semibold">Source</th>
             <th className="px-3 py-2 text-left font-semibold">Resolution</th>
             <th className="px-3 py-2 text-left font-semibold">Status</th>
+            <th className="px-3 py-2 text-right font-semibold w-24">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -92,6 +98,32 @@ export function ClassicMonitorsTable({ monitors, liveSessionIds }: ClassicMonito
                       <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-cyan-50 border border-cyan-300 text-cyan-700">
                         Live
                       </span>
+                    )}
+                  </div>
+                </td>
+                <td className="px-3 py-2 text-right">
+                  <div className="inline-flex items-center gap-1">
+                    {onClone && (
+                      <button
+                        onClick={() => onClone(m.id)}
+                        disabled={busy}
+                        aria-label={`Clone ${m.name}`}
+                        title="Clone"
+                        className="p-1 rounded text-zinc-500 hover:text-cyan-700 hover:bg-cyan-50 transition-colors disabled:opacity-40"
+                      >
+                        <Copy size={12} />
+                      </button>
+                    )}
+                    {onDelete && (
+                      <button
+                        onClick={() => onDelete(m.id, m.name)}
+                        disabled={busy}
+                        aria-label={`Delete ${m.name}`}
+                        title="Delete"
+                        className="p-1 rounded text-zinc-500 hover:text-red-700 hover:bg-red-50 transition-colors disabled:opacity-40"
+                      >
+                        <Trash2 size={12} />
+                      </button>
                     )}
                   </div>
                 </td>
