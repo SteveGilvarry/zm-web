@@ -12,13 +12,11 @@ import {
   Info,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useMontageStore } from '@/stores/montage';
-import { useUiStore } from '@/stores/ui';
 import type { GridLayout } from '@/types';
 
 export const Route = createFileRoute('/montage/')({
@@ -38,7 +36,6 @@ function getGridCols(layout: GridLayout): number {
 
 function MontagePage() {
   const { isAuthenticated } = useAuthStore();
-  const { sidebarCollapsed } = useUiStore();
   const navigate = useNavigate();
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -138,16 +135,8 @@ function MontagePage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-
-      <div className={clsx(
-        'min-h-screen flex flex-col transition-all duration-300 ease-out',
-        sidebarCollapsed ? 'ml-16' : 'ml-56',
-      )}>
-        <Header title="Montage" />
-
-        <main className="flex-1 p-6 overflow-auto flex flex-col">
+    <AppShell title="Montage">
+      <main className="flex-1 p-6 overflow-auto flex flex-col">
           {/* Toolbar */}
           <div className="flex items-center justify-between mb-4 flex-shrink-0">
             <div className="flex items-center gap-3">
@@ -310,13 +299,7 @@ function MontagePage() {
               {layout} &middot; {protocol.toUpperCase()}
             </span>
           </div>
-        </main>
-      </div>
-
-      {/* Background effects */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }

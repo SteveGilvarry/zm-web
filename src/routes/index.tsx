@@ -13,8 +13,7 @@ import { useState } from 'react';
 import { clsx } from 'clsx';
 import type { StreamProtocol } from '@/types';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { StatCard } from '@/components/console/StatCard';
 import { MonitorThumbnail } from '@/components/console/MonitorThumbnail';
@@ -91,13 +90,8 @@ function ConsolePage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-
-      <div className="ml-56 min-h-screen flex flex-col">
-        <Header title="Console" />
-
-        <main className="flex-1 p-6 overflow-auto">
+    <AppShell title="Console">
+      <main className="flex-1 p-6 overflow-auto">
           {/* Stats Row */}
           <div className="grid grid-cols-4 gap-4 mb-6 stagger-children">
             <StatCard
@@ -247,14 +241,8 @@ function ConsolePage() {
             </div>
           </div>
 
-        </main>
-      </div>
-
-      {/* Background effects */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }
 

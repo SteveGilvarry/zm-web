@@ -1,0 +1,23 @@
+import type { ReactNode } from 'react';
+import { ClassicTopNav } from './shell/TopNav';
+import { ClassicStatBar } from './shell/StatBar';
+
+interface ClassicShellProps {
+  title?: string;
+  children: ReactNode;
+}
+
+/**
+ * Classic ZoneMinder shell — top nav bar, sub-header stat strip, light
+ * content area with table-heavy layouts. Mirrors the legacy PHP UI for
+ * operators migrating from the old interface.
+ */
+export function ClassicShell({ children }: ClassicShellProps) {
+  return (
+    <div className="min-h-screen bg-zinc-100 text-zinc-900">
+      <ClassicTopNav />
+      <ClassicStatBar />
+      {children}
+    </div>
+  );
+}

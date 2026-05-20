@@ -13,8 +13,7 @@ import {
   Loader2,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { Modal } from '@/components/common/Modal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -124,12 +123,8 @@ function StoragePage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-      <div className="ml-56 min-h-screen flex flex-col">
-        <Header title="Storage Management" />
-
-        <main className="flex-1 p-6 overflow-auto">
+    <AppShell title="Storage Management">
+      <main className="flex-1 p-6 overflow-auto">
           <Panel
             title="Storage Locations"
             icon={<HardDrive size={18} />}
@@ -277,8 +272,7 @@ function StoragePage() {
               </div>
             )}
           </Panel>
-        </main>
-      </div>
+      </main>
 
       {/* Create/Edit Modal */}
       <Modal
@@ -401,11 +395,6 @@ function StoragePage() {
         variant="danger"
         isLoading={deleteMutation.isPending}
       />
-
-      {/* Background */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+    </AppShell>
   );
 }

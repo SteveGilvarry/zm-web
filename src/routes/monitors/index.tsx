@@ -13,8 +13,7 @@ import {
   ChevronRight,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { getMonitors, getLiveSessions } from '@/api/monitors';
@@ -90,13 +89,8 @@ function MonitorsPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-
-      <div className="ml-56 min-h-screen flex flex-col">
-        <Header title="Monitors" />
-
-        <main className="flex-1 p-6 overflow-auto">
+    <AppShell title="Monitors">
+      <main className="flex-1 p-6 overflow-auto">
           {/* Toolbar */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
@@ -289,14 +283,8 @@ function MonitorsPage() {
               </button>
             </div>
           )}
-        </main>
-      </div>
-
-      {/* Background effects */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }
 

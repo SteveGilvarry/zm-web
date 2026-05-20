@@ -16,8 +16,7 @@ import {
   Archive,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { getEvents, getEventThumbnailUrl } from '@/api/events';
 import { getMonitors } from '@/api/monitors';
@@ -118,13 +117,8 @@ function EventsPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-
-      <div className="ml-56 min-h-screen flex flex-col">
-        <Header title="Events" />
-
-        <main className="flex-1 p-6 overflow-auto">
+    <AppShell title="Events">
+      <main className="flex-1 p-6 overflow-auto">
           {/* Toolbar */}
           <div className="flex items-center justify-between mb-6">
             <div className="flex items-center gap-4">
@@ -345,14 +339,8 @@ function EventsPage() {
               </button>
             </div>
           )}
-        </main>
-      </div>
-
-      {/* Background effects */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }
 

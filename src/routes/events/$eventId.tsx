@@ -20,8 +20,7 @@ import {
   SkipForward,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { getEvent, getEventVideoUrl, getEventThumbnailUrl, deleteEvent } from '@/api/events';
 import { getMonitor } from '@/api/monitors';
@@ -131,47 +130,39 @@ function EventDetailPage() {
 
   if (eventLoading) {
     return (
-      <div className="min-h-screen bg-void">
-        <Sidebar />
-        <div className="ml-56 min-h-screen flex flex-col">
-          <Header title="Loading..." />
-          <main className="flex-1 p-6">
-            <div className="animate-pulse space-y-6">
-              <div className="h-[500px] bg-surface rounded-xl" />
-              <div className="grid grid-cols-4 gap-4">
-                <div className="h-24 bg-surface rounded-xl" />
-                <div className="h-24 bg-surface rounded-xl" />
-                <div className="h-24 bg-surface rounded-xl" />
-                <div className="h-24 bg-surface rounded-xl" />
-              </div>
+      <AppShell title="Loading...">
+        <main className="flex-1 p-6">
+          <div className="animate-pulse space-y-6">
+            <div className="h-[500px] bg-surface rounded-xl" />
+            <div className="grid grid-cols-4 gap-4">
+              <div className="h-24 bg-surface rounded-xl" />
+              <div className="h-24 bg-surface rounded-xl" />
+              <div className="h-24 bg-surface rounded-xl" />
+              <div className="h-24 bg-surface rounded-xl" />
             </div>
-          </main>
-        </div>
-      </div>
+          </div>
+        </main>
+      </AppShell>
     );
   }
 
   if (!event) {
     return (
-      <div className="min-h-screen bg-void">
-        <Sidebar />
-        <div className="ml-56 min-h-screen flex flex-col">
-          <Header title="Event Not Found" />
-          <main className="flex-1 p-6 flex items-center justify-center">
-            <div className="text-center">
-              <Video size={64} className="mx-auto mb-4 text-text-muted" />
-              <h2 className="text-xl font-bold text-text-primary mb-2">Event Not Found</h2>
-              <p className="text-text-muted mb-6">The requested event could not be found.</p>
-              <Link
-                to="/events"
-                className="px-6 py-3 bg-cyan text-void font-medium rounded-lg hover:bg-cyan-dim transition-colors"
-              >
-                Back to Events
-              </Link>
-            </div>
-          </main>
-        </div>
-      </div>
+      <AppShell title="Event Not Found">
+        <main className="flex-1 p-6 flex items-center justify-center">
+          <div className="text-center">
+            <Video size={64} className="mx-auto mb-4 text-text-muted" />
+            <h2 className="text-xl font-bold text-text-primary mb-2">Event Not Found</h2>
+            <p className="text-text-muted mb-6">The requested event could not be found.</p>
+            <Link
+              to="/events"
+              className="px-6 py-3 bg-cyan text-void font-medium rounded-lg hover:bg-cyan-dim transition-colors"
+            >
+              Back to Events
+            </Link>
+          </div>
+        </main>
+      </AppShell>
     );
   }
 
@@ -181,14 +172,9 @@ function EventDetailPage() {
   const thumbnailUrl = getEventThumbnailUrl(event.id, accessToken || undefined);
 
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-
-      <div className="ml-56 min-h-screen flex flex-col">
-        <Header title={event.name} />
-
-        <main className="flex-1 p-6 overflow-auto">
-          {/* Breadcrumb */}
+    <AppShell title={event.name}>
+      <main className="flex-1 p-6 overflow-auto">
+        {/* Breadcrumb */}
           <div className="flex items-center gap-2 mb-6 text-sm">
             <Link
               to="/events"
@@ -499,13 +485,7 @@ function EventDetailPage() {
               </Panel>
             </div>
           </div>
-        </main>
-      </div>
-
-      {/* Background effects */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }

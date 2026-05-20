@@ -24,8 +24,7 @@ import {
   Layers,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import {
@@ -41,6 +40,7 @@ import {
   getVersion,
 } from '@/api/system';
 import { getConfigs, updateConfig } from '@/api/configs';
+import { useUiStore, type Skin } from '@/stores/ui';
 import { useAuthStore } from '@/stores/auth';
 import type { DaemonStatus, ZmConfig } from '@/types';
 
@@ -230,12 +230,12 @@ function SettingsPage() {
   if (!isAuthenticated) return null;
 
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-      <div className="ml-56 min-h-screen flex flex-col">
-        <Header title="System Settings" />
+    <AppShell title="System Settings">
+      <main className="flex-1 p-6 overflow-auto">
+          <div className="mb-6">
+            <SkinSwitcher />
+          </div>
 
-        <main className="flex-1 p-6 overflow-auto">
           <div className="grid grid-cols-12 gap-6">
             {/* Left column: System Overview + Config Editor */}
             <div className="col-span-8 space-y-6">
@@ -589,8 +589,7 @@ function SettingsPage() {
               </Panel>
             </div>
           </div>
-        </main>
-      </div>
+      </main>
 
       {/* Confirm dialog */}
       <ConfirmDialog
@@ -603,12 +602,7 @@ function SettingsPage() {
         variant={confirmAction?.action === 'shutdown' ? 'danger' : 'warning'}
         isLoading={systemMutation.isPending}
       />
-
-      {/* Background */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+    </AppShell>
   );
 }
 
@@ -757,5 +751,55 @@ function DaemonRow({
         </button>
       </div>
     </div>
+  );
+}
+
+function SkinSwitcher() {
+  const skin = useUiStore((s) => s.skin);
+  const setSkin = useUiStore((s) => s.setSkin);
+
+  const option = (value: Skin, label: string, blurb: string) => (
+    <button
+      key={value}
+      type="button"
+      onClick={() => setSkin(value)}
+      className={clsx(
+        'flex-1 text-left p-4 rounded-lg border transition-colors',
+        skin === value
+          ? 'bg-cyan/10 border-cyan/40 text-text-primary'
+          : 'bg-surface/50 border-border-subtle text-text-muted hover:border-text-muted/50 hover:text-text-primary',
+      )}
+    >
+      <div className="flex items-center gap-2 mb-1">
+        <span
+          className={clsx(
+            'w-2 h-2 rounded-full',
+            skin === value ? 'bg-cyan' : 'bg-border',
+          )}
+        />
+        <span className="font-medium">{label}</span>
+        {skin === value && (
+          <span className="ml-auto text-[10px] font-mono text-cyan">ACTIVE</span>
+        )}
+      </div>
+      <div className="text-xs text-text-muted">{blurb}</div>
+    </button>
+  );
+
+  return (
+    <Panel title="Appearance" icon={<Server size={18} />}>
+      <div className="flex flex-col sm:flex-row gap-3">
+        {option(
+          'modern',
+          'Mission Control',
+          'The next-generation dashboard — adaptive layouts, live thumbnails, dark cyan accents.',
+        )}
+        {option(
+          'classic',
+          'Classic ZoneMinder',
+          'Faithful to the legacy ZM layout — top nav and dense tables. For operators migrating from the old interface.',
+        )}
+      </div>
+    </Panel>
   );
 }
