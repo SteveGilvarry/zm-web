@@ -22,10 +22,10 @@ import {
   Loader2,
   Wifi,
   Radio,
+  Joystick,
 } from 'lucide-react';
 
-import { Sidebar } from '@/components/layout/Sidebar';
-import { Header } from '@/components/layout/Header';
+import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import {
   getMonitor,
@@ -38,6 +38,8 @@ import type { StreamProtocol, CapturingMode, AnalysingMode, RecordingMode } from
 import { getOrientationStyle, isOrientationRotated } from '@/types';
 import { useWebRtcStream } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
+import { usePtzCapabilities } from '@/features/ptz/usePtz';
+import { PtzControls } from '@/features/ptz/PtzControls';
 
 export const Route = createFileRoute('/monitors/$monitorId')({
   component: MonitorDetailPage,
@@ -76,6 +78,7 @@ function MonitorDetailPage() {
   // Streaming hooks — both always mounted, only active one gets start() called
   const webrtc = useWebRtcStream(id);
   const hls = useHlsStream(id);
+  const ptzState = usePtzCapabilities(id, isAuthenticated && !isNaN(id));
 
   const activeStream = protocol === 'webrtc' ? webrtc : hls;
   const isStreaming = activeStream.state === 'connected';
@@ -182,46 +185,38 @@ function MonitorDetailPage() {
 
   if (monitorLoading) {
     return (
-      <div className="min-h-screen bg-void">
-        <Sidebar />
-        <div className="ml-56 min-h-screen flex flex-col">
-          <Header title="Loading..." />
-          <main className="flex-1 p-6">
-            <div className="animate-pulse space-y-6">
-              <div className="aspect-video bg-surface rounded-xl" />
-              <div className="grid grid-cols-3 gap-4">
-                <div className="h-32 bg-surface rounded-xl" />
-                <div className="h-32 bg-surface rounded-xl" />
-                <div className="h-32 bg-surface rounded-xl" />
-              </div>
+      <AppShell title="Loading...">
+        <main className="flex-1 p-6">
+          <div className="animate-pulse space-y-6">
+            <div className="aspect-video bg-surface rounded-xl" />
+            <div className="grid grid-cols-3 gap-4">
+              <div className="h-32 bg-surface rounded-xl" />
+              <div className="h-32 bg-surface rounded-xl" />
+              <div className="h-32 bg-surface rounded-xl" />
             </div>
-          </main>
-        </div>
-      </div>
+          </div>
+        </main>
+      </AppShell>
     );
   }
 
   if (!monitor) {
     return (
-      <div className="min-h-screen bg-void">
-        <Sidebar />
-        <div className="ml-56 min-h-screen flex flex-col">
-          <Header title="Monitor Not Found" />
-          <main className="flex-1 p-6 flex items-center justify-center">
-            <div className="text-center">
-              <VideoOff size={64} className="mx-auto mb-4 text-text-muted" />
-              <h2 className="text-xl font-bold text-text-primary mb-2">Monitor Not Found</h2>
-              <p className="text-text-muted mb-6">The requested monitor could not be found.</p>
-              <Link
-                to="/monitors"
-                className="px-6 py-3 bg-cyan text-void font-medium rounded-lg hover:bg-cyan-dim transition-colors"
-              >
-                Back to Monitors
-              </Link>
-            </div>
-          </main>
-        </div>
-      </div>
+      <AppShell title="Monitor Not Found">
+        <main className="flex-1 p-6 flex items-center justify-center">
+          <div className="text-center">
+            <VideoOff size={64} className="mx-auto mb-4 text-text-muted" />
+            <h2 className="text-xl font-bold text-text-primary mb-2">Monitor Not Found</h2>
+            <p className="text-text-muted mb-6">The requested monitor could not be found.</p>
+            <Link
+              to="/monitors"
+              className="px-6 py-3 bg-cyan text-void font-medium rounded-lg hover:bg-cyan-dim transition-colors"
+            >
+              Back to Monitors
+            </Link>
+          </div>
+        </main>
+      </AppShell>
     );
   }
 
@@ -723,15 +718,28 @@ function MonitorDetailPage() {
     </Panel>
   );
 
+  // Only mount the PTZ panel when the backend reports real capabilities;
+  // non-PTZ monitors get no empty panel at all.
+  const ptzPanel = ptzState.status === 'ready' ? (
+    <Panel
+      title="Camera control"
+      icon={<Joystick size={16} />}
+      action={
+        ptzState.capabilities.protocol ? (
+          <span className="text-[10px] font-mono uppercase tracking-wider text-cyan/80 px-2 py-0.5 rounded border border-cyan/25 bg-cyan/5">
+            {ptzState.capabilities.protocol}
+          </span>
+        ) : undefined
+      }
+    >
+      <PtzControls monitorId={id} capabilities={ptzState.capabilities} />
+    </Panel>
+  ) : null;
+
   return (
-    <div className="min-h-screen bg-void">
-      <Sidebar />
-
-      <div className="ml-56 min-h-screen flex flex-col">
-        <Header title={monitor.name} />
-
-        <main className="flex-1 p-6 overflow-auto">
-          {/* Breadcrumb */}
+    <AppShell title={monitor.name}>
+      <main className="flex-1 p-6 overflow-auto">
+        {/* Breadcrumb */}
           <div className="flex items-center gap-2 mb-6 text-sm">
             <Link
               to="/monitors"
@@ -746,6 +754,8 @@ function MonitorDetailPage() {
 
           {layout === 'side' ? (
             // Portrait/tall camera: video fills viewport height; panels alongside.
+            // PTZ is the first sidebar card when present — sits right next to
+            // the live picture for live operation.
             <div className="flex gap-6">
               <div
                 className="h-[calc(100vh-9rem)] flex-shrink-0"
@@ -754,6 +764,7 @@ function MonitorDetailPage() {
                 {videoPanel}
               </div>
               <div className="flex-1 min-w-0 space-y-6">
+                {ptzPanel}
                 {infoCards}
                 {controlsPanel}
                 {statusPanel}
@@ -763,8 +774,18 @@ function MonitorDetailPage() {
             </div>
           ) : (
             // Landscape/square camera: video fills width; panels arranged below.
+            // PTZ-capable cameras get an "operations row" — video + PTZ panel
+            // side-by-side at xl, stacked at narrower widths — so the camera
+            // controls live above the fold next to the picture.
             <div className="space-y-6">
-              {videoPanel}
+              {ptzPanel ? (
+                <div className="flex flex-col xl:flex-row gap-6">
+                  <div className="flex-1 min-w-0">{videoPanel}</div>
+                  <div className="xl:w-[22rem] xl:flex-shrink-0">{ptzPanel}</div>
+                </div>
+              ) : (
+                videoPanel
+              )}
               {infoCards}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
                 {controlsPanel}
@@ -774,13 +795,7 @@ function MonitorDetailPage() {
               </div>
             </div>
           )}
-        </main>
-      </div>
-
-      {/* Background effects */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
-    </div>
+      </main>
+    </AppShell>
   );
 }
