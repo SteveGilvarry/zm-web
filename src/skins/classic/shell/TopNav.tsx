@@ -1,6 +1,7 @@
 import { Link, useLocation } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
+import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
 
 // Mirrors the legacy ZoneMinder top navigation. Items map to either existing
 // routes or future ones (some 404 until later phases land them).
@@ -65,9 +66,7 @@ export function ClassicTopNav() {
               <span>{user.user}</span>
             </button>
           )}
-          <span className="px-2 py-1 bg-zinc-600 rounded text-xs font-mono">
-            RUNNING
-          </span>
+          <SystemRunningToggle tone="light" />
         </div>
       </div>
     </header>
