@@ -22,6 +22,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { useConsoleData, type ConsoleData } from '@/features/console/useConsoleData';
 import { ConsoleClassicTable } from '@/features/console/ConsoleClassicTable';
+import { SkinHint } from '@/components/onboarding/SkinHint';
 
 export const Route = createFileRoute('/')({
   component: ConsolePage,
@@ -39,7 +40,10 @@ function ConsolePage() {
       {skin === 'classic' ? (
         <ConsoleClassic data={data} />
       ) : (
-        <ConsoleModern data={data} />
+        <>
+          <ConsoleModern data={data} />
+          <SkinHint />
+        </>
       )}
     </AppShell>
   );

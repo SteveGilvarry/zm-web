@@ -33,3 +33,10 @@ dist-ssr
 .playwright-cli/
 .playwright-mcp/
 .claude/
+
+# Playwright + ad-hoc screenshots from dev (kept out of repo)
+.playwright-cli/
+.playwright-mcp/
+*.png
+!public/**/*.png
+!src/**/*.png

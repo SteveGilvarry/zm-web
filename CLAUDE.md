@@ -126,47 +126,39 @@ const monitorFn = getMonitorFunction(monitor.function);
 const color = functionColors[monitorFn];
 ```
 
-## Implementation Plan
+## Dual-skin architecture
 
-### Phase 1: Core Infrastructure (Current)
-- [x] Project scaffolding (Vite, React, Tailwind v4)
-- [x] TanStack Router setup with file-based routing
-- [x] TanStack Query setup
-- [x] Auth store with JWT handling
-- [x] API client layer
-- [x] Base layout (Sidebar, Header)
-- [x] Login page
-- [x] Console/dashboard page (monitors grid, stats, events feed, system status)
-- [x] Fix TypeScript build errors (path aliases)
+`zm-dashboard` ships **two skins on one codebase**:
 
-### Phase 2: Monitor Views (Complete)
-- [x] Monitors list page (`/monitors`)
-- [x] Monitor detail page (`/monitors/$monitorId`)
-- [x] Live streaming integration (HLS.js)
-- [x] Monitor status indicators
-- [x] Monitor controls (enable/disable toggle, function selector)
+- **Mission Control** (modern, opinionated dashboard) — dark cyan, panels, adaptive layouts, live thumbnails.
+- **Classic ZoneMinder** (legacy-style) — top nav + dense white tables, for operators migrating from the PHP UI.
 
-### Phase 3: Events
-- [x] Events list page (`/events`) with filtering/pagination
-- [x] Event detail page (`/events/$eventId`)
-- [x] Event video playback
-- [x] Event thumbnails
+Selection lives in `useUiStore.skin` (persisted) and is honoured by `<AppShell>` in `src/skins/AppShell.tsx`. Every route renders the same data via shared hooks/features (`src/features/<feature>/…`); only the layout primitives differ. The classic top nav is in `src/skins/classic/shell/TopNav.tsx`; the modern Sidebar in `src/components/layout/Sidebar.tsx`.
 
-### Phase 4: Montage View
-- [ ] Multi-monitor live view grid
-- [ ] Customizable layouts (2x2, 3x3, etc.)
-- [ ] Fullscreen mode
+A URL hint `?skin=modern|classic` switches once (`src/routes/__root.tsx`). Operators also pick in Settings → Appearance.
 
-### Phase 5: PTZ Controls
-- [ ] PTZ control overlay/panel
-- [ ] Directional controls (pan/tilt)
-- [ ] Zoom controls
-- [ ] Preset positions
+## Implementation Plan — Full-parity legacy-UI replacement
 
-### Phase 6: Settings & Admin
-- [ ] System settings page
-- [ ] Monitor configuration
-- [ ] User management (if applicable)
+All eleven phases (P0–P10) are complete. The dashboard is feature-equivalent to the legacy ZoneMinder web UI at `http://localhost/zm/`, with the bandwidth-profile sub-UI deliberately omitted per user preference (see `MEMORY.md`).
+
+- [x] **P0** — Two-skin foundation (UI store, AppShell, modern/classic shells, URL hint).
+- [x] **P1** — Watch + integrated PTZ control surface on `/monitors/$monitorId` (D-pad, speed dial, zoom/focus rockers, presets, AUTO state). Capability-gated against `/api/v3/monitors/$id/ptz`.
+- [x] **P2** — Montage Review (`/montagereview`): master clock + per-cell HLS playback, draggable timeline with event bars per monitor.
+- [x] **P3** — Cycle (`/cycle`) + Classic Console table (`useConsoleData` shared by both skins).
+- [x] **P4** — Events power features: Tags CRUD + chip editor, per-frame scrubber (`/api/v3/frames`), Tot/Avg/Max scores, Notes substring filter.
+- [x] **P5** — Groups (`/groups`) + Logs viewer (`/logs`) with level + component filters.
+- [x] **P6** — Filters (`/filters`) with rule-row builder + Auto-archive / Auto-delete actions; Reports (`/reports`); Audit (`/audit`).
+- [x] **P7** — Options parity: existing `/settings` configs editor + new `/settings/sessions` (API tokens) + `/settings/servers` (clustering). **Bandwidth profile UI explicitly skipped** per user.
+- [x] **P8** — Classic skin tables for Events list + Monitors list (the two highest-traffic routes).
+- [x] **P9** — Header status strip (LOAD/CPU/MEM/DISK with warn thresholds) + interactive RUNNING toggle wired to `/system/startup` and `/system/shutdown` (confirms before stop).
+- [x] **P10** — Polish: Settings → Appearance skin chooser, first-login skin hint, CLAUDE.md updated.
+
+### Feature module layout
+
+- `src/api/<feature>.ts` — typed wrappers per backend resource.
+- `src/features/<feature>/` — skin-agnostic data hooks + headless logic (e.g. `useConsoleData`, `useReviewClock`, `RuleBuilder`).
+- `src/routes/` — TanStack Router routes; route bodies dispatch on `useUiStore.skin` and render either the modern panel layout or a classic table.
+- `src/skins/{modern,classic}/shell/` — the chrome (sidebar / header / top-nav / stat bar) chosen by `<AppShell>`.
 
 ## Conventions
 
