@@ -15,6 +15,7 @@ import {
   Filter as FilterIcon,
   FileText,
   ShieldCheck,
+  Key,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -48,6 +49,8 @@ const settingsItems: NavItem[] = [
   { label: 'Settings', icon: <Settings size={20} />, path: '/settings' },
   { label: 'Storage', icon: <HardDrive size={20} />, path: '/settings/storage' },
   { label: 'Users', icon: <Users size={20} />, path: '/settings/users' },
+  { label: 'Servers', icon: <Shield size={20} />, path: '/settings/servers' },
+  { label: 'API Tokens', icon: <Key size={20} />, path: '/settings/sessions' },
 ];
 
 export function Sidebar() {

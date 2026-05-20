@@ -24,6 +24,8 @@ import { Route as CycleIndexRouteImport } from './routes/cycle/index'
 import { Route as AuditIndexRouteImport } from './routes/audit/index'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
 import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
+import { Route as SettingsSessionsRouteImport } from './routes/settings/sessions'
+import { Route as SettingsServersRouteImport } from './routes/settings/servers'
 import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
 import { Route as EventsEventIdRouteImport } from './routes/events/$eventId'
 
@@ -102,6 +104,16 @@ const SettingsStorageRoute = SettingsStorageRouteImport.update({
   path: '/settings/storage',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsSessionsRoute = SettingsSessionsRouteImport.update({
+  id: '/settings/sessions',
+  path: '/settings/sessions',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsServersRoute = SettingsServersRouteImport.update({
+  id: '/settings/servers',
+  path: '/settings/servers',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MonitorsMonitorIdRoute = MonitorsMonitorIdRouteImport.update({
   id: '/monitors/$monitorId',
   path: '/monitors/$monitorId',
@@ -118,6 +130,8 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
+  '/settings/servers': typeof SettingsServersRoute
+  '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
   '/audit/': typeof AuditIndexRoute
@@ -137,6 +151,8 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
+  '/settings/servers': typeof SettingsServersRoute
+  '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
   '/audit': typeof AuditIndexRoute
@@ -157,6 +173,8 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
+  '/settings/servers': typeof SettingsServersRoute
+  '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
   '/audit/': typeof AuditIndexRoute
@@ -178,6 +196,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/events/$eventId'
     | '/monitors/$monitorId'
+    | '/settings/servers'
+    | '/settings/sessions'
     | '/settings/storage'
     | '/settings/users'
     | '/audit/'
@@ -197,6 +217,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/events/$eventId'
     | '/monitors/$monitorId'
+    | '/settings/servers'
+    | '/settings/sessions'
     | '/settings/storage'
     | '/settings/users'
     | '/audit'
@@ -216,6 +238,8 @@ export interface FileRouteTypes {
     | '/login'
     | '/events/$eventId'
     | '/monitors/$monitorId'
+    | '/settings/servers'
+    | '/settings/sessions'
     | '/settings/storage'
     | '/settings/users'
     | '/audit/'
@@ -236,6 +260,8 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   EventsEventIdRoute: typeof EventsEventIdRoute
   MonitorsMonitorIdRoute: typeof MonitorsMonitorIdRoute
+  SettingsServersRoute: typeof SettingsServersRoute
+  SettingsSessionsRoute: typeof SettingsSessionsRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
   AuditIndexRoute: typeof AuditIndexRoute
@@ -358,6 +384,20 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsStorageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/sessions': {
+      id: '/settings/sessions'
+      path: '/settings/sessions'
+      fullPath: '/settings/sessions'
+      preLoaderRoute: typeof SettingsSessionsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/servers': {
+      id: '/settings/servers'
+      path: '/settings/servers'
+      fullPath: '/settings/servers'
+      preLoaderRoute: typeof SettingsServersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/monitors/$monitorId': {
       id: '/monitors/$monitorId'
       path: '/monitors/$monitorId'
@@ -380,6 +420,8 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   EventsEventIdRoute: EventsEventIdRoute,
   MonitorsMonitorIdRoute: MonitorsMonitorIdRoute,
+  SettingsServersRoute: SettingsServersRoute,
+  SettingsSessionsRoute: SettingsSessionsRoute,
   SettingsStorageRoute: SettingsStorageRoute,
   SettingsUsersRoute: SettingsUsersRoute,
   AuditIndexRoute: AuditIndexRoute,
