@@ -10,6 +10,8 @@ import {
   Shield,
   HardDrive,
   Users,
+  UsersRound,
+  ScrollText,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -32,6 +34,8 @@ const navItems: NavItem[] = [
   { label: 'Montage', icon: <LayoutGrid size={20} />, path: '/montage' },
   { label: 'Review', icon: <Film size={20} />, path: '/montagereview' },
   { label: 'Cycle', icon: <RefreshCcw size={20} />, path: '/cycle' },
+  { label: 'Groups', icon: <UsersRound size={20} />, path: '/groups' },
+  { label: 'Log', icon: <ScrollText size={20} />, path: '/logs' },
 ];
 
 const settingsItems: NavItem[] = [

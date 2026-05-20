@@ -15,6 +15,8 @@ import { Route as SettingsIndexRouteImport } from './routes/settings/index'
 import { Route as MontagereviewIndexRouteImport } from './routes/montagereview/index'
 import { Route as MontageIndexRouteImport } from './routes/montage/index'
 import { Route as MonitorsIndexRouteImport } from './routes/monitors/index'
+import { Route as LogsIndexRouteImport } from './routes/logs/index'
+import { Route as GroupsIndexRouteImport } from './routes/groups/index'
 import { Route as EventsIndexRouteImport } from './routes/events/index'
 import { Route as CycleIndexRouteImport } from './routes/cycle/index'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
@@ -50,6 +52,16 @@ const MontageIndexRoute = MontageIndexRouteImport.update({
 const MonitorsIndexRoute = MonitorsIndexRouteImport.update({
   id: '/monitors/',
   path: '/monitors/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogsIndexRoute = LogsIndexRouteImport.update({
+  id: '/logs/',
+  path: '/logs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GroupsIndexRoute = GroupsIndexRouteImport.update({
+  id: '/groups/',
+  path: '/groups/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsIndexRoute = EventsIndexRouteImport.update({
@@ -92,6 +104,8 @@ export interface FileRoutesByFullPath {
   '/settings/users': typeof SettingsUsersRoute
   '/cycle/': typeof CycleIndexRoute
   '/events/': typeof EventsIndexRoute
+  '/groups/': typeof GroupsIndexRoute
+  '/logs/': typeof LogsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
   '/montage/': typeof MontageIndexRoute
   '/montagereview/': typeof MontagereviewIndexRoute
@@ -106,6 +120,8 @@ export interface FileRoutesByTo {
   '/settings/users': typeof SettingsUsersRoute
   '/cycle': typeof CycleIndexRoute
   '/events': typeof EventsIndexRoute
+  '/groups': typeof GroupsIndexRoute
+  '/logs': typeof LogsIndexRoute
   '/monitors': typeof MonitorsIndexRoute
   '/montage': typeof MontageIndexRoute
   '/montagereview': typeof MontagereviewIndexRoute
@@ -121,6 +137,8 @@ export interface FileRoutesById {
   '/settings/users': typeof SettingsUsersRoute
   '/cycle/': typeof CycleIndexRoute
   '/events/': typeof EventsIndexRoute
+  '/groups/': typeof GroupsIndexRoute
+  '/logs/': typeof LogsIndexRoute
   '/monitors/': typeof MonitorsIndexRoute
   '/montage/': typeof MontageIndexRoute
   '/montagereview/': typeof MontagereviewIndexRoute
@@ -137,6 +155,8 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/cycle/'
     | '/events/'
+    | '/groups/'
+    | '/logs/'
     | '/monitors/'
     | '/montage/'
     | '/montagereview/'
@@ -151,6 +171,8 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/cycle'
     | '/events'
+    | '/groups'
+    | '/logs'
     | '/monitors'
     | '/montage'
     | '/montagereview'
@@ -165,6 +187,8 @@ export interface FileRouteTypes {
     | '/settings/users'
     | '/cycle/'
     | '/events/'
+    | '/groups/'
+    | '/logs/'
     | '/monitors/'
     | '/montage/'
     | '/montagereview/'
@@ -180,6 +204,8 @@ export interface RootRouteChildren {
   SettingsUsersRoute: typeof SettingsUsersRoute
   CycleIndexRoute: typeof CycleIndexRoute
   EventsIndexRoute: typeof EventsIndexRoute
+  GroupsIndexRoute: typeof GroupsIndexRoute
+  LogsIndexRoute: typeof LogsIndexRoute
   MonitorsIndexRoute: typeof MonitorsIndexRoute
   MontageIndexRoute: typeof MontageIndexRoute
   MontagereviewIndexRoute: typeof MontagereviewIndexRoute
@@ -228,6 +254,20 @@ declare module '@tanstack/react-router' {
       path: '/monitors'
       fullPath: '/monitors/'
       preLoaderRoute: typeof MonitorsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logs/': {
+      id: '/logs/'
+      path: '/logs'
+      fullPath: '/logs/'
+      preLoaderRoute: typeof LogsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/groups/': {
+      id: '/groups/'
+      path: '/groups'
+      fullPath: '/groups/'
+      preLoaderRoute: typeof GroupsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events/': {
@@ -284,6 +324,8 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsUsersRoute: SettingsUsersRoute,
   CycleIndexRoute: CycleIndexRoute,
   EventsIndexRoute: EventsIndexRoute,
+  GroupsIndexRoute: GroupsIndexRoute,
+  LogsIndexRoute: LogsIndexRoute,
   MonitorsIndexRoute: MonitorsIndexRoute,
   MontageIndexRoute: MontageIndexRoute,
   MontagereviewIndexRoute: MontagereviewIndexRoute,
