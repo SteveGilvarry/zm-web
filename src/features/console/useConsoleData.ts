@@ -131,8 +131,9 @@ export function useConsoleData(): ConsoleData {
 
 /** Helper: count for a monitor in a given timeframe bucket. */
 export function lookupCount(
-  buckets: EventCountByMonitor[],
+  buckets: EventCountByMonitor[] | undefined,
   monitorId: number,
 ): number {
+  if (!Array.isArray(buckets)) return 0;
   return buckets.find((b) => b.monitor_id === monitorId)?.count ?? 0;
 }

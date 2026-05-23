@@ -64,8 +64,18 @@ export interface EventCountByMonitor {
   count: number;
 }
 
+interface EventCountsByMonitorResponse {
+  counts: EventCountByMonitor[];
+  hours: number;
+}
+
 export async function getEventCountsByMonitor(hours: number = 24): Promise<EventCountByMonitor[]> {
-  return apiGet(`/events/counts-by-monitor/${hours}`);
+  // Backend wraps the array in { counts, hours } — unwrap so callers can
+  // iterate directly.
+  const response = await apiGet<EventCountsByMonitorResponse>(
+    `/events/counts-by-monitor/${hours}`,
+  );
+  return response?.counts ?? [];
 }
 
 // Event playback URLs - token param for media elements that can't send headers
