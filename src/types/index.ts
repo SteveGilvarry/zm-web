@@ -230,9 +230,14 @@ export interface ZmEvent {
 // ============================================
 
 export interface DaemonStatus {
+  id: string;
   name: string;
-  status: 'running' | 'stopped' | 'unknown';
-  pid?: number;
+  /** Backend returns this as 'state', not 'status'. */
+  state: 'running' | 'stopped' | 'unknown' | string;
+  pid?: number | null;
+  uptime_seconds?: number | null;
+  restart_count?: number | null;
+  monitor_id?: number | null;
 }
 
 export interface SystemStatus {

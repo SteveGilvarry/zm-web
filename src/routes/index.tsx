@@ -3,10 +3,10 @@ import {
   Monitor,
   Video,
   Activity,
-  Play,
   Wifi,
   Radio,
   VideoOff,
+  HardDrive,
 } from 'lucide-react';
 import { useState } from 'react';
 import { clsx } from 'clsx';
@@ -20,7 +20,7 @@ import { EventsFeed } from '@/components/console/EventsFeed';
 import { SystemStatus } from '@/components/console/SystemStatus';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
-import { useConsoleData, type ConsoleData } from '@/features/console/useConsoleData';
+import { useConsoleData, type ConsoleData, lookupCount } from '@/features/console/useConsoleData';
 import { ConsoleClassicTable } from '@/features/console/ConsoleClassicTable';
 import { SkinHint } from '@/components/onboarding/SkinHint';
 
@@ -98,11 +98,23 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
           subtitle="cameras"
         />
         <StatCard
-          label="Streaming"
-          value={liveSessions.length}
-          icon={<Play size={20} />}
-          variant="emerald"
-          subtitle="active streams"
+          label="Storage"
+          value={systemStats?.disk_usage_percent != null
+            ? `${systemStats.disk_usage_percent.toFixed(0)}%`
+            : '—'}
+          icon={<HardDrive size={20} />}
+          variant={
+            systemStats?.disk_usage_percent != null && systemStats.disk_usage_percent > 90
+              ? 'crimson'
+              : systemStats?.disk_usage_percent != null && systemStats.disk_usage_percent > 75
+                ? 'amber'
+                : 'emerald'
+          }
+          subtitle={
+            systemStats?.free_disk != null
+              ? `${formatGB(systemStats.free_disk)} free`
+              : 'disk capacity'
+          }
         />
       </div>
 
@@ -158,7 +170,7 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
             }
           >
             {loading.monitors ? (
-              <div className="grid grid-cols-3 gap-4">
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
                 {[...Array(6)].map((_, i) => (
                   <div
                     key={i}
@@ -172,13 +184,32 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
                 <p>No monitors configured</p>
               </div>
             ) : (
-              <div className="grid grid-cols-3 gap-4">
+              // Aspect-aware grid: each tile sets its own row-span based on
+              // the camera's natural aspect ratio, then grid-auto-flow:dense
+              // packs short tiles into the gaps left by tall ones. Portraits
+              // and landscapes pack tightly without forcing either to fit
+              // into the wrong shape.
+              <div
+                className={clsx(
+                  'grid gap-4',
+                  'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]',
+                )}
+                style={{
+                  gridAutoRows: '24px',
+                  gridAutoFlow: 'dense',
+                }}
+              >
                 {monitors.slice(0, 9).map((monitor) => (
                   <MonitorThumbnail
                     key={monitor.id}
                     monitor={monitor}
                     isStreaming={liveSessions.includes(monitor.id)}
                     liveProtocol={liveProtocol}
+                    counts={{
+                      hour: lookupCount(data.countsByMonitor.hour, monitor.id),
+                      day:  lookupCount(data.countsByMonitor.day,  monitor.id),
+                      week: lookupCount(data.countsByMonitor.week, monitor.id),
+                    }}
                   />
                 ))}
               </div>
@@ -239,4 +270,10 @@ function ConsoleClassic({ data }: { data: ConsoleData }) {
       </div>
     </main>
   );
+}
+
+function formatGB(bytes: number): string {
+  if (!bytes) return '0 GB';
+  const gb = bytes / (1024 ** 3);
+  return gb >= 100 ? `${gb.toFixed(0)} GB` : `${gb.toFixed(1)} GB`;
 }

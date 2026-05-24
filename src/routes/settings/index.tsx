@@ -710,9 +710,9 @@ function DaemonRow({
   isLoading: boolean;
 }) {
   const StatusIcon =
-    daemon.status === 'running' ? CheckCircle : daemon.status === 'stopped' ? XCircle : AlertCircle;
+    daemon.state === 'running' ? CheckCircle : daemon.state === 'stopped' ? XCircle : AlertCircle;
   const statusColor =
-    daemon.status === 'running' ? 'text-emerald' : daemon.status === 'stopped' ? 'text-crimson' : 'text-amber';
+    daemon.state === 'running' ? 'text-emerald' : daemon.state === 'stopped' ? 'text-crimson' : 'text-amber';
 
   return (
     <div className="flex items-center justify-between py-2 px-3 rounded-lg hover:bg-panel/50 transition-colors">
@@ -721,7 +721,7 @@ function DaemonRow({
         <span className="text-sm font-mono text-text-secondary truncate">{daemon.name}</span>
       </div>
       <div className="flex items-center gap-1">
-        {daemon.status !== 'running' && (
+        {daemon.state !== 'running' && (
           <button
             onClick={() => onAction('start')}
             disabled={isLoading}
@@ -731,7 +731,7 @@ function DaemonRow({
             <Play size={12} />
           </button>
         )}
-        {daemon.status === 'running' && (
+        {daemon.state === 'running' && (
           <button
             onClick={() => onAction('stop')}
             disabled={isLoading}

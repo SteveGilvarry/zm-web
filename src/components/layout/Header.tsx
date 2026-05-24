@@ -65,35 +65,88 @@ export function Header({ title }: HeaderProps) {
       </div>
 
       {/* Center: live system stats strip */}
-      {isAuthenticated && (
-        <div className="hidden lg:flex items-center gap-4 text-[11px] font-mono tabular-nums text-text-muted">
-          {stats?.cpu_load != null && (
-            <StatItem icon={<Gauge size={11} />} label="LOAD" value={stats.cpu_load.toFixed(2)} />
-          )}
-          {stats?.cpu_usage_percent != null && (
-            <StatItem
-              icon={<Cpu size={11} />}
-              label="CPU"
-              value={`${stats.cpu_usage_percent.toFixed(0)}%`}
-              tone={stats.cpu_usage_percent > 85 ? 'warn' : 'normal'}
-            />
-          )}
-          {memPct != null && (
-            <StatItem
-              icon={<MemoryStick size={11} />}
-              label="MEM"
-              value={`${memPct}%`}
-              tone={memPct > 85 ? 'warn' : 'normal'}
-            />
-          )}
-          {stats?.disk_usage_percent != null && stats.disk_usage_percent > 0 && (
-            <StatItem
-              icon={<HardDrive size={11} />}
-              label="DISK"
-              value={`${stats.disk_usage_percent.toFixed(0)}%`}
-              tone={stats.disk_usage_percent > 90 ? 'warn' : 'normal'}
-            />
-          )}
+      {isAuthenticated && stats && (
+        <div className="relative hidden lg:block group">
+          {/* Compact glanceable strip — same layout as before */}
+          <div className="flex items-center gap-4 text-[11px] font-mono tabular-nums text-text-muted px-3 py-1.5 rounded-md border border-transparent group-hover:border-cyan/20 group-hover:bg-surface/40 transition-colors cursor-default">
+            {stats.cpu_load != null && (
+              <StatItem icon={<Gauge size={11} />} label="LOAD" value={stats.cpu_load.toFixed(2)} />
+            )}
+            {stats.cpu_usage_percent != null && (
+              <StatItem
+                icon={<Cpu size={11} />}
+                label="CPU"
+                value={`${stats.cpu_usage_percent.toFixed(0)}%`}
+                tone={stats.cpu_usage_percent > 85 ? 'warn' : 'normal'}
+              />
+            )}
+            {memPct != null && (
+              <StatItem
+                icon={<MemoryStick size={11} />}
+                label="MEM"
+                value={`${memPct}%`}
+                tone={memPct > 85 ? 'warn' : 'normal'}
+              />
+            )}
+            {stats.disk_usage_percent != null && stats.disk_usage_percent > 0 && (
+              <StatItem
+                icon={<HardDrive size={11} />}
+                label="DISK"
+                value={`${stats.disk_usage_percent.toFixed(0)}%`}
+                tone={stats.disk_usage_percent > 90 ? 'warn' : 'normal'}
+              />
+            )}
+          </div>
+
+          {/* Hover detail — opens below on hover. Pointer-events:none so
+              moving the mouse INTO the tooltip doesn't break the hover. */}
+          <div
+            role="tooltip"
+            className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50
+              w-72 px-4 py-3 rounded-lg border border-cyan/30
+              bg-panel/95 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]
+              opacity-0 invisible group-hover:opacity-100 group-hover:visible
+              transition-all duration-150 pointer-events-none"
+          >
+            <h4 className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan mb-2">
+              System
+            </h4>
+            <dl className="space-y-1.5 text-[11px] font-mono">
+              {stats.cpu_load != null && (
+                <DetailRow label="Load" value={stats.cpu_load.toFixed(2)} />
+              )}
+              {stats.cpu_usage_percent != null && (
+                <DetailRow
+                  label="CPU"
+                  value={`${stats.cpu_usage_percent.toFixed(1)}%`}
+                  tone={stats.cpu_usage_percent > 85 ? 'warn' : undefined}
+                />
+              )}
+              {stats.total_mem > 0 && (
+                <DetailRow
+                  label="Memory"
+                  value={`${formatBytes(stats.total_mem - stats.free_mem)} / ${formatBytes(stats.total_mem)}`}
+                  tone={memPct != null && memPct > 85 ? 'warn' : undefined}
+                />
+              )}
+              {stats.total_swap > 0 && (
+                <DetailRow
+                  label="Swap"
+                  value={`${formatBytes(stats.total_swap - stats.free_swap)} / ${formatBytes(stats.total_swap)}`}
+                />
+              )}
+              {stats.total_disk > 0 && (
+                <DetailRow
+                  label="Disk"
+                  value={`${formatBytes(stats.used_disk)} / ${formatBytes(stats.total_disk)}`}
+                  tone={stats.disk_usage_percent > 90 ? 'warn' : undefined}
+                />
+              )}
+              {version?.version && (
+                <DetailRow label="Version" value={`v${version.version}`} />
+              )}
+            </dl>
+          </div>
         </div>
       )}
 
@@ -161,4 +214,34 @@ function StatItem({
       <span className="text-text-primary">{value}</span>
     </span>
   );
+}
+
+function DetailRow({
+  label, value, tone,
+}: {
+  label: string;
+  value: string;
+  tone?: 'warn';
+}) {
+  return (
+    <div className="flex items-center justify-between gap-3">
+      <dt className="text-text-dim uppercase tracking-wider text-[10px]">{label}</dt>
+      <dd
+        className={clsx(
+          'tabular-nums',
+          tone === 'warn' ? 'text-amber' : 'text-text-primary',
+        )}
+      >
+        {value}
+      </dd>
+    </div>
+  );
+}
+
+function formatBytes(bytes: number): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }

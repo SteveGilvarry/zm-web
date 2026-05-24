@@ -1,14 +1,16 @@
+import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import {
-  Cpu,
-  HardDrive,
-  Activity,
-  Server,
   CheckCircle,
   XCircle,
   AlertCircle,
-  MemoryStick,
+  RotateCw,
+  HardDrive,
+  Clock,
 } from 'lucide-react';
+import { Link } from '@tanstack/react-router';
+import { getVersion } from '@/api/system';
+import { useAuthStore } from '@/stores/auth';
 import type { DaemonStatus } from '@/types';
 import type { SystemStats } from '@/api/system';
 
@@ -19,67 +21,34 @@ interface SystemStatusProps {
   isLoading?: boolean;
 }
 
-function LoadBar({ value, max = 100 }: { value: number; max?: number }) {
-  const percent = Math.min((value / max) * 100, 100);
-  const color =
-    percent > 90
-      ? 'bg-crimson'
-      : percent > 70
-        ? 'bg-amber'
-        : 'bg-cyan';
-
-  return (
-    <div className="h-1.5 rounded-full bg-border overflow-hidden">
-      <div
-        className={clsx('h-full rounded-full transition-all duration-slow', color)}
-        style={{ width: `${percent}%` }}
-      />
-    </div>
-  );
-}
-
-function DaemonItem({ daemon }: { daemon: DaemonStatus }) {
-  const StatusIcon =
-    daemon.status === 'running'
-      ? CheckCircle
-      : daemon.status === 'stopped'
-        ? XCircle
-        : AlertCircle;
-
-  const statusColor =
-    daemon.status === 'running'
-      ? 'text-emerald'
-      : daemon.status === 'stopped'
-        ? 'text-crimson'
-        : 'text-amber';
-
-  return (
-    <div className="flex items-center justify-between py-1.5">
-      <div className="flex items-center gap-2">
-        <StatusIcon size={12} className={statusColor} />
-        <span className="text-xs font-mono text-text-secondary">{daemon.name}</span>
-      </div>
-      <span className={clsx('text-[10px] font-mono uppercase', statusColor)}>
-        {daemon.status}
-      </span>
-    </div>
-  );
-}
-
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
-}
-
+/**
+ * System panel — focuses on what the header strip can't show. The header
+ * already carries live LOAD/CPU/MEM/DISK + a RUNNING toggle; this panel
+ * adds:
+ *
+ *  - ZM version + system uptime (derived from the longest-running daemon)
+ *  - Per-daemon health with PID, uptime, restart count
+ *  - Storage breakdown — overall % from the header, count of configured
+ *    areas with a link to the storage admin page for detail
+ *
+ * No duplicate CPU/Mem/Disk meters. The header has them; here we trade that
+ * vertical space for daemons and config detail the operator actually needs
+ * to triage a stuck system.
+ */
 export function SystemStatus({
   daemons = [],
   isRunning,
   stats,
   isLoading,
 }: SystemStatusProps) {
+  const { isAuthenticated } = useAuthStore();
+  const { data: version } = useQuery({
+    queryKey: ['version'],
+    queryFn: getVersion,
+    enabled: isAuthenticated,
+    refetchInterval: 60_000,
+  });
+
   if (isLoading) {
     return (
       <div className="space-y-4 animate-pulse">
@@ -93,139 +62,164 @@ export function SystemStatus({
     );
   }
 
-  const memoryUsedPercent = stats && stats.total_mem > 0
-    ? ((stats.total_mem - stats.free_mem) / stats.total_mem) * 100
-    : 0;
+  // System uptime ≈ longest-running daemon's uptime. ZM doesn't expose a
+  // single uptime field, so we approximate from the daemons it does report.
+  const systemUptimeSec = daemons
+    .map((d) => d.uptime_seconds ?? 0)
+    .reduce((max, v) => (v > max ? v : max), 0);
+
+  const runningCount = daemons.filter((d) => d.state === 'running').length;
+  const stoppedCount = daemons.filter((d) => d.state === 'stopped').length;
 
   return (
-    <div className="space-y-4">
-      {/* ZoneMinder Status */}
-      <div>
-        <div className="flex items-center gap-2 mb-2">
-          <Server size={14} className="text-cyan" />
-          <span className="text-xs font-medium text-text-secondary">ZoneMinder</span>
-        </div>
-        <div className="flex items-center justify-center py-2">
-          {isRunning !== undefined ? (
-            <div className={clsx(
-              'flex items-center gap-2 px-3 py-1.5 rounded-lg',
-              isRunning ? 'bg-emerald/20 text-emerald' : 'bg-crimson/20 text-crimson'
-            )}>
-              {isRunning ? <CheckCircle size={14} /> : <XCircle size={14} />}
-              <span className="text-sm font-medium">{isRunning ? 'Running' : 'Stopped'}</span>
-            </div>
-          ) : (
-            <div className="text-xs text-text-muted text-center py-2">
-              No data
-            </div>
+    <div className="space-y-5">
+      {/* Identity strip — running pill + version + uptime in one tight row */}
+      <div className="flex items-center justify-between gap-2">
+        <span
+          className={clsx(
+            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono uppercase tracking-wider border',
+            isRunning
+              ? 'border-emerald/40 bg-emerald/10 text-emerald'
+              : 'border-crimson/40 bg-crimson/10 text-crimson',
           )}
-        </div>
+        >
+          {isRunning ? <CheckCircle size={10} /> : <XCircle size={10} />}
+          {isRunning ? 'Running' : 'Stopped'}
+        </span>
+        <span className="text-[10px] font-mono text-text-muted tabular-nums">
+          {version?.version ? `v${version.version}` : '—'}
+        </span>
       </div>
 
-      {/* CPU Usage */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <Cpu size={14} className="text-amber" />
-            <span className="text-xs font-medium text-text-secondary">CPU</span>
-          </div>
-          {stats && stats.cpu_usage_percent > 0 && (
-            <span className={clsx(
-              'text-xs font-mono',
-              stats.cpu_usage_percent > 90 ? 'text-crimson' :
-              stats.cpu_usage_percent > 70 ? 'text-amber' : 'text-text-secondary'
-            )}>
-              {stats.cpu_usage_percent.toFixed(1)}%
-            </span>
-          )}
+      {systemUptimeSec > 0 && (
+        <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted">
+          <Clock size={10} />
+          <span className="uppercase tracking-wider text-text-dim">Uptime</span>
+          <span className="text-text-secondary tabular-nums">
+            {formatDuration(systemUptimeSec)}
+          </span>
         </div>
-        {stats && stats.cpu_usage_percent > 0 ? (
-          <LoadBar value={stats.cpu_usage_percent} />
+      )}
+
+      {/* Daemons — the main payload */}
+      <section>
+        <header className="flex items-baseline justify-between mb-2">
+          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
+            Daemons
+          </span>
+          <span
+            className={clsx(
+              'text-[10px] font-mono tabular-nums',
+              stoppedCount > 0 ? 'text-amber' : 'text-text-muted',
+            )}
+          >
+            {runningCount}/{daemons.length}
+            {stoppedCount > 0 && ` · ${stoppedCount} stopped`}
+          </span>
+        </header>
+
+        {daemons.length === 0 ? (
+          <div className="text-[11px] text-text-muted italic py-2 text-center">
+            No daemons reported.
+          </div>
         ) : (
-          <div className="text-xs text-text-muted text-center py-1">No data</div>
-        )}
-        {stats && stats.cpu_load > 0 && (
-          <div className="text-[10px] text-text-muted mt-1">
-            Load: {stats.cpu_load.toFixed(2)}
-          </div>
-        )}
-      </div>
-
-      {/* Memory Usage */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <MemoryStick size={14} className="text-purple" />
-            <span className="text-xs font-medium text-text-secondary">Memory</span>
-          </div>
-          {stats && stats.total_mem > 0 && (
-            <span className={clsx(
-              'text-xs font-mono',
-              memoryUsedPercent > 90 ? 'text-crimson' :
-              memoryUsedPercent > 70 ? 'text-amber' : 'text-text-secondary'
-            )}>
-              {memoryUsedPercent.toFixed(1)}%
-            </span>
-          )}
-        </div>
-        {stats && stats.total_mem > 0 ? (
-          <>
-            <LoadBar value={memoryUsedPercent} />
-            <div className="text-[10px] text-text-muted mt-1">
-              {formatBytes(stats.total_mem - stats.free_mem)} / {formatBytes(stats.total_mem)}
-            </div>
-          </>
-        ) : (
-          <div className="text-xs text-text-muted text-center py-1">No data</div>
-        )}
-      </div>
-
-      {/* Disk Usage */}
-      <div>
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center gap-2">
-            <HardDrive size={14} className="text-emerald" />
-            <span className="text-xs font-medium text-text-secondary">Storage</span>
-          </div>
-          {stats && stats.disk_usage_percent > 0 && (
-            <span className={clsx(
-              'text-xs font-mono',
-              stats.disk_usage_percent > 90 ? 'text-crimson' :
-              stats.disk_usage_percent > 70 ? 'text-amber' : 'text-text-secondary'
-            )}>
-              {stats.disk_usage_percent.toFixed(1)}%
-            </span>
-          )}
-        </div>
-        {stats && stats.total_disk > 0 ? (
-          <>
-            <LoadBar value={stats.disk_usage_percent} />
-            <div className="text-[10px] text-text-muted mt-1">
-              {formatBytes(stats.used_disk)} / {formatBytes(stats.total_disk)}
-            </div>
-          </>
-        ) : (
-          <div className="text-xs text-text-muted text-center py-1">No data</div>
-        )}
-      </div>
-
-      {/* Daemons */}
-      {daemons.length > 0 && (
-        <div>
-          <div className="flex items-center gap-2 mb-2">
-            <Activity size={14} className="text-cyan" />
-            <span className="text-xs font-medium text-text-secondary">Daemons</span>
-            <span className="ml-auto text-[10px] text-text-dim">
-              {daemons.filter((d) => d.status === 'running').length}/{daemons.length}
-            </span>
-          </div>
-          <div className="divide-y divide-border-subtle">
-            {daemons.slice(0, 6).map((daemon) => (
-              <DaemonItem key={daemon.name} daemon={daemon} />
+          <ul className="divide-y divide-border-subtle/60">
+            {daemons.map((d) => (
+              <DaemonRow key={d.id ?? d.name} daemon={d} />
             ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Storage areas — header has overall % but not the breakdown */}
+      {stats && (
+        <section>
+          <header className="flex items-baseline justify-between mb-2">
+            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
+              Storage
+            </span>
+            <Link
+              to="/settings/storage"
+              className="text-[10px] font-mono text-cyan/80 hover:text-cyan transition-colors"
+            >
+              manage →
+            </Link>
+          </header>
+          <div className="flex items-center gap-2 text-[11px]">
+            <HardDrive size={11} className="text-text-muted" />
+            <span className="text-text-secondary font-mono tabular-nums">
+              {formatBytes(stats.used_disk)} / {formatBytes(stats.total_disk)}
+            </span>
+            <span className="ml-auto text-text-muted font-mono">
+              {stats.disk_usage_percent != null
+                ? `${stats.disk_usage_percent.toFixed(0)}% used`
+                : ''}
+            </span>
           </div>
-        </div>
+        </section>
       )}
     </div>
   );
 }
+
+function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
+  const StatusIcon =
+    daemon.state === 'running'
+      ? CheckCircle
+      : daemon.state === 'stopped'
+        ? XCircle
+        : AlertCircle;
+
+  const statusColor =
+    daemon.state === 'running'
+      ? 'text-emerald'
+      : daemon.state === 'stopped'
+        ? 'text-crimson'
+        : 'text-amber';
+
+  return (
+    <li className="flex items-center gap-2 py-1.5 text-[11px]">
+      <StatusIcon size={11} className={statusColor} />
+      <span className="font-mono text-text-secondary truncate flex-1" title={daemon.id ?? daemon.name}>
+        {daemon.name}
+      </span>
+      {daemon.pid != null && (
+        <span className="font-mono text-text-dim tabular-nums" title="PID">
+          {daemon.pid}
+        </span>
+      )}
+      {daemon.restart_count != null && daemon.restart_count > 0 && (
+        <span
+          className="inline-flex items-center gap-0.5 text-amber font-mono tabular-nums"
+          title={`Restarted ${daemon.restart_count}× since boot`}
+        >
+          <RotateCw size={9} />
+          {daemon.restart_count}
+        </span>
+      )}
+    </li>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Helpers                                                                  */
+/* ------------------------------------------------------------------------ */
+
+function formatBytes(bytes?: number): string {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
+}
+
+function formatDuration(sec: number): string {
+  if (sec < 60) return `${sec}s`;
+  const m = Math.floor(sec / 60);
+  if (m < 60) return `${m}m`;
+  const h = Math.floor(m / 60);
+  if (h < 24) return `${h}h ${m % 60}m`;
+  const d = Math.floor(h / 24);
+  return `${d}d ${h % 24}h`;
+}
+
