@@ -23,24 +23,13 @@ interface MonitorThumbnailProps {
   hourly?: number[];
 }
 
-/**
- * Approximate row-span for a CSS Grid cell so portrait and landscape
- * cameras pack tightly into the same grid. Computed against fixed
- * COLUMN_WIDTH (matches the grid-template-columns repeat) and ROW_UNIT
- * so the math is exact. The ribbon natural height is small (one name
- * row + one sparkline row + one counter row); 72px covers it.
- */
 export const MONITOR_TILE_COLUMN_WIDTH = 280;
-export function rowSpanForMonitor(monitor: Monitor): number {
-  const ROW_UNIT = 24;
-  const RIBBON_HEIGHT = 72;
-  const rotated = isOrientationRotated(monitor.orientation);
-  const rawW = monitor.width || 16;
-  const rawH = monitor.height || 9;
-  const aspect = rotated ? rawH / rawW : rawW / rawH;
-  const videoHeight = MONITOR_TILE_COLUMN_WIDTH / Math.max(aspect, 0.2);
-  const totalHeight = videoHeight + RIBBON_HEIGHT;
-  return Math.max(4, Math.ceil(totalHeight / ROW_UNIT));
+// rowSpanForMonitor kept for any callers; returns 0 to opt out of grid
+// row-span sizing. We let each tile take its natural content height
+// instead — the previous masonry math under-allocated and produced
+// hundreds of pixels of dead space below each tile.
+export function rowSpanForMonitor(_monitor: Monitor): number {
+  return 0;
 }
 
 export function MonitorThumbnail({
@@ -56,15 +45,13 @@ export function MonitorThumbnail({
   const rotated = isOrientationRotated(monitor.orientation);
   const effW = rotated ? (monitor.height || 9)  : (monitor.width || 16);
   const effH = rotated ? (monitor.width  || 16) : (monitor.height || 9);
-  const rowSpan = rowSpanForMonitor(monitor);
 
   return (
     <Link
       to="/monitors/$monitorId"
       params={{ monitorId: String(monitor.id) }}
-      style={{ gridRow: `span ${rowSpan}` }}
       className={clsx(
-        'group relative flex flex-col rounded-lg overflow-hidden',
+        'group relative flex flex-col rounded-lg overflow-hidden self-start',
         'bg-abyss border border-border-subtle',
         'transition-all duration-base',
         'hover:border-cyan/50 hover:shadow-lg hover:shadow-cyan/10',
@@ -85,6 +72,7 @@ export function MonitorThumbnail({
                 orientation={monitor.orientation}
                 autoStart
                 compact
+                rotationFit="fill"
               />
             </div>
 
@@ -197,62 +185,92 @@ function ActivityCounters({ counts }: ActivityCountersProps) {
 }
 
 interface SparklineProps {
-  /** 24-length array, index 0 = 23h ago, index 23 = current hour. */
+  /** 24-length array, index 0 = current hour (newest), index 23 = ~24h ago.
+   *  Undefined while loading. */
   hourly: number[] | undefined;
 }
 
 /**
- * 24-hour event-rate spark over a thin baseline. SVG bars scale to the
- * monitor's own peak so a quiet camera still shows a readable rhythm.
- * When data is loading we render a flat baseline to reserve the row
- * height (keeps tile heights from popping in when buckets arrive).
+ * 24-hour event-rate spark. Each bar's opacity decays linearly from
+ * newest (right, full cyan) to oldest (left, ~20%) — one visual rule
+ * encodes both intensity and time direction, replacing the previous
+ * three-state colour split. Zero-event hours render as absent rather
+ * than as dim ghost bars, so the baseline reads cleanly.
+ *
+ *  - NOW dot at the right edge anchors the time direction without
+ *    needing a label (right = recent, left = 24h ago)
+ *  - native <title> on each bar gives hover detail like '5h ago · 4
+ *    events' with zero JS
+ *  - loading state is an animated shimmer, distinct from 'all zeros'
+ *  - 'all zeros' renders as a flat baseline with a small 'quiet'
+ *    caption rather than 24 ghost bars
+ *
+ * Per-monitor peak normalisation is intentional: the spark answers
+ * 'when was this camera active?' (rhythm). For volume, read the
+ * 1H/24H/7D counters below — they carry the absolute numbers.
  */
 function Sparkline({ hourly }: SparklineProps) {
-  const data = hourly ?? new Array(24).fill(0);
-  const peak = Math.max(1, ...data);
-  const W = 100;
-  const H = 16;
-  const BAR_W = W / 24;
-  const GAP = BAR_W * 0.18;
+  // Distinct loading + empty states.
+  if (hourly == null) {
+    return (
+      <div className="h-4 rounded-sm bg-surface/60 animate-pulse" aria-label="Loading activity" />
+    );
+  }
 
+  const peak = Math.max(0, ...hourly);
+  if (peak === 0) {
+    return (
+      <div className="h-4 flex items-center text-[9px] font-mono text-text-dim italic">
+        <span className="flex-1 border-t border-text-dim/20" aria-hidden />
+        <span className="px-2">quiet · 24h</span>
+        <span className="flex-1 border-t border-text-dim/20" aria-hidden />
+      </div>
+    );
+  }
+
+  // Bars in pixel space — no viewBox stretching. Oldest on the left,
+  // newest on the right; source array is newest-first so we iterate in
+  // reverse to render.
   return (
-    <svg
-      viewBox={`0 0 ${W} ${H}`}
-      preserveAspectRatio="none"
-      className="w-full h-4 opacity-90"
-      aria-hidden
+    <div
+      className="flex items-end gap-[1px] h-4"
+      role="img"
+      aria-label={`24-hour event activity, peak ${peak} events per hour`}
     >
-      {/* baseline */}
-      <line
-        x1={0}
-        x2={W}
-        y1={H - 0.5}
-        y2={H - 0.5}
-        stroke="currentColor"
-        strokeWidth={0.5}
-        className="text-text-dim/40"
-      />
-      {data.map((v, i) => {
-        const h = peak === 0 ? 0 : (v / peak) * (H - 1);
-        const x = (23 - i) * BAR_W + GAP / 2;
+      {[...hourly].reverse().map((v, idx) => {
+        const hoursAgo = 23 - idx;
+        const heightPct = (v / peak) * 100;
+        // Opacity ramp: newest = 1.0, oldest = 0.2. One rule encodes
+        // intensity AND time direction.
+        const opacity = 0.2 + (idx / 23) * 0.8;
         return (
-          <rect
-            key={i}
-            x={x}
-            y={H - h}
-            width={BAR_W - GAP}
-            height={Math.max(0, h)}
-            className={
-              v === 0
-                ? 'fill-text-dim/30'
-                : i === 0
-                  ? 'fill-cyan'
-                  : 'fill-cyan/70'
-            }
-          />
+          <div key={hoursAgo} className="flex-1 h-full relative">
+            {v > 0 && (
+              <div
+                className="absolute bottom-0 left-0 right-0 rounded-t-[1px] bg-cyan"
+                style={{
+                  height: `${Math.max(heightPct, 6)}%`,
+                  opacity,
+                }}
+              >
+                <title>
+                  {hoursAgo === 0
+                    ? `last hour · ${v} event${v === 1 ? '' : 's'}`
+                    : `${hoursAgo}h ago · ${v} event${v === 1 ? '' : 's'}`}
+                </title>
+              </div>
+            )}
+          </div>
         );
       })}
-    </svg>
+      {/* NOW dot — anchors the right edge as 'most recent' so operators
+          read the direction correctly without a label. */}
+      <span
+        aria-hidden
+        title="now"
+        className="ml-0.5 w-1 h-1 rounded-full bg-cyan self-end shadow-[0_0_4px_var(--color-cyan)]"
+      />
+    </div>
   );
 }
 

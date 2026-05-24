@@ -38,6 +38,9 @@ interface MonitorPreviewProps {
   /** Enable debounced hover-to-live WebRTC preview (grid view). */
   enableLivePreview?: boolean;
   compact?: boolean;
+  /** See StreamCell. Default 'fit' (parent is fixed landscape, rotation
+   *  letterboxes); 'fill' for parents with post-rotation aspect. */
+  rotationFit?: 'fill' | 'fit';
 }
 
 /**
@@ -59,6 +62,7 @@ export function MonitorPreview({
   isActive,
   enableLivePreview = false,
   compact = false,
+  rotationFit = 'fit',
 }: MonitorPreviewProps) {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const inView = useInViewport(rootRef, '200px');
@@ -108,20 +112,21 @@ export function MonitorPreview({
             <Video size={iconSize} className="text-text-dim" />
           </div>
 
-          {/* Refreshing snapshot — base layer. Rotated cameras use swap-
-              dimensions positioning so the rotated content fills the
-              container's post-rotation aspect ratio. */}
+          {/* Refreshing snapshot — base layer. Rotated cameras switch
+              strategy on rotationFit: 'fill' for parents whose aspect
+              matches the post-rotation shape, 'fit' for fixed landscape
+              parents (simple rotate+scale, letterboxed). */}
           {snapshotUrl && (
             <img
               src={snapshotUrl}
               alt={monitorName}
               className={
-                isOrientationRotated(orientation)
+                isOrientationRotated(orientation) && rotationFit === 'fill'
                   ? 'bg-black'
                   : 'absolute inset-0 w-full h-full object-contain'
               }
               style={
-                isOrientationRotated(orientation)
+                isOrientationRotated(orientation) && rotationFit === 'fill'
                   ? rotatedSnapshotStyle(orientation)
                   : getOrientationStyle(orientation)
               }
@@ -134,7 +139,9 @@ export function MonitorPreview({
             />
           )}
 
-          {/* Live WebRTC preview — overlays the snapshot while hovered */}
+          {/* Live WebRTC preview — overlays the snapshot while hovered.
+              rotationFit is forwarded so the live overlay matches the
+              snapshot's rotation strategy. */}
           {live && (
             <div className="absolute inset-0">
               <StreamCell
@@ -143,6 +150,7 @@ export function MonitorPreview({
                 orientation={orientation}
                 autoStart
                 compact
+                rotationFit={rotationFit}
               />
             </div>
           )}

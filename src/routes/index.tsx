@@ -184,20 +184,15 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
                 <p>No monitors configured</p>
               </div>
             ) : (
-              // Aspect-aware grid: each tile sets its own row-span based on
-              // the camera's natural aspect ratio, then grid-auto-flow:dense
-              // packs short tiles into the gaps left by tall ones. Columns
-              // are pinned to a fixed width so the row-span math (which
-              // depends on column width) stays exact.
+              // Aspect-aware grid: each tile takes the camera's true
+              // aspect via aspectRatio CSS on the video block. Rows
+              // size to content (self-start on the tile lets it shrink
+              // to its natural height instead of stretching to row).
               <div
                 className={clsx(
-                  'grid gap-4 justify-center',
+                  'grid gap-4 justify-center items-start',
                   'grid-cols-[repeat(auto-fill,280px)]',
                 )}
-                style={{
-                  gridAutoRows: '24px',
-                  gridAutoFlow: 'dense',
-                }}
               >
                 {monitors.slice(0, 9).map((monitor) => (
                   <MonitorThumbnail

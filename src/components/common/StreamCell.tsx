@@ -60,6 +60,20 @@ interface StreamCellProps {
   showControls?: boolean;
   onClick?: () => void;
   onDoubleClick?: () => void;
+  /**
+   * Picks the right rotation strategy for rotated cameras:
+   *  - 'fill' (default): parent's aspect-ratio matches the camera's
+   *    POST-rotation shape (e.g. a portrait container for a ROTATE_90
+   *    camera). The video is sized to the swapped landscape ratio and
+   *    rotated to fill the container with no letterboxing. Use this
+   *    on the Console / Monitors thumbnails, where each cell carries
+   *    the camera's natural aspect.
+   *  - 'fit': parent is a fixed landscape (16:9) container. The video
+   *    is rotated and scaled down to fit inside, with the unavoidable
+   *    pillarboxing on either side. Use this in Montage where every
+   *    cell is uniformly aspect-video regardless of camera shape.
+   */
+  rotationFit?: 'fill' | 'fit';
 }
 
 export function StreamCell({
@@ -72,6 +86,7 @@ export function StreamCell({
   showControls = false,
   onClick,
   onDoubleClick,
+  rotationFit = 'fit',
 }: StreamCellProps) {
   // Conditionally render inner component based on protocol.
   // When protocol changes, React unmounts the old and mounts the new,
@@ -87,6 +102,7 @@ export function StreamCell({
         showControls={showControls}
         onClick={onClick}
         onDoubleClick={onDoubleClick}
+        rotationFit={rotationFit}
       />
     );
   }
@@ -100,6 +116,7 @@ export function StreamCell({
       showControls={showControls}
       onClick={onClick}
       onDoubleClick={onDoubleClick}
+      rotationFit={rotationFit}
     />
   );
 }
@@ -113,6 +130,7 @@ interface StreamInnerProps {
   showControls: boolean;
   onClick?: () => void;
   onDoubleClick?: () => void;
+  rotationFit: 'fill' | 'fit';
 }
 
 function WebRtcStreamInner(props: StreamInnerProps) {
@@ -140,6 +158,7 @@ function StreamVideo({
   showControls,
   onClick,
   onDoubleClick,
+  rotationFit,
 }: StreamVideoProps) {
   const isConnecting = stream.state === 'connecting' || stream.state === 'signaling';
   const isConnected = stream.state === 'connected';
@@ -169,20 +188,26 @@ function StreamVideo({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
     >
-      {/* Video element — always rendered so ref is available. Rotated
-          cameras use the swap-dimensions style so the rotated content
-          fills the container's post-rotation aspect instead of being
-          letterboxed into a small strip. */}
+      {/* Video element — always rendered so ref is available.
+          Rotated cameras pick between two strategies via rotationFit:
+            - 'fill' for parents whose aspect matches the post-rotation
+              shape (Console / Monitors thumbnails). Uses swap-dimensions
+              so the rotated content fills the container.
+            - 'fit' for fixed landscape parents (Montage cells). Uses
+              the simple rotate + scale(0.5625) so the rotated content
+              shrinks to fit a 16:9 box with letterboxing on either side.
+              Avoids the cropping we got from swap-dimensions in a
+              non-matching container. */}
       <video
         ref={stream.videoRef}
         className={clsx(
-          isOrientationRotated(orientation)
-            ? 'object-cover bg-black'
+          isOrientationRotated(orientation) && rotationFit === 'fill'
+            ? 'object-contain bg-black'
             : 'w-full h-full object-contain bg-black',
           isIdle && 'hidden',
         )}
         style={
-          isOrientationRotated(orientation)
+          isOrientationRotated(orientation) && rotationFit === 'fill'
             ? rotatedStreamStyle(
                 (orientation ?? '').replace(/[_\s]/g, '').toLowerCase() === 'rotate270'
                   ? 270
