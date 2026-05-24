@@ -17,10 +17,15 @@ export interface EventQueryParams {
   page?: number;
   page_size?: number;
   monitor_id?: number;
-  start_date?: string;
-  end_date?: string;
+  /** ISO timestamp; events with start_date_time >= this. */
+  start_time?: string;
+  /** ISO timestamp; events with start_date_time <= this. */
+  end_time?: string;
   cause?: string;
   archived?: boolean;
+  alarm_frames_min?: number;
+  sort?: 'id' | 'start_date_time' | 'max_score' | 'frames';
+  direction?: 'asc' | 'desc';
 }
 
 export async function getEvents(params?: EventQueryParams): Promise<PaginatedResponse<ZmEvent>> {

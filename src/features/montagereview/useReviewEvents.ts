@@ -21,8 +21,8 @@ export function useReviewEvents(
     queryKey: ['reviewEvents', monitorId, startISO, endISO],
     queryFn: () => getEvents({
       monitor_id: monitorId,
-      start_date: startISO,
-      end_date: endISO,
+      start_time: startISO,
+      end_time: endISO,
       page: 1,
       page_size: 500,
     }),

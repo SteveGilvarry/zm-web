@@ -210,6 +210,7 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
                       day:  lookupCount(data.countsByMonitor.day,  monitor.id),
                       week: lookupCount(data.countsByMonitor.week, monitor.id),
                     }}
+                    hourly={data.hourlyByMonitor[monitor.id]}
                   />
                 ))}
               </div>

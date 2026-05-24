@@ -18,6 +18,9 @@ interface MonitorThumbnailProps {
     day: number;
     week: number;
   };
+  /** 24-length hourly histogram for this monitor, oldest-first (index 0
+   *  = 23h ago, index 23 = current hour). Omitted while still loading. */
+  hourly?: number[];
 }
 
 /**
@@ -25,12 +28,12 @@ interface MonitorThumbnailProps {
  * cameras pack tightly into the same grid. Computed against fixed
  * COLUMN_WIDTH (matches the grid-template-columns repeat) and ROW_UNIT
  * so the math is exact. The ribbon natural height is small (one name
- * row + one counter row); 56px covers it comfortably.
+ * row + one sparkline row + one counter row); 72px covers it.
  */
 export const MONITOR_TILE_COLUMN_WIDTH = 280;
 export function rowSpanForMonitor(monitor: Monitor): number {
   const ROW_UNIT = 24;
-  const RIBBON_HEIGHT = 56;
+  const RIBBON_HEIGHT = 72;
   const rotated = isOrientationRotated(monitor.orientation);
   const rawW = monitor.width || 16;
   const rawH = monitor.height || 9;
@@ -47,6 +50,7 @@ export function MonitorThumbnail({
   hasAlarm = false,
   liveProtocol = null,
   counts,
+  hourly,
 }: MonitorThumbnailProps) {
   const isEnabled = monitor.capturing !== 'None';
   const rotated = isOrientationRotated(monitor.orientation);
@@ -148,10 +152,8 @@ export function MonitorThumbnail({
         )}
       </div>
 
-      {/* Activity ribbon — natural height (name row + counters row), no
-          flex-1: that pushed the counters to the very bottom of an
-          oversized tile, separated from the name by hundreds of px of
-          dead space. */}
+      {/* Activity ribbon — name + 24h sparkline + Hour/Day/Week counters.
+          Natural height: stacks vertically without dead space. */}
       <div className="space-y-1 px-2 py-1.5 bg-surface/70 border-t border-border-subtle/60">
         <div className="flex items-center gap-1.5 min-w-0">
           <span
@@ -169,6 +171,7 @@ export function MonitorThumbnail({
           </span>
         </div>
 
+        <Sparkline hourly={hourly} />
         <ActivityCounters counts={counts} />
       </div>
     </Link>
@@ -190,6 +193,66 @@ function ActivityCounters({ counts }: ActivityCountersProps) {
       <span className="text-text-dim/50">·</span>
       <Counter label="7D"  value={counts?.week} tone="muted" />
     </div>
+  );
+}
+
+interface SparklineProps {
+  /** 24-length array, index 0 = 23h ago, index 23 = current hour. */
+  hourly: number[] | undefined;
+}
+
+/**
+ * 24-hour event-rate spark over a thin baseline. SVG bars scale to the
+ * monitor's own peak so a quiet camera still shows a readable rhythm.
+ * When data is loading we render a flat baseline to reserve the row
+ * height (keeps tile heights from popping in when buckets arrive).
+ */
+function Sparkline({ hourly }: SparklineProps) {
+  const data = hourly ?? new Array(24).fill(0);
+  const peak = Math.max(1, ...data);
+  const W = 100;
+  const H = 16;
+  const BAR_W = W / 24;
+  const GAP = BAR_W * 0.18;
+
+  return (
+    <svg
+      viewBox={`0 0 ${W} ${H}`}
+      preserveAspectRatio="none"
+      className="w-full h-4 opacity-90"
+      aria-hidden
+    >
+      {/* baseline */}
+      <line
+        x1={0}
+        x2={W}
+        y1={H - 0.5}
+        y2={H - 0.5}
+        stroke="currentColor"
+        strokeWidth={0.5}
+        className="text-text-dim/40"
+      />
+      {data.map((v, i) => {
+        const h = peak === 0 ? 0 : (v / peak) * (H - 1);
+        const x = (23 - i) * BAR_W + GAP / 2;
+        return (
+          <rect
+            key={i}
+            x={x}
+            y={H - h}
+            width={BAR_W - GAP}
+            height={Math.max(0, h)}
+            className={
+              v === 0
+                ? 'fill-text-dim/30'
+                : i === 0
+                  ? 'fill-cyan'
+                  : 'fill-cyan/70'
+            }
+          />
+        );
+      })}
+    </svg>
   );
 }
 
