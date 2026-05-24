@@ -1,40 +1,41 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { GridLayout, StreamProtocol } from '@/types';
+import type { StreamProtocol } from '@/types';
+import type { LayoutNode } from '@/features/montage/mosaic';
+import { leaf } from '@/features/montage/mosaic';
 
 interface MontageState {
-  layout: GridLayout;
+  /**
+   * Layout tree describing how the viewport is split between monitors.
+   * Replaces the old fixed grid (1×1/2×2/3×3/4×4). Preset layouts are
+   * just trees with conventional shapes; the operator can split/resize
+   * any further.
+   */
+  tree: LayoutNode;
   protocol: StreamProtocol;
-  selectedMonitorIds: number[];
-  isStreamingAll: boolean;
 
-  setLayout: (layout: GridLayout) => void;
+  setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   setProtocol: (protocol: StreamProtocol) => void;
-  setSelectedMonitorIds: (ids: number[]) => void;
-  setStreamingAll: (streaming: boolean) => void;
 }
 
 export const useMontageStore = create<MontageState>()(
   persist(
-    (set) => ({
-      layout: '2x2',
+    (set, get) => ({
+      // Start with an empty single tile; the route auto-populates it
+      // with the first available monitor on mount.
+      tree: leaf(null),
       protocol: 'webrtc',
-      selectedMonitorIds: [],
-      isStreamingAll: false,
 
-      setLayout: (layout) => set({ layout }),
+      setTree: (next) =>
+        set({ tree: typeof next === 'function' ? next(get().tree) : next }),
       setProtocol: (protocol) => set({ protocol }),
-      setSelectedMonitorIds: (ids) => set({ selectedMonitorIds: ids }),
-      setStreamingAll: (streaming) => set({ isStreamingAll: streaming }),
     }),
     {
       name: 'zm-montage',
       partialize: (state) => ({
-        layout: state.layout,
+        tree: state.tree,
         protocol: state.protocol,
-        selectedMonitorIds: state.selectedMonitorIds,
-        // isStreamingAll is NOT persisted — streams don't auto-resume
       }),
-    }
-  )
+    },
+  ),
 );

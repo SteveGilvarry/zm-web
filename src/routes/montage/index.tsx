@@ -1,14 +1,13 @@
-import { createFileRoute, useNavigate } from '@tanstack/react-router';
+import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import {
   Maximize2,
   Wifi,
   Radio,
-  Monitor,
-  Info,
   RotateCw,
+  LayoutGrid,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -16,282 +15,337 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useMontageStore } from '@/stores/montage';
-import type { GridLayout } from '@/types';
+import { MosaicView } from '@/features/montage/MosaicView';
+import {
+  bannerLayout,
+  gridLayout,
+  leaf,
+  leafCount,
+  leafMonitors,
+  nodeAt,
+  pipLayout,
+  removeAt,
+  setMonitorAt,
+  splitAt,
+  type LayoutNode,
+  type Path,
+} from '@/features/montage/mosaic';
+import type { Monitor } from '@/types';
 
 export const Route = createFileRoute('/montage/')({
   component: MontagePage,
 });
 
-const layoutOptions: { value: GridLayout; label: string; cols: number }[] = [
-  { value: '1x1', label: '1×1', cols: 1 },
-  { value: '2x2', label: '2×2', cols: 2 },
-  { value: '3x3', label: '3×3', cols: 3 },
-  { value: '4x4', label: '4×4', cols: 4 },
-];
+/* ------------------------------------------------------------------------ */
+/*  Preset layouts                                                          */
+/* ------------------------------------------------------------------------ */
 
-function getGridCols(layout: GridLayout): number {
-  return parseInt(layout[0], 10);
+interface Preset {
+  id: string;
+  label: string;
+  build: (monitorIds: number[]) => LayoutNode;
+  /** Number of monitors a preset visually expects; layouts gracefully
+   *  pad with null leaves when fewer are available. */
+  size: number;
 }
+
+const PRESETS: Preset[] = [
+  { id: '1x1',     label: '1×1',     size: 1, build: (m) => gridLayout(1, 1, m) },
+  { id: '2x2',     label: '2×2',     size: 4, build: (m) => gridLayout(2, 2, m) },
+  { id: '3x3',     label: '3×3',     size: 9, build: (m) => gridLayout(3, 3, m) },
+  { id: '4x4',     label: '4×4',     size: 16, build: (m) => gridLayout(4, 4, m) },
+  { id: 'banner',  label: 'Banner',  size: 4, build: bannerLayout },
+  { id: 'pip',     label: 'PIP',     size: 4, build: pipLayout },
+];
 
 function MontagePage() {
   const { isAuthenticated } = useAuthStore();
-  const navigate = useNavigate();
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const {
-    layout,
-    protocol,
-    selectedMonitorIds,
-    setLayout,
-    setProtocol,
-    setSelectedMonitorIds,
-  } = useMontageStore();
+  const { tree, protocol, setTree, setProtocol } = useMontageStore();
 
   // Generation counter — bumped to force every StreamCell to unmount and
-  // remount, which re-acquires its stream from scratch. Used by the
-  // Restart button to recover stuck cells without leaving the page.
+  // remount, used by the Restart button and protocol switching to acquire
+  // streams fresh.
   const [streamGeneration, setStreamGeneration] = useState(0);
 
-  const cols = getGridCols(layout);
-  const totalCells = cols * cols;
-
-  // Fetch all monitors
   const { data: monitorsData } = useQuery({
     queryKey: ['monitors'],
     queryFn: () => getMonitors({ page: 1, page_size: 50 }),
     enabled: isAuthenticated,
-    refetchInterval: 30000,
+    refetchInterval: 30_000,
   });
+  const monitors: Monitor[] = monitorsData?.items ?? [];
+  const enabledMonitors = monitors.filter((m) => m.capturing !== 'None');
+  const monitorById = new Map(monitors.map((m) => [m.id, m]));
 
-  const monitors = monitorsData?.items || [];
-  const enabledMonitors = monitors.filter(
-    (m) => m.capturing !== 'None'
+  // First-time hydration: if the persisted tree has no monitors assigned,
+  // seed it with as many available monitors as the tree has cells.
+  useEffect(() => {
+    const currentLeaves = leafMonitors(tree);
+    const anyAssigned = currentLeaves.some((id) => id != null);
+    if (anyAssigned) return;
+    if (enabledMonitors.length === 0) return;
+
+    // Replace each null leaf in order with the next available monitor.
+    const ids = enabledMonitors.map((m) => m.id);
+    let idx = 0;
+    const filled = mapLeaves(tree, () => {
+      const next = ids[idx];
+      idx += 1;
+      return next != null ? leaf(next) : leaf(null);
+    });
+    setTree(filled);
+  }, [enabledMonitors.length, tree, setTree]);
+
+  /* ----- Layout edit handlers ------------------------------------- */
+
+  const handleSplit = useCallback(
+    (path: Path, direction: 'row' | 'column') => {
+      // Pick a monitor not already on screen, if any.
+      const onScreen = new Set(leafMonitors(tree).filter((v): v is number => v != null));
+      const next = enabledMonitors.find((m) => !onScreen.has(m.id));
+      setTree((prev) => splitAt(prev, path, direction, next?.id ?? null));
+    },
+    [tree, enabledMonitors, setTree],
   );
 
-  // Auto-populate selectedMonitorIds when monitors load
-  useEffect(() => {
-    if (selectedMonitorIds.length === 0 && enabledMonitors.length > 0) {
-      setSelectedMonitorIds(enabledMonitors.slice(0, totalCells).map((m) => m.id));
-    }
-  }, [enabledMonitors.length, selectedMonitorIds.length, totalCells, setSelectedMonitorIds]); // eslint-disable-line react-hooks/exhaustive-deps
+  const handleClose = useCallback(
+    (path: Path) => setTree((prev) => removeAt(prev, path)),
+    [setTree],
+  );
 
-  // Get monitors to show in grid (limited to totalCells)
-  const gridMonitors = selectedMonitorIds
-    .slice(0, totalCells)
-    .map((id) => monitors.find((m) => m.id === id))
-    .filter(Boolean);
-
-  // Restart re-mounts every cell by bumping the generation key, which
-  // tears down each stream and acquires a fresh one. Useful when a cell
-  // is wedged (lost peer connection, codec hiccup, etc.) without
-  // forcing the operator to leave the page.
-  const handleRestartAll = () => {
-    setStreamGeneration((g) => g + 1);
+  const handleApplyPreset = (preset: Preset) => {
+    // Reuse currently-shown monitors first; pad with unused enabled
+    // monitors; pad the rest with null.
+    const onScreen = leafMonitors(tree).filter((v): v is number => v != null);
+    const unused = enabledMonitors
+      .map((m) => m.id)
+      .filter((id) => !onScreen.includes(id));
+    const seed = [...onScreen, ...unused].slice(0, preset.size);
+    setTree(preset.build(seed));
   };
 
-  const handleProtocolChange = (newProtocol: 'webrtc' | 'hls') => {
-    if (newProtocol === protocol) return;
-    setProtocol(newProtocol);
-    // Bump generation so cells remount with the new protocol.
-    setStreamGeneration((g) => g + 1);
-  };
+  const handleRestartAll = () => setStreamGeneration((g) => g + 1);
 
-  const handleLayoutChange = (newLayout: GridLayout) => {
-    if (newLayout === layout) return;
-    const newCols = getGridCols(newLayout);
-    const newTotal = newCols * newCols;
-    setLayout(newLayout);
-    // Expand selection if we have more cells now
-    if (selectedMonitorIds.length < newTotal && enabledMonitors.length > selectedMonitorIds.length) {
-      const additionalIds = enabledMonitors
-        .filter((m) => !selectedMonitorIds.includes(m.id))
-        .slice(0, newTotal - selectedMonitorIds.length)
-        .map((m) => m.id);
-      setSelectedMonitorIds([...selectedMonitorIds, ...additionalIds]);
-    }
+  const handleProtocolChange = (next: 'webrtc' | 'hls') => {
+    if (next === protocol) return;
+    setProtocol(next);
+    setStreamGeneration((g) => g + 1);
   };
 
   const handleFullscreen = useCallback(() => {
-    if (gridRef.current) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else {
-        gridRef.current.requestFullscreen();
-      }
-    }
+    if (!gridRef.current) return;
+    if (document.fullscreenElement) document.exitFullscreen();
+    else gridRef.current.requestFullscreen().catch(() => {});
   }, []);
 
-  const handleCellClick = (monitorId: number) => {
-    navigate({ to: '/monitors/$monitorId', params: { monitorId: String(monitorId) } });
-  };
-
-  const handleCellDoubleClick = (monitorId: number) => {
-    // Find the video element in the cell and fullscreen it
-    const cell = gridRef.current?.querySelector(`[data-monitor-id="${monitorId}"] video`);
-    if (cell instanceof HTMLVideoElement) {
-      cell.requestFullscreen().catch(() => {});
-    }
+  /* ----- Monitor picker for a vacant cell ------------------------- */
+  const [picking, setPicking] = useState<Path | null>(null);
+  const handleChooseMonitor = (path: Path) => setPicking(path);
+  const handlePickMonitor = (mid: number) => {
+    if (!picking) return;
+    setTree((prev) => setMonitorAt(prev, picking, mid));
+    setPicking(null);
   };
 
   if (!isAuthenticated) return null;
 
+  const cellsOnScreen = leafCount(tree);
+
   return (
     <AppShell title="Montage">
-      <main className="flex-1 p-6 overflow-auto flex flex-col">
-          {/* Toolbar */}
-          <div className="flex items-center justify-between mb-4 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              {/* Layout selector */}
-              <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
-                {layoutOptions.map((opt) => (
-                  <button
-                    key={opt.value}
-                    onClick={() => handleLayoutChange(opt.value)}
-                    className={clsx(
-                      'px-3 py-1.5 rounded text-xs font-mono font-medium transition-all duration-fast',
-                      layout === opt.value
-                        ? 'bg-cyan/20 text-cyan'
-                        : 'text-text-muted hover:text-text-primary',
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-
-              {/* Protocol toggle */}
-              <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
+      <main className="flex-1 p-6 overflow-hidden flex flex-col gap-4">
+        {/* Toolbar */}
+        <div className="flex items-center justify-between flex-shrink-0">
+          <div className="flex items-center gap-3">
+            {/* Preset layout picker */}
+            <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
+              <LayoutGrid size={14} className="ml-2 text-text-muted" />
+              {PRESETS.map((p) => (
                 <button
-                  onClick={() => handleProtocolChange('webrtc')}
-                  className={clsx(
-                    'flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-all duration-fast',
-                    protocol === 'webrtc'
-                      ? 'bg-cyan/20 text-cyan'
-                      : 'text-text-muted hover:text-text-primary',
-                  )}
+                  key={p.id}
+                  onClick={() => handleApplyPreset(p)}
+                  className="px-2.5 py-1 rounded text-[11px] font-mono font-medium text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors"
+                  title={`Apply ${p.label} layout`}
                 >
-                  <Wifi size={12} />
-                  WebRTC
+                  {p.label}
                 </button>
-                <button
-                  onClick={() => handleProtocolChange('hls')}
-                  className={clsx(
-                    'flex items-center gap-1 px-3 py-1.5 rounded text-xs font-medium transition-all duration-fast',
-                    protocol === 'hls'
-                      ? 'bg-cyan/20 text-cyan'
-                      : 'text-text-muted hover:text-text-primary',
-                  )}
-                >
-                  <Radio size={12} />
-                  HLS
-                </button>
-              </div>
+              ))}
             </div>
 
-            <div className="flex items-center gap-2">
-              {/* 4x4 performance hint */}
-              {layout === '4x4' && protocol === 'webrtc' && (
-                <div className="flex items-center gap-1 text-[10px] text-amber font-mono">
-                  <Info size={12} />
-                  HLS recommended for 4×4
-                </div>
-              )}
-
-              {/* Restart — cells auto-start on mount; this is for
-                  recovering wedged streams without leaving the page. */}
+            {/* Protocol toggle */}
+            <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
               <button
-                onClick={handleRestartAll}
+                onClick={() => handleProtocolChange('webrtc')}
                 className={clsx(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg',
-                  'text-sm font-medium transition-all duration-fast',
-                  'bg-surface text-text-secondary border border-border-subtle',
-                  'hover:border-cyan/40 hover:text-cyan',
+                  'flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors',
+                  protocol === 'webrtc'
+                    ? 'bg-cyan/20 text-cyan'
+                    : 'text-text-muted hover:text-text-primary',
                 )}
-                title="Restart all streams"
               >
-                <RotateCw size={14} />
-                Restart
+                <Wifi size={12} />
+                WebRTC
               </button>
-
-              {/* Fullscreen */}
               <button
-                onClick={handleFullscreen}
+                onClick={() => handleProtocolChange('hls')}
                 className={clsx(
-                  'p-2 rounded-lg border border-border text-text-muted',
-                  'hover:text-text-primary hover:bg-panel transition-colors',
+                  'flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors',
+                  protocol === 'hls'
+                    ? 'bg-cyan/20 text-cyan'
+                    : 'text-text-muted hover:text-text-primary',
                 )}
-                title="Fullscreen grid"
               >
-                <Maximize2 size={16} />
+                <Radio size={12} />
+                HLS
               </button>
             </div>
+
+            <span className="text-[10px] font-mono text-text-muted">
+              {cellsOnScreen} cell{cellsOnScreen === 1 ? '' : 's'}
+            </span>
           </div>
 
-          {/* Grid */}
-          <div
-            ref={gridRef}
-            className={clsx(
-              'grid gap-2 flex-1',
-              cols === 1 && 'grid-cols-1',
-              cols === 2 && 'grid-cols-2',
-              cols === 3 && 'grid-cols-3',
-              cols === 4 && 'grid-cols-4',
-              'bg-void',
-            )}
-          >
-            {Array.from({ length: totalCells }).map((_, idx) => {
-              const monitor = gridMonitors[idx];
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleRestartAll}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface text-text-secondary border border-border-subtle hover:border-cyan/40 hover:text-cyan transition-colors text-sm"
+              title="Restart all streams"
+            >
+              <RotateCw size={14} />
+              Restart
+            </button>
+            <button
+              onClick={handleFullscreen}
+              className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface text-text-secondary border border-border-subtle hover:border-cyan/40 hover:text-cyan transition-colors text-sm"
+              title="Fullscreen"
+            >
+              <Maximize2 size={14} />
+            </button>
+          </div>
+        </div>
 
-              if (!monitor) {
+        {/* Mosaic viewport — fills the rest of the page height. Needs
+            display:flex so the MosaicView wrapper can take its own flex
+            share and resolve percentage heights inside the tree. */}
+        <div ref={gridRef} className="flex flex-col flex-1 min-h-0 rounded-lg bg-abyss/60 border border-border-subtle overflow-hidden">
+          <MosaicView
+            tree={tree}
+            onChange={(next) => setTree(next)}
+            renderCell={(monitorId) => {
+              if (monitorId == null) return null;
+              const m = monitorById.get(monitorId);
+              if (!m) {
                 return (
-                  <div
-                    key={`empty-${idx}`}
-                    className="aspect-video bg-abyss rounded-lg border border-border-subtle flex items-center justify-center"
-                  >
-                    <div className="text-center text-text-dim">
-                      <Monitor size={24} className="mx-auto mb-1 opacity-30" />
-                      <span className="text-[10px] font-mono">No monitor</span>
-                    </div>
+                  <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs font-mono">
+                    Monitor {monitorId} not found
                   </div>
                 );
               }
-
               return (
-                <div
-                  key={monitor.id}
-                  data-monitor-id={monitor.id}
-                  className="aspect-video rounded-lg border border-border-subtle overflow-hidden"
-                >
-                  {/* Key includes streamGeneration so Restart forces a
-                      full unmount+remount on every cell, acquiring a
-                      fresh stream from scratch. */}
-                  <StreamCell
-                    key={`${monitor.id}-${protocol}-${streamGeneration}`}
-                    protocol={protocol}
-                    monitorId={monitor.id}
-                    monitorName={monitor.name}
-                    orientation={monitor.orientation}
-                    autoStart
-                    compact={cols >= 3}
-                    showControls={cols <= 2}
-                    onClick={() => handleCellClick(monitor.id)}
-                    onDoubleClick={() => handleCellDoubleClick(monitor.id)}
-                  />
-                </div>
+                <StreamCell
+                  key={`${m.id}-${protocol}-${streamGeneration}`}
+                  protocol={protocol}
+                  monitorId={m.id}
+                  monitorName={m.name}
+                  orientation={m.orientation}
+                  autoStart
+                  compact
+                  rotationFit="fit"
+                />
               );
-            })}
-          </div>
+            }}
+            onSplit={handleSplit}
+            onClose={handleClose}
+            onChooseMonitor={handleChooseMonitor}
+          />
+        </div>
 
-          {/* Status bar */}
-          <div className="mt-2 flex items-center justify-between text-[10px] font-mono text-text-dim flex-shrink-0">
-            <span>
-              {gridMonitors.length} / {enabledMonitors.length} monitors
-            </span>
-            <span>
-              {layout} &middot; {protocol.toUpperCase()}
-            </span>
-          </div>
+        {/* Monitor picker — shown when an operator clicks a vacant cell */}
+        {picking && (
+          <MonitorPicker
+            monitors={enabledMonitors}
+            onPick={handlePickMonitor}
+            onCancel={() => setPicking(null)}
+          />
+        )}
       </main>
     </AppShell>
   );
 }
+
+/* ------------------------------------------------------------------------ */
+/*  Monitor picker modal                                                    */
+/* ------------------------------------------------------------------------ */
+
+function MonitorPicker({
+  monitors,
+  onPick,
+  onCancel,
+}: {
+  monitors: Monitor[];
+  onPick: (id: number) => void;
+  onCancel: () => void;
+}) {
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label="Choose a monitor"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      onClick={(e) => { if (e.target === e.currentTarget) onCancel(); }}
+    >
+      <div className="w-80 max-w-full rounded-xl border border-cyan/40 bg-panel/95 backdrop-blur-md shadow-[0_24px_60px_rgba(0,0,0,0.5)] p-4 space-y-2">
+        <h2 className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted mb-2">
+          Choose monitor
+        </h2>
+        {monitors.length === 0 ? (
+          <p className="text-xs text-text-muted italic py-4 text-center">
+            No capturing monitors available.
+          </p>
+        ) : (
+          <ul className="space-y-1 max-h-80 overflow-y-auto">
+            {monitors.map((m) => (
+              <li key={m.id}>
+                <button
+                  onClick={() => onPick(m.id)}
+                  className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-left text-sm text-text-primary hover:bg-cyan/10 hover:text-cyan transition-colors"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald" />
+                  <span className="flex-1 truncate">{m.name}</span>
+                  <span className="text-[10px] font-mono text-text-muted">#{m.id}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        )}
+        <div className="flex justify-end pt-2 border-t border-border-subtle">
+          <button
+            onClick={onCancel}
+            className="text-[11px] text-text-muted hover:text-text-primary"
+          >
+            Cancel
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Tree helpers                                                            */
+/* ------------------------------------------------------------------------ */
+
+/** Walk the tree and replace each leaf with the result of `f`. */
+function mapLeaves(node: LayoutNode, f: (l: LayoutNode & { type: 'leaf' }) => LayoutNode): LayoutNode {
+  if (node.type === 'leaf') return f(node);
+  return {
+    ...node,
+    children: node.children.map((c) => mapLeaves(c, f)),
+  };
+}
+
+// Suppress an unused-import warning so nodeAt stays available for the
+// drag-and-drop pass that lands next.
+export const _NodeAtShim = nodeAt;
