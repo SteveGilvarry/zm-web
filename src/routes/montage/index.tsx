@@ -1,15 +1,14 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useRef, useCallback, useEffect } from 'react';
+import { useRef, useCallback, useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 import {
-  Play,
-  Square,
   Maximize2,
   Wifi,
   Radio,
   Monitor,
   Info,
+  RotateCw,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -43,12 +42,15 @@ function MontagePage() {
     layout,
     protocol,
     selectedMonitorIds,
-    isStreamingAll,
     setLayout,
     setProtocol,
     setSelectedMonitorIds,
-    setStreamingAll,
   } = useMontageStore();
+
+  // Generation counter — bumped to force every StreamCell to unmount and
+  // remount, which re-acquires its stream from scratch. Used by the
+  // Restart button to recover stuck cells without leaving the page.
+  const [streamGeneration, setStreamGeneration] = useState(0);
 
   const cols = getGridCols(layout);
   const totalCells = cols * cols;
@@ -79,20 +81,19 @@ function MontagePage() {
     .map((id) => monitors.find((m) => m.id === id))
     .filter(Boolean);
 
-  const handleStartAll = () => {
-    setStreamingAll(true);
-  };
-
-  const handleStopAll = () => {
-    setStreamingAll(false);
+  // Restart re-mounts every cell by bumping the generation key, which
+  // tears down each stream and acquires a fresh one. Useful when a cell
+  // is wedged (lost peer connection, codec hiccup, etc.) without
+  // forcing the operator to leave the page.
+  const handleRestartAll = () => {
+    setStreamGeneration((g) => g + 1);
   };
 
   const handleProtocolChange = (newProtocol: 'webrtc' | 'hls') => {
     if (newProtocol === protocol) return;
-    // Stop all streams before switching protocol
-    setStreamingAll(false);
-    // Small delay so components unmount cleanly, then set new protocol
-    setTimeout(() => setProtocol(newProtocol), 100);
+    setProtocol(newProtocol);
+    // Bump generation so cells remount with the new protocol.
+    setStreamGeneration((g) => g + 1);
   };
 
   const handleLayoutChange = (newLayout: GridLayout) => {
@@ -196,34 +197,21 @@ function MontagePage() {
                 </div>
               )}
 
-              {/* Start/Stop All */}
-              {isStreamingAll ? (
-                <button
-                  onClick={handleStopAll}
-                  className={clsx(
-                    'flex items-center gap-2 px-4 py-2 rounded-lg',
-                    'text-sm font-medium transition-all duration-fast',
-                    'bg-crimson/20 text-crimson border border-crimson/30',
-                    'hover:bg-crimson/30',
-                  )}
-                >
-                  <Square size={14} />
-                  Stop All
-                </button>
-              ) : (
-                <button
-                  onClick={handleStartAll}
-                  className={clsx(
-                    'flex items-center gap-2 px-4 py-2 rounded-lg',
-                    'text-sm font-medium transition-all duration-fast',
-                    'bg-cyan text-void',
-                    'hover:bg-cyan-dim',
-                  )}
-                >
-                  <Play size={14} />
-                  Start All
-                </button>
-              )}
+              {/* Restart — cells auto-start on mount; this is for
+                  recovering wedged streams without leaving the page. */}
+              <button
+                onClick={handleRestartAll}
+                className={clsx(
+                  'flex items-center gap-2 px-4 py-2 rounded-lg',
+                  'text-sm font-medium transition-all duration-fast',
+                  'bg-surface text-text-secondary border border-border-subtle',
+                  'hover:border-cyan/40 hover:text-cyan',
+                )}
+                title="Restart all streams"
+              >
+                <RotateCw size={14} />
+                Restart
+              </button>
 
               {/* Fullscreen */}
               <button
@@ -274,12 +262,16 @@ function MontagePage() {
                   data-monitor-id={monitor.id}
                   className="aspect-video rounded-lg border border-border-subtle overflow-hidden"
                 >
+                  {/* Key includes streamGeneration so Restart forces a
+                      full unmount+remount on every cell, acquiring a
+                      fresh stream from scratch. */}
                   <StreamCell
+                    key={`${monitor.id}-${protocol}-${streamGeneration}`}
                     protocol={protocol}
                     monitorId={monitor.id}
                     monitorName={monitor.name}
                     orientation={monitor.orientation}
-                    autoStart={isStreamingAll}
+                    autoStart
                     compact={cols >= 3}
                     showControls={cols <= 2}
                     onClick={() => handleCellClick(monitor.id)}
