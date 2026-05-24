@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { clsx } from 'clsx';
 import {
   ArrowLeft,
@@ -26,7 +26,8 @@ import { Panel } from '@/components/common/Panel';
 import { getEvent, getEventVideoUrl, getEventThumbnailUrl, deleteEvent } from '@/api/events';
 import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
-import { getOrientationStyle } from '@/types';
+import { getOrientationStyle, isOrientationRotated } from '@/types';
+import type { CSSProperties } from 'react';
 import { TagChips } from '@/features/events/TagChips';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
 
@@ -43,7 +44,16 @@ function EventDetailPage() {
   const [isMuted, setIsMuted] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
+  const [isFullscreen, setIsFullscreen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+
+  // Track fullscreen so the rotated-video styling can switch between the
+  // event-shaped container fit (inline) and the 16:9-screen fit (fullscreen).
+  useEffect(() => {
+    const onChange = () => setIsFullscreen(!!document.fullscreenElement);
+    document.addEventListener('fullscreenchange', onChange);
+    return () => document.removeEventListener('fullscreenchange', onChange);
+  }, []);
 
   const id = parseInt(eventId, 10);
 
@@ -174,6 +184,39 @@ function EventDetailPage() {
   const videoUrl = getEventVideoUrl(event.id, accessToken || undefined);
   const thumbnailUrl = getEventThumbnailUrl(event.id, accessToken || undefined);
 
+  // Rotation-aware sizing — mirrors the monitor detail page so a portrait
+  // camera shows its full image instead of letterboxing at the centre of a
+  // 16:9 box. event.width/height are the *post*-rotation declared dims, so
+  // they already reflect the operator's intent; the underlying file is the
+  // raw (pre-rotation) landscape capture.
+  const rotated = isOrientationRotated(event.orientation);
+  const effW = event.width  || 16;
+  const effH = event.height || 9;
+  // Container takes the camera's natural aspect when inline, 16:9 in
+  // fullscreen (browsers letterbox automatically inside the screen).
+  const videoContainerW = isFullscreen ? 16 : effW;
+  const videoContainerH = isFullscreen ? 9  : effH;
+  // For rotated cameras outside fullscreen we swap the rendered dimensions
+  // and apply a plain rotate — no scale needed, the swapped element already
+  // fills the rotated footprint perfectly. Fullscreen / non-rotated cameras
+  // fall back to the simple object-contain + getOrientationStyle path.
+  const useSwappedRotation = rotated && !isFullscreen;
+  const rotationDeg = (event.orientation ?? '').replace(/[_\s]/g, '').toLowerCase() === 'rotate270' ? 270 : 90;
+  const videoElementStyle: CSSProperties | undefined = useSwappedRotation
+    ? {
+        position: 'absolute',
+        top: '50%',
+        left: '50%',
+        width: `${(effH / effW) * 100}%`,
+        height: `${(effW / effH) * 100}%`,
+        // Override Tailwind preflight's `max-width: 100%` on <video>.
+        maxWidth: 'none',
+        maxHeight: 'none',
+        transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
+        transformOrigin: 'center',
+      }
+    : getOrientationStyle(event.orientation);
+
   return (
     <AppShell title={event.name}>
       <main className="flex-1 p-6 overflow-auto">
@@ -194,14 +237,19 @@ function EventDetailPage() {
             {/* Video Player - 8 columns */}
             <div className="col-span-8 space-y-6">
               <Panel noPadding className="overflow-hidden">
-                <div className="relative aspect-video bg-black">
-                  {/* Video element */}
+                <div
+                  className="relative bg-black"
+                  style={{ aspectRatio: `${videoContainerW} / ${videoContainerH}` }}
+                >
+                  {/* Video element — rotated cameras need a swap-dimensions
+                      + rotate trick so the portrait content fills the
+                      portrait container instead of pillarboxing at center. */}
                   <video
                     ref={videoRef}
                     src={videoUrl}
                     poster={thumbnailUrl}
-                    className="w-full h-full object-contain"
-                    style={getOrientationStyle(event.orientation)}
+                    className={useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
+                    style={videoElementStyle}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onPlay={() => setIsPlaying(true)}
