@@ -8,9 +8,10 @@ import {
   VideoOff,
   HardDrive,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
-import type { StreamProtocol } from '@/types';
+import type { StreamProtocol, Monitor as MonitorType } from '@/types';
+import { isOrientationRotated } from '@/types';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
@@ -22,6 +23,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { useConsoleData, type ConsoleData, lookupCount } from '@/features/console/useConsoleData';
 import { ConsoleClassicTable } from '@/features/console/ConsoleClassicTable';
+import { justifyRows } from '@/features/console/layout';
 import { SkinHint } from '@/components/onboarding/SkinHint';
 
 export const Route = createFileRoute('/')({
@@ -184,31 +186,12 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
                 <p>No monitors configured</p>
               </div>
             ) : (
-              // Aspect-aware grid: each tile takes the camera's true
-              // aspect via aspectRatio CSS on the video block. Rows
-              // size to content (self-start on the tile lets it shrink
-              // to its natural height instead of stretching to row).
-              <div
-                className={clsx(
-                  'grid gap-4 justify-center items-start',
-                  'grid-cols-[repeat(auto-fill,280px)]',
-                )}
-              >
-                {monitors.slice(0, 9).map((monitor) => (
-                  <MonitorThumbnail
-                    key={monitor.id}
-                    monitor={monitor}
-                    isStreaming={liveSessions.includes(monitor.id)}
-                    liveProtocol={liveProtocol}
-                    counts={{
-                      hour: lookupCount(data.countsByMonitor.hour, monitor.id),
-                      day:  lookupCount(data.countsByMonitor.day,  monitor.id),
-                      week: lookupCount(data.countsByMonitor.week, monitor.id),
-                    }}
-                    hourly={data.hourlyByMonitor[monitor.id]}
-                  />
-                ))}
-              </div>
+              <JustifiedMonitorGrid
+                monitors={monitors.slice(0, 9)}
+                liveSessions={liveSessions}
+                liveProtocol={liveProtocol}
+                data={data}
+              />
             )}
 
             {monitors.length > 9 && (
@@ -272,4 +255,95 @@ function formatGB(bytes: number): string {
   if (!bytes) return '0 GB';
   const gb = bytes / (1024 ** 3);
   return gb >= 100 ? `${gb.toFixed(0)} GB` : `${gb.toFixed(1)} GB`;
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Justified-row monitor grid                                              */
+/* ------------------------------------------------------------------------ */
+
+interface JustifiedMonitorGridProps {
+  monitors: MonitorType[];
+  liveSessions: number[];
+  liveProtocol: StreamProtocol | null;
+  data: ConsoleData;
+}
+
+/**
+ * Aspect-constrained rectangle packing for the Console monitor grid.
+ *
+ * Each tile's aspect ratio comes from the camera's true (post-rotation)
+ * displayed shape. The justifyRows() algorithm groups tiles into rows
+ * such that every row's tiles share one height H, chosen so the row's
+ * total width exactly equals the container width minus gaps. Standard
+ * Flickr / Google-Photos justified layout.
+ *
+ * ResizeObserver tracks the container width; the layout recomputes on
+ * every width change. The activity ribbon below each video adds a
+ * fixed height that the algorithm doesn't see — rows end up
+ * (algoHeight + ribbonHeight) tall, which is fine because every tile
+ * in a row picks up the same fixed ribbon below.
+ */
+function JustifiedMonitorGrid({
+  monitors,
+  liveSessions,
+  liveProtocol,
+  data,
+}: JustifiedMonitorGridProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerWidth, setContainerWidth] = useState(0);
+
+  useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    setContainerWidth(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver((entries) => {
+      // Use contentRect for the inner width (excluding padding).
+      setContainerWidth(entries[0].contentRect.width);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+
+  // Tiles + their displayed (post-rotation) aspect.
+  const tiles = monitors.map((m) => {
+    const rotated = isOrientationRotated(m.orientation);
+    const rawW = m.width  || 16;
+    const rawH = m.height || 9;
+    const aspect = rotated ? rawH / rawW : rawW / rawH;
+    return { data: m, aspect };
+  });
+
+  // Don't compute until we know the container width — avoids a flash
+  // of mis-sized tiles before the first ResizeObserver entry lands.
+  const rows = containerWidth > 0
+    ? justifyRows(tiles, containerWidth, {
+        targetHeight: 360,
+        maxHeight: 560,
+        gap: 16,
+      })
+    : [];
+
+  return (
+    <div ref={containerRef} className="flex flex-col gap-4">
+      {rows.map((row, rowIdx) => (
+        <div key={rowIdx} className="flex gap-4">
+          {row.tiles.map(({ data: monitor, width }) => (
+            <MonitorThumbnail
+              key={monitor.id}
+              monitor={monitor}
+              isStreaming={liveSessions.includes(monitor.id)}
+              liveProtocol={liveProtocol}
+              counts={{
+                hour: lookupCount(data.countsByMonitor.hour, monitor.id),
+                day:  lookupCount(data.countsByMonitor.day,  monitor.id),
+                week: lookupCount(data.countsByMonitor.week, monitor.id),
+              }}
+              hourly={data.hourlyByMonitor[monitor.id]}
+              width={width}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
 }

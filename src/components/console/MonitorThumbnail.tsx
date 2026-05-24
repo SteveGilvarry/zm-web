@@ -21,6 +21,9 @@ interface MonitorThumbnailProps {
   /** 24-length hourly histogram for this monitor, oldest-first (index 0
    *  = 23h ago, index 23 = current hour). Omitted while still loading. */
   hourly?: number[];
+  /** Optional fixed width in pixels — set by a justified-row layout
+   *  outside the component. When omitted the tile flows naturally. */
+  width?: number;
 }
 
 export const MONITOR_TILE_COLUMN_WIDTH = 280;
@@ -40,6 +43,7 @@ export function MonitorThumbnail({
   liveProtocol = null,
   counts,
   hourly,
+  width,
 }: MonitorThumbnailProps) {
   const isEnabled = monitor.capturing !== 'None';
   const rotated = isOrientationRotated(monitor.orientation);
@@ -50,6 +54,7 @@ export function MonitorThumbnail({
     <Link
       to="/monitors/$monitorId"
       params={{ monitorId: String(monitor.id) }}
+      style={width != null ? { width: `${width}px` } : undefined}
       className={clsx(
         'group relative flex flex-col rounded-lg overflow-hidden self-start',
         'bg-abyss border border-border-subtle',
