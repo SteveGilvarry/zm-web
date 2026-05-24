@@ -210,6 +210,74 @@ export function removeAt(tree: LayoutNode, path: Path): LayoutNode {
   return setAt(tree, path, null);
 }
 
+export type DropZone = 'left' | 'right' | 'top' | 'bottom' | 'center';
+
+/**
+ * Drag-and-drop: move the leaf at `fromPath` onto the leaf at `toPath`,
+ * dropping into the specified zone of the target.
+ *
+ *  - 'center'  → swap the two leaves' monitor ids
+ *  - 'left' /  'right'  → split target as a row, source on left/right
+ *  - 'top'  /  'bottom' → split target as a column, source on top/bottom
+ *
+ * Source-removal leaves a vacant null leaf in place rather than fully
+ * pruning the source's parent split. This keeps every other path stable
+ * (no index adjustments needed) and the operator can close the leftover
+ * cell with the X button if they want. Closing it later collapses the
+ * parent split as normal.
+ */
+export function moveLeafTo(
+  tree: LayoutNode,
+  fromPath: Path,
+  toPath: Path,
+  position: DropZone,
+): LayoutNode {
+  // Same cell — no-op.
+  if (pathsEqual(fromPath, toPath)) return tree;
+
+  const source = nodeAt(tree, fromPath);
+  if (!source || source.type !== 'leaf') return tree;
+  const target = nodeAt(tree, toPath);
+  if (!target || target.type !== 'leaf') return tree;
+
+  // Center: swap.
+  if (position === 'center') {
+    let next = setMonitorAt(tree, fromPath, target.monitorId);
+    next = setMonitorAt(next, toPath, source.monitorId);
+    return next;
+  }
+
+  // Edge: vacate source, split target.
+  const sourceMonitorId = source.monitorId;
+  const direction = position === 'left' || position === 'right' ? 'row' : 'column';
+  const newOnFirst = position === 'left' || position === 'top';
+
+  const vacated = setMonitorAt(tree, fromPath, null);
+  let after = splitAt(vacated, toPath, direction, sourceMonitorId);
+
+  // splitAt appends the new leaf after the original. If we wanted the new
+  // leaf to come FIRST in the split (left/top drops), reverse the split's
+  // children + sizes.
+  if (newOnFirst) {
+    const newSplit = nodeAt(after, toPath);
+    if (newSplit && newSplit.type === 'split') {
+      after = setAt(after, toPath, {
+        ...newSplit,
+        children: newSplit.children.slice().reverse(),
+        sizes: newSplit.sizes.slice().reverse(),
+      });
+    }
+  }
+
+  return after;
+}
+
+function pathsEqual(a: Path, b: Path): boolean {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
 /* ------------------------------------------------------------------------ */
 /*  Preset layouts                                                          */
 /* ------------------------------------------------------------------------ */

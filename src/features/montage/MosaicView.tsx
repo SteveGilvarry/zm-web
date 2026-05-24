@@ -1,16 +1,22 @@
 import {
   useCallback,
   useRef,
+  useState,
+  type DragEvent as ReactDragEvent,
   type PointerEvent as ReactPointerEvent,
   type ReactNode,
 } from 'react';
 import { clsx } from 'clsx';
-import { SplitSquareHorizontal, SplitSquareVertical, X, Camera } from 'lucide-react';
+import { SplitSquareHorizontal, SplitSquareVertical, X, Camera, GripVertical } from 'lucide-react';
 import {
   type LayoutNode,
   type Path,
+  type DropZone,
+  moveLeafTo,
   resizeAt,
 } from './mosaic';
+
+const DRAG_MIME = 'application/x-mosaic-path';
 
 interface MosaicViewProps {
   tree: LayoutNode;
@@ -21,6 +27,15 @@ interface MosaicViewProps {
   onClose: (path: Path) => void;
   /** Called when the operator wants to assign a monitor to a vacant cell. */
   onChooseMonitor?: (path: Path) => void;
+}
+
+function makeMoveHandler(
+  tree: LayoutNode,
+  onChange: (next: LayoutNode) => void,
+) {
+  return (fromPath: Path, toPath: Path, zone: DropZone) => {
+    onChange(moveLeafTo(tree, fromPath, toPath, zone));
+  };
 }
 
 /**
@@ -40,6 +55,7 @@ export function MosaicView({
   onClose,
   onChooseMonitor,
 }: MosaicViewProps) {
+  const onMove = makeMoveHandler(tree, onChange);
   return (
     <div className="flex flex-col w-full h-full flex-1 min-h-0">
       <MosaicNode
@@ -51,6 +67,7 @@ export function MosaicView({
         onSplit={onSplit}
         onClose={onClose}
         onChooseMonitor={onChooseMonitor}
+        onMove={onMove}
       />
     </div>
   );
@@ -65,10 +82,11 @@ interface MosaicNodeProps {
   onSplit: (path: Path, direction: 'row' | 'column') => void;
   onClose: (path: Path) => void;
   onChooseMonitor?: (path: Path) => void;
+  onMove: (fromPath: Path, toPath: Path, zone: DropZone) => void;
 }
 
 function MosaicNode(props: MosaicNodeProps) {
-  const { node, path, renderCell, onSplit, onClose, onChooseMonitor } = props;
+  const { node, path, renderCell, onSplit, onClose, onChooseMonitor, onMove } = props;
 
   if (node.type === 'leaf') {
     return (
@@ -79,6 +97,7 @@ function MosaicNode(props: MosaicNodeProps) {
         onSplit={onSplit}
         onClose={onClose}
         onChooseMonitor={onChooseMonitor}
+        onMove={onMove}
       />
     );
   }
@@ -247,6 +266,8 @@ interface CellProps {
   onSplit: (path: Path, direction: 'row' | 'column') => void;
   onClose: (path: Path) => void;
   onChooseMonitor?: (path: Path) => void;
+  /** Drag-and-drop reorder. Provided by MosaicView so cells share state. */
+  onMove: (fromPath: Path, toPath: Path, zone: DropZone) => void;
 }
 
 function Cell({
@@ -256,9 +277,74 @@ function Cell({
   onSplit,
   onClose,
   onChooseMonitor,
+  onMove,
 }: CellProps) {
+  // Hover-driven drop zone while another cell is being dragged onto us.
+  const [dropZone, setDropZone] = useState<DropZone | null>(null);
+  const cellRef = useRef<HTMLDivElement>(null);
+
+  // Compute which of the 5 zones (top/right/bottom/left/center) the pointer
+  // sits in, expressed as fractions of the cell's bounds.
+  const zoneFor = (e: ReactDragEvent<HTMLDivElement>): DropZone => {
+    const r = e.currentTarget.getBoundingClientRect();
+    const x = (e.clientX - r.left) / r.width;
+    const y = (e.clientY - r.top) / r.height;
+    // Center square covers the middle 40% of each dimension.
+    if (x > 0.3 && x < 0.7 && y > 0.3 && y < 0.7) return 'center';
+    // Otherwise pick the edge nearest the pointer.
+    const distLeft = x;
+    const distRight = 1 - x;
+    const distTop = y;
+    const distBottom = 1 - y;
+    const min = Math.min(distLeft, distRight, distTop, distBottom);
+    if (min === distLeft) return 'left';
+    if (min === distRight) return 'right';
+    if (min === distTop) return 'top';
+    return 'bottom';
+  };
+
+  const handleDragStart = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (monitorId == null) {
+      // Don't drag a vacant cell.
+      e.preventDefault();
+      return;
+    }
+    e.dataTransfer.setData(DRAG_MIME, JSON.stringify(path));
+    e.dataTransfer.effectAllowed = 'move';
+  };
+
+  const handleDragOver = (e: ReactDragEvent<HTMLDivElement>) => {
+    if (!e.dataTransfer.types.includes(DRAG_MIME)) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDropZone(zoneFor(e));
+  };
+
+  const handleDragLeave = (e: ReactDragEvent<HTMLDivElement>) => {
+    // Only clear if the pointer actually left the cell (not a child).
+    if (cellRef.current && !cellRef.current.contains(e.relatedTarget as Node)) {
+      setDropZone(null);
+    }
+  };
+
+  const handleDrop = (e: ReactDragEvent<HTMLDivElement>) => {
+    const raw = e.dataTransfer.getData(DRAG_MIME);
+    if (!raw) return;
+    e.preventDefault();
+    const fromPath = JSON.parse(raw) as Path;
+    const zone = zoneFor(e);
+    setDropZone(null);
+    onMove(fromPath, path, zone);
+  };
+
   return (
-    <div className="relative flex-1 min-w-0 min-h-0 bg-abyss border border-border-subtle rounded-md overflow-hidden group/cell">
+    <div
+      ref={cellRef}
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+      className="relative flex-1 min-w-0 min-h-0 bg-abyss border border-border-subtle rounded-md overflow-hidden group/cell"
+    >
       {/* Content (live stream / vacant placeholder) */}
       <div className="absolute inset-0">{renderCell(monitorId, path)}</div>
 
@@ -274,6 +360,25 @@ function Cell({
           <Camera size={24} />
           <span className="text-xs font-medium">Choose monitor</span>
         </button>
+      )}
+
+      {/* Drag handle — appears top-left on hover. Draggable=true on the
+          handle keeps the rest of the cell clickable for normal use. */}
+      {monitorId != null && (
+        <div
+          draggable
+          onDragStart={handleDragStart}
+          aria-label="Drag tile"
+          title="Drag to reorder"
+          className={clsx(
+            'absolute top-1 left-1 flex items-center justify-center',
+            'w-5 h-5 rounded backdrop-blur-sm border border-cyan/30 bg-black/50',
+            'text-cyan/80 hover:text-cyan cursor-grab active:cursor-grabbing',
+            'opacity-0 group-hover/cell:opacity-100 transition-opacity z-10',
+          )}
+        >
+          <GripVertical size={11} />
+        </div>
       )}
 
       {/* Hover controls — split / close in the top-right of every cell. */}
@@ -301,6 +406,27 @@ function Cell({
           <X size={12} />
         </IconBtn>
       </div>
+
+      {/* Drop-zone overlay shown while a tile is being dragged onto us */}
+      {dropZone && <DropZoneOverlay zone={dropZone} />}
+    </div>
+  );
+}
+
+function DropZoneOverlay({ zone }: { zone: DropZone }) {
+  // Render a translucent cyan band on the side the operator's about to
+  // drop into, or a centred square for swap.
+  const bandClass = clsx(
+    'absolute bg-cyan/25 border-2 border-cyan transition-all pointer-events-none',
+    zone === 'left'   && 'top-0 left-0 bottom-0 w-1/2',
+    zone === 'right'  && 'top-0 right-0 bottom-0 w-1/2',
+    zone === 'top'    && 'top-0 left-0 right-0 h-1/2',
+    zone === 'bottom' && 'bottom-0 left-0 right-0 h-1/2',
+    zone === 'center' && 'inset-[15%] rounded',
+  );
+  return (
+    <div className="absolute inset-0 pointer-events-none z-20">
+      <div className={bandClass} />
     </div>
   );
 }
