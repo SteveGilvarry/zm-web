@@ -30,12 +30,14 @@ export async function logout(token: string): Promise<void> {
 }
 
 export async function refreshToken(refreshToken: string): Promise<LoginResponse> {
+  // Backend's RefreshTokenRequest schema wants {token: ...} — the
+  // previous {refresh_token: ...} shape returned 422 silently.
   const response = await fetch(`${API_BASE}/auth/refresh`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
     },
-    body: JSON.stringify({ refresh_token: refreshToken }),
+    body: JSON.stringify({ token: refreshToken }),
   });
 
   if (!response.ok) {

@@ -54,6 +54,33 @@ function getAuthHeaders(): HeadersInit {
   return {};
 }
 
+/**
+ * Run a fetch with auth headers. If the response is 401 and we haven't
+ * already retried, trigger a refresh (deduped across concurrent callers)
+ * and retry the original request once. Anything still 401 after that —
+ * the refresh failed and the store has cleared auth, so we propagate the
+ * error and the root route will redirect to login.
+ */
+async function authedFetch(url: string, init: RequestInit): Promise<Response> {
+  const initWithAuth = (): RequestInit => ({
+    ...init,
+    headers: {
+      ...(init.headers ?? {}),
+      ...getAuthHeaders(),
+    },
+  });
+
+  let response = await fetch(url, initWithAuth());
+  if (response.status !== 401) return response;
+
+  // 401 — try to refresh once and retry.
+  const newToken = await useAuthStore.getState().refresh();
+  if (!newToken) return response; // refresh failed; let caller handle the 401
+
+  response = await fetch(url, initWithAuth());
+  return response;
+}
+
 export async function apiGet<T>(endpoint: string, params?: Record<string, string | number | undefined>): Promise<T> {
   const url = new URL(`${API_BASE}${endpoint}`, window.location.origin);
 
@@ -65,24 +92,18 @@ export async function apiGet<T>(endpoint: string, params?: Record<string, string
     });
   }
 
-  const response = await fetch(url.toString(), {
+  const response = await authedFetch(url.toString(), {
     method: 'GET',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(),
-    },
+    headers: { 'Content-Type': 'application/json' },
   });
 
   return handleResponse<T>(response);
 }
 
 export async function apiPost<T, R = T>(endpoint: string, data?: T): Promise<R> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await authedFetch(`${API_BASE}${endpoint}`, {
     method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: data ? JSON.stringify(data) : undefined,
   });
 
@@ -90,12 +111,9 @@ export async function apiPost<T, R = T>(endpoint: string, data?: T): Promise<R> 
 }
 
 export async function apiPatch<T, R = T>(endpoint: string, data: T): Promise<R> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await authedFetch(`${API_BASE}${endpoint}`, {
     method: 'PATCH',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 
@@ -103,12 +121,9 @@ export async function apiPatch<T, R = T>(endpoint: string, data: T): Promise<R> 
 }
 
 export async function apiPut<T, R = T>(endpoint: string, data: T): Promise<R> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await authedFetch(`${API_BASE}${endpoint}`, {
     method: 'PUT',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(),
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
 
@@ -116,12 +131,9 @@ export async function apiPut<T, R = T>(endpoint: string, data: T): Promise<R> {
 }
 
 export async function apiDelete(endpoint: string): Promise<void> {
-  const response = await fetch(`${API_BASE}${endpoint}`, {
+  const response = await authedFetch(`${API_BASE}${endpoint}`, {
     method: 'DELETE',
-    headers: {
-      'Content-Type': 'application/json',
-      ...getAuthHeaders(),
-    },
+    headers: { 'Content-Type': 'application/json' },
   });
 
   return handleResponse<void>(response);
