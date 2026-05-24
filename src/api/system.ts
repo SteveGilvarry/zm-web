@@ -1,17 +1,18 @@
 import { apiGet, apiPost } from './client';
 import type { DaemonStatus } from '@/types';
 
-export interface SystemStatusResponse {
+export interface VersionResponse {
   version: string;
   api_version: string;
+  db_version: string;
 }
 
 export interface DaemonListResponse {
   daemons: DaemonStatus[];
 }
 
-export async function getVersion(): Promise<SystemStatusResponse> {
-  return apiGet<SystemStatusResponse>('/version');
+export async function getVersion(): Promise<VersionResponse> {
+  return apiGet<VersionResponse>('/host/getVersion');
 }
 
 export async function getDaemons(): Promise<DaemonListResponse> {
