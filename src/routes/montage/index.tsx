@@ -252,7 +252,9 @@ function MontagePage() {
                   orientation={m.orientation}
                   autoStart
                   compact
-                  rotationFit="fit"
+                  // rotationFit defaults to 'auto' — it measures the
+                  // cell's actual shape and picks fill when the cell
+                  // ends up portrait, fit otherwise.
                 />
               );
             }}

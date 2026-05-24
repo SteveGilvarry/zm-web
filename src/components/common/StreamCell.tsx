@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import type { CSSProperties } from 'react';
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
@@ -61,19 +61,20 @@ interface StreamCellProps {
   onClick?: () => void;
   onDoubleClick?: () => void;
   /**
-   * Picks the right rotation strategy for rotated cameras:
-   *  - 'fill' (default): parent's aspect-ratio matches the camera's
-   *    POST-rotation shape (e.g. a portrait container for a ROTATE_90
-   *    camera). The video is sized to the swapped landscape ratio and
-   *    rotated to fill the container with no letterboxing. Use this
-   *    on the Console / Monitors thumbnails, where each cell carries
-   *    the camera's natural aspect.
-   *  - 'fit': parent is a fixed landscape (16:9) container. The video
-   *    is rotated and scaled down to fit inside, with the unavoidable
-   *    pillarboxing on either side. Use this in Montage where every
-   *    cell is uniformly aspect-video regardless of camera shape.
+   * Rotation strategy for rotated cameras:
+   *  - 'auto' (default): measure the container's actual aspect at
+   *    runtime via ResizeObserver and pick 'fill' when the container
+   *    is portrait-shaped (matches the camera's post-rotation aspect),
+   *    'fit' when it isn't. Lets operators drag dividers to coax a
+   *    portrait camera into filling its cell without cropping.
+   *  - 'fill': always swap-dimensions + rotate, assuming the parent's
+   *    aspect matches the post-rotation shape. Use when you know the
+   *    container is purpose-built around the camera.
+   *  - 'fit': always rotate + scale(9/16), letterboxed inside a
+   *    landscape container. Use when the container is constrained to
+   *    a different aspect than the camera.
    */
-  rotationFit?: 'fill' | 'fit';
+  rotationFit?: 'auto' | 'fill' | 'fit';
 }
 
 export function StreamCell({
@@ -86,7 +87,7 @@ export function StreamCell({
   showControls = false,
   onClick,
   onDoubleClick,
-  rotationFit = 'fit',
+  rotationFit = 'auto',
 }: StreamCellProps) {
   // Conditionally render inner component based on protocol.
   // When protocol changes, React unmounts the old and mounts the new,
@@ -130,7 +131,7 @@ interface StreamInnerProps {
   showControls: boolean;
   onClick?: () => void;
   onDoubleClick?: () => void;
-  rotationFit: 'fill' | 'fit';
+  rotationFit: 'auto' | 'fill' | 'fit';
 }
 
 function WebRtcStreamInner(props: StreamInnerProps) {
@@ -182,8 +183,31 @@ function StreamVideo({
     setTimeout(() => stream.start(), 200);
   };
 
+  // Auto-resolve fit/fill from the container's actual aspect.
+  // Cell aspect < 1 (portrait) → camera's post-rotation matches → fill.
+  // Cell aspect >= 1 (landscape/square) → letterbox via 'fit'.
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [containerIsPortrait, setContainerIsPortrait] = useState(false);
+  useEffect(() => {
+    if (rotationFit !== 'auto') return;
+    const el = containerRef.current;
+    if (!el) return;
+    const update = () => {
+      const r = el.getBoundingClientRect();
+      setContainerIsPortrait(r.height > r.width);
+    };
+    update();
+    const ro = new ResizeObserver(update);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [rotationFit]);
+
+  const effectiveFit: 'fill' | 'fit' =
+    rotationFit === 'auto' ? (containerIsPortrait ? 'fill' : 'fit') : rotationFit;
+
   return (
     <div
+      ref={containerRef}
       className="relative w-full h-full bg-abyss overflow-hidden"
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -201,13 +225,13 @@ function StreamVideo({
       <video
         ref={stream.videoRef}
         className={clsx(
-          isOrientationRotated(orientation) && rotationFit === 'fill'
+          isOrientationRotated(orientation) && effectiveFit === 'fill'
             ? 'object-contain bg-black'
             : 'w-full h-full object-contain bg-black',
           isIdle && 'hidden',
         )}
         style={
-          isOrientationRotated(orientation) && rotationFit === 'fill'
+          isOrientationRotated(orientation) && effectiveFit === 'fill'
             ? rotatedStreamStyle(
                 (orientation ?? '').replace(/[_\s]/g, '').toLowerCase() === 'rotate270'
                   ? 270
