@@ -22,22 +22,22 @@ interface MonitorThumbnailProps {
 
 /**
  * Approximate row-span for a CSS Grid cell so portrait and landscape
- * cameras both pack tightly into the same grid. Calculated from the
- * displayed aspect ratio (orientation-aware) against a fixed 24px row
- * unit and an assumed 240px column width. The activity ribbon adds
- * ~70px of fixed below-video height that's accounted for separately.
+ * cameras pack tightly into the same grid. Computed against fixed
+ * COLUMN_WIDTH (matches the grid-template-columns repeat) and ROW_UNIT
+ * so the math is exact. The ribbon natural height is small (one name
+ * row + one counter row); 56px covers it comfortably.
  */
+export const MONITOR_TILE_COLUMN_WIDTH = 280;
 export function rowSpanForMonitor(monitor: Monitor): number {
   const ROW_UNIT = 24;
-  const COL_WIDTH = 240;
-  const RIBBON_HEIGHT = 70;
+  const RIBBON_HEIGHT = 56;
   const rotated = isOrientationRotated(monitor.orientation);
   const rawW = monitor.width || 16;
   const rawH = monitor.height || 9;
   const aspect = rotated ? rawH / rawW : rawW / rawH;
-  const videoHeight = COL_WIDTH / Math.max(aspect, 0.2);
+  const videoHeight = MONITOR_TILE_COLUMN_WIDTH / Math.max(aspect, 0.2);
   const totalHeight = videoHeight + RIBBON_HEIGHT;
-  return Math.max(4, Math.round(totalHeight / ROW_UNIT));
+  return Math.max(4, Math.ceil(totalHeight / ROW_UNIT));
 }
 
 export function MonitorThumbnail({
@@ -148,10 +148,11 @@ export function MonitorThumbnail({
         )}
       </div>
 
-      {/* Activity ribbon — sits below the video, fixed height. The name + status
-          live here so they don't overlay the picture; counts give a quick read
-          of how busy each camera is over Hour / 24h / Week. */}
-      <div className="flex-1 flex flex-col justify-between gap-1 px-2 py-1.5 bg-surface/70 border-t border-border-subtle/60">
+      {/* Activity ribbon — natural height (name row + counters row), no
+          flex-1: that pushed the counters to the very bottom of an
+          oversized tile, separated from the name by hundreds of px of
+          dead space. */}
+      <div className="space-y-1 px-2 py-1.5 bg-surface/70 border-t border-border-subtle/60">
         <div className="flex items-center gap-1.5 min-w-0">
           <span
             className={clsx(

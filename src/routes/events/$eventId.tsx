@@ -26,7 +26,6 @@ import { Panel } from '@/components/common/Panel';
 import { getEvent, getEventVideoUrl, getEventThumbnailUrl, deleteEvent } from '@/api/events';
 import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
-import { getOrientationStyle, isOrientationRotated } from '@/types';
 import type { CSSProperties } from 'react';
 import { TagChips } from '@/features/events/TagChips';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
@@ -45,11 +44,6 @@ function EventDetailPage() {
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  // Tracks the video file's intrinsic dimensions once metadata loads. If
-  // these already match the event's declared (post-rotation) dimensions,
-  // the file was rotated server-side at write time and we must not apply
-  // a second CSS rotation on top.
-  const [natural, setNatural] = useState<{ w: number; h: number } | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Track fullscreen so the rotated-video styling can switch between the
@@ -189,51 +183,23 @@ function EventDetailPage() {
   const videoUrl = getEventVideoUrl(event.id, accessToken || undefined);
   const thumbnailUrl = getEventThumbnailUrl(event.id, accessToken || undefined);
 
-  // Rotation handling — two cases:
+  // Container takes the camera's declared (post-rotation) aspect so a
+  // portrait camera gets a portrait box. The video element itself plays
+  // at its file-native orientation — no CSS rotation. This works because
+  // every backend we know of rotates the stored MP4 at write time, and
+  // Chrome / Safari both render those files correctly.
   //
-  //  (a) the saved MP4 was rotated server-side at write time; its intrinsic
-  //      dimensions already match the event's declared (post-rotation) dims.
-  //      In this case we must NOT apply CSS rotation — the file is already
-  //      correctly oriented, and rotating it would un-rotate it visually.
-  //
-  //  (b) the file is the raw pre-rotation stream and we need CSS to rotate
-  //      it on display, the same way the live monitor view does.
-  //
-  // We detect (a) by waiting for the video element to load metadata and
-  // comparing videoWidth/Height against event.width/height. Until metadata
-  // is available we optimistically assume (a) for rotated cameras so we
-  // don't briefly show a wrongly-rotated frame.
-  const rotated = isOrientationRotated(event.orientation);
+  // Previous attempts to CSS-rotate the element based on monitor metadata
+  // double-rotated on Safari (Safari natively honours MP4 rotation atoms
+  // but reports raw videoWidth/videoHeight in the JS API, defeating any
+  // dimension-based detection). If a future install ever ships un-rotated
+  // files we'll re-add rotation as an opt-in toggle per monitor.
   const effW = event.width  || 16;
   const effH = event.height || 9;
-  const fileAlreadyRotated =
-    rotated && natural != null && natural.w === effW && natural.h === effH;
-  const needsCssRotation = rotated && natural != null && !fileAlreadyRotated;
-
-  // Container takes the camera's declared aspect when inline, 16:9 in
-  // fullscreen (browsers letterbox inside the screen anyway).
   const videoContainerW = isFullscreen ? 16 : effW;
   const videoContainerH = isFullscreen ? 9  : effH;
-
-  // Swap-dimensions rotation only applies when CSS rotation is actually
-  // needed AND we're not in fullscreen. Otherwise plain object-contain.
-  const useSwappedRotation = needsCssRotation && !isFullscreen;
-  const rotationDeg = (event.orientation ?? '').replace(/[_\s]/g, '').toLowerCase() === 'rotate270' ? 270 : 90;
-  const videoElementStyle: CSSProperties | undefined = useSwappedRotation
-    ? {
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        width: `${(effH / effW) * 100}%`,
-        height: `${(effW / effH) * 100}%`,
-        maxWidth: 'none',
-        maxHeight: 'none',
-        transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
-        transformOrigin: 'center',
-      }
-    : needsCssRotation
-      ? getOrientationStyle(event.orientation)
-      : undefined;
+  const useSwappedRotation = false;
+  const videoElementStyle: CSSProperties | undefined = undefined;
 
   return (
     <AppShell title={event.name}>
@@ -269,13 +235,7 @@ function EventDetailPage() {
                     className={useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
                     style={videoElementStyle}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-                    onLoadedMetadata={(e) => {
-                      setDuration(e.currentTarget.duration);
-                      setNatural({
-                        w: e.currentTarget.videoWidth,
-                        h: e.currentTarget.videoHeight,
-                      });
-                    }}
+                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
                     onEnded={() => setIsPlaying(false)}

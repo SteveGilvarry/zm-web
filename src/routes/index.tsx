@@ -186,13 +186,13 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
             ) : (
               // Aspect-aware grid: each tile sets its own row-span based on
               // the camera's natural aspect ratio, then grid-auto-flow:dense
-              // packs short tiles into the gaps left by tall ones. Portraits
-              // and landscapes pack tightly without forcing either to fit
-              // into the wrong shape.
+              // packs short tiles into the gaps left by tall ones. Columns
+              // are pinned to a fixed width so the row-span math (which
+              // depends on column width) stays exact.
               <div
                 className={clsx(
-                  'grid gap-4',
-                  'grid-cols-[repeat(auto-fill,minmax(220px,1fr))]',
+                  'grid gap-4 justify-center',
+                  'grid-cols-[repeat(auto-fill,280px)]',
                 )}
                 style={{
                   gridAutoRows: '24px',

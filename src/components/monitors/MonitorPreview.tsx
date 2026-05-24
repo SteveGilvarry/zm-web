@@ -3,7 +3,27 @@ import { Video, VideoOff } from 'lucide-react';
 import { StreamCell } from '@/components/common/StreamCell';
 import { useInViewport } from '@/hooks/useInViewport';
 import { useRefreshingSnapshot } from '@/hooks/useRefreshingSnapshot';
-import { getOrientationStyle } from '@/types';
+import { getOrientationStyle, isOrientationRotated } from '@/types';
+import type { CSSProperties } from 'react';
+
+/** Same swap-dimensions rotation strategy as StreamCell, applied to the
+ *  refreshing snapshot so the still image fills a portrait container
+ *  instead of getting letterboxed to a thumbnail-sized strip. */
+function rotatedSnapshotStyle(orientation: string | null | undefined): CSSProperties {
+  const deg = (orientation ?? '').replace(/[_\s]/g, '').toLowerCase() === 'rotate270' ? 270 : 90;
+  return {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    width: '177.7778%',
+    height: '56.25%',
+    maxWidth: 'none',
+    maxHeight: 'none',
+    transform: `translate(-50%, -50%) rotate(${deg}deg)`,
+    transformOrigin: 'center',
+    objectFit: 'cover',
+  };
+}
 
 /** How long the pointer must rest on a card before its live preview starts —
  *  long enough that sweeping the mouse across a grid costs nothing. */
@@ -88,13 +108,23 @@ export function MonitorPreview({
             <Video size={iconSize} className="text-text-dim" />
           </div>
 
-          {/* Refreshing snapshot — base layer */}
+          {/* Refreshing snapshot — base layer. Rotated cameras use swap-
+              dimensions positioning so the rotated content fills the
+              container's post-rotation aspect ratio. */}
           {snapshotUrl && (
             <img
               src={snapshotUrl}
               alt={monitorName}
-              className="absolute inset-0 w-full h-full object-contain"
-              style={getOrientationStyle(orientation)}
+              className={
+                isOrientationRotated(orientation)
+                  ? 'bg-black'
+                  : 'absolute inset-0 w-full h-full object-contain'
+              }
+              style={
+                isOrientationRotated(orientation)
+                  ? rotatedSnapshotStyle(orientation)
+                  : getOrientationStyle(orientation)
+              }
               onLoad={(e) => {
                 (e.target as HTMLImageElement).style.visibility = 'visible';
               }}

@@ -1,11 +1,54 @@
 import { useEffect } from 'react';
 import { clsx } from 'clsx';
+import type { CSSProperties } from 'react';
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useWebRtcStream } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
 import type { StreamProtocol } from '@/types';
-import { getOrientationStyle } from '@/types';
+import { getOrientationStyle, isOrientationRotated } from '@/types';
 import type { StreamHookResult } from '@/hooks/useWebRtcStream';
+
+/**
+ * Style for a rotated live stream. Live feeds come from the camera in their
+ * raw orientation (landscape), so a ROTATE_90 monitor needs the displayed
+ * element rotated 90° to fill its post-rotation (portrait) container.
+ *
+ * The math: parent container has aspectRatio matching the post-rotation
+ * shape (e.g. 9:16 for ROTATE_90 of a 16:9 sensor). To fill that portrait
+ * box with a rotated landscape video, the underlying <video> element needs
+ * to be sized to a *landscape* shape whose dimensions, when rotated 90°,
+ * exactly fit the container:
+ *
+ *   element width  = container_height  (in percentage of container_width)
+ *   element height = container_width   (in percentage of container_height)
+ *
+ * Container's aspect is W:H where (W < H) for portrait. So:
+ *   width-pct  = (H / W) * 100   → > 100%, element wider than container
+ *   height-pct = (W / H) * 100   → < 100%, element shorter than container
+ *
+ * After translate(-50%, -50%) rotate(90°) the element's footprint becomes
+ * W × H — exactly the container shape, no letterboxing.
+ */
+function rotatedStreamStyle(rotationDeg: 90 | 270): CSSProperties {
+  // Without runtime measurement we assume the parent's aspect is the
+  // post-rotation shape (it is, in every call site we have today).
+  // The element gets the SWAPPED aspect inline via percentages, scaled
+  // relative to the container, then rotated to land back on the container.
+  return {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    // For an unknown container aspect we can't compute exact percentages,
+    // so fall back to a 16:9 element rotated to fill a 9:16 container.
+    // This matches every camera in this codebase (all 16:9 sensors).
+    width: '177.7778%',
+    height: '56.25%',
+    maxWidth: 'none',
+    maxHeight: 'none',
+    transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
+    transformOrigin: 'center',
+  };
+}
 
 interface StreamCellProps {
   protocol: StreamProtocol;
@@ -126,14 +169,27 @@ function StreamVideo({
       onClick={onClick}
       onDoubleClick={onDoubleClick}
     >
-      {/* Video element — always rendered so ref is available */}
+      {/* Video element — always rendered so ref is available. Rotated
+          cameras use the swap-dimensions style so the rotated content
+          fills the container's post-rotation aspect instead of being
+          letterboxed into a small strip. */}
       <video
         ref={stream.videoRef}
         className={clsx(
-          'w-full h-full object-contain bg-black',
+          isOrientationRotated(orientation)
+            ? 'object-cover bg-black'
+            : 'w-full h-full object-contain bg-black',
           isIdle && 'hidden',
         )}
-        style={getOrientationStyle(orientation)}
+        style={
+          isOrientationRotated(orientation)
+            ? rotatedStreamStyle(
+                (orientation ?? '').replace(/[_\s]/g, '').toLowerCase() === 'rotate270'
+                  ? 270
+                  : 90,
+              )
+            : getOrientationStyle(orientation)
+        }
         autoPlay
         muted
         playsInline
