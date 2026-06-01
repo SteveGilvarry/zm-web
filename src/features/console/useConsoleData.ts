@@ -9,6 +9,7 @@ import {
 } from '@/api/events';
 import { getDaemons, getSystemStatus } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
+import { bucketEventsByHour } from './bucketEvents';
 import type { Monitor, ZmEvent, DaemonStatus } from '@/types';
 import type { SystemStats } from '@/api/system';
 
@@ -134,41 +135,12 @@ export function useConsoleData(): ConsoleData {
   });
 
   // Bucket the last-24h events into a per-monitor × per-hour histogram.
-  // Index 0 = the current hour (most recent), index 23 = 24h ago. Anchor
-  // 'now' against the freshest event in the response rather than the
-  // client clock so the histogram stays correct even when the camera /
-  // backend clock drifts ahead or behind the browser.
+  // Pure logic lives in bucketEventsByHour for testability.
   const last24hEvents = last24hQ.data?.items;
-  const hourlyByMonitor = useMemo(() => {
-    const out: Record<number, number[]> = {};
-    if (!last24hEvents || last24hEvents.length === 0) return out;
-
-    // Pick the latest event timestamp as the right edge of the spark; fall
-    // back to client time if no events have parseable timestamps.
-    let latest = 0;
-    for (const e of last24hEvents) {
-      if (!e.start_date_time) continue;
-      const t = Date.parse(e.start_date_time);
-      if (!Number.isNaN(t) && t > latest) latest = t;
-    }
-    const anchor = latest > 0 ? latest : Date.now();
-
-    for (const e of last24hEvents) {
-      if (!e.start_date_time) continue;
-      const t = Date.parse(e.start_date_time);
-      if (Number.isNaN(t)) continue;
-      // Slot the event by hours-before-anchor. Clamp negatives to 0 so a
-      // tiny bit of clock skew past 'anchor' doesn't drop the freshest
-      // event; cap at 23 so anything older than the window doesn't poison
-      // the spark.
-      let hoursAgo = Math.floor((anchor - t) / (60 * 60 * 1000));
-      if (hoursAgo < 0) hoursAgo = 0;
-      if (hoursAgo > 23) continue;
-      const buckets = out[e.monitor_id] ?? (out[e.monitor_id] = new Array(24).fill(0));
-      buckets[hoursAgo] += 1;
-    }
-    return out;
-  }, [last24hEvents]);
+  const hourlyByMonitor = useMemo(
+    () => bucketEventsByHour(last24hEvents),
+    [last24hEvents],
+  );
 
   return {
     monitors: monitorsQ.data?.items ?? [],
