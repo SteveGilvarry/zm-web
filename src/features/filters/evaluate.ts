@@ -15,9 +15,13 @@ import type { ZmEvent } from '@/types';
  * can reason about — and it matches the visual top-down reading order.
  */
 export function evaluateFilter(query: FilterQuery, events: ZmEvent[]): ZmEvent[] {
-  if (query.rules.length === 0) return events.slice();
-
-  const matched = events.filter((e) => evalRules(query.rules, e));
+  // No rules → no filtering; everything passes through to sort + limit.
+  // (Earlier versions short-circuited here and dropped sort/limit on the
+  // floor, which broke 'list all events newest-first' style queries.)
+  const matched =
+    query.rules.length === 0
+      ? events.slice()
+      : events.filter((e) => evalRules(query.rules, e));
 
   // Apply sort + limit hints if present.
   if (query.sort) {
