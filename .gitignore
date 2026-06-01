@@ -40,3 +40,9 @@ dist-ssr
 *.png
 !public/**/*.png
 !src/**/*.png
+
+# Playwright + Vitest artifacts
+test-results/
+playwright-report/
+.playwright/
+coverage/
