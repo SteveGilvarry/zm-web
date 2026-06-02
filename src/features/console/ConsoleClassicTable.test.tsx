@@ -64,16 +64,23 @@ describe('ConsoleClassicTable — rendering', () => {
 });
 
 describe('ConsoleClassicTable — sort', () => {
-  it('initial sort is by ID ascending', () => {
-    renderWithProviders(<ConsoleClassicTable data={data} />);
-    // Filter to tbody rows only — header + footer are excluded so the test
-    // doesn't care that we added a totals row.
+  it('initial sort is by Sequence ascending; missing sequence sinks to the bottom', () => {
+    // Override fixture: give Front Door + Garage explicit sequence values
+    // so the new default sort orders them; Driveway East has no sequence
+    // and should land last (Number.MAX_SAFE_INTEGER tiebreaker).
+    const seqData = {
+      ...data,
+      monitors: data.monitors.map((m) =>
+        m.name === 'Front Door' ? { ...m, sequence: 1 } :
+        m.name === 'Garage'     ? { ...m, sequence: 2 } : m,
+      ),
+    } as typeof data;
+    renderWithProviders(<ConsoleClassicTable data={seqData} />);
     const rows = screen
       .getAllByRole('row')
       .filter((r) => r.parentElement?.tagName === 'TBODY');
-    // rows[0] is the header; data rows follow.
     const names = rows.map((r) => within(r).getByRole('link').textContent?.trim());
-    expect(names).toEqual(['Front Door', 'Driveway East', 'Garage']);
+    expect(names).toEqual(['Front Door', 'Garage', 'Driveway East']);
   });
 
   it('clicking the Name header re-sorts alphabetically', async () => {

@@ -7,7 +7,13 @@ import path from 'path'
 // https://vite.dev/config/
 export default defineConfig({
   plugins: [
-    TanStackRouterVite({ quoteStyle: 'single' }),
+    TanStackRouterVite({
+      quoteStyle: 'single',
+      // Colocated test files (e.g. src/routes/settings/state.test.tsx) are not
+      // route modules — exclude them from the router scan so dev-mode doesn't
+      // warn about a missing Route export on every file save.
+      routeFileIgnorePattern: '\\.(test|spec)\\.tsx?$',
+    }),
     react(),
     tailwindcss(),
   ],

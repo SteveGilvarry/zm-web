@@ -1,14 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
-import { ChevronDown, ChevronUp, Monitor as MonitorIcon } from 'lucide-react';
+import { ChevronDown, ChevronUp, GripVertical, Monitor as MonitorIcon } from 'lucide-react';
 import { type ConsoleData, lookupSummary } from './useConsoleData';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { formatBytes } from '@/lib/format';
+import { updateMonitor } from '@/api/monitors';
 import type { Monitor } from '@/types';
 
 type SortKey =
-  | 'id' | 'name' | 'function' | 'source'
+  | 'id' | 'name' | 'function' | 'source' | 'sequence'
   | 'hour' | 'day' | 'week' | 'month' | 'total' | 'archived';
 
 interface ConsoleClassicTableProps {
@@ -23,8 +25,30 @@ interface ConsoleClassicTableProps {
  */
 export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
   const { monitors, summariesByMonitor } = data;
-  const [sortKey, setSortKey] = useState<SortKey>('id');
+  const [sortKey, setSortKey] = useState<SortKey>('sequence');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
+  const [draggingId, setDraggingId] = useState<number | null>(null);
+  const qc = useQueryClient();
+
+  const reorderMutation = useMutation({
+    // Re-numbers the sequence column on every monitor that changed
+    // position. Issues each PATCH in parallel; failure on any single
+    // request still propagates as a rejected mutation that re-fetches
+    // the monitors query to recover the server's truth.
+    mutationFn: async (next: Monitor[]) => {
+      const updates = next
+        .map((m, i) => ({ id: m.id, seq: i + 1, prev: m.sequence ?? null }))
+        .filter((u) => u.seq !== u.prev);
+      await Promise.all(updates.map((u) =>
+        updateMonitor(u.id, { sequence: u.seq } as Partial<Monitor>),
+      ));
+    },
+    onSettled: () => qc.invalidateQueries({ queryKey: ['monitors'] }),
+  });
+
+  // Drag is only meaningful when the visible order matches the sequence
+  // column we're about to mutate. Disable it under any other sort.
+  const dragEnabled = sortKey === 'sequence' && sortDir === 'asc';
 
   const rows = useMemo(() => {
     const enriched = monitors.map((m) => ({
@@ -37,6 +61,19 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
     });
     return sorted;
   }, [monitors, summariesByMonitor, sortKey, sortDir]);
+
+  const handleDrop = (targetId: number) => {
+    if (!draggingId || draggingId === targetId) return;
+    const ordered = rows.map((r) => r.monitor);
+    const fromIdx = ordered.findIndex((m) => m.id === draggingId);
+    const toIdx = ordered.findIndex((m) => m.id === targetId);
+    if (fromIdx < 0 || toIdx < 0) return;
+    const next = ordered.slice();
+    const [moved] = next.splice(fromIdx, 1);
+    next.splice(toIdx, 0, moved);
+    setDraggingId(null);
+    reorderMutation.mutate(next);
+  };
 
   const totals = useMemo(() => {
     const t = {
@@ -81,6 +118,16 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
       <table className="w-full text-sm text-zinc-800">
         <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
           <tr>
+            <th
+              className="w-6 px-1 py-2 text-center cursor-pointer select-none hover:bg-zinc-200"
+              onClick={() => toggleSort('sequence')}
+              title="Sort by sequence (drag rows to reorder)"
+            >
+              <GripVertical
+                size={12}
+                className={clsx('mx-auto', dragEnabled ? 'text-cyan-700' : 'text-zinc-400')}
+              />
+            </th>
             <Th label="ID"        sortKey="id"       active={sortKey} dir={sortDir} onClick={toggleSort} />
             <th className="px-2 py-2 text-left font-semibold">Thumbnail</th>
             <Th label="Name"      sortKey="name"     active={sortKey} dir={sortDir} onClick={toggleSort} />
@@ -96,12 +143,21 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
         </thead>
         <tbody>
           {rows.map(({ monitor, summary }) => (
-            <Row key={monitor.id} monitor={monitor} summary={summary} />
+            <Row
+              key={monitor.id}
+              monitor={monitor}
+              summary={summary}
+              dragEnabled={dragEnabled}
+              isDragging={draggingId === monitor.id}
+              onDragStart={() => setDraggingId(monitor.id)}
+              onDragEnd={() => setDraggingId(null)}
+              onDrop={() => handleDrop(monitor.id)}
+            />
           ))}
         </tbody>
         <tfoot className="bg-zinc-50 border-t border-zinc-300 text-xs">
           <tr>
-            <td className="px-3 py-2 font-semibold text-zinc-700" colSpan={5}>
+            <td className="px-3 py-2 font-semibold text-zinc-700" colSpan={6}>
               Total ({rows.length} monitors)
             </td>
             <FootCount count={totals.hour}     disk={totals.hour_disk} />
@@ -160,15 +216,52 @@ function Th({ label, sortKey, active, dir, onClick, numeric }: ThProps) {
 }
 
 function Row({
-  monitor, summary,
+  monitor, summary, dragEnabled, isDragging, onDragStart, onDragEnd, onDrop,
 }: {
   monitor: Monitor;
   summary: ReturnType<typeof lookupSummary>;
+  dragEnabled: boolean;
+  isDragging: boolean;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
 }) {
   const isActive = monitor.capturing !== 'None';
 
   return (
-    <tr className="border-b border-zinc-200 hover:bg-zinc-50 transition-colors">
+    <tr
+      className={clsx(
+        'border-b border-zinc-200 hover:bg-zinc-50 transition-colors',
+        isDragging && 'opacity-40',
+      )}
+      draggable={dragEnabled}
+      onDragStart={(e) => {
+        if (!dragEnabled) return;
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setData('text/plain', String(monitor.id));
+        onDragStart();
+      }}
+      onDragOver={(e) => {
+        if (!dragEnabled) return;
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+      }}
+      onDrop={(e) => {
+        if (!dragEnabled) return;
+        e.preventDefault();
+        onDrop();
+      }}
+      onDragEnd={onDragEnd}
+    >
+      <td
+        className={clsx(
+          'w-6 px-1 py-2 text-center',
+          dragEnabled ? 'cursor-grab text-zinc-400 hover:text-zinc-700' : 'text-zinc-200',
+        )}
+        title={dragEnabled ? 'Drag to reorder' : 'Sort by Sequence to enable reordering'}
+      >
+        <GripVertical size={12} className="mx-auto" />
+      </td>
       <td className="px-3 py-2 font-mono tabular-nums text-zinc-600">{monitor.id}</td>
       <td className="px-2 py-1">
         <div className="w-16 h-10 relative rounded overflow-hidden bg-zinc-200">
@@ -238,6 +331,9 @@ function compare(
     case 'name':     return a.monitor.name.localeCompare(b.monitor.name);
     case 'function': return describeFunction(a.monitor).localeCompare(describeFunction(b.monitor));
     case 'source':   return (a.monitor.host ?? '').localeCompare(b.monitor.host ?? '');
+    // Monitors without a sequence sort to the end; otherwise ascending by sequence.
+    case 'sequence': return (a.monitor.sequence ?? Number.MAX_SAFE_INTEGER)
+                          - (b.monitor.sequence ?? Number.MAX_SAFE_INTEGER);
     case 'hour':     return a.summary.hour_events     - b.summary.hour_events;
     case 'day':      return a.summary.day_events      - b.summary.day_events;
     case 'week':     return a.summary.week_events     - b.summary.week_events;
