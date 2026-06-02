@@ -1,4 +1,4 @@
-import { createFileRoute } from '@tanstack/react-router';
+import { createFileRoute, Link } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
@@ -94,7 +94,13 @@ function ReportsPage() {
                 {reports.map((r) => (
                   <tr key={r.id} className="border-b border-border-subtle/50 hover:bg-surface/30">
                     <td className="px-3 py-2 text-text-primary">
-                      {r.name || <span className="text-text-muted italic">untitled</span>}
+                      <Link
+                        to="/reports/$reportId"
+                        params={{ reportId: String(r.id) }}
+                        className="text-cyan hover:underline"
+                      >
+                        {r.name || <span className="text-text-muted italic">untitled</span>}
+                      </Link>
                     </td>
                     <td className="px-3 py-2 text-cyan text-xs">
                       {r.filter_id != null
