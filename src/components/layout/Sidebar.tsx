@@ -16,6 +16,7 @@ import {
   FileText,
   ShieldCheck,
   Key,
+  Power,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -51,6 +52,7 @@ const settingsItems: NavItem[] = [
   { label: 'Users', icon: <Users size={20} />, path: '/settings/users' },
   { label: 'Servers', icon: <Shield size={20} />, path: '/settings/servers' },
   { label: 'API Tokens', icon: <Key size={20} />, path: '/settings/sessions' },
+  { label: 'Run State', icon: <Power size={20} />, path: '/settings/state' },
 ];
 
 export function Sidebar() {

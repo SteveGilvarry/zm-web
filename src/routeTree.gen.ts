@@ -24,10 +24,12 @@ import { Route as CycleIndexRouteImport } from './routes/cycle/index'
 import { Route as AuditIndexRouteImport } from './routes/audit/index'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
 import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
+import { Route as SettingsStateRouteImport } from './routes/settings/state'
 import { Route as SettingsSessionsRouteImport } from './routes/settings/sessions'
 import { Route as SettingsServersRouteImport } from './routes/settings/servers'
 import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
 import { Route as EventsEventIdRouteImport } from './routes/events/$eventId'
+import { Route as MonitorsMonitorIdZonesRouteImport } from './routes/monitors/$monitorId.zones'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -104,6 +106,11 @@ const SettingsStorageRoute = SettingsStorageRouteImport.update({
   path: '/settings/storage',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsStateRoute = SettingsStateRouteImport.update({
+  id: '/settings/state',
+  path: '/settings/state',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SettingsSessionsRoute = SettingsSessionsRouteImport.update({
   id: '/settings/sessions',
   path: '/settings/sessions',
@@ -124,14 +131,20 @@ const EventsEventIdRoute = EventsEventIdRouteImport.update({
   path: '/events/$eventId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const MonitorsMonitorIdZonesRoute = MonitorsMonitorIdZonesRouteImport.update({
+  id: '/zones',
+  path: '/zones',
+  getParentRoute: () => MonitorsMonitorIdRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
-  '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
+  '/monitors/$monitorId': typeof MonitorsMonitorIdRouteWithChildren
   '/settings/servers': typeof SettingsServersRoute
   '/settings/sessions': typeof SettingsSessionsRoute
+  '/settings/state': typeof SettingsStateRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
   '/audit/': typeof AuditIndexRoute
@@ -145,14 +158,16 @@ export interface FileRoutesByFullPath {
   '/montagereview/': typeof MontagereviewIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/monitors/$monitorId/zones': typeof MonitorsMonitorIdZonesRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
-  '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
+  '/monitors/$monitorId': typeof MonitorsMonitorIdRouteWithChildren
   '/settings/servers': typeof SettingsServersRoute
   '/settings/sessions': typeof SettingsSessionsRoute
+  '/settings/state': typeof SettingsStateRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
   '/audit': typeof AuditIndexRoute
@@ -166,15 +181,17 @@ export interface FileRoutesByTo {
   '/montagereview': typeof MontagereviewIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/monitors/$monitorId/zones': typeof MonitorsMonitorIdZonesRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
-  '/monitors/$monitorId': typeof MonitorsMonitorIdRoute
+  '/monitors/$monitorId': typeof MonitorsMonitorIdRouteWithChildren
   '/settings/servers': typeof SettingsServersRoute
   '/settings/sessions': typeof SettingsSessionsRoute
+  '/settings/state': typeof SettingsStateRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
   '/audit/': typeof AuditIndexRoute
@@ -188,6 +205,7 @@ export interface FileRoutesById {
   '/montagereview/': typeof MontagereviewIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/monitors/$monitorId/zones': typeof MonitorsMonitorIdZonesRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -198,6 +216,7 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/settings/servers'
     | '/settings/sessions'
+    | '/settings/state'
     | '/settings/storage'
     | '/settings/users'
     | '/audit/'
@@ -211,6 +230,7 @@ export interface FileRouteTypes {
     | '/montagereview/'
     | '/reports/'
     | '/settings/'
+    | '/monitors/$monitorId/zones'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -219,6 +239,7 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/settings/servers'
     | '/settings/sessions'
+    | '/settings/state'
     | '/settings/storage'
     | '/settings/users'
     | '/audit'
@@ -232,6 +253,7 @@ export interface FileRouteTypes {
     | '/montagereview'
     | '/reports'
     | '/settings'
+    | '/monitors/$monitorId/zones'
   id:
     | '__root__'
     | '/'
@@ -240,6 +262,7 @@ export interface FileRouteTypes {
     | '/monitors/$monitorId'
     | '/settings/servers'
     | '/settings/sessions'
+    | '/settings/state'
     | '/settings/storage'
     | '/settings/users'
     | '/audit/'
@@ -253,15 +276,17 @@ export interface FileRouteTypes {
     | '/montagereview/'
     | '/reports/'
     | '/settings/'
+    | '/monitors/$monitorId/zones'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LoginRoute: typeof LoginRoute
   EventsEventIdRoute: typeof EventsEventIdRoute
-  MonitorsMonitorIdRoute: typeof MonitorsMonitorIdRoute
+  MonitorsMonitorIdRoute: typeof MonitorsMonitorIdRouteWithChildren
   SettingsServersRoute: typeof SettingsServersRoute
   SettingsSessionsRoute: typeof SettingsSessionsRoute
+  SettingsStateRoute: typeof SettingsStateRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
   AuditIndexRoute: typeof AuditIndexRoute
@@ -384,6 +409,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsStorageRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/state': {
+      id: '/settings/state'
+      path: '/settings/state'
+      fullPath: '/settings/state'
+      preLoaderRoute: typeof SettingsStateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/settings/sessions': {
       id: '/settings/sessions'
       path: '/settings/sessions'
@@ -412,16 +444,35 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsEventIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/monitors/$monitorId/zones': {
+      id: '/monitors/$monitorId/zones'
+      path: '/zones'
+      fullPath: '/monitors/$monitorId/zones'
+      preLoaderRoute: typeof MonitorsMonitorIdZonesRouteImport
+      parentRoute: typeof MonitorsMonitorIdRoute
+    }
   }
 }
+
+interface MonitorsMonitorIdRouteChildren {
+  MonitorsMonitorIdZonesRoute: typeof MonitorsMonitorIdZonesRoute
+}
+
+const MonitorsMonitorIdRouteChildren: MonitorsMonitorIdRouteChildren = {
+  MonitorsMonitorIdZonesRoute: MonitorsMonitorIdZonesRoute,
+}
+
+const MonitorsMonitorIdRouteWithChildren =
+  MonitorsMonitorIdRoute._addFileChildren(MonitorsMonitorIdRouteChildren)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LoginRoute: LoginRoute,
   EventsEventIdRoute: EventsEventIdRoute,
-  MonitorsMonitorIdRoute: MonitorsMonitorIdRoute,
+  MonitorsMonitorIdRoute: MonitorsMonitorIdRouteWithChildren,
   SettingsServersRoute: SettingsServersRoute,
   SettingsSessionsRoute: SettingsSessionsRoute,
+  SettingsStateRoute: SettingsStateRoute,
   SettingsStorageRoute: SettingsStorageRoute,
   SettingsUsersRoute: SettingsUsersRoute,
   AuditIndexRoute: AuditIndexRoute,
