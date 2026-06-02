@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useSearch } from '@tanstack/react-router';
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import {
@@ -15,17 +15,22 @@ import {
   ChevronRight,
   Archive,
   Tag as TagIcon,
+  Download,
+  X,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
-import { getEvents, getEventThumbnailUrl } from '@/api/events';
+import { getEvents, getEventThumbnailUrl, getEventVideoUrl } from '@/api/events';
 import { getMonitors } from '@/api/monitors';
 import { listTags } from '@/api/tags';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
 import { BulkActionBar } from '@/features/events/BulkActionBar';
+import { ColumnChooser } from '@/features/events/ColumnChooser';
+import { formatBytes } from '@/lib/format';
+import { sumEventDurations, sumEventDiskSpace, formatDuration } from '@/features/events/duration';
 import type { ZmEvent } from '@/types';
 
 interface EventsSearchParams {
@@ -42,6 +47,18 @@ export const Route = createFileRoute('/events/')({
     archived: search.archived as boolean | undefined,
   }),
 });
+
+/**
+ * Lower bound for the default "last hour" start-time filter. Pulled into a
+ * helper so tests / time-mocked code paths can reason about it directly.
+ * Returns an ISO timestamp (`YYYY-MM-DDTHH:MM`) suitable for an `<input
+ * type="datetime-local">` value.
+ */
+export function defaultStartTimeLowerBound(now: Date = new Date()): string {
+  const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+  const tzOffset = oneHourAgo.getTimezoneOffset() * 60 * 1000;
+  return new Date(oneHourAgo.getTime() - tzOffset).toISOString().slice(0, 16);
+}
 
 function EventsPage() {
   const { isAuthenticated, accessToken } = useAuthStore();
@@ -66,7 +83,13 @@ function EventsPage() {
   );
   const [causeFilter, setCauseFilter] = useState<string>(searchParams.cause || 'all');
   const [archivedFilter, setArchivedFilter] = useState<'all' | 'archived' | 'unarchived'>('all');
-  const [dateFilter, setDateFilter] = useState<string>('');
+  // Default to "last hour" on first land — matches legacy ZM behaviour.
+  // Operators can clear it with the "Showing last hour only — clear" link
+  // that appears above the list.
+  const [dateFilter, setDateFilter] = useState<string>(() => defaultStartTimeLowerBound());
+  // Tracks whether the date filter is still the auto-seeded "now - 1h"
+  // value. Used to gate the clear-affordance.
+  const [defaultDateActive, setDefaultDateActive] = useState(true);
   const [page, setPage] = useState(1);
   const pageSize = 20;
 
@@ -147,11 +170,35 @@ function EventsPage() {
     });
   }, [events, searchQuery, notesQuery, tagFilter, monitorLookup]);
 
+  // Footer totals for the modern card layout — sum across the visible page.
+  const totals = useMemo(() => ({
+    duration: sumEventDurations(filteredEvents),
+    disk: sumEventDiskSpace(filteredEvents),
+  }), [filteredEvents]);
+
   // Get unique causes for filter
   const causes = useMemo(() => {
     const causeSet = new Set(events.map((e) => e.cause).filter((c): c is string => !!c));
     return Array.from(causeSet).sort();
   }, [events]);
+
+  // The "last hour only" hint should only appear when the auto-seeded date
+  // is still the only filter applied — once the operator narrows the list
+  // any further, the hint is just noise.
+  const noOtherFiltersApplied =
+    monitorFilter === 'all' &&
+    causeFilter === 'all' &&
+    archivedFilter === 'all' &&
+    tagFilter === 'all' &&
+    searchQuery.trim() === '' &&
+    notesQuery.trim() === '';
+  const showDefaultHourHint = defaultDateActive && dateFilter !== '' && noOtherFiltersApplied;
+
+  const clearDefaultDateFilter = () => {
+    setDateFilter('');
+    setDefaultDateActive(false);
+    setPage(1);
+  };
 
   if (!isAuthenticated) return null;
 
@@ -160,7 +207,7 @@ function EventsPage() {
       <main className="flex-1 p-6 overflow-auto">
           {/* Toolbar */}
           <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-4 flex-wrap">
               {/* Search */}
               <div className="relative">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
@@ -236,9 +283,10 @@ function EventsPage() {
                 <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
                 <input
                   type="date"
-                  value={dateFilter}
+                  value={dateFilter ? dateFilter.slice(0, 10) : ''}
                   onChange={(e) => {
                     setDateFilter(e.target.value);
+                    setDefaultDateActive(false);
                     setPage(1);
                   }}
                   className={clsx(
@@ -315,18 +363,59 @@ function EventsPage() {
               </div>
             </div>
 
-            {/* Refresh */}
-            <button
-              onClick={() => refetch()}
-              className="p-2 rounded-lg bg-surface border border-border-subtle text-text-muted hover:text-text-primary hover:border-cyan/50 transition-colors"
-            >
-              <RefreshCw className="w-4 h-4" />
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Column chooser */}
+              <ColumnChooser variant={skin === 'classic' ? 'classic' : 'modern'} />
+
+              {/* Refresh */}
+              <button
+                onClick={() => refetch()}
+                className="p-2 rounded-lg bg-surface border border-border-subtle text-text-muted hover:text-text-primary hover:border-cyan/50 transition-colors"
+                aria-label="Refresh events"
+              >
+                <RefreshCw className="w-4 h-4" />
+              </button>
+            </div>
           </div>
 
+          {/* Default last-hour filter hint — gives the operator a one-click
+              escape from the surprising "older events are hidden" default. */}
+          {showDefaultHourHint && (
+            <div
+              role="status"
+              data-testid="default-hour-hint"
+              className="mb-4 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-amber/40 bg-amber/10 text-amber text-sm"
+            >
+              <span className="flex items-center gap-2">
+                <Clock size={14} />
+                Showing events from the last hour only
+              </span>
+              <button
+                type="button"
+                onClick={clearDefaultDateFilter}
+                className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-amber/20 transition-colors"
+              >
+                <X size={12} />
+                Clear
+              </button>
+            </div>
+          )}
+
           {/* Event Count */}
-          <div className="mb-4 text-sm text-text-muted">
-            Showing {filteredEvents.length} of {eventsData?.total || 0} events
+          <div className="mb-4 flex items-center justify-between text-sm text-text-muted">
+            <span>
+              Showing {filteredEvents.length} of {eventsData?.total || 0} events
+            </span>
+            {filteredEvents.length > 0 && (
+              <span className="flex items-center gap-3 font-mono text-xs">
+                <span data-testid="modern-total-duration">
+                  Σ Duration {formatDuration(totals.duration)}
+                </span>
+                <span data-testid="modern-total-disk">
+                  Σ Disk {formatBytes(totals.disk)}
+                </span>
+              </span>
+            )}
           </div>
 
           {/* Events List — table in classic skin, card list in modern */}
@@ -353,6 +442,7 @@ function EventsPage() {
               monitorLookup={monitorLookup}
               selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
+              token={accessToken}
             />
           ) : (
             <div className="space-y-3 stagger-children">
@@ -381,6 +471,7 @@ function EventsPage() {
               <button
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
+                aria-label="Previous page"
                 className={clsx(
                   'p-2 rounded-lg border transition-colors',
                   page === 1
@@ -408,6 +499,8 @@ function EventsPage() {
                     <button
                       key={pageNum}
                       onClick={() => setPage(pageNum)}
+                      aria-label={`Go to page ${pageNum}`}
+                      aria-current={page === pageNum ? 'page' : undefined}
                       className={clsx(
                         'w-8 h-8 rounded-lg text-sm font-medium transition-colors',
                         page === pageNum
@@ -424,6 +517,7 @@ function EventsPage() {
               <button
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
+                aria-label="Next page"
                 className={clsx(
                   'p-2 rounded-lg border transition-colors',
                   page === totalPages
@@ -433,10 +527,95 @@ function EventsPage() {
               >
                 <ChevronRight className="w-4 h-4" />
               </button>
+
+              {/* Jump-to-page input — operators with hundreds of pages save a
+                  lot of clicks vs. the « 1 2 3 … » strip. */}
+              <JumpToPage
+                page={page}
+                totalPages={totalPages}
+                onJump={(n) => setPage(n)}
+              />
             </div>
           )}
       </main>
     </AppShell>
+  );
+}
+
+/**
+ * Numeric jump-to-page input. Submits on Enter or button press; ignores any
+ * value outside `1..totalPages`. Internal value resets to the current page
+ * whenever the parent navigates so the input always reflects reality.
+ */
+function JumpToPage({
+  page,
+  totalPages,
+  onJump,
+}: {
+  page: number;
+  totalPages: number;
+  onJump: (n: number) => void;
+}) {
+  const [value, setValue] = useState(String(page));
+  const inputRef = useRef<HTMLInputElement | null>(null);
+
+  // Keep the local input synced with the canonical page when navigation
+  // happens via the « / » buttons or the page-number strip.
+  useEffect(() => {
+    setValue(String(page));
+  }, [page]);
+
+  const submit = () => {
+    const n = Number(value);
+    if (!Number.isFinite(n) || !Number.isInteger(n)) {
+      setValue(String(page));
+      return;
+    }
+    if (n < 1 || n > totalPages) {
+      setValue(String(page));
+      return;
+    }
+    if (n === page) return;
+    onJump(n);
+  };
+
+  return (
+    <form
+      role="search"
+      aria-label="Jump to page"
+      onSubmit={(e) => {
+        e.preventDefault();
+        submit();
+      }}
+      className="flex items-center gap-1 ml-2"
+    >
+      <span className="text-xs text-text-muted">Page</span>
+      <input
+        ref={inputRef}
+        type="number"
+        inputMode="numeric"
+        min={1}
+        max={totalPages}
+        value={value}
+        onChange={(e) => setValue(e.target.value)}
+        onBlur={submit}
+        aria-label="Jump to page"
+        className={clsx(
+          'w-14 px-2 py-1 rounded text-sm text-center font-mono',
+          'bg-surface border border-border-subtle text-text-primary',
+          'focus:outline-none focus:border-cyan/50',
+          // Strip native number-input spinners — they're noisy at small sizes.
+          '[appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none',
+        )}
+      />
+      <span className="text-xs text-text-muted">of {totalPages}</span>
+      <button
+        type="submit"
+        className="px-2 py-1 rounded text-xs text-cyan border border-cyan/40 hover:bg-cyan/15 transition-colors"
+      >
+        Go
+      </button>
+    </form>
   );
 }
 
@@ -611,6 +790,25 @@ function EventCard({
         )}
       </div>
       </Link>
+
+      {/* Per-row Download Video — sits outside the <Link> so clicking it
+          doesn't navigate to event-detail. */}
+      <a
+        href={getEventVideoUrl(event.id, token ?? undefined)}
+        target="_blank"
+        rel="noopener noreferrer"
+        download={`event-${event.id}.mp4`}
+        aria-label={`Download video for event ${event.id}`}
+        title="Download video"
+        className={clsx(
+          'flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0',
+          'border border-border-subtle text-text-muted',
+          'hover:border-cyan/50 hover:text-cyan transition-colors',
+        )}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <Download size={14} />
+      </a>
     </div>
   );
 }

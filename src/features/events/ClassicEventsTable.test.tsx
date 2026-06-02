@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ZmEvent } from '@/types';
@@ -14,6 +14,13 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 const { ClassicEventsTable } = await import('./ClassicEventsTable');
+const { useEventsColumnsStore } = await import('@/stores/eventsColumns');
+
+// Reset column-visibility to defaults before each test so suite ordering
+// can't leak hidden/shown column choices across cases.
+beforeEach(() => {
+  useEventsColumnsStore.getState().resetDefaults();
+});
 
 function makeEvent(over: Partial<ZmEvent> = {}): ZmEvent {
   return {
@@ -179,7 +186,9 @@ describe('ClassicEventsTable — selection', () => {
 });
 
 describe('ClassicEventsTable — archived events', () => {
-  it('renders the "Arch" badge for archived events', () => {
+  it('renders the "Arch" badge for archived events when the Archived column is on', () => {
+    // Archived column is off-by-default; toggle it on so the badge renders.
+    useEventsColumnsStore.getState().toggle('archived');
     render(
       <ClassicEventsTable
         events={[makeEvent({ id: 1, archived: 1 })]}
