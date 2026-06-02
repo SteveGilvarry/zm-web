@@ -1,6 +1,6 @@
-import { createFileRoute, Link } from '@tanstack/react-router';
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { clsx } from 'clsx';
 import {
   ArrowLeft,
@@ -19,16 +19,35 @@ import {
   SkipBack,
   SkipForward,
   Tag as TagIcon,
+  Layers,
+  BarChart3,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
+  FileVideo,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
-import { getEvent, getEventVideoUrl, getEventThumbnailUrl, deleteEvent } from '@/api/events';
+import {
+  getEvent,
+  getEvents,
+  getEventVideoUrl,
+  getEventThumbnailUrl,
+  deleteEvent,
+} from '@/api/events';
 import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import {
+  useEventPlaybackStore,
+  scaleToMaxWidth,
+  SCALE_OPTIONS,
+  REPLAY_MODE_OPTIONS,
+} from '@/stores/eventPlayback';
 import type { CSSProperties } from 'react';
 import { TagChips } from '@/features/events/TagChips';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
+import { ZonesOverlay } from '@/features/events/ZonesOverlay';
+import { formatBytes } from '@/lib/format';
 
 export const Route = createFileRoute('/events/$eventId')({
   component: EventDetailPage,
@@ -38,6 +57,14 @@ function EventDetailPage() {
   const { eventId } = Route.useParams();
   const { isAuthenticated, accessToken } = useAuthStore();
   const queryClient = useQueryClient();
+  const navigate = useNavigate();
+
+  const {
+    replayMode, setReplayMode,
+    scale, setScale,
+    showZones, setShowZones,
+    showStats, setShowStats,
+  } = useEventPlaybackStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
@@ -69,6 +96,49 @@ function EventDetailPage() {
     queryFn: () => getMonitor(event!.monitor_id),
     enabled: isAuthenticated && !!event?.monitor_id,
   });
+
+  // ----- Prev / next event navigation -----------------------------------
+  //
+  // Pull a page of events from the same monitor (or all monitors if the
+  // current event has no monitor_id) sorted by id ascending. We then find
+  // the current id's index and use index±1 to get the adjacent ids.
+  //
+  // page_size=100 means we cover ~100 events around the current one; for a
+  // typical operator clicking through recent events this is plenty without
+  // putting heavy load on the backend.
+  const { data: neighborhood } = useQuery({
+    queryKey: ['eventNeighborhood', event?.monitor_id ?? null, id],
+    queryFn: () => getEvents({
+      monitor_id: event?.monitor_id,
+      sort: 'id',
+      direction: 'asc',
+      page_size: 100,
+    }),
+    enabled: isAuthenticated && !!event,
+  });
+
+  const { prevEventId, nextEventId } = useMemo(() => {
+    if (!neighborhood?.items?.length) return { prevEventId: null, nextEventId: null };
+    const items = neighborhood.items;
+    const idx = items.findIndex((e) => e.id === id);
+    if (idx === -1) return { prevEventId: null, nextEventId: null };
+    return {
+      prevEventId: idx > 0 ? items[idx - 1].id : null,
+      nextEventId: idx < items.length - 1 ? items[idx + 1].id : null,
+    };
+  }, [neighborhood, id]);
+
+  // When playback ends, apply the replay-mode policy. `single` does nothing
+  // (the video just stops); `all` and `gapless` navigate to the next event
+  // (only difference: gapless skips the intra-load delay — we honour it by
+  // navigating immediately on `ended`, vs `all` which we also do but
+  // future-proofed for a real delay if we want one).
+  const handleVideoEnded = () => {
+    setIsPlaying(false);
+    if ((replayMode === 'all' || replayMode === 'gapless') && nextEventId != null) {
+      navigate({ to: '/events/$eventId', params: { eventId: String(nextEventId) } });
+    }
+  };
 
   // Delete mutation
   const deleteMutation = useMutation({
@@ -184,22 +254,35 @@ function EventDetailPage() {
   const thumbnailUrl = getEventThumbnailUrl(event.id, accessToken || undefined);
 
   // Container takes the camera's declared (post-rotation) aspect so a
-  // portrait camera gets a portrait box. The video element itself plays
-  // at its file-native orientation — no CSS rotation. This works because
-  // every backend we know of rotates the stored MP4 at write time, and
-  // Chrome / Safari both render those files correctly.
-  //
-  // Previous attempts to CSS-rotate the element based on monitor metadata
-  // double-rotated on Safari (Safari natively honours MP4 rotation atoms
-  // but reports raw videoWidth/videoHeight in the JS API, defeating any
-  // dimension-based detection). If a future install ever ships un-rotated
-  // files we'll re-add rotation as an opt-in toggle per monitor.
+  // portrait camera gets a portrait box. See git blame for the rotation
+  // saga — we deliberately do NOT CSS-rotate the element because every
+  // backend we know of rotates the stored MP4 at write time.
   const effW = event.width  || 16;
   const effH = event.height || 9;
   const videoContainerW = isFullscreen ? 16 : effW;
   const videoContainerH = isFullscreen ? 9  : effH;
   const useSwappedRotation = false;
   const videoElementStyle: CSSProperties | undefined = undefined;
+
+  // Source codec hint — falls back to "Unknown" when the backend hasn't
+  // stamped the event with a default_video filename yet (e.g. a still-
+  // recording event).
+  const codecHint = event.default_video?.trim() ? event.default_video : 'Unknown';
+
+  const navPrev = () => {
+    if (prevEventId != null) {
+      navigate({ to: '/events/$eventId', params: { eventId: String(prevEventId) } });
+    }
+  };
+  const navNext = () => {
+    if (nextEventId != null) {
+      navigate({ to: '/events/$eventId', params: { eventId: String(nextEventId) } });
+    }
+  };
+
+  // Scale → max-width style on the video frame container. `auto` leaves
+  // the container at column-width.
+  const playerMaxWidth = scaleToMaxWidth(scale);
 
   return (
     <AppShell title={event.name}>
@@ -217,13 +300,119 @@ function EventDetailPage() {
             <span className="text-text-primary">{event.name}</span>
           </div>
 
+          {/* Playback toolbar — prev/next, replay mode, scale, codec hint,
+              zones toggle, stats toggle. Sits above the grid so it spans
+              the whole width and is visible without scrolling. */}
+          <div
+            data-testid="event-playback-toolbar"
+            className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 rounded-lg border border-border-subtle bg-surface/40"
+          >
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                onClick={navPrev}
+                disabled={prevEventId == null}
+                aria-label="Previous event"
+                className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeftIcon size={14} />
+                Prev
+              </button>
+              <button
+                type="button"
+                onClick={navNext}
+                disabled={nextEventId == null}
+                aria-label="Next event"
+                className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                Next
+                <ChevronRightIcon size={14} />
+              </button>
+            </div>
+
+            <div className="h-5 w-px bg-border-subtle" />
+
+            <label className="flex items-center gap-1.5 text-xs text-text-muted">
+              <span className="font-mono uppercase tracking-[0.16em]">Replay</span>
+              <select
+                aria-label="Replay mode"
+                value={replayMode}
+                onChange={(e) => setReplayMode(e.target.value as typeof replayMode)}
+                className="px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+              >
+                {REPLAY_MODE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex items-center gap-1.5 text-xs text-text-muted">
+              <span className="font-mono uppercase tracking-[0.16em]">Scale</span>
+              <select
+                aria-label="Scale"
+                value={scale}
+                onChange={(e) => setScale(e.target.value as typeof scale)}
+                className="px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+              >
+                {SCALE_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <div
+              data-testid="codec-hint"
+              title={`Source codec: ${codecHint}`}
+              className="flex items-center gap-1.5 px-2 py-1 text-xs rounded border border-border-subtle bg-surface/70 text-text-secondary"
+            >
+              <FileVideo size={12} />
+              <span className="font-mono uppercase tracking-[0.16em] text-text-muted">Codec</span>
+              <span className="font-mono">{codecHint}</span>
+            </div>
+
+            <div className="flex-1" />
+
+            <button
+              type="button"
+              onClick={() => setShowZones(!showZones)}
+              aria-pressed={showZones}
+              className={clsx(
+                'flex items-center gap-1 px-2 py-1 text-xs rounded border transition-colors',
+                showZones
+                  ? 'border-cyan/50 bg-cyan/15 text-cyan'
+                  : 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan',
+              )}
+            >
+              <Layers size={14} />
+              {showZones ? 'Hide Zones' : 'Show Zones'}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowStats(!showStats)}
+              aria-pressed={showStats}
+              className={clsx(
+                'flex items-center gap-1 px-2 py-1 text-xs rounded border transition-colors',
+                showStats
+                  ? 'border-cyan/50 bg-cyan/15 text-cyan'
+                  : 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan',
+              )}
+            >
+              <BarChart3 size={14} />
+              {showStats ? 'Hide Stats' : 'Stats'}
+            </button>
+          </div>
+
           <div className="grid grid-cols-12 gap-6">
             {/* Video Player - 8 columns */}
             <div className="col-span-8 space-y-6">
               <Panel noPadding className="overflow-hidden">
                 <div
-                  className="relative bg-black"
-                  style={{ aspectRatio: `${videoContainerW} / ${videoContainerH}` }}
+                  className="relative bg-black mx-auto"
+                  style={{
+                    aspectRatio: `${videoContainerW} / ${videoContainerH}`,
+                    maxWidth: playerMaxWidth,
+                  }}
                 >
                   {/* Video element — rotated cameras need a swap-dimensions
                       + rotate trick so the portrait content fills the
@@ -238,8 +427,18 @@ function EventDetailPage() {
                     onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
-                    onEnded={() => setIsPlaying(false)}
+                    onEnded={handleVideoEnded}
                   />
+
+                  {/* Zones overlay — only mounted when toggle is on so we
+                      don't fetch the monitor's zone list otherwise. */}
+                  {showZones && event.monitor_id > 0 && (
+                    <ZonesOverlay
+                      monitorId={event.monitor_id}
+                      monitorWidth={event.width || 1920}
+                      monitorHeight={event.height || 1080}
+                    />
+                  )}
 
                   {/* Play overlay when paused */}
                   {!isPlaying && (
@@ -320,6 +519,48 @@ function EventDetailPage() {
                   </div>
                 </div>
               </Panel>
+
+              {/* Stats panel — collapsible per-event diagnostics. Pulled
+                  from the existing event payload, no extra fetch. */}
+              {showStats && (
+                <Panel title="Event Stats" icon={<BarChart3 size={16} />}>
+                  <div
+                    data-testid="event-stats-panel"
+                    className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm"
+                  >
+                    <StatRow label="Alarm Frames" value={event.alarm_frames ?? 0} />
+                    <StatRow label="Total Frames" value={event.frames ?? 0} />
+                    <StatRow label="Tot Score"    value={event.tot_score ?? 0} />
+                    <StatRow label="Avg Score"    value={event.avg_score ?? 0} />
+                    <StatRow label="Max Score"    value={event.max_score ?? 0} />
+                    <StatRow
+                      label="Duration"
+                      value={`${Math.round(event.length ?? 0)}s`}
+                    />
+                    <StatRow
+                      label="Disk Space"
+                      value={formatBytes(event.disk_space ?? 0)}
+                    />
+                    <StatRow
+                      label="Start"
+                      value={startTime ? startTime.toLocaleString() : '—'}
+                    />
+                    <StatRow
+                      label="End"
+                      value={endTime ? endTime.toLocaleString() : '—'}
+                    />
+                    <StatRow
+                      label="Resolution"
+                      value={`${event.width}x${event.height}`}
+                    />
+                    <StatRow label="Codec" value={codecHint} />
+                    <StatRow
+                      label="Archived"
+                      value={event.archived === 1 ? 'Yes' : 'No'}
+                    />
+                  </div>
+                </Panel>
+              )}
 
               {/* Frame Scrubber — per-frame stepper, score-graded ticks */}
               <Panel>
@@ -518,6 +759,7 @@ function EventDetailPage() {
                   <a
                     href={videoUrl}
                     download
+                    title="Backend generates the MP4 on demand (Range-supported) and streams it as a download."
                     className={clsx(
                       'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
                       'bg-surface border border-border-subtle',
@@ -551,5 +793,17 @@ function EventDetailPage() {
           </div>
       </main>
     </AppShell>
+  );
+}
+
+/** Two-cell label/value row used inside the stats panel. */
+function StatRow({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle/50 py-1">
+      <span className="text-text-muted text-xs font-mono uppercase tracking-[0.14em]">
+        {label}
+      </span>
+      <span className="font-mono text-text-primary tabular-nums">{value}</span>
+    </div>
   );
 }
