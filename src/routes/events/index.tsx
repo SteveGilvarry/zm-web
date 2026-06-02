@@ -103,7 +103,7 @@ function EventsPage() {
         monitor_id: monitorFilter === 'all' ? undefined : monitorFilter,
         cause: causeFilter === 'all' ? undefined : causeFilter,
         archived: archivedFilter === 'all' ? undefined : archivedFilter === 'archived',
-        start_date: dateFilter || undefined,
+        start_time: dateFilter || undefined,
       }),
     enabled: isAuthenticated,
     refetchInterval: 30000,

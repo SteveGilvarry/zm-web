@@ -3,6 +3,7 @@ import { Plus, X } from 'lucide-react';
 import type {
   FilterQuery, FilterRule, FilterField, FilterOperator, FilterConjunction,
 } from '@/api/filters';
+import { FILTER_OPERATOR_LABELS } from '@/api/filters';
 import type { Monitor } from '@/types';
 
 interface RuleBuilderProps {
@@ -24,19 +25,36 @@ const FIELDS: Array<{ value: FilterField; label: string; kind: 'string' | 'numbe
   { value: 'start_date_time', label: 'Start date/time', kind: 'date' },
 ];
 
+/**
+ * Per-field-kind operator menu. Mirrors legacy `Filter::opTypes()` but pruned
+ * to only the operators that make sense for the given column type. The full
+ * legacy set is exposed for string fields; numeric fields drop the regex /
+ * LIKE family; date fields restrict to comparison + IS NULL.
+ *
+ * `contains` / `starts` / `ends` are dashboard-native string operators we
+ * keep for back-compat with filters saved before P19. New rules default to
+ * the legacy tokens (`LIKE` etc.).
+ */
 const OPERATORS: Record<string, FilterOperator[]> = {
-  string:  ['=', '!=', 'contains', 'starts', 'ends'],
-  number:  ['=', '!=', '>', '<'],
-  monitor: ['=', '!='],
-  bool:    ['='],
-  date:    ['=', '>', '<'],
+  string:  [
+    '=', '!=', '=~', '!~', '=[]', '![]', 'LIKE', 'NOT LIKE',
+    'IS', 'IS NOT', 'contains', 'starts', 'ends',
+  ],
+  number:  ['=', '!=', '>', '>=', '<', '<=', '=[]', '![]', 'IS', 'IS NOT'],
+  monitor: ['=', '!=', '=[]', '![]'],
+  bool:    ['=', 'IS', 'IS NOT'],
+  date:    ['=', '!=', '>', '>=', '<', '<=', 'IS', 'IS NOT'],
 };
 
+const BRACKET_CHOICES = [0, 1, 2, 3];
+
 /**
- * Visual rule-row builder. Each row is `[conjunction] [field] [op] [value]
- * [remove]`. The conjunction column is hidden on the first row — it would be
- * meaningless. Adding a row appends with the same kind of value picker the
- * field implies (monitor picker, boolean toggle, date input, free text).
+ * Visual rule-row builder. Each row is
+ *   `[(] [cnj] [field] [op] [value] [)] [remove]`.
+ * The conjunction column is hidden on the first row — it would be meaningless.
+ * The bracket selects let operators group rules with classic precedence,
+ * e.g. `(rule AND rule) OR (rule AND rule)`. Selecting `0` (the default)
+ * inserts no parens — the row reads as a flat conjunction with its neighbours.
  */
 export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
   const updateRule = (idx: number, patch: Partial<FilterRule>) => {
@@ -55,6 +73,8 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
       operator: '=',
       value: monitors[0] ? String(monitors[0].id) : '',
       conjunction: 'and',
+      bracket_open: 0,
+      bracket_close: 0,
     };
     onChange({ ...query, rules: [...query.rules, next] });
   };
@@ -72,7 +92,7 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
         const opChoices = OPERATORS[fieldMeta.kind];
 
         return (
-          <div key={i} className="flex items-center gap-1.5">
+          <div key={i} className="flex items-center gap-1.5 flex-wrap">
             {/* Conjunction (hidden on first row — no preceding rule to join) */}
             {i === 0 ? (
               <span className="text-[10px] font-mono uppercase text-text-muted w-12 text-right">
@@ -88,6 +108,18 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
                 <option value="or">OR</option>
               </select>
             )}
+
+            {/* Open bracket — number of `(` inserted before this rule */}
+            <select
+              aria-label="Open brackets"
+              value={rule.bracket_open ?? 0}
+              onChange={(e) => updateRule(i, { bracket_open: Number(e.target.value) })}
+              className="w-10 px-1 py-1 text-[10px] font-mono bg-surface border border-border-subtle rounded text-text-secondary focus:outline-none focus:border-cyan/50"
+            >
+              {BRACKET_CHOICES.map((n) => (
+                <option key={n} value={n}>{n === 0 ? '(' : '('.repeat(n)}</option>
+              ))}
+            </select>
 
             {/* Field */}
             <select
@@ -116,7 +148,7 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
               className="px-2 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
             >
               {opChoices.map((op) => (
-                <option key={op} value={op}>{op}</option>
+                <option key={op} value={op} title={FILTER_OPERATOR_LABELS[op]}>{op}</option>
               ))}
             </select>
 
@@ -127,6 +159,18 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
               monitors={monitors}
               onChange={(value) => updateRule(i, { value })}
             />
+
+            {/* Close bracket — number of `)` after this rule */}
+            <select
+              aria-label="Close brackets"
+              value={rule.bracket_close ?? 0}
+              onChange={(e) => updateRule(i, { bracket_close: Number(e.target.value) })}
+              className="w-10 px-1 py-1 text-[10px] font-mono bg-surface border border-border-subtle rounded text-text-secondary focus:outline-none focus:border-cyan/50"
+            >
+              {BRACKET_CHOICES.map((n) => (
+                <option key={n} value={n}>{n === 0 ? ')' : ')'.repeat(n)}</option>
+              ))}
+            </select>
 
             <button
               type="button"
@@ -164,7 +208,32 @@ function ValueInput({
   monitors: Monitor[];
   onChange: (v: string) => void;
 }) {
-  const cls = 'flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
+  const cls = 'flex-1 min-w-[8rem] px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
+
+  // IS / IS NOT have a restricted value set in legacy (`Filter::is_isnot_opTypes()`).
+  // Honour that to keep filters loaded from the legacy backend predictable.
+  if (rule.operator === 'IS' || rule.operator === 'IS NOT') {
+    return (
+      <select value={rule.value} onChange={(e) => onChange(e.target.value)} className={cls}>
+        <option value="NULL">NULL (unspecified)</option>
+        <option value="0">Zero</option>
+        <option value="1">Default / set</option>
+      </select>
+    );
+  }
+
+  // IN / NOT IN — free text but the runtime semantics are comma-separated.
+  if (rule.operator === '=[]' || rule.operator === '![]') {
+    return (
+      <input
+        type="text"
+        value={rule.value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder="comma,separated,list"
+        className={cls}
+      />
+    );
+  }
 
   if (kind === 'monitor') {
     return (

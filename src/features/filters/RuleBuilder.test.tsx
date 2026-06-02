@@ -90,3 +90,88 @@ describe('RuleBuilder — existing rules', () => {
     expect(next.rules[0].field).toBe('max_score');
   });
 });
+
+describe('RuleBuilder — P19 operator parity', () => {
+  it('exposes the full legacy operator set for string fields', () => {
+    const q: FilterQuery = {
+      rules: [
+        { field: 'cause', operator: '=', value: '', conjunction: 'and' },
+      ],
+    };
+    renderWithProviders(
+      <RuleBuilder query={q} monitors={monitors} onChange={() => {}} />,
+    );
+
+    // The operator dropdown is the second combobox (after field).
+    const selects = screen.getAllByRole('combobox');
+    const opSelect = selects.find((s) =>
+      Array.from(s.querySelectorAll('option')).some((o) => o.textContent === 'LIKE'),
+    );
+    expect(opSelect).toBeDefined();
+    const optionTexts = Array.from(opSelect!.querySelectorAll('option')).map((o) => o.textContent);
+    // Spot-check the new legacy tokens added in P19.
+    expect(optionTexts).toEqual(expect.arrayContaining([
+      '=', '!=', '=~', '!~', '=[]', '![]', 'LIKE', 'NOT LIKE', 'IS', 'IS NOT',
+    ]));
+  });
+
+  it('exposes >= and <= for numeric fields', () => {
+    const q: FilterQuery = {
+      rules: [
+        { field: 'max_score', operator: '=', value: '', conjunction: 'and' },
+      ],
+    };
+    renderWithProviders(
+      <RuleBuilder query={q} monitors={monitors} onChange={() => {}} />,
+    );
+    const selects = screen.getAllByRole('combobox');
+    const opSelect = selects.find((s) =>
+      Array.from(s.querySelectorAll('option')).some((o) => o.textContent === '>='),
+    );
+    expect(opSelect).toBeDefined();
+    const optionTexts = Array.from(opSelect!.querySelectorAll('option')).map((o) => o.textContent);
+    expect(optionTexts).toEqual(expect.arrayContaining(['>=', '<=', '=[]', '![]']));
+  });
+
+  it('renders the restricted value picker for IS / IS NOT', () => {
+    const q: FilterQuery = {
+      rules: [
+        { field: 'notes', operator: 'IS', value: 'NULL', conjunction: 'and' },
+      ],
+    };
+    renderWithProviders(
+      <RuleBuilder query={q} monitors={monitors} onChange={() => {}} />,
+    );
+    expect(screen.getByText(/NULL \(unspecified\)/i)).toBeInTheDocument();
+    expect(screen.getByText(/^Zero$/)).toBeInTheDocument();
+  });
+
+  it('shows the bracket-open / bracket-close selectors per row', () => {
+    const q: FilterQuery = {
+      rules: [
+        { field: 'cause', operator: '=', value: 'Motion', conjunction: 'and' },
+      ],
+    };
+    renderWithProviders(
+      <RuleBuilder query={q} monitors={monitors} onChange={() => {}} />,
+    );
+    expect(screen.getByLabelText(/open brackets/i)).toBeInTheDocument();
+    expect(screen.getByLabelText(/close brackets/i)).toBeInTheDocument();
+  });
+
+  it('emits bracket_open via onChange when adjusted', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn();
+    const q: FilterQuery = {
+      rules: [
+        { field: 'cause', operator: '=', value: 'Motion', conjunction: 'and', bracket_open: 0, bracket_close: 0 },
+      ],
+    };
+    renderWithProviders(
+      <RuleBuilder query={q} monitors={monitors} onChange={onChange} />,
+    );
+    await user.selectOptions(screen.getByLabelText(/open brackets/i), '2');
+    const next = onChange.mock.calls[0][0] as FilterQuery;
+    expect(next.rules[0].bracket_open).toBe(2);
+  });
+});

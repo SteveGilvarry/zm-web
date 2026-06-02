@@ -70,6 +70,59 @@ describe('parseFilterQuery ⇄ serializeFilterQuery round-trip', () => {
     const round = parseFilterQuery(serializeFilterQuery(q));
     expect(round).toEqual(q);
   });
+
+  it('round-trips legacy operators (P19): =~, !~, =[], ![], IS, IS NOT, LIKE, NOT LIKE, >=, <=', () => {
+    const q: FilterQuery = {
+      rules: [
+        { field: 'cause',     operator: '=~',       value: '^Motion',       conjunction: 'and' },
+        { field: 'cause',     operator: '!~',       value: '.*spam.*',      conjunction: 'and' },
+        { field: 'monitor_id',operator: '=[]',      value: '1,2,3',         conjunction: 'and' },
+        { field: 'monitor_id',operator: '![]',      value: '7',             conjunction: 'and' },
+        { field: 'notes',     operator: 'IS',       value: 'NULL',          conjunction: 'and' },
+        { field: 'notes',     operator: 'IS NOT',   value: 'NULL',          conjunction: 'and' },
+        { field: 'name',      operator: 'LIKE',     value: '%cam%',         conjunction: 'and' },
+        { field: 'name',      operator: 'NOT LIKE', value: '%test%',        conjunction: 'and' },
+        { field: 'max_score', operator: '>=',       value: '50',            conjunction: 'and' },
+        { field: 'max_score', operator: '<=',       value: '90',            conjunction: 'and' },
+      ],
+    };
+    const round = parseFilterQuery(serializeFilterQuery(q));
+    expect(round.rules).toHaveLength(q.rules.length);
+    expect(round.rules.map((r) => r.operator)).toEqual(q.rules.map((r) => r.operator));
+  });
+
+  it('round-trips bracket grouping (obr/cbr equivalent)', () => {
+    const q: FilterQuery = {
+      rules: [
+        { field: 'monitor_id', operator: '=', value: '1', conjunction: 'and', bracket_open: 1, bracket_close: 0 },
+        { field: 'max_score',  operator: '>', value: '50', conjunction: 'and', bracket_open: 0, bracket_close: 1 },
+        { field: 'archived',   operator: '=', value: '0', conjunction: 'or',  bracket_open: 0, bracket_close: 0 },
+      ],
+    };
+    const round = parseFilterQuery(serializeFilterQuery(q));
+    expect(round.rules[0].bracket_open).toBe(1);
+    expect(round.rules[1].bracket_close).toBe(1);
+    expect(round.rules[2].conjunction).toBe('or');
+  });
+
+  it('round-trips filter-level options + actions through query_json', () => {
+    const q: FilterQuery = {
+      rules: [],
+      options: { background: true, concurrent: false, lock_rows: true },
+      actions: {
+        auto_video: true,
+        auto_execute: true, auto_execute_cmd: '/bin/echo %EI%',
+        auto_email: true, email_to: 'a@b', email_subject: 'subj',
+        email_body: 'body', email_format: 'Summary', email_server: 'smtp.local',
+        auto_message: false,
+        auto_copy: true, auto_copy_to: 2,
+        auto_move: true, auto_move_to: 3,
+      },
+    };
+    const round = parseFilterQuery(serializeFilterQuery(q));
+    expect(round.options).toEqual(q.options);
+    expect(round.actions).toEqual(q.actions);
+  });
 });
 
 describe('listFilters / getFilter', () => {
