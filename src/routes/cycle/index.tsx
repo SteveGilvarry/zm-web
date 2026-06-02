@@ -7,8 +7,10 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
+import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 
 export const Route = createFileRoute('/cycle/')({
   component: CyclePage,
@@ -19,6 +21,7 @@ const INTERVAL_OPTIONS = [5, 10, 20, 30, 60];
 
 function CyclePage() {
   const { isAuthenticated } = useAuthStore();
+  const skin = useUiStore((s) => s.skin);
 
   const { data: monitorsData } = useQuery({
     queryKey: ['monitors'],
@@ -110,9 +113,11 @@ function CyclePage() {
               </Link>
             </div>
 
-            {/* Stage — single big live stream. key={current.id} forces a clean
-                mount when the active monitor changes so the shared stream
-                manager acquires/releases correctly. */}
+            {/* Stage — modern uses a live WebRTC stream; classic uses the
+                refreshing snapshot (matches legacy ZM cycle, much lighter
+                weight). key={current.id} forces a clean mount when the
+                active monitor changes so the shared stream manager
+                acquires/releases correctly. */}
             <div className="flex-1 min-h-0 flex items-center justify-center">
               <div
                 className="relative max-w-full max-h-full"
@@ -122,14 +127,25 @@ function CyclePage() {
                   maxHeight: 'calc(100vh - 18rem)',
                 }}
               >
-                <StreamCell
-                  key={current.id}
-                  protocol="webrtc"
-                  monitorId={current.id}
-                  monitorName={current.name}
-                  orientation={current.orientation}
-                  autoStart
-                />
+                {skin === 'classic' ? (
+                  <MonitorPreview
+                    key={current.id}
+                    monitorId={current.id}
+                    monitorName={current.name}
+                    orientation={current.orientation}
+                    isActive={true}
+                    rotationFit="fit"
+                  />
+                ) : (
+                  <StreamCell
+                    key={current.id}
+                    protocol="webrtc"
+                    monitorId={current.id}
+                    monitorName={current.name}
+                    orientation={current.orientation}
+                    autoStart
+                  />
+                )}
               </div>
             </div>
 
