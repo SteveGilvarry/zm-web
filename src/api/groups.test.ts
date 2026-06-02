@@ -89,6 +89,30 @@ describe('createGroup / updateGroup / deleteGroup', () => {
     expect(body).toEqual({ name: 'Renamed' });
   });
 
+  it('updateGroup forwards parent_id when provided (even if backend ignores it today)', async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.put('/api/v3/groups/3', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 3, name: 'Renamed', parent_id: 7 });
+      }),
+    );
+    await updateGroup(3, 'Renamed', 7);
+    expect(body).toEqual({ name: 'Renamed', parent_id: 7 });
+  });
+
+  it('updateGroup forwards parent_id=null to detach from a parent', async () => {
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.put('/api/v3/groups/3', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 3, name: 'Top', parent_id: null });
+      }),
+    );
+    await updateGroup(3, 'Top', null);
+    expect(body).toEqual({ name: 'Top', parent_id: null });
+  });
+
   it('deleteGroup DELETEs /groups/{id}', async () => {
     let id: string | undefined;
     server.use(

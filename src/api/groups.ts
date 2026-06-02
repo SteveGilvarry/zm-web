@@ -33,8 +33,24 @@ export async function createGroup(name: string, parentId?: number | null): Promi
   });
 }
 
-export async function updateGroup(id: number, name: string): Promise<Group> {
-  return apiPut<{ name: string }, Group>(`/groups/${id}`, { name });
+/**
+ * Rename a group (and, best-effort, re-parent it).
+ *
+ * NOTE on `parentId`: as of zm_api current OpenAPI spec `UpdateGroupRequest`
+ * only declares `name`, and the live backend silently ignores `parent_id`
+ * on PUT/PATCH. We still forward the field so that:
+ *   1. when the backend gains support no client change is needed;
+ *   2. the call site can be written symmetrically with `createGroup`.
+ * Parent assignment today therefore only sticks at create time.
+ */
+export async function updateGroup(
+  id: number,
+  name: string,
+  parentId?: number | null,
+): Promise<Group> {
+  const body: { name: string; parent_id?: number | null } = { name };
+  if (parentId !== undefined) body.parent_id = parentId;
+  return apiPut<typeof body, Group>(`/groups/${id}`, body);
 }
 
 export async function deleteGroup(id: number): Promise<void> {

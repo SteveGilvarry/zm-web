@@ -1,8 +1,16 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useMemo, useState, type FormEvent } from 'react';
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
-import { Users, Plus, Trash2, Monitor as MonitorIcon, Check, X } from 'lucide-react';
+import {
+  Users,
+  Plus,
+  Trash2,
+  Monitor as MonitorIcon,
+  Check,
+  X,
+  Pencil,
+} from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
@@ -12,6 +20,7 @@ import {
   listGroups,
   listGroupMonitors,
   createGroup,
+  updateGroup,
   deleteGroup,
   attachMonitorToGroup,
   detachMonitorFromGroup,
@@ -19,6 +28,8 @@ import {
   type GroupMonitor,
 } from '@/api/groups';
 import type { Monitor } from '@/types';
+import { buildGroupTree, getDescendantGroups } from '@/features/groups/tree';
+import { GroupEditDialog } from '@/features/groups/GroupEditDialog';
 
 export const Route = createFileRoute('/groups/')({
   component: GroupsPage,
@@ -48,6 +59,9 @@ function GroupsPage() {
   const groupMonitors = groupMonitorsQ.data?.items ?? [];
   const monitors = monitorsQ.data?.items ?? [];
 
+  // Tree-flattened groups for indented rendering.
+  const tree = useMemo(() => buildGroupTree(groups), [groups]);
+
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const selected = useMemo(
     () => groups.find((g) => g.id === selectedId) ?? null,
@@ -66,18 +80,54 @@ function GroupsPage() {
   );
   const memberIds = useMemo(() => new Set(memberships.map((m) => m.monitor_id)), [memberships]);
 
+  /* ----- Mutations -------------------------------------------------------- */
+
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['groups'] });
     qc.invalidateQueries({ queryKey: ['groups-monitors'] });
   };
 
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editing, setEditing] = useState<Group | null>(null);
+  const [dialogError, setDialogError] = useState<string | null>(null);
+
+  const openCreate = () => {
+    setEditing(null);
+    setDialogError(null);
+    setDialogOpen(true);
+  };
+  const openEdit = (g: Group) => {
+    setEditing(g);
+    setDialogError(null);
+    setDialogOpen(true);
+  };
+  const closeDialog = () => {
+    setDialogOpen(false);
+    setEditing(null);
+    setDialogError(null);
+  };
+
   const createMutation = useMutation({
-    mutationFn: (name: string) => createGroup(name),
+    mutationFn: ({ name, parentId }: { name: string; parentId: number | null }) =>
+      createGroup(name, parentId),
     onSuccess: (g) => {
       invalidate();
       setSelectedId(g.id);
+      closeDialog();
     },
+    onError: (e: Error) => setDialogError(e.message),
   });
+
+  const updateMutation = useMutation({
+    mutationFn: ({ id, name, parentId }: { id: number; name: string; parentId: number | null }) =>
+      updateGroup(id, name, parentId),
+    onSuccess: () => {
+      invalidate();
+      closeDialog();
+    },
+    onError: (e: Error) => setDialogError(e.message),
+  });
+
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteGroup(id),
     onSuccess: () => {
@@ -95,32 +145,71 @@ function GroupsPage() {
     onSuccess: invalidate,
   });
 
+  const handleSubmit = ({ name, parentId }: { name: string; parentId: number | null }) => {
+    setDialogError(null);
+    if (editing) {
+      updateMutation.mutate({ id: editing.id, name, parentId });
+    } else {
+      createMutation.mutate({ name, parentId });
+    }
+  };
+
+  const handleDelete = (g: Group) => {
+    const descendants = getDescendantGroups(groups, g.id);
+    let message: string;
+    if (descendants.length === 0) {
+      message = `Delete group "${g.name}"?`;
+    } else {
+      const list = descendants.slice(0, 5).map((d) => `  - ${d.name}`).join('\n');
+      const extra = descendants.length > 5 ? `\n  …and ${descendants.length - 5} more` : '';
+      message =
+        `Delete "${g.name}" and its ${descendants.length} sub-group` +
+        (descendants.length === 1 ? '' : 's') +
+        `?\n\nThe following will also be deleted:\n${list}${extra}`;
+    }
+    if (window.confirm(message)) deleteMutation.mutate(g.id);
+  };
+
   if (!isAuthenticated) return null;
 
   return (
     <AppShell title="Groups">
       <main className="flex-1 p-6 overflow-auto">
         <div className="grid grid-cols-12 gap-6">
-          {/* Left — group list + create */}
+          {/* Left — group tree + create */}
           <div className="col-span-4 space-y-4">
             <Panel title="Groups" icon={<Users size={16} />}>
-              <CreateGroupForm onSubmit={(n) => createMutation.mutate(n)} />
-              <ul className="mt-3 -mx-1 space-y-0.5 max-h-[60vh] overflow-y-auto">
-                {groups.length === 0 ? (
+              <div className="flex items-center justify-between mb-3">
+                <button
+                  onClick={openCreate}
+                  className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded bg-cyan/20 text-cyan hover:bg-cyan/30 transition-colors"
+                >
+                  <Plus size={12} />
+                  New group
+                </button>
+                <span className="text-[10px] text-text-muted">
+                  {groups.length} total
+                </span>
+              </div>
+              <ul
+                aria-label="Groups tree"
+                className="-mx-1 space-y-0.5 max-h-[60vh] overflow-y-auto"
+              >
+                {tree.length === 0 ? (
                   <li className="text-xs text-text-muted italic px-1 py-4 text-center">
-                    No groups yet. Create one above.
+                    No groups yet. Click "New group" to create one.
                   </li>
                 ) : (
-                  groups.map((g) => (
+                  tree.map(({ group, depth }) => (
                     <GroupRow
-                      key={g.id}
-                      group={g}
-                      memberCount={groupMonitors.filter((gm) => gm.group_id === g.id).length}
-                      active={effectiveSelected?.id === g.id}
-                      onSelect={() => setSelectedId(g.id)}
-                      onDelete={() => {
-                        if (confirm(`Delete group "${g.name}"?`)) deleteMutation.mutate(g.id);
-                      }}
+                      key={group.id}
+                      group={group}
+                      depth={depth}
+                      memberCount={groupMonitors.filter((gm) => gm.group_id === group.id).length}
+                      active={effectiveSelected?.id === group.id}
+                      onSelect={() => setSelectedId(group.id)}
+                      onEdit={() => openEdit(group)}
+                      onDelete={() => handleDelete(group)}
                     />
                   ))
                 )}
@@ -166,53 +255,35 @@ function GroupsPage() {
           </div>
         </div>
       </main>
+
+      <GroupEditDialog
+        open={dialogOpen}
+        editing={editing}
+        groups={groups}
+        onClose={closeDialog}
+        onSubmit={handleSubmit}
+        pending={createMutation.isPending || updateMutation.isPending}
+        error={dialogError}
+      />
     </AppShell>
   );
 }
 
-function CreateGroupForm({ onSubmit }: { onSubmit: (name: string) => void }) {
-  const [name, setName] = useState('');
-  const handle = (e: FormEvent) => {
-    e.preventDefault();
-    const trimmed = name.trim();
-    if (!trimmed) return;
-    onSubmit(trimmed);
-    setName('');
-  };
-  return (
-    <form
-      onSubmit={handle}
-      className="flex items-center gap-2 px-2 py-1.5 rounded-md border border-border-subtle bg-surface"
-    >
-      <Plus size={12} className="text-text-muted" />
-      <input
-        value={name}
-        onChange={(e) => setName(e.target.value)}
-        placeholder="New group name"
-        className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted focus:outline-none"
-      />
-      <button
-        type="submit"
-        disabled={!name.trim()}
-        className="px-2 py-0.5 text-[10px] font-medium rounded bg-cyan/20 text-cyan hover:bg-cyan/30 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-      >
-        Create
-      </button>
-    </form>
-  );
-}
-
 function GroupRow({
-  group, memberCount, active, onSelect, onDelete,
+  group, depth, memberCount, active, onSelect, onEdit, onDelete,
 }: {
   group: Group;
+  depth: number;
   memberCount: number;
   active: boolean;
   onSelect: () => void;
+  onEdit: () => void;
   onDelete: () => void;
 }) {
+  // 16px per depth level — visually obvious, doesn't blow up the column.
+  const indentPx = depth * 16;
   return (
-    <li>
+    <li data-depth={depth}>
       <div
         className={clsx(
           'flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors group',
@@ -220,7 +291,11 @@ function GroupRow({
             ? 'bg-cyan/10 border border-cyan/30'
             : 'border border-transparent hover:bg-surface/60',
         )}
+        style={{ paddingLeft: `${8 + indentPx}px` }}
       >
+        {depth > 0 ? (
+          <span aria-hidden className="text-text-muted text-[10px] -ml-1.5">↳</span>
+        ) : null}
         <button
           onClick={onSelect}
           className="flex-1 text-left text-xs min-w-0"
@@ -231,6 +306,13 @@ function GroupRow({
           <span className="text-[10px] text-text-muted">
             {memberCount} monitor{memberCount === 1 ? '' : 's'}
           </span>
+        </button>
+        <button
+          onClick={onEdit}
+          aria-label={`Edit group ${group.name}`}
+          className="p-1 rounded text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors opacity-0 group-hover:opacity-100"
+        >
+          <Pencil size={12} />
         </button>
         <button
           onClick={onDelete}
