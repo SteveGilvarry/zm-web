@@ -28,6 +28,9 @@ export interface UserClaims {
   iat: number;
   exp: number;
   user: string;
+  /** Numeric ZoneMinder user id (`uid` claim). Backend populates this on
+   *  successful auth; older tokens may lack it, hence optional. */
+  uid?: number;
 }
 
 // ============================================

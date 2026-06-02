@@ -16,6 +16,7 @@ import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useMontageStore } from '@/stores/montage';
 import { MosaicView } from '@/features/montage/MosaicView';
+import { SavedLayoutsMenu } from '@/features/montage/SavedLayoutsMenu';
 import {
   bannerLayout,
   gridLayout,
@@ -173,6 +174,13 @@ function MontagePage() {
                 </button>
               ))}
             </div>
+
+            {/* Saved-layout CRUD — pick a named arrangement, save the
+                current one, or rename / delete the loaded one. */}
+            <SavedLayoutsMenu
+              currentTree={tree}
+              onLoad={(next) => setTree(next)}
+            />
 
             {/* Protocol toggle */}
             <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
