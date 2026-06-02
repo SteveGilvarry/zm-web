@@ -58,6 +58,24 @@ export async function deleteZone(id: number): Promise<void> {
 }
 
 /* ------------------------------------------------------------------------ */
+/*  Zone presets                                                            */
+/* ------------------------------------------------------------------------ */
+
+export interface ZonePreset {
+  id: number;
+  name: string;
+  type: string;
+  units: string;
+  check_method: string;
+}
+
+export async function listZonePresets(): Promise<PaginatedResponse<ZonePreset>> {
+  return apiGet<PaginatedResponse<ZonePreset>>('/zone-presets', {
+    page: 1, page_size: 100,
+  });
+}
+
+/* ------------------------------------------------------------------------ */
 /*  Polygon utilities                                                       */
 /* ------------------------------------------------------------------------ */
 

@@ -26,6 +26,16 @@ afterAll(() => {
   useAuthStore.getState().clearAuth();
 });
 
+// Default preset handler shared by every test — most tests don't care about
+// presets, but the editor always queries them on mount.
+beforeEach(() => {
+  server.use(
+    http.get('/api/v3/zone-presets', () => HttpResponse.json({
+      items: [], total: 0, per_page: 100, current_page: 1, last_page: 1,
+    })),
+  );
+});
+
 const zoneFixture = {
   id: 7,
   monitor_id: 1,
@@ -237,5 +247,109 @@ describe('ZoneEditor — polygon midpoint insertion', () => {
 
     fireEvent.pointerDown(midDots[0]);
     await waitFor(() => expect(screen.getByText(/5 vertices/i)).toBeInTheDocument());
+  });
+});
+
+describe('ZoneEditor — units toggle', () => {
+  it('starts a new zone in Pixels and switches to Percent on toggle', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v3/monitors/1/zones', () =>
+      HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+    ));
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+
+    await user.click(screen.getByRole('button', { name: /new/i }));
+
+    // Pixels is active by default.
+    const pixelsBtn = screen.getByRole('button', { name: 'Pixels' });
+    const percentBtn = screen.getByRole('button', { name: 'Percent' });
+    expect(pixelsBtn.className).toMatch(/border-cyan/);
+
+    await user.click(percentBtn);
+    expect(percentBtn.className).toMatch(/border-cyan/);
+  });
+
+  it('serialises Percent units in the create POST body', async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.get('/api/v3/monitors/1/zones', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+      ),
+      http.post('/api/v3/monitors/1/zones', async ({ request }) => {
+        body = await request.json() as Record<string, unknown>;
+        return HttpResponse.json({ id: 99 });
+      }),
+    );
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    await user.click(screen.getByRole('button', { name: 'Percent' }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(body.units).toBe('Percent'));
+  });
+});
+
+describe('ZoneEditor — type hint', () => {
+  it('shows a hint matching the selected zone type', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v3/monitors/1/zones', () =>
+      HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+    ));
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    // Default type Active → "Triggers alarms…" hint visible.
+    expect(screen.getByText(/triggers alarms on motion/i)).toBeInTheDocument();
+
+    // Switch to Privacy → its hint replaces the prior one.
+    await user.selectOptions(screen.getByDisplayValue('Active'), 'Privacy');
+    expect(screen.getByText(/region is blacked out/i)).toBeInTheDocument();
+  });
+});
+
+describe('ZoneEditor — zone presets', () => {
+  it('does NOT render the preset dropdown when no presets are configured', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v3/monitors/1/zones', () =>
+      HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+    ));
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    expect(screen.queryByText(/apply preset/i)).toBeNull();
+  });
+
+  it('applies a preset to the draft when selected from the dropdown', async () => {
+    const user = userEvent.setup();
+    // Override the default empty-preset handler.
+    server.use(
+      http.get('/api/v3/zone-presets', () => HttpResponse.json({
+        items: [
+          { id: 1, name: 'Front Path', type: 'Active', units: 'Pixels', check_method: 'Blobs' },
+          { id: 2, name: 'Backyard Privacy', type: 'Privacy', units: 'Pixels', check_method: 'AlarmedPixels' },
+        ],
+        total: 2, per_page: 100, current_page: 1, last_page: 1,
+      })),
+      http.get('/api/v3/monitors/1/zones', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+      ),
+    );
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    await waitFor(() => screen.getByText(/apply preset/i));
+
+    // Find the preset combobox by its placeholder option text.
+    const presetSelect = screen.getByText(/apply preset…/i).closest('select')!;
+    await user.selectOptions(presetSelect, '2');
+    // Type now reflects the preset's value.
+    expect(screen.getByDisplayValue('Privacy')).toBeInTheDocument();
   });
 });

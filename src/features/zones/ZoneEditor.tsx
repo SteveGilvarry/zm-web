@@ -4,6 +4,7 @@ import { clsx } from 'clsx';
 import { Plus, Save, Trash2, X, Square } from 'lucide-react';
 import {
   listZonesForMonitor, createZone, updateZone, deleteZone,
+  listZonePresets,
   parseCoords, serializeCoords, insertMidpoint,
   type Zone, type ZoneType, type Point,
 } from '@/api/zones';
@@ -24,6 +25,15 @@ const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string; label: st
   Privacy:    { stroke: '#ff3366', fill: 'rgba(255,51,102,0.22)', label: 'Privacy' },
 };
 const ZONE_TYPE_ORDER: ZoneType[] = ['Active', 'Inclusive', 'Exclusive', 'Preclusive', 'Inactive', 'Privacy'];
+
+const ZONE_TYPE_HINTS: Record<string, string> = {
+  Active:     'Triggers alarms on motion inside this region.',
+  Inclusive:  'Motion only counts if it also overlaps an Active zone.',
+  Exclusive:  'Motion in this region is ignored.',
+  Preclusive: 'If motion fills this region, the whole frame is rejected (camera shake).',
+  Inactive:   'Disabled — no detection here. Useful for parking it.',
+  Privacy:    'Region is blacked out in recordings and live view.',
+};
 
 /**
  * SVG-overlay polygon editor over a refreshing camera snapshot. Each vertex
@@ -47,11 +57,21 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
   // Drives the snapshot below the polygon — keeps the editor visually live.
   const snapshotUrl = useRefreshingSnapshot(monitorId, true);
 
+  // Presets define reusable defaults (name/type/units/check_method) the
+  // operator can apply to a new draft to avoid retyping a standard zone.
+  const presetsQ = useQuery({
+    queryKey: ['zonePresets'],
+    queryFn: listZonePresets,
+    staleTime: 5 * 60_000,
+  });
+  const presets = presetsQ.data?.items ?? [];
+
   const [selectedId, setSelectedId] = useState<number | 'new' | null>(null);
   const [draft, setDraft] = useState<{
     id: number | null;
     name: string;
     type: string;
+    units: 'Pixels' | 'Percent';
     points: Point[];
   } | null>(null);
 
@@ -62,6 +82,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
       id: z.id,
       name: z.name,
       type: z.type,
+      units: (z.units === 'Percent' ? 'Percent' : 'Pixels') as 'Pixels' | 'Percent',
       points: parseCoords(z.coords),
     });
   };
@@ -73,12 +94,39 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
       id: null,
       name: 'New zone',
       type: 'Active',
+      units: 'Pixels',
       points: [
         { x: width * m,         y: height * m         },
         { x: width * (1 - m),   y: height * m         },
         { x: width * (1 - m),   y: height * (1 - m)   },
         { x: width * m,         y: height * (1 - m)   },
       ],
+    });
+  };
+  // Switch units, converting the polygon's coords so it covers the same
+  // physical region. Pixels are absolute (0..width × 0..height); Percent
+  // is 0..100 of each axis so the same polygon would fit a different
+  // resolution monitor.
+  const convertUnits = (target: 'Pixels' | 'Percent') => {
+    if (!draft || draft.units === target) return;
+    const converted = draft.points.map((p) => {
+      if (target === 'Percent') {
+        return { x: (p.x / width) * 100, y: (p.y / height) * 100 };
+      }
+      return { x: (p.x / 100) * width, y: (p.y / 100) * height };
+    });
+    setDraft({ ...draft, units: target, points: converted });
+  };
+  // Apply a preset's name/type/units to the current draft (preserves
+  // whatever polygon the operator has drawn).
+  const applyPreset = (presetId: number) => {
+    const p = presets.find((x) => x.id === presetId);
+    if (!p || !draft) return;
+    setDraft({
+      ...draft,
+      name: p.name,
+      type: p.type,
+      units: (p.units === 'Percent' ? 'Percent' : 'Pixels') as 'Pixels' | 'Percent',
     });
   };
 
@@ -92,7 +140,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
         await createZone(monitorId, {
           name: draft.name,
           type: draft.type,
-          units: 'Pixels',
+          units: draft.units,
           coords,
           num_coords: draft.points.length,
         });
@@ -211,6 +259,40 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                 ))}
               </select>
             </Field>
+            <div className="text-[10px] text-text-muted italic px-1">
+              {ZONE_TYPE_HINTS[draft.type] ?? ''}
+            </div>
+            <Field label="Units">
+              <div className="flex items-center gap-1 text-[11px]">
+                <UnitToggleBtn
+                  active={draft.units === 'Pixels'}
+                  onClick={() => convertUnits('Pixels')}
+                  label="Pixels"
+                />
+                <UnitToggleBtn
+                  active={draft.units === 'Percent'}
+                  onClick={() => convertUnits('Percent')}
+                  label="Percent"
+                />
+              </div>
+            </Field>
+            {presets.length > 0 && (
+              <Field label="Preset">
+                <select
+                  defaultValue=""
+                  onChange={(e) => {
+                    if (e.target.value) applyPreset(Number(e.target.value));
+                    e.target.value = '';
+                  }}
+                  className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                >
+                  <option value="" disabled>Apply preset…</option>
+                  {presets.map((p) => (
+                    <option key={p.id} value={p.id}>{p.name}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
             <div className="text-[10px] text-text-muted">
               {draft.points.length} vertices · click an edge dot to insert ·
               Alt-click a vertex to remove
@@ -255,6 +337,25 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
       </label>
       {children}
     </div>
+  );
+}
+
+function UnitToggleBtn({ active, onClick, label }: {
+  active: boolean; onClick: () => void; label: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        'px-2 py-0.5 rounded border transition-colors',
+        active
+          ? 'border-cyan/50 bg-cyan/15 text-cyan'
+          : 'border-border-subtle text-text-muted hover:bg-surface',
+      )}
+    >
+      {label}
+    </button>
   );
 }
 
