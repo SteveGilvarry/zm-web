@@ -1,10 +1,11 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import {
-  X, Save, Undo2, Loader2, ChevronRight, AlertCircle,
+  X, Save, Undo2, Loader2, ChevronRight, AlertCircle, Eye, EyeOff,
 } from 'lucide-react';
 import { patchMonitor } from '@/api/monitors-crud';
+import { listControls } from '@/api/controls';
 import type { Monitor } from '@/types';
 import { TABS, type FieldDef, type TabDef } from './fields';
 
@@ -355,6 +356,7 @@ function FieldInput({
         rows={3}
         value={value == null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={field.placeholder}
         className={clsx(baseInput, 'font-mono text-xs leading-relaxed resize-y')}
       />
     );
@@ -369,6 +371,7 @@ function FieldInput({
           const raw = e.target.value;
           onChange(raw === '' ? null : Number(raw));
         }}
+        placeholder={field.placeholder}
         className={clsx(baseInput, 'font-mono tabular-nums')}
       />
     );
@@ -404,10 +407,17 @@ function FieldInput({
   }
 
   if (field.kind === 'select' && field.options) {
+    // Coerce back to number when the option values are numeric — keeps the
+    // PATCH body's types matching the backend schema (e.g. label_size:int,
+    // return_location:int) instead of stringifying them.
+    const optionsAreNumeric = field.options.every((o) => typeof o.value === 'number');
     return (
       <select
         value={value == null ? '' : String(value)}
-        onChange={(e) => onChange(e.target.value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          onChange(optionsAreNumeric ? Number(raw) : raw);
+        }}
         className={clsx(baseInput, 'cursor-pointer')}
       >
         {field.options.map((o) => (
@@ -417,14 +427,117 @@ function FieldInput({
     );
   }
 
+  if (field.kind === 'control-select') {
+    return <ControlSelect value={value} onChange={onChange} className={baseInput} />;
+  }
+
+  if (field.kind === 'password') {
+    return <PasswordInput value={value} onChange={onChange} className={baseInput} />;
+  }
+
   // text
   return (
     <input
       type="text"
       value={value == null ? '' : String(value)}
       onChange={(e) => onChange(e.target.value)}
+      placeholder={field.placeholder}
       className={clsx(baseInput, 'font-mono')}
     />
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Specialised inputs                                                      */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Password input with a visibility toggle. Mirrors the legacy ONVIF/source
+ * password fields which ship with an eye icon — operators expect to be able
+ * to verify what they're typing against the camera UI.
+ */
+function PasswordInput({
+  value,
+  onChange,
+  className,
+}: {
+  value: FieldValue;
+  onChange: (v: FieldValue) => void;
+  className: string;
+}) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <div className="relative">
+      <input
+        type={visible ? 'text' : 'password'}
+        value={value == null ? '' : String(value)}
+        onChange={(e) => onChange(e.target.value)}
+        autoComplete="new-password"
+        className={clsx(className, 'font-mono pr-9')}
+      />
+      <button
+        type="button"
+        onClick={() => setVisible((v) => !v)}
+        aria-label={visible ? 'Hide password' : 'Show password'}
+        className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
+      >
+        {visible ? <EyeOff size={14} /> : <Eye size={14} />}
+      </button>
+    </div>
+  );
+}
+
+/**
+ * Control-type dropdown — sources options from /api/v3/controls. We
+ * surface the friendly name in the option label, but the value is the
+ * numeric control_id so PATCH bodies carry the right FK type.
+ *
+ * While the list is loading we still render the select but mark it as
+ * disabled so the operator sees something rather than a blank gap. If the
+ * fetch fails we surface a tiny error line under the field — the editor's
+ * own save button stays enabled (the user might be backing out of an edit).
+ */
+function ControlSelect({
+  value,
+  onChange,
+  className,
+}: {
+  value: FieldValue;
+  onChange: (v: FieldValue) => void;
+  className: string;
+}) {
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ['controls', { page_size: 200 }],
+    queryFn: () => listControls({ page: 1, page_size: 200 }),
+    staleTime: 5 * 60 * 1000,
+  });
+
+  const controls = data?.items ?? [];
+
+  return (
+    <div>
+      <select
+        value={value == null ? '0' : String(value)}
+        onChange={(e) => {
+          const raw = e.target.value;
+          onChange(raw === '' || raw === '0' ? 0 : Number(raw));
+        }}
+        disabled={isLoading}
+        className={clsx(className, 'cursor-pointer')}
+      >
+        <option value="0">None</option>
+        {controls.map((c) => (
+          <option key={c.id} value={c.id}>
+            {c.name}{c.protocol ? ` (${c.protocol})` : ''}
+          </option>
+        ))}
+      </select>
+      {isError && (
+        <p className="text-[10px] text-crimson mt-1">
+          Could not load control list — save will still work if you don’t change this field.
+        </p>
+      )}
+    </div>
   );
 }
 

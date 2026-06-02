@@ -14,6 +14,9 @@ export type FieldKind =
   | 'number'
   | 'select'
   | 'toggle'
+  | 'password'
+  /** Dropdown sourced live from /api/v3/controls (PTZ-driver catalogue). */
+  | 'control-select'
   | 'group';
 
 export interface FieldDef {
@@ -25,6 +28,8 @@ export interface FieldDef {
   options?: Array<{ value: string | number; label: string }>;
   /** Optional width hint inside the 2-col grid. Default: 1 col. */
   span?: 1 | 2;
+  /** Optional placeholder for text-type inputs. */
+  placeholder?: string;
 }
 
 export interface TabDef {
@@ -123,6 +128,30 @@ const IMPORTANCE_OPTIONS = [
   { value: 'Normal', label: 'Normal' },
   { value: 'Less',   label: 'Less' },
   { value: 'Not',    label: 'Not important' },
+];
+
+/**
+ * Legacy ZM label-size enum stored as a small int (0–3). Maps to the four
+ * fonts the capture daemon bakes into JPEGs. Default lines up with the legacy
+ * "Default" font.
+ */
+const LABEL_SIZE_OPTIONS = [
+  { value: 0, label: 'Small' },
+  { value: 1, label: 'Default' },
+  { value: 2, label: 'Large' },
+  { value: 3, label: 'Extra Large' },
+];
+
+/**
+ * Legacy `ReturnLocation` is stored as an int. -1 disables auto-return;
+ * 0 sends the PTZ head back to its Home preset after the idle timer; any
+ * positive value matches a `ControlPresets` row id. We surface the two
+ * common sentinels here — operators with custom presets must edit them via
+ * the controlcaps editor.
+ */
+const RETURN_LOCATION_OPTIONS = [
+  { value: -1, label: 'None (no return)' },
+  { value: 0,  label: 'Home preset' },
 ];
 
 /* ------------------------------------------------------------------------ */
@@ -249,21 +278,91 @@ export const TABS: TabDef[] = [
     ],
   },
   {
+    id: 'timestamp',
+    label: 'Timestamp',
+    description: 'On-image timestamp label format and position.',
+    fields: [
+      { kind: 'text',   key: 'label_format',        label: 'Timestamp label format', span: 2,
+        placeholder: '%N - %d/%m/%y %H:%M:%S',
+        help: 'strftime-style format. %N = monitor name, %f = hundredths of a second, %Q = "show text" overlay.' },
+      { kind: 'number', key: 'label_x',             label: 'Timestamp label X',
+        help: 'Pixel offset from the left edge of the frame.' },
+      { kind: 'number', key: 'label_y',             label: 'Timestamp label Y',
+        help: 'Pixel offset from the top edge of the frame.' },
+      { kind: 'select', key: 'label_size',          label: 'Font size',
+        options: LABEL_SIZE_OPTIONS,
+        help: 'Bitmap font baked into the capture daemon. "Default" works for most resolutions.' },
+    ],
+  },
+  {
+    id: 'onvif',
+    label: 'ONVIF',
+    description: 'ONVIF camera-side endpoint + credentials. Used for events + PTZ on supported devices.',
+    fields: [
+      { kind: 'text',     key: 'onvif_url',            label: 'ONVIF URL', span: 2,
+        placeholder: 'http://192.168.0.10/onvif/device_service',
+        help: 'Device-service endpoint — usually shown in the camera’s ONVIF status page.' },
+      { kind: 'text',     key: 'onvif_username',       label: 'Username' },
+      { kind: 'password', key: 'onvif_password',       label: 'Password' },
+      { kind: 'text',     key: 'onvif_options',        label: 'ONVIF options', span: 2,
+        help: 'Free-form key=value pairs passed to the ONVIF client (e.g. ProfileToken=Profile_1).' },
+      { kind: 'toggle',   key: 'onvif_event_listener', label: 'ONVIF event listener',
+        help: 'Subscribe to the camera’s ONVIF event push (motion / tamper). Polled if disabled.' },
+      { kind: 'toggle',   key: 'use_onvif',            label: 'Use ONVIF',
+        help: 'Master switch — enable to drive PTZ and events via ONVIF instead of the vendor protocol.' },
+    ],
+  },
+  {
+    id: 'control',
+    label: 'Control',
+    description: 'PTZ driver selection, addressing, and motion-tracking behaviour.',
+    fields: [
+      { kind: 'toggle',         key: 'controllable',      label: 'Controllable', span: 2,
+        help: 'Master switch — when off, all PTZ inputs on this monitor are disabled.' },
+      { kind: 'control-select', key: 'control_id',        label: 'Control type', span: 2,
+        help: 'PTZ driver template from the Controls catalogue (Pelco-D, Hikvision, ONVIF …).' },
+      { kind: 'text',           key: 'control_device',    label: 'Control device',
+        placeholder: 'Profile_1',
+        help: 'Profile token (ONVIF) or serial device path (e.g. /dev/ttyS0).' },
+      { kind: 'text',           key: 'control_address',   label: 'Control address',
+        placeholder: 'user:pass@ip',
+        help: 'Override address — leave blank to reuse the monitor source credentials.' },
+      { kind: 'number',         key: 'auto_stop_timeout', label: 'Auto stop timeout (s)',
+        help: 'Stops a continuous PTZ move after N seconds even if no stop command arrives.' },
+      { kind: 'toggle',         key: 'track_motion',      label: 'Track motion',
+        help: 'When ON, the head moves to follow detected motion until the return delay elapses.' },
+      { kind: 'number',         key: 'track_delay',       label: 'Track delay (s)',
+        help: 'Seconds between motion-tracking moves.' },
+      { kind: 'select',         key: 'return_location',   label: 'Return location',
+        options: RETURN_LOCATION_OPTIONS,
+        help: 'Where the head returns to once tracking ends. Use the Controls editor for custom presets.' },
+      { kind: 'number',         key: 'return_delay',      label: 'Return delay (s)',
+        help: 'Idle seconds before the head returns to its return location.' },
+      { kind: 'toggle',         key: 'modect_during_ptz', label: 'Detect during PTZ', span: 2,
+        help: 'Run motion detection while the head is moving (usually off — produces false alarms).' },
+    ],
+  },
+  {
+    id: 'mqtt',
+    label: 'MQTT',
+    description: 'Per-monitor MQTT subscriptions. Broker connection settings live in Settings → Config (MQTT).',
+    fields: [
+      { kind: 'toggle', key: 'mqtt_enabled',       label: 'MQTT enabled', span: 2,
+        help: 'When ON, this monitor publishes event topics and listens on the subscriptions below.' },
+      { kind: 'text',   key: 'mqtt_subscriptions', label: 'MQTT subscriptions', span: 2,
+        placeholder: 'home/sensors/door, alarms/#',
+        help: 'Comma-separated topic patterns this monitor will subscribe to. Supports MQTT wildcards (+, #).' },
+    ],
+  },
+  {
     id: 'misc',
     label: 'Misc',
-    description: 'Branding, labels, geolocation.',
+    description: 'Branding, geolocation, and other low-traffic settings.',
     fields: [
       { kind: 'text',   key: 'web_colour',          label: 'Web colour',
         help: 'CSS colour used in lists / montage to identify this camera.' },
-      { kind: 'text',   key: 'label_format',        label: 'Label format', span: 2,
-        help: 'Timestamp / overlay format. Use %N for name, %Y/%m/%d/%H/%M/%S for time.' },
-      { kind: 'number', key: 'label_x',             label: 'Label X' },
-      { kind: 'number', key: 'label_y',             label: 'Label Y' },
-      { kind: 'number', key: 'label_size',          label: 'Label size' },
       { kind: 'text',   key: 'latitude',            label: 'Latitude' },
       { kind: 'text',   key: 'longitude',           label: 'Longitude' },
-      { kind: 'toggle', key: 'mqtt_enabled',        label: 'MQTT enabled' },
-      { kind: 'text',   key: 'mqtt_subscriptions',  label: 'MQTT subscriptions', span: 2 },
     ],
   },
 ];
