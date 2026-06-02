@@ -1,0 +1,67 @@
+import { test, expect } from './fixtures';
+
+/**
+ * Skin switcher — modern <-> classic round-trip. The choice persists via
+ * Zustand's persist middleware in localStorage under `zm-ui`, so a hard
+ * reload should keep the chosen skin. The classic shell renders a
+ * legacy-style top nav (the dashboard's centrepiece text "ZoneMinder" in
+ * amber); the modern shell renders a left <aside> sidebar.
+ */
+test.describe('Skin switching', () => {
+  test('switch modern → classic, persist across reload, switch back', async ({ loggedInPage: page }) => {
+    // Start from the modern Console — sidebar should be visible.
+    await page.goto('/');
+    await expect(page.locator('aside')).toBeVisible();
+
+    // Navigate to Settings (Appearance lives at the top of the settings page).
+    await page.goto('/settings');
+
+    // The Appearance panel exposes two cards: "Mission Control" and
+    // "Classic ZoneMinder". Click the Classic option.
+    await page.getByRole('button', { name: /classic zoneminder/i }).click();
+
+    // Classic shell mounts: the legacy top nav has the amber "ZoneMinder"
+    // brand and no <aside> sidebar.
+    await expect(page.getByText('ZoneMinder', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('aside')).toHaveCount(0);
+
+    // Persistence check — Zustand persist stores under `zm-ui`.
+    const stored = await page.evaluate(() => {
+      const raw = window.localStorage.getItem('zm-ui');
+      if (!raw) return null;
+      try {
+        return JSON.parse(raw).state.skin as string;
+      } catch {
+        return null;
+      }
+    });
+    expect(stored).toBe('classic');
+
+    // Hard reload — classic should still be selected.
+    await page.reload();
+    await expect(page.getByText('ZoneMinder', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator('aside')).toHaveCount(0);
+
+    // Switch back to Modern from the classic settings page.
+    // The Appearance panel is still on /settings under the classic skin.
+    await page.goto('/settings');
+    await page.getByRole('button', { name: /mission control/i }).click();
+
+    // Modern shell remounts: the sidebar comes back.
+    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+  });
+
+  test.afterEach(async ({ loggedInPage: page }) => {
+    // Restore modern skin so subsequent specs see the expected shell.
+    await page.evaluate(() => {
+      try {
+        const raw = window.localStorage.getItem('zm-ui');
+        const obj = raw ? JSON.parse(raw) : { state: {}, version: 0 };
+        obj.state = { ...(obj.state ?? {}), skin: 'modern' };
+        window.localStorage.setItem('zm-ui', JSON.stringify(obj));
+      } catch {
+        // ignore — best-effort cleanup
+      }
+    });
+  });
+});
