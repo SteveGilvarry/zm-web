@@ -27,6 +27,7 @@ import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
 import { Route as SettingsStateRouteImport } from './routes/settings/state'
 import { Route as SettingsSessionsRouteImport } from './routes/settings/sessions'
 import { Route as SettingsServersRouteImport } from './routes/settings/servers'
+import { Route as SettingsPtzControlsRouteImport } from './routes/settings/ptz-controls'
 import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
 import { Route as EventsEventIdRouteImport } from './routes/events/$eventId'
 import { Route as MonitorsMonitorIdZonesRouteImport } from './routes/monitors/$monitorId.zones'
@@ -121,6 +122,11 @@ const SettingsServersRoute = SettingsServersRouteImport.update({
   path: '/settings/servers',
   getParentRoute: () => rootRouteImport,
 } as any)
+const SettingsPtzControlsRoute = SettingsPtzControlsRouteImport.update({
+  id: '/settings/ptz-controls',
+  path: '/settings/ptz-controls',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MonitorsMonitorIdRoute = MonitorsMonitorIdRouteImport.update({
   id: '/monitors/$monitorId',
   path: '/monitors/$monitorId',
@@ -142,6 +148,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/monitors/$monitorId': typeof MonitorsMonitorIdRouteWithChildren
+  '/settings/ptz-controls': typeof SettingsPtzControlsRoute
   '/settings/servers': typeof SettingsServersRoute
   '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/state': typeof SettingsStateRoute
@@ -165,6 +172,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/monitors/$monitorId': typeof MonitorsMonitorIdRouteWithChildren
+  '/settings/ptz-controls': typeof SettingsPtzControlsRoute
   '/settings/servers': typeof SettingsServersRoute
   '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/state': typeof SettingsStateRoute
@@ -189,6 +197,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/events/$eventId': typeof EventsEventIdRoute
   '/monitors/$monitorId': typeof MonitorsMonitorIdRouteWithChildren
+  '/settings/ptz-controls': typeof SettingsPtzControlsRoute
   '/settings/servers': typeof SettingsServersRoute
   '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/state': typeof SettingsStateRoute
@@ -214,6 +223,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/events/$eventId'
     | '/monitors/$monitorId'
+    | '/settings/ptz-controls'
     | '/settings/servers'
     | '/settings/sessions'
     | '/settings/state'
@@ -237,6 +247,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/events/$eventId'
     | '/monitors/$monitorId'
+    | '/settings/ptz-controls'
     | '/settings/servers'
     | '/settings/sessions'
     | '/settings/state'
@@ -260,6 +271,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/events/$eventId'
     | '/monitors/$monitorId'
+    | '/settings/ptz-controls'
     | '/settings/servers'
     | '/settings/sessions'
     | '/settings/state'
@@ -284,6 +296,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   EventsEventIdRoute: typeof EventsEventIdRoute
   MonitorsMonitorIdRoute: typeof MonitorsMonitorIdRouteWithChildren
+  SettingsPtzControlsRoute: typeof SettingsPtzControlsRoute
   SettingsServersRoute: typeof SettingsServersRoute
   SettingsSessionsRoute: typeof SettingsSessionsRoute
   SettingsStateRoute: typeof SettingsStateRoute
@@ -430,6 +443,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsServersRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/settings/ptz-controls': {
+      id: '/settings/ptz-controls'
+      path: '/settings/ptz-controls'
+      fullPath: '/settings/ptz-controls'
+      preLoaderRoute: typeof SettingsPtzControlsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/monitors/$monitorId': {
       id: '/monitors/$monitorId'
       path: '/monitors/$monitorId'
@@ -470,6 +490,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   EventsEventIdRoute: EventsEventIdRoute,
   MonitorsMonitorIdRoute: MonitorsMonitorIdRouteWithChildren,
+  SettingsPtzControlsRoute: SettingsPtzControlsRoute,
   SettingsServersRoute: SettingsServersRoute,
   SettingsSessionsRoute: SettingsSessionsRoute,
   SettingsStateRoute: SettingsStateRoute,
