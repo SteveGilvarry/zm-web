@@ -4,9 +4,8 @@ import { getMonitors, getLiveSessions } from '@/api/monitors';
 import {
   getEvents,
   getEventCounts,
-  getEventCountsByMonitor,
-  type EventCountByMonitor,
 } from '@/api/events';
+import { listEventSummaries, type EventSummary } from '@/api/eventSummaries';
 import { getDaemons, getSystemStatus } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { bucketEventsByHour } from './bucketEvents';
@@ -22,15 +21,11 @@ export interface ConsoleData {
   isSystemRunning: boolean | undefined;
   systemStats: SystemStats | undefined;
   /**
-   * Per-monitor event counts over four timeframes. Lookup helper provided
-   * since the API returns flat arrays of {monitor_id, count}.
+   * Per-monitor event summaries — event counts AND disk_space for each of
+   * total / hour / day / week / month / archived. Sourced from a single
+   * /event-summaries call instead of four /events/counts-by-monitor calls.
    */
-  countsByMonitor: {
-    hour: EventCountByMonitor[];
-    day: EventCountByMonitor[];
-    week: EventCountByMonitor[];
-    month: EventCountByMonitor[];
-  };
+  summariesByMonitor: EventSummary[];
   /**
    * Last-24h hourly histogram per monitor, computed client-side from the
    * raw events list (no backend endpoint exists for this shape yet). Each
@@ -108,30 +103,13 @@ export function useConsoleData(): ConsoleData {
   });
 
 
-  // Per-monitor counts over 4 timeframes (hours).
-  const cbmHourQ = useQuery({
-    queryKey: ['eventCountsByMonitor', 1],
-    queryFn: () => getEventCountsByMonitor(1),
+  // One call replaces the four per-timeframe count queries below — the
+  // backend pre-calculates count + disk_space rollups for every timeframe.
+  const summariesQ = useQuery({
+    queryKey: ['eventSummaries'],
+    queryFn: () => listEventSummaries({ page: 1, page_size: 200 }),
     enabled: isAuthenticated,
     refetchInterval: 60_000,
-  });
-  const cbmDayQ = useQuery({
-    queryKey: ['eventCountsByMonitor', 24],
-    queryFn: () => getEventCountsByMonitor(24),
-    enabled: isAuthenticated,
-    refetchInterval: 60_000,
-  });
-  const cbmWeekQ = useQuery({
-    queryKey: ['eventCountsByMonitor', 168],
-    queryFn: () => getEventCountsByMonitor(168),
-    enabled: isAuthenticated,
-    refetchInterval: 120_000,
-  });
-  const cbmMonthQ = useQuery({
-    queryKey: ['eventCountsByMonitor', 720],
-    queryFn: () => getEventCountsByMonitor(720),
-    enabled: isAuthenticated,
-    refetchInterval: 300_000,
   });
 
   // Bucket the last-24h events into a per-monitor × per-hour histogram.
@@ -150,12 +128,7 @@ export function useConsoleData(): ConsoleData {
     daemons: daemonsQ.data?.daemons ?? [],
     isSystemRunning: systemQ.data?.running,
     systemStats: systemQ.data?.stats,
-    countsByMonitor: {
-      hour:  cbmHourQ.data  ?? [],
-      day:   cbmDayQ.data   ?? [],
-      week:  cbmWeekQ.data  ?? [],
-      month: cbmMonthQ.data ?? [],
-    },
+    summariesByMonitor: summariesQ.data?.items ?? [],
     hourlyByMonitor,
     loading: {
       monitors: monitorsQ.isLoading,
@@ -164,11 +137,25 @@ export function useConsoleData(): ConsoleData {
   };
 }
 
-/** Helper: count for a monitor in a given timeframe bucket. */
-export function lookupCount(
-  buckets: EventCountByMonitor[] | undefined,
+/** Empty-summary placeholder so callers can rely on a row always existing. */
+const EMPTY_SUMMARY: EventSummary = {
+  monitor_id: 0,
+  total_events: 0, total_event_disk_space: 0,
+  hour_events: 0, hour_event_disk_space: 0,
+  day_events: 0, day_event_disk_space: 0,
+  week_events: 0, week_event_disk_space: 0,
+  month_events: 0, month_event_disk_space: 0,
+  archived_events: 0, archived_event_disk_space: 0,
+};
+
+/** Look up a monitor's summary row; returns a zeroed row if absent. */
+export function lookupSummary(
+  summaries: EventSummary[] | undefined,
   monitorId: number,
-): number {
-  if (!Array.isArray(buckets)) return 0;
-  return buckets.find((b) => b.monitor_id === monitorId)?.count ?? 0;
+): EventSummary {
+  if (!Array.isArray(summaries)) return { ...EMPTY_SUMMARY, monitor_id: monitorId };
+  return (
+    summaries.find((s) => s.monitor_id === monitorId)
+    ?? { ...EMPTY_SUMMARY, monitor_id: monitorId }
+  );
 }

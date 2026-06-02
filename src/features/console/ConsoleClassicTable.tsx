@@ -2,11 +2,14 @@ import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { ChevronDown, ChevronUp, Monitor as MonitorIcon } from 'lucide-react';
-import { type ConsoleData, lookupCount } from './useConsoleData';
+import { type ConsoleData, lookupSummary } from './useConsoleData';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
+import { formatBytes } from '@/lib/format';
 import type { Monitor } from '@/types';
 
-type SortKey = 'id' | 'name' | 'function' | 'source' | 'hour' | 'day' | 'week' | 'month';
+type SortKey =
+  | 'id' | 'name' | 'function' | 'source'
+  | 'hour' | 'day' | 'week' | 'month' | 'total' | 'archived';
 
 interface ConsoleClassicTableProps {
   data: ConsoleData;
@@ -19,24 +22,41 @@ interface ConsoleClassicTableProps {
  * thumbnail grid) and this table never disagree about a number.
  */
 export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
-  const { monitors, countsByMonitor } = data;
+  const { monitors, summariesByMonitor } = data;
   const [sortKey, setSortKey] = useState<SortKey>('id');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
 
   const rows = useMemo(() => {
     const enriched = monitors.map((m) => ({
       monitor: m,
-      hour:  lookupCount(countsByMonitor.hour,  m.id),
-      day:   lookupCount(countsByMonitor.day,   m.id),
-      week:  lookupCount(countsByMonitor.week,  m.id),
-      month: lookupCount(countsByMonitor.month, m.id),
+      summary: lookupSummary(summariesByMonitor, m.id),
     }));
     const sorted = enriched.sort((a, b) => {
       const cmp = compare(a, b, sortKey);
       return sortDir === 'asc' ? cmp : -cmp;
     });
     return sorted;
-  }, [monitors, countsByMonitor, sortKey, sortDir]);
+  }, [monitors, summariesByMonitor, sortKey, sortDir]);
+
+  const totals = useMemo(() => {
+    const t = {
+      hour: 0, hour_disk: 0,
+      day: 0, day_disk: 0,
+      week: 0, week_disk: 0,
+      month: 0, month_disk: 0,
+      total: 0, total_disk: 0,
+      archived: 0, archived_disk: 0,
+    };
+    for (const { summary: s } of rows) {
+      t.hour     += s.hour_events;        t.hour_disk     += s.hour_event_disk_space;
+      t.day      += s.day_events;         t.day_disk      += s.day_event_disk_space;
+      t.week     += s.week_events;        t.week_disk     += s.week_event_disk_space;
+      t.month    += s.month_events;       t.month_disk    += s.month_event_disk_space;
+      t.total    += s.total_events;       t.total_disk    += s.total_event_disk_space;
+      t.archived += s.archived_events;    t.archived_disk += s.archived_event_disk_space;
+    }
+    return t;
+  }, [rows]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -70,22 +90,41 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
             <Th label="Day"       sortKey="day"      active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
             <Th label="Week"      sortKey="week"     active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
             <Th label="Month"     sortKey="month"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label="Total"     sortKey="total"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label="Archived"  sortKey="archived" active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
           </tr>
         </thead>
         <tbody>
-          {rows.map(({ monitor, hour, day, week, month }) => (
-            <Row
-              key={monitor.id}
-              monitor={monitor}
-              hour={hour}
-              day={day}
-              week={week}
-              month={month}
-            />
+          {rows.map(({ monitor, summary }) => (
+            <Row key={monitor.id} monitor={monitor} summary={summary} />
           ))}
         </tbody>
+        <tfoot className="bg-zinc-50 border-t border-zinc-300 text-xs">
+          <tr>
+            <td className="px-3 py-2 font-semibold text-zinc-700" colSpan={5}>
+              Total ({rows.length} monitors)
+            </td>
+            <FootCount count={totals.hour}     disk={totals.hour_disk} />
+            <FootCount count={totals.day}      disk={totals.day_disk} />
+            <FootCount count={totals.week}     disk={totals.week_disk} />
+            <FootCount count={totals.month}    disk={totals.month_disk} />
+            <FootCount count={totals.total}    disk={totals.total_disk} />
+            <FootCount count={totals.archived} disk={totals.archived_disk} />
+          </tr>
+        </tfoot>
       </table>
     </div>
+  );
+}
+
+function FootCount({ count, disk }: { count: number; disk: number }) {
+  return (
+    <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-zinc-800">
+      {count}
+      <div className="text-[10px] font-normal text-zinc-500">
+        {disk > 0 ? formatBytes(disk) : '—'}
+      </div>
+    </td>
   );
 }
 
@@ -121,13 +160,10 @@ function Th({ label, sortKey, active, dir, onClick, numeric }: ThProps) {
 }
 
 function Row({
-  monitor, hour, day, week, month,
+  monitor, summary,
 }: {
   monitor: Monitor;
-  hour: number;
-  day: number;
-  week: number;
-  month: number;
+  summary: ReturnType<typeof lookupSummary>;
 }) {
   const isActive = monitor.capturing !== 'None';
 
@@ -171,17 +207,30 @@ function Row({
           </div>
         )}
       </td>
-      <td className="px-3 py-2 text-right font-mono tabular-nums">{hour}</td>
-      <td className="px-3 py-2 text-right font-mono tabular-nums">{day}</td>
-      <td className="px-3 py-2 text-right font-mono tabular-nums">{week}</td>
-      <td className="px-3 py-2 text-right font-mono tabular-nums">{month}</td>
+      <CountCell count={summary.hour_events}     disk={summary.hour_event_disk_space} />
+      <CountCell count={summary.day_events}      disk={summary.day_event_disk_space} />
+      <CountCell count={summary.week_events}     disk={summary.week_event_disk_space} />
+      <CountCell count={summary.month_events}    disk={summary.month_event_disk_space} />
+      <CountCell count={summary.total_events}    disk={summary.total_event_disk_space} />
+      <CountCell count={summary.archived_events} disk={summary.archived_event_disk_space} />
     </tr>
   );
 }
 
+function CountCell({ count, disk }: { count: number; disk: number }) {
+  return (
+    <td className="px-3 py-2 text-right font-mono tabular-nums">
+      <div className={count === 0 ? 'text-zinc-400' : ''}>{count}</div>
+      {count > 0 && disk > 0 && (
+        <div className="text-[10px] text-zinc-500">{formatBytes(disk)}</div>
+      )}
+    </td>
+  );
+}
+
 function compare(
-  a: { monitor: Monitor; hour: number; day: number; week: number; month: number },
-  b: { monitor: Monitor; hour: number; day: number; week: number; month: number },
+  a: { monitor: Monitor; summary: ReturnType<typeof lookupSummary> },
+  b: { monitor: Monitor; summary: ReturnType<typeof lookupSummary> },
   key: SortKey,
 ): number {
   switch (key) {
@@ -189,10 +238,12 @@ function compare(
     case 'name':     return a.monitor.name.localeCompare(b.monitor.name);
     case 'function': return describeFunction(a.monitor).localeCompare(describeFunction(b.monitor));
     case 'source':   return (a.monitor.host ?? '').localeCompare(b.monitor.host ?? '');
-    case 'hour':     return a.hour  - b.hour;
-    case 'day':      return a.day   - b.day;
-    case 'week':     return a.week  - b.week;
-    case 'month':    return a.month - b.month;
+    case 'hour':     return a.summary.hour_events     - b.summary.hour_events;
+    case 'day':      return a.summary.day_events      - b.summary.day_events;
+    case 'week':     return a.summary.week_events     - b.summary.week_events;
+    case 'month':    return a.summary.month_events    - b.summary.month_events;
+    case 'total':    return a.summary.total_events    - b.summary.total_events;
+    case 'archived': return a.summary.archived_events - b.summary.archived_events;
   }
 }
 

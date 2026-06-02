@@ -4,6 +4,8 @@ import { Link } from '@tanstack/react-router';
 import type { Monitor, StreamProtocol } from '@/types';
 import { isOrientationRotated } from '@/types';
 import { StreamCell } from '@/components/common/StreamCell';
+import type { EventSummary } from '@/api/eventSummaries';
+import { formatBytes } from '@/lib/format';
 
 interface MonitorThumbnailProps {
   monitor: Monitor;
@@ -11,13 +13,9 @@ interface MonitorThumbnailProps {
   hasMotion?: boolean;
   hasAlarm?: boolean;
   liveProtocol?: StreamProtocol | null;
-  /** Event counts pulled from the parent's useConsoleData so we don't
-   *  refetch per card. Undefined = loading; null = data unavailable. */
-  counts?: {
-    hour: number;
-    day: number;
-    week: number;
-  };
+  /** Per-monitor event summary pulled from the parent's useConsoleData so we
+   *  don't refetch per card. Undefined = loading. */
+  summary?: EventSummary;
   /** 24-length hourly histogram for this monitor, oldest-first (index 0
    *  = 23h ago, index 23 = current hour). Omitted while still loading. */
   hourly?: number[];
@@ -41,7 +39,7 @@ export function MonitorThumbnail({
   hasMotion = false,
   hasAlarm = false,
   liveProtocol = null,
-  counts,
+  summary,
   hourly,
   width,
 }: MonitorThumbnailProps) {
@@ -165,26 +163,45 @@ export function MonitorThumbnail({
         </div>
 
         <Sparkline hourly={hourly} />
-        <ActivityCounters counts={counts} />
+        <ActivityCounters summary={summary} />
       </div>
     </Link>
   );
 }
 
 interface ActivityCountersProps {
-  counts?: { hour: number; day: number; week: number };
+  summary?: EventSummary;
 }
 
-function ActivityCounters({ counts }: ActivityCountersProps) {
-  // Render even when counts are loading — empty slots reserve the space so
-  // the card height doesn't pop in.
+function ActivityCounters({ summary }: ActivityCountersProps) {
+  // Render even when summary is loading — empty slots reserve the space so
+  // the card height doesn't pop in. Disk space appears as a tooltip on
+  // hover so we don't blow the tile height.
   return (
     <div className="flex items-center justify-between text-[10px] font-mono tabular-nums">
-      <Counter label="1H"  value={counts?.hour} tone="cyan" />
+      <Counter
+        label="1H"
+        value={summary?.hour_events}
+        title={summary && summary.hour_event_disk_space > 0
+          ? `${formatBytes(summary.hour_event_disk_space)} in last hour` : undefined}
+        tone="cyan"
+      />
       <span className="text-text-dim/50">·</span>
-      <Counter label="24H" value={counts?.day}  tone="amber" />
+      <Counter
+        label="24H"
+        value={summary?.day_events}
+        title={summary && summary.day_event_disk_space > 0
+          ? `${formatBytes(summary.day_event_disk_space)} today` : undefined}
+        tone="amber"
+      />
       <span className="text-text-dim/50">·</span>
-      <Counter label="7D"  value={counts?.week} tone="muted" />
+      <Counter
+        label="7D"
+        value={summary?.week_events}
+        title={summary && summary.week_event_disk_space > 0
+          ? `${formatBytes(summary.week_event_disk_space)} this week` : undefined}
+        tone="muted"
+      />
     </div>
   );
 }
@@ -283,10 +300,12 @@ function Counter({
   label,
   value,
   tone,
+  title,
 }: {
   label: string;
   value: number | undefined;
   tone: 'cyan' | 'amber' | 'muted';
+  title?: string;
 }) {
   const valueCls =
     value == null
@@ -300,7 +319,7 @@ function Counter({
             : 'text-text-secondary';
 
   return (
-    <span className="inline-flex items-center gap-1">
+    <span className="inline-flex items-center gap-1" title={title}>
       <span className="text-text-dim uppercase tracking-wider">{label}</span>
       <span className={clsx('font-medium', valueCls)}>
         {value == null ? '··' : value}

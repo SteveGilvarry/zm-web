@@ -21,7 +21,7 @@ import { EventsFeed } from '@/components/console/EventsFeed';
 import { SystemStatus } from '@/components/console/SystemStatus';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
-import { useConsoleData, type ConsoleData, lookupCount } from '@/features/console/useConsoleData';
+import { useConsoleData, type ConsoleData, lookupSummary } from '@/features/console/useConsoleData';
 import { ConsoleClassicTable } from '@/features/console/ConsoleClassicTable';
 import { justifyRows } from '@/features/console/layout';
 import { SkinHint } from '@/components/onboarding/SkinHint';
@@ -333,11 +333,7 @@ function JustifiedMonitorGrid({
               monitor={monitor}
               isStreaming={liveSessions.includes(monitor.id)}
               liveProtocol={liveProtocol}
-              counts={{
-                hour: lookupCount(data.countsByMonitor.hour, monitor.id),
-                day:  lookupCount(data.countsByMonitor.day,  monitor.id),
-                week: lookupCount(data.countsByMonitor.week, monitor.id),
-              }}
+              summary={lookupSummary(data.summariesByMonitor, monitor.id)}
               hourly={data.hourlyByMonitor[monitor.id]}
               width={width}
             />

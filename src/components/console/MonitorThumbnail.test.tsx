@@ -35,11 +35,19 @@ describe('MonitorThumbnail — activity ribbon', () => {
     expect(screen.getByText('Front Door')).toBeInTheDocument();
   });
 
-  it('shows counter values when counts are supplied', () => {
+  it('shows counter values when summary is supplied', () => {
     renderWithProviders(
       <MonitorThumbnail
         monitor={m}
-        counts={{ hour: 4, day: 87, week: 612 }}
+        summary={{
+          monitor_id: 1,
+          hour_events: 4, hour_event_disk_space: 1024,
+          day_events: 87, day_event_disk_space: 4096,
+          week_events: 612, week_event_disk_space: 8192,
+          month_events: 2000, month_event_disk_space: 16384,
+          total_events: 5000, total_event_disk_space: 32768,
+          archived_events: 25, archived_event_disk_space: 2048,
+        }}
       />,
     );
     expect(screen.getByText('4')).toBeInTheDocument();
@@ -47,7 +55,7 @@ describe('MonitorThumbnail — activity ribbon', () => {
     expect(screen.getByText('612')).toBeInTheDocument();
   });
 
-  it("shows '··' placeholders when counts are loading", () => {
+  it("shows '··' placeholders when summary is loading", () => {
     renderWithProviders(<MonitorThumbnail monitor={m} />);
     expect(screen.getAllByText('··')).toHaveLength(3);
   });

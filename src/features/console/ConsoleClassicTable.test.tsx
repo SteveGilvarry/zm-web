@@ -19,14 +19,25 @@ const m = (id: number, name: string, host?: string): Monitor =>
     capturing: 'Always', analysing: 'None', recording: 'None',
   } as unknown as Monitor);
 
+const summary = (
+  monitor_id: number,
+  hour = 0, day = 0, week = 0, month = 0, total = 0, archived = 0,
+) => ({
+  monitor_id,
+  hour_events: hour,    hour_event_disk_space: hour * 1024,
+  day_events: day,      day_event_disk_space: day * 1024,
+  week_events: week,    week_event_disk_space: week * 1024,
+  month_events: month,  month_event_disk_space: month * 1024,
+  total_events: total,  total_event_disk_space: total * 1024,
+  archived_events: archived, archived_event_disk_space: archived * 1024,
+});
+
 const data = {
   monitors: [m(2, 'Driveway East'), m(1, 'Front Door'), m(3, 'Garage')],
-  countsByMonitor: {
-    hour:  [{ monitor_id: 1, count: 4 }],
-    day:   [{ monitor_id: 1, count: 87 }, { monitor_id: 3, count: 12 }],
-    week:  [{ monitor_id: 1, count: 612 }],
-    month: [],
-  },
+  summariesByMonitor: [
+    summary(1, 4, 87, 612, 2000, 5000, 25),
+    summary(3, 0, 12),
+  ],
 } as unknown as Parameters<typeof ConsoleClassicTable>[0]['data'];
 
 describe('ConsoleClassicTable — rendering', () => {
@@ -55,9 +66,13 @@ describe('ConsoleClassicTable — rendering', () => {
 describe('ConsoleClassicTable — sort', () => {
   it('initial sort is by ID ascending', () => {
     renderWithProviders(<ConsoleClassicTable data={data} />);
-    const rows = screen.getAllByRole('row');
+    // Filter to tbody rows only — header + footer are excluded so the test
+    // doesn't care that we added a totals row.
+    const rows = screen
+      .getAllByRole('row')
+      .filter((r) => r.parentElement?.tagName === 'TBODY');
     // rows[0] is the header; data rows follow.
-    const names = rows.slice(1).map((r) => within(r).getByRole('link').textContent?.trim());
+    const names = rows.map((r) => within(r).getByRole('link').textContent?.trim());
     expect(names).toEqual(['Front Door', 'Driveway East', 'Garage']);
   });
 
@@ -66,8 +81,12 @@ describe('ConsoleClassicTable — sort', () => {
     renderWithProviders(<ConsoleClassicTable data={data} />);
 
     await user.click(screen.getByText(/^name$/i));
-    const rows = screen.getAllByRole('row');
-    const names = rows.slice(1).map((r) => within(r).getByRole('link').textContent?.trim());
+    // Filter to tbody rows only — header + footer are excluded so the test
+    // doesn't care that we added a totals row.
+    const rows = screen
+      .getAllByRole('row')
+      .filter((r) => r.parentElement?.tagName === 'TBODY');
+    const names = rows.map((r) => within(r).getByRole('link').textContent?.trim());
     expect(names).toEqual(['Driveway East', 'Front Door', 'Garage']);
   });
 
@@ -76,8 +95,12 @@ describe('ConsoleClassicTable — sort', () => {
     renderWithProviders(<ConsoleClassicTable data={data} />);
     await user.click(screen.getByText(/^name$/i));
     await user.click(screen.getByText(/^name$/i));
-    const rows = screen.getAllByRole('row');
-    const names = rows.slice(1).map((r) => within(r).getByRole('link').textContent?.trim());
+    // Filter to tbody rows only — header + footer are excluded so the test
+    // doesn't care that we added a totals row.
+    const rows = screen
+      .getAllByRole('row')
+      .filter((r) => r.parentElement?.tagName === 'TBODY');
+    const names = rows.map((r) => within(r).getByRole('link').textContent?.trim());
     expect(names).toEqual(['Garage', 'Front Door', 'Driveway East']);
   });
 });
