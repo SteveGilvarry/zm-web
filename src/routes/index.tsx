@@ -25,6 +25,7 @@ import { useConsoleData, type ConsoleData, lookupSummary } from '@/features/cons
 import { ConsoleClassicTable } from '@/features/console/ConsoleClassicTable';
 import { justifyRows } from '@/features/console/layout';
 import { SkinHint } from '@/components/onboarding/SkinHint';
+import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 
 export const Route = createFileRoute('/')({
   component: ConsolePage,
@@ -68,19 +69,27 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
   } = data;
 
   const [liveProtocol, setLiveProtocol] = useState<StreamProtocol | null>('webrtc');
+  // Result of the shared MonitorFilterBar. Defaults to the full list so the
+  // grid renders sensibly before any chip has fired.
+  const [filteredMonitors, setFilteredMonitors] = useState<MonitorType[]>(monitors);
 
-  const activeMonitors = monitors.filter((m) => m.capturing !== 'None');
-  const recordingMonitors = monitors.filter((m) =>
+  const activeMonitors = filteredMonitors.filter((m) => m.capturing !== 'None');
+  const recordingMonitors = filteredMonitors.filter((m) =>
     ['OnMotion', 'Always'].includes(m.recording),
   );
 
   return (
     <main className="flex-1 p-6 overflow-auto">
+      {/* Filter bar — shared across Console / Montage / Montage Review. */}
+      <div className="mb-4">
+        <MonitorFilterBar monitors={monitors} onChange={setFilteredMonitors} />
+      </div>
+
       {/* Stats Row */}
       <div className="grid grid-cols-4 gap-4 mb-6 stagger-children">
         <StatCard
           label="Monitors"
-          value={monitors.length}
+          value={filteredMonitors.length}
           icon={<Monitor size={20} />}
           variant="cyan"
           subtitle={`${activeMonitors.length} active`}
@@ -180,27 +189,31 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
                   />
                 ))}
               </div>
-            ) : monitors.length === 0 ? (
+            ) : filteredMonitors.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-12 text-text-muted">
                 <Monitor size={48} className="mb-4 opacity-50" />
-                <p>No monitors configured</p>
+                <p>
+                  {monitors.length === 0
+                    ? 'No monitors configured'
+                    : 'No monitors match the current filter'}
+                </p>
               </div>
             ) : (
               <JustifiedMonitorGrid
-                monitors={monitors.slice(0, 9)}
+                monitors={filteredMonitors.slice(0, 9)}
                 liveSessions={liveSessions}
                 liveProtocol={liveProtocol}
                 data={data}
               />
             )}
 
-            {monitors.length > 9 && (
+            {filteredMonitors.length > 9 && (
               <div className="mt-4 text-center">
                 <a
                   href="/monitors"
                   className="text-sm text-cyan hover:text-cyan-dim transition-colors"
                 >
-                  View all {monitors.length} monitors →
+                  View all {filteredMonitors.length} monitors →
                 </a>
               </div>
             )}
@@ -241,11 +254,20 @@ function ConsoleModern({ data }: { data: ConsoleData }) {
 /* -------------------------------------------------------------------------- */
 
 function ConsoleClassic({ data }: { data: ConsoleData }) {
+  // Mirror the modern skin: feed the unfiltered list into the bar, swap in
+  // the filtered list when rendering the table. The bar styling is dark
+  // ("Mission Control" panel) but contrasts cleanly against the light
+  // classic page background.
+  const [filteredMonitors, setFilteredMonitors] = useState<MonitorType[]>(data.monitors);
+  const filteredData: ConsoleData = { ...data, monitors: filteredMonitors };
   return (
     <main className="flex-1 p-4 overflow-auto bg-zinc-50">
       <div className="max-w-screen-2xl mx-auto space-y-4">
         <h1 className="text-xl text-zinc-800 font-semibold">Console</h1>
-        <ConsoleClassicTable data={data} />
+        <div className="bg-panel/95 rounded-lg border border-border-subtle p-3">
+          <MonitorFilterBar monitors={data.monitors} onChange={setFilteredMonitors} />
+        </div>
+        <ConsoleClassicTable data={filteredData} />
       </div>
     </main>
   );

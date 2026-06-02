@@ -8,6 +8,7 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
 import { useReviewClock } from '@/features/montagereview/useReviewClock';
+import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import type { Monitor } from '@/types';
@@ -66,7 +67,12 @@ function MontageReviewPage() {
     enabled: isAuthenticated,
   });
   const allMonitors: Monitor[] = monitorsData?.items ?? [];
-  const enabled = allMonitors.filter((m) => m.capturing !== 'None');
+
+  // Shared <MonitorFilterBar/> output. Layered on top of the per-monitor
+  // chip toggles further down — so the chip row only offers monitors that
+  // survive the filter bar's group/source/etc. selections.
+  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[]>(allMonitors);
+  const enabled = filteredMonitors.filter((m) => m.capturing !== 'None');
 
   // Default selection: all enabled monitors (once they load).
   useEffect(() => {
@@ -92,6 +98,14 @@ function MontageReviewPage() {
   return (
     <AppShell title="Montage Review">
       <main className="flex-1 p-6 overflow-auto flex flex-col gap-6 min-h-0">
+        {/* Shared multi-select filter bar (Group / Capturing / etc.) */}
+        <div className="flex-shrink-0">
+          <MonitorFilterBar
+            monitors={allMonitors}
+            onChange={setFilteredMonitors}
+          />
+        </div>
+
         {/* Toolbar */}
         <div className="space-y-3 flex-shrink-0">
           {/* Range presets */}

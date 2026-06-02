@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router';
 import { useQuery } from '@tanstack/react-query';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import {
   Maximize2,
@@ -17,6 +17,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useMontageStore } from '@/stores/montage';
 import { MosaicView } from '@/features/montage/MosaicView';
 import { SavedLayoutsMenu } from '@/features/montage/SavedLayoutsMenu';
+import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 import {
   bannerLayout,
   gridLayout,
@@ -79,6 +80,16 @@ function MontagePage() {
   const monitors: Monitor[] = monitorsData?.items ?? [];
   const enabledMonitors = monitors.filter((m) => m.capturing !== 'None');
   const monitorById = new Map(monitors.map((m) => [m.id, m]));
+
+  // Filter chip result — the subset of monitors that survive the shared
+  // MonitorFilterBar. Cells whose monitor falls outside this set render a
+  // muted "filtered" placeholder so the mosaic layout itself is unchanged
+  // (we don't want a chip selection to disrupt a saved arrangement).
+  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[]>(monitors);
+  const filteredIds = useMemo(
+    () => new Set(filteredMonitors.map((m) => m.id)),
+    [filteredMonitors],
+  );
 
   // First-time hydration: if the persisted tree has no monitors assigned,
   // seed it with as many available monitors as the tree has cells.
@@ -157,6 +168,14 @@ function MontagePage() {
   return (
     <AppShell title="Montage">
       <main className="flex-1 p-6 overflow-hidden flex flex-col gap-4">
+        {/* Shared filter bar — hides cells whose monitor is filtered out. */}
+        <div className="flex-shrink-0">
+          <MonitorFilterBar
+            monitors={monitors}
+            onChange={setFilteredMonitors}
+          />
+        </div>
+
         {/* Toolbar */}
         <div className="flex items-center justify-between flex-shrink-0">
           <div className="flex items-center gap-3">
@@ -248,6 +267,15 @@ function MontagePage() {
                 return (
                   <div className="absolute inset-0 flex items-center justify-center text-text-muted text-xs font-mono">
                     Monitor {monitorId} not found
+                  </div>
+                );
+              }
+              // Cell is occupied but filtered out — render a dimmed
+              // placeholder so the layout itself isn't disturbed.
+              if (!filteredIds.has(m.id)) {
+                return (
+                  <div className="absolute inset-0 flex items-center justify-center bg-abyss/60 text-text-muted text-[11px] font-mono italic">
+                    {m.name} (filtered)
                   </div>
                 );
               }
