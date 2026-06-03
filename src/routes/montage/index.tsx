@@ -14,9 +14,11 @@ import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import { useMontageStore } from '@/stores/montage';
 import { MosaicView } from '@/features/montage/MosaicView';
 import { SavedLayoutsMenu } from '@/features/montage/SavedLayoutsMenu';
+import { MontageClassicGrid } from '@/features/montage/MontageClassicGrid';
 import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 import {
   bannerLayout,
@@ -61,6 +63,81 @@ const PRESETS: Preset[] = [
 ];
 
 function MontagePage() {
+  const { isAuthenticated } = useAuthStore();
+  const skin = useUiStore((s) => s.skin);
+
+  if (!isAuthenticated) return null;
+
+  if (skin === 'classic') {
+    return (
+      <AppShell title="Montage">
+        <MontageClassic />
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell title="Montage">
+      <MontageModern />
+    </AppShell>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Classic skin — flat preset grid, no mosaic                              */
+/* ------------------------------------------------------------------------ */
+
+function MontageClassic() {
+  const { isAuthenticated } = useAuthStore();
+  const { data: monitorsData } = useQuery({
+    queryKey: ['monitors'],
+    queryFn: () => getMonitors({ page: 1, page_size: 50 }),
+    enabled: isAuthenticated,
+    refetchInterval: 30_000,
+  });
+  // Stabilise the reference: react-query returns a new `items` array
+  // identity on each render even when the rows are unchanged, so wrap in
+  // useMemo keyed on the array reference to keep downstream memoisation
+  // useful.
+  const monitors: Monitor[] = useMemo(
+    () => monitorsData?.items ?? [],
+    [monitorsData?.items],
+  );
+  // Legacy ZM only shows capturing monitors on the wall.
+  const capturingMonitors = useMemo(
+    () => monitors.filter((m) => m.capturing !== 'None'),
+    [monitors],
+  );
+  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[]>(monitors);
+  // Intersect "capturing" (legacy gate) with the filter-bar selection so the
+  // grid never shows a disabled cam, but operator chip filters still apply.
+  const visibleMonitors = useMemo(() => {
+    const ids = new Set(filteredMonitors.map((m) => m.id));
+    return capturingMonitors.filter((m) => ids.has(m.id));
+  }, [capturingMonitors, filteredMonitors]);
+
+  return (
+    <main className="flex-1 p-4 overflow-auto bg-zinc-50">
+      <div className="max-w-screen-2xl mx-auto space-y-4">
+        <h1 className="text-xl text-zinc-800 font-semibold">Montage</h1>
+
+        {/* Shared filter bar — same dark panel treatment as ConsoleClassic so
+            the chrome looks consistent across classic-skin pages. */}
+        <div className="bg-panel/95 rounded-lg border border-border-subtle p-3">
+          <MonitorFilterBar monitors={monitors} onChange={setFilteredMonitors} />
+        </div>
+
+        <MontageClassicGrid monitors={visibleMonitors} />
+      </div>
+    </main>
+  );
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Modern skin — mosaic editor + saved layouts                             */
+/* ------------------------------------------------------------------------ */
+
+function MontageModern() {
   const { isAuthenticated } = useAuthStore();
   const gridRef = useRef<HTMLDivElement>(null);
 
@@ -161,12 +238,10 @@ function MontagePage() {
     setPicking(null);
   };
 
-  if (!isAuthenticated) return null;
-
   const cellsOnScreen = leafCount(tree);
 
   return (
-    <AppShell title="Montage">
+    <>
       <main className="flex-1 p-6 overflow-hidden flex flex-col gap-4">
         {/* Shared filter bar — hides cells whose monitor is filtered out. */}
         <div className="flex-shrink-0">
@@ -309,7 +384,7 @@ function MontagePage() {
           />
         )}
       </main>
-    </AppShell>
+    </>
   );
 }
 
