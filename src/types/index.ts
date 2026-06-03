@@ -480,3 +480,35 @@ export function getOrientationStyle(orientation?: string | null): React.CSSPrope
       return undefined;
   }
 }
+
+/**
+ * Swap-dimensions rotation style for video elements whose parent container
+ * is already sized to the post-rotation (portrait) aspect — e.g. event
+ * detail playback, where width/height in the event payload are already
+ * the rotated dimensions. Returns absolute positioning that lays a
+ * landscape video over a portrait container without letterboxing.
+ *
+ * Returns `undefined` for non-rotating orientations so callers can fall
+ * through to `getOrientationStyle` for 180°/flip cases.
+ */
+export function getOrientationFillStyle(orientation?: string | null): React.CSSProperties | undefined {
+  if (!orientation) return undefined;
+  const norm = orientation.replace(/[_\s]/g, '').toLowerCase();
+  const deg = norm === 'rotate90' ? 90 : norm === 'rotate270' ? 270 : null;
+  if (deg == null) return undefined;
+  return {
+    position: 'absolute',
+    top: '50%',
+    left: '50%',
+    // Underlying video is the camera's native 16:9 sensor; container is
+    // 9:16 portrait. The element needs to be sized to the swapped aspect
+    // (177.78% × 56.25%) so that after rotate(±90deg) it lands back on
+    // the container's footprint.
+    width: '177.7778%',
+    height: '56.25%',
+    maxWidth: 'none',
+    maxHeight: 'none',
+    transform: `translate(-50%, -50%) rotate(${deg}deg)`,
+    transformOrigin: 'center',
+  };
+}

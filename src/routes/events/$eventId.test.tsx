@@ -97,6 +97,7 @@ interface EventFixture {
   cause?: string;
   start_date_time?: string;
   end_date_time?: string;
+  orientation?: string;
 }
 
 function makeEvent(over: EventFixture): Record<string, unknown> {
@@ -119,7 +120,7 @@ function makeEvent(over: EventFixture): Record<string, unknown> {
     max_score: over.max_score ?? 25,
     archived: over.archived ?? 0,
     videoed: 1, uploaded: 0, emailed: 0, messaged: 0, executed: 0,
-    notes: null, state_id: 1, orientation: 'Rotate0',
+    notes: null, state_id: 1, orientation: over.orientation ?? 'Rotate0',
     disk_space: over.disk_space ?? 12_582_912,
     scheme: 'Medium', locked: 0, tags: [],
   };
@@ -372,5 +373,94 @@ describe('EventDetailPage — Download Video button', () => {
     expect(link.getAttribute('href')).toMatch(/\/api\/v3\/events\/100\/video/);
     // Tooltip explains that the backend generates on demand.
     expect(link.getAttribute('title') ?? '').toMatch(/on demand/i);
+  });
+});
+
+describe('EventDetailPage — rotated-camera playback', () => {
+  // Regression: the event detail page used to hardcode useSwappedRotation=false
+  // assuming the backend's stored mp4 carried a rotation side-data tag the
+  // browser would honour. In practice the HLS path strips it and Safari has
+  // historically ignored it even when present, so rotated cameras played
+  // back as landscape pixels squished into a portrait container. The
+  // dashboard now applies the same swap-dimensions transform StreamCell
+  // uses for live streams.
+
+  it('applies a rotate(90deg) transform to the <video> when orientation=Rotate90', async () => {
+    stubBase({
+      event: makeEvent({
+        id: 100, monitor_id: 1, orientation: 'Rotate90',
+        width: 2160, height: 3840, // post-rotation portrait dims from backend
+      }),
+    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+
+    const video = container.querySelector('video');
+    expect(video).not.toBeNull();
+    expect(video!.style.transform).toContain('rotate(90deg)');
+    // Swap-dimensions footprint: element wider than container width, then
+    // rotated to land back on the portrait box.
+    expect(video!.style.width).toBe('177.7778%');
+    expect(video!.style.height).toBe('56.25%');
+    expect(video!.style.position).toBe('absolute');
+  });
+
+  it('applies a rotate(270deg) transform for Rotate270', async () => {
+    stubBase({
+      event: makeEvent({
+        id: 100, monitor_id: 2, orientation: 'Rotate270',
+        width: 720, height: 1280,
+      }),
+    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+
+    const video = container.querySelector('video')!;
+    expect(video.style.transform).toContain('rotate(270deg)');
+  });
+
+  it('accepts the backend ROTATE_90 string variant (underscore + upper)', async () => {
+    stubBase({
+      event: makeEvent({
+        id: 100, monitor_id: 1, orientation: 'ROTATE_90',
+        width: 2160, height: 3840,
+      }),
+    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+
+    const video = container.querySelector('video')!;
+    expect(video.style.transform).toContain('rotate(90deg)');
+  });
+
+  it('does NOT rotate when orientation=Rotate0', async () => {
+    stubBase({
+      event: makeEvent({
+        id: 100, monitor_id: 1, orientation: 'Rotate0',
+        width: 1920, height: 1080,
+      }),
+    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+
+    const video = container.querySelector('video')!;
+    expect(video.style.transform).toBe('');
+    expect(video.style.position).toBe('');
+  });
+
+  it('applies the simple rotate(180deg) for Rotate180 (no swap needed)', async () => {
+    stubBase({
+      event: makeEvent({
+        id: 100, monitor_id: 1, orientation: 'Rotate180',
+        width: 1920, height: 1080,
+      }),
+    });
+    const { container } = await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+
+    const video = container.querySelector('video')!;
+    expect(video.style.transform).toContain('rotate(180deg)');
+    // 180° preserves the bounding box, so no absolute positioning swap.
+    expect(video.style.position).toBe('');
   });
 });

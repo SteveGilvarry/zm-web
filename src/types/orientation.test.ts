@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { isOrientationRotated, getOrientationStyle } from './index';
+import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from './index';
 
 describe('isOrientationRotated', () => {
   it('returns false for null / undefined / empty', () => {
@@ -86,5 +86,55 @@ describe('getOrientationStyle', () => {
       'rotate(90deg) scale(0.5625)',
     );
     expect(getOrientationStyle('FLIP_HORI')?.transform).toBe('scaleX(-1)');
+  });
+});
+
+describe('getOrientationFillStyle — used by event detail playback', () => {
+  // Returns the swap-dimensions style used when the parent container is
+  // already in the post-rotation aspect (e.g. event.width/height are the
+  // portrait values for a rotated camera). The video is the camera's raw
+  // landscape pixels; the style rotates + over-sizes so it fills the
+  // portrait box without letterboxing.
+
+  it('returns undefined for null / undefined / empty', () => {
+    expect(getOrientationFillStyle(null)).toBeUndefined();
+    expect(getOrientationFillStyle(undefined)).toBeUndefined();
+    expect(getOrientationFillStyle('')).toBeUndefined();
+  });
+
+  it('returns undefined for non-rotating orientations (Rotate0, Rotate180, flips)', () => {
+    expect(getOrientationFillStyle('Rotate0')).toBeUndefined();
+    expect(getOrientationFillStyle('Rotate180')).toBeUndefined();
+    expect(getOrientationFillStyle('FlipHori')).toBeUndefined();
+    expect(getOrientationFillStyle('FlipVert')).toBeUndefined();
+  });
+
+  it('returns a 90° rotation + 16:9-to-9:16 swap for Rotate90', () => {
+    const style = getOrientationFillStyle('Rotate90');
+    expect(style?.position).toBe('absolute');
+    expect(style?.transform).toBe('translate(-50%, -50%) rotate(90deg)');
+    expect(style?.width).toBe('177.7778%');
+    expect(style?.height).toBe('56.25%');
+    expect(style?.maxWidth).toBe('none');
+    expect(style?.maxHeight).toBe('none');
+  });
+
+  it('returns a 270° rotation for Rotate270', () => {
+    expect(getOrientationFillStyle('Rotate270')?.transform).toBe(
+      'translate(-50%, -50%) rotate(270deg)',
+    );
+  });
+
+  it('accepts the backend ROTATE_90 / ROTATE_270 variants', () => {
+    expect(getOrientationFillStyle('ROTATE_90')?.transform).toBe(
+      'translate(-50%, -50%) rotate(90deg)',
+    );
+    expect(getOrientationFillStyle('ROTATE_270')?.transform).toBe(
+      'translate(-50%, -50%) rotate(270deg)',
+    );
+  });
+
+  it('returns undefined for unknown strings (defensive)', () => {
+    expect(getOrientationFillStyle('garbage')).toBeUndefined();
   });
 });

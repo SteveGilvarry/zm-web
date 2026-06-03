@@ -44,6 +44,7 @@ import {
   REPLAY_MODE_OPTIONS,
 } from '@/stores/eventPlayback';
 import type { CSSProperties } from 'react';
+import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from '@/types';
 import { TagChips } from '@/features/events/TagChips';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
 import { ZonesOverlay } from '@/features/events/ZonesOverlay';
@@ -254,15 +255,19 @@ function EventDetailPage() {
   const thumbnailUrl = getEventThumbnailUrl(event.id, accessToken || undefined);
 
   // Container takes the camera's declared (post-rotation) aspect so a
-  // portrait camera gets a portrait box. See git blame for the rotation
-  // saga — we deliberately do NOT CSS-rotate the element because every
-  // backend we know of rotates the stored MP4 at write time.
+  // portrait camera gets a portrait box. The stored mp4 SHOULD carry a
+  // rotation side-data tag, but in practice the HLS path served by zm_api
+  // strips it and Safari historically ignores it even when present, so
+  // the dashboard applies its own swap-dimensions transform — same
+  // strategy as live streaming via StreamCell.
   const effW = event.width  || 16;
   const effH = event.height || 9;
   const videoContainerW = isFullscreen ? 16 : effW;
   const videoContainerH = isFullscreen ? 9  : effH;
-  const useSwappedRotation = false;
-  const videoElementStyle: CSSProperties | undefined = undefined;
+  const useSwappedRotation = isOrientationRotated(event.orientation);
+  const videoElementStyle: CSSProperties | undefined = useSwappedRotation
+    ? getOrientationFillStyle(event.orientation)
+    : getOrientationStyle(event.orientation);
 
   // Source codec hint — falls back to "Unknown" when the backend hasn't
   // stamped the event with a default_video filename yet (e.g. a still-
