@@ -36,6 +36,7 @@ import {
 } from '@/api/monitors';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import type { StreamProtocol, CapturingMode, AnalysingMode, RecordingMode } from '@/types';
 import { getOrientationStyle, isOrientationRotated } from '@/types';
 import { useWebRtcStream } from '@/hooks/useWebRtcStream';
@@ -44,6 +45,7 @@ import { usePtzCapabilities } from '@/features/ptz/usePtz';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
+import { MonitorWatchClassic } from '@/features/monitors/MonitorWatchClassic';
 
 export const Route = createFileRoute('/monitors/$monitorId')({
   component: MonitorDetailPage,
@@ -53,6 +55,7 @@ function MonitorDetailPage() {
   const { monitorId } = Route.useParams();
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
+  const skin = useUiStore((s) => s.skin);
 
   const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
   const [isMuted, setIsMuted] = useState(true);
@@ -228,6 +231,38 @@ function MonitorDetailPage() {
   const isEnabled = monitor.capturing !== 'None';
   const events = eventsData?.items || [];
 
+  // Classic skin: render the dense legacy-style watch view. Returns early so
+  // the modern-specific layout computations and panels below don't run.
+  if (skin === 'classic') {
+    return (
+      <AppShell title={monitor.name}>
+        <MonitorWatchClassic
+          monitor={monitor}
+          stream={activeStream}
+          protocol={protocol}
+          onProtocolChange={handleProtocolChange}
+          ptzState={ptzState}
+          events={events}
+          isMuted={isMuted}
+          onToggleMute={handleToggleMute}
+          onToggleFullscreen={handleToggleFullscreen}
+          onStartStream={handleStartStream}
+          onStopStream={handleStopStream}
+          onRetry={handleRetry}
+          onEditMonitor={() => setEditorOpen(true)}
+          onRefresh={() => {
+            queryClient.invalidateQueries({ queryKey: ['monitor', id] });
+            queryClient.invalidateQueries({ queryKey: ['monitorEvents', id] });
+          }}
+        />
+        {editorOpen && (
+          <MonitorEditor monitor={monitor} onClose={() => setEditorOpen(false)} />
+        )}
+      </AppShell>
+    );
+  }
+
+  // Modern skin layout computation continues below.
   // Effective dimensions after orientation, used to drive the layout.
   const rotated = isOrientationRotated(monitor.orientation);
   const effW = rotated ? monitor.height : monitor.width;

@@ -17,6 +17,22 @@ export async function deleteMonitor(id: number): Promise<void> {
   return apiDelete(`/monitors/${id}`);
 }
 
+/**
+ * Trigger / cancel a forced alarm on the monitor — the legacy "Force Alarm"
+ * button. Backed by `PATCH /api/v3/monitors/{id}/alarm` with an action of
+ * `on` (trigger), `off`/`cancel`, or `status`.
+ */
+export interface AlarmControlRequest {
+  action: 'on' | 'off' | 'cancel' | 'status';
+  cause?: string | null;
+  score?: number | null;
+  text?: string | null;
+}
+
+export async function controlMonitorAlarm(id: number, body: AlarmControlRequest): Promise<Monitor> {
+  return apiPatch<AlarmControlRequest, Monitor>(`/monitors/${id}/alarm`, body);
+}
+
 // Live streaming — endpoints are protected by Feature::Stream + monitor ACL,
 // so a Bearer token is required (header is accepted; query fallback also works).
 export async function startLiveStream(monitorId: number, options?: StartLiveRequest): Promise<StartLiveResponse> {
