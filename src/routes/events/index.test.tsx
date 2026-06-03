@@ -44,60 +44,43 @@ function mount(eventOverrides: Record<string, unknown>) {
 }
 
 describe('EventCard — thumbnail rotation', () => {
-  // Regression: backend's /thumbnail endpoint renders at the sensor's
-  // native (landscape) aspect, so rotated cameras would display sideways
-  // pixels in a 16:9 box. The fix rotates the thumbnail upright AND
-  // switches the container to portrait (9:16) so the rotated content
-  // fills it instead of being letterboxed.
+  // Backend /thumbnail renders at the sensor's native (landscape) aspect,
+  // so rotated cameras need a CSS rotation to display upright. Container
+  // is a square layout footprint (invisible — no bg, no overlay tint);
+  // object-contain letterboxes landscape top/bottom and pillarboxes
+  // rotated content left/right inside the square.
 
-  it('non-rotated event: 16:9 container, no transform on the <img>', () => {
+  it('uses an invisible square layout footprint regardless of orientation', () => {
     const { container } = mount({ orientation: 'Rotate0' });
-    const thumb = container.querySelector('img')!;
-    expect(thumb.style.transform).toBe('');
-    // Container should carry aspect-video.
-    const wrapper = thumb.closest('div')!;
-    expect(wrapper.className).toContain('aspect-video');
+    const wrapper = container.querySelector('img')!.closest('div')!;
+    expect(wrapper.className).toContain('aspect-square');
+    expect(wrapper.className).not.toMatch(/bg-(abyss|black|surface)/);
   });
 
-  it('Rotate90 event: portrait container + rotate(90deg) swap-dim transform', () => {
-    const { container } = mount({
-      orientation: 'Rotate90', width: 1080, height: 1920,
-    });
-    const thumb = container.querySelector('img')!;
-    expect(thumb.style.transform).toContain('rotate(90deg)');
-    expect(thumb.style.width).toBe('177.7778%');
-    expect(thumb.style.height).toBe('56.25%');
-    expect(thumb.style.position).toBe('absolute');
-    const wrapper = thumb.closest('div')!;
-    expect(wrapper.className).toContain('aspect-[9/16]');
-    expect(wrapper.className).not.toContain('aspect-video');
+  it('non-rotated event: no transform on the <img>', () => {
+    const { container } = mount({ orientation: 'Rotate0' });
+    expect(container.querySelector('img')!.style.transform).toBe('');
   });
 
-  it('Rotate270 event: same portrait container, 270° rotation', () => {
-    const { container } = mount({
-      orientation: 'Rotate270', width: 1080, height: 1920,
-    });
-    const thumb = container.querySelector('img')!;
-    expect(thumb.style.transform).toContain('rotate(270deg)');
+  it('Rotate90 event: rotate(90deg) on the <img>, no scale', () => {
+    const { container } = mount({ orientation: 'Rotate90' });
+    const t = container.querySelector('img')!.style.transform;
+    expect(t).toContain('rotate(90deg)');
+    expect(t).not.toContain('scale(');
+  });
+
+  it('Rotate270 event: rotate(270deg)', () => {
+    const { container } = mount({ orientation: 'Rotate270' });
+    expect(container.querySelector('img')!.style.transform).toContain('rotate(270deg)');
   });
 
   it('accepts the backend ROTATE_90 string variant', () => {
-    const { container } = mount({
-      orientation: 'ROTATE_90', width: 1080, height: 1920,
-    });
-    const thumb = container.querySelector('img')!;
-    expect(thumb.style.transform).toContain('rotate(90deg)');
-    const wrapper = thumb.closest('div')!;
-    expect(wrapper.className).toContain('aspect-[9/16]');
+    const { container } = mount({ orientation: 'ROTATE_90' });
+    expect(container.querySelector('img')!.style.transform).toContain('rotate(90deg)');
   });
 
-  it('Rotate180 event: landscape container + simple rotate(180deg), no swap', () => {
+  it('Rotate180 event: simple rotate(180deg)', () => {
     const { container } = mount({ orientation: 'Rotate180' });
-    const thumb = container.querySelector('img')!;
-    expect(thumb.style.transform).toContain('rotate(180deg)');
-    // 180° preserves bounding box; container stays 16:9.
-    const wrapper = thumb.closest('div')!;
-    expect(wrapper.className).toContain('aspect-video');
-    expect(thumb.style.position).toBe('');
+    expect(container.querySelector('img')!.style.transform).toContain('rotate(180deg)');
   });
 });

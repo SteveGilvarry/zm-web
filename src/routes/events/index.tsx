@@ -32,7 +32,25 @@ import { ColumnChooser } from '@/features/events/ColumnChooser';
 import { formatBytes } from '@/lib/format';
 import { sumEventDurations, sumEventDiskSpace, formatDuration } from '@/features/events/duration';
 import type { ZmEvent } from '@/types';
-import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from '@/types';
+import type { CSSProperties } from 'react';
+
+// Rotation transform for events-list thumbnails (square layout footprint,
+// object-contain). No scale factor — the 1:1 footprint already handles
+// letterbox/pillarbox via object-contain.
+function thumbnailRotationStyle(orientation?: string | null): CSSProperties | undefined {
+  if (!orientation) return undefined;
+  const norm = orientation.replace(/[_\s]/g, '').toLowerCase();
+  switch (norm) {
+    case 'rotate90':  return { transform: 'rotate(90deg)' };
+    case 'rotate180': return { transform: 'rotate(180deg)' };
+    case 'rotate270': return { transform: 'rotate(270deg)' };
+    case 'fliphori':
+    case 'fliphorizontal': return { transform: 'scaleX(-1)' };
+    case 'flipvert':
+    case 'flipvertical':   return { transform: 'scaleY(-1)' };
+    default: return undefined;
+  }
+}
 
 interface EventsSearchParams {
   monitor_id?: number;
@@ -690,39 +708,18 @@ export function EventCard({
         params={{ eventId: String(event.id) }}
         className="flex items-center gap-4 flex-1 min-w-0"
       >
-        {/* Thumbnail — the backend's /thumbnail endpoint renders at the
-            sensor's native (landscape) aspect, so rotated cameras need a
-            CSS rotation to display the subject upright. For rotated
-            events the container itself goes portrait (9:16) so the
-            swap-dim style fills it without letterboxing — rows grow
-            taller but the operator gets a usable preview. */}
-      <div
-        className={clsx(
-          'w-40 relative rounded-lg overflow-hidden bg-abyss flex-shrink-0',
-          isOrientationRotated(event.orientation)
-            ? 'aspect-[9/16]'
-            : 'aspect-video',
-        )}
-      >
+      <div className="w-40 aspect-square relative flex-shrink-0">
         <img
           src={getEventThumbnailUrl(event.id, token || undefined)}
           alt={event.name}
-          className={
-            isOrientationRotated(event.orientation)
-              ? 'object-cover bg-abyss'
-              : 'w-full h-full object-cover'
-          }
-          style={
-            isOrientationRotated(event.orientation)
-              ? getOrientationFillStyle(event.orientation)
-              : getOrientationStyle(event.orientation)
-          }
+          className="w-full h-full object-contain rounded-lg"
+          style={thumbnailRotationStyle(event.orientation)}
           onError={(e) => {
             e.currentTarget.style.display = 'none';
           }}
         />
-        <div className="absolute inset-0 flex items-center justify-center bg-black/20">
-          <Play size={24} className="text-white/80" />
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Play size={32} className="text-white/80 drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]" />
         </div>
         {duration && (
           <div className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white">
