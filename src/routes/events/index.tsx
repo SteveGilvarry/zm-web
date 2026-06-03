@@ -51,13 +51,26 @@ export const Route = createFileRoute('/events/')({
 /**
  * Lower bound for the default "last hour" start-time filter. Pulled into a
  * helper so tests / time-mocked code paths can reason about it directly.
- * Returns an ISO timestamp (`YYYY-MM-DDTHH:MM`) suitable for an `<input
- * type="datetime-local">` value.
+ * Returns a full ISO timestamp (`YYYY-MM-DDTHH:MM:SSZ`). The backend's
+ * `start_time` query strict-parses — the short form (no seconds / no Z)
+ * is rejected with a JSON parse error, which silently returns 0 events
+ * (see BACKEND-TICKETS.md / e2e events.spec.ts regression).
  */
 export function defaultStartTimeLowerBound(now: Date = new Date()): string {
   const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
-  const tzOffset = oneHourAgo.getTimezoneOffset() * 60 * 1000;
-  return new Date(oneHourAgo.getTime() - tzOffset).toISOString().slice(0, 16);
+  return oneHourAgo.toISOString().replace(/\.\d{3}Z$/, 'Z');
+}
+
+/**
+ * Normalises a date input ('YYYY-MM-DD' from <input type="date">) to a
+ * full ISO timestamp at start-of-day UTC, so it survives the backend's
+ * strict parser.
+ */
+export function dateInputToStartTime(value: string): string {
+  if (!value) return '';
+  // Already a full ISO timestamp — pass through.
+  if (value.length > 10) return value;
+  return `${value}T00:00:00Z`;
 }
 
 function EventsPage() {
@@ -285,7 +298,7 @@ function EventsPage() {
                   type="date"
                   value={dateFilter ? dateFilter.slice(0, 10) : ''}
                   onChange={(e) => {
-                    setDateFilter(e.target.value);
+                    setDateFilter(dateInputToStartTime(e.target.value));
                     setDefaultDateActive(false);
                     setPage(1);
                   }}
