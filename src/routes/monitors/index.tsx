@@ -23,7 +23,7 @@ import { useUiStore } from '@/stores/ui';
 import { ClassicMonitorsTable } from '@/features/monitors/ClassicMonitorsTable';
 import { AddMonitorDialog } from '@/features/monitors/AddMonitorDialog';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { Plus } from 'lucide-react';
+import { Plus, Copy, Trash2 } from 'lucide-react';
 import type { Monitor as MonitorType } from '@/types';
 
 export const Route = createFileRoute('/monitors/')({
@@ -247,6 +247,13 @@ function MonitorsPage() {
                   key={monitor.id}
                   monitor={monitor}
                   isStreaming={liveSessions.includes(monitor.id)}
+                  onClone={() => cloneMutation.mutate(monitor.id)}
+                  onDelete={() => {
+                    if (confirm(`Delete monitor "${monitor.name}"? This removes its config and any future captures; existing event recordings are kept until storage is reclaimed.`)) {
+                      deleteMutation.mutate(monitor.id);
+                    }
+                  }}
+                  busy={cloneMutation.isPending || deleteMutation.isPending}
                 />
               ))}
             </div>
@@ -257,6 +264,13 @@ function MonitorsPage() {
                   key={monitor.id}
                   monitor={monitor}
                   isStreaming={liveSessions.includes(monitor.id)}
+                  onClone={() => cloneMutation.mutate(monitor.id)}
+                  onDelete={() => {
+                    if (confirm(`Delete monitor "${monitor.name}"? This removes its config and any future captures; existing event recordings are kept until storage is reclaimed.`)) {
+                      deleteMutation.mutate(monitor.id);
+                    }
+                  }}
+                  busy={cloneMutation.isPending || deleteMutation.isPending}
                 />
               ))}
             </div>
@@ -332,9 +346,15 @@ function MonitorsPage() {
 function MonitorCard({
   monitor,
   isStreaming,
+  onClone,
+  onDelete,
+  busy,
 }: {
   monitor: MonitorType;
   isStreaming: boolean;
+  onClone: () => void;
+  onDelete: () => void;
+  busy: boolean;
 }) {
   const isActive = monitor.capturing !== 'None';
 
@@ -368,6 +388,8 @@ function MonitorCard({
             <span className="text-xs font-mono font-bold text-white">LIVE</span>
           </div>
         )}
+
+        <CardActions onClone={onClone} onDelete={onDelete} busy={busy} name={monitor.name} />
 
         <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
       </div>
@@ -412,9 +434,15 @@ function MonitorCard({
 function MonitorListItem({
   monitor,
   isStreaming,
+  onClone,
+  onDelete,
+  busy,
 }: {
   monitor: MonitorType;
   isStreaming: boolean;
+  onClone: () => void;
+  onDelete: () => void;
+  busy: boolean;
 }) {
   const isActive = monitor.capturing !== 'None';
 
@@ -495,7 +523,75 @@ function MonitorListItem({
         <span className={clsx('text-xs', isActive ? 'text-emerald' : 'text-text-muted')}>
           {isActive ? 'Active' : 'Inactive'}
         </span>
+        <InlineActions onClone={onClone} onDelete={onDelete} busy={busy} name={monitor.name} />
       </div>
     </Link>
+  );
+}
+
+// Action buttons that sit over the thumbnail in grid view. Stop propagation
+// so clicks don't navigate into the monitor detail page.
+function CardActions({
+  onClone, onDelete, busy, name,
+}: { onClone: () => void; onDelete: () => void; busy: boolean; name: string }) {
+  return (
+    <div className="absolute top-2 right-2 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+      <ActionBtn
+        title={`Clone ${name}`}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClone(); }}
+        disabled={busy}
+      >
+        <Copy size={14} />
+      </ActionBtn>
+      <ActionBtn
+        title={`Delete ${name}`}
+        tone="danger"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+        disabled={busy}
+      >
+        <Trash2 size={14} />
+      </ActionBtn>
+    </div>
+  );
+}
+
+// Action buttons that sit at the end of a list row.
+function InlineActions({
+  onClone, onDelete, busy, name,
+}: { onClone: () => void; onDelete: () => void; busy: boolean; name: string }) {
+  return (
+    <div className="flex items-center gap-1">
+      <ActionBtn
+        title={`Clone ${name}`}
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClone(); }}
+        disabled={busy}
+      >
+        <Copy size={14} />
+      </ActionBtn>
+      <ActionBtn
+        title={`Delete ${name}`}
+        tone="danger"
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); onDelete(); }}
+        disabled={busy}
+      >
+        <Trash2 size={14} />
+      </ActionBtn>
+    </div>
+  );
+}
+
+function ActionBtn({
+  children, tone, ...rest
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & { tone?: 'danger' }) {
+  return (
+    <button
+      type="button"
+      {...rest}
+      className={clsx(
+        'p-1.5 rounded bg-black/60 text-text-secondary transition-colors',
+        tone === 'danger' ? 'hover:text-crimson' : 'hover:text-cyan',
+        'disabled:opacity-40 disabled:cursor-not-allowed',
+      )}
+    />
   );
 }
