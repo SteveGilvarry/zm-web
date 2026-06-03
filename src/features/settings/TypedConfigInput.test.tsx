@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ZmConfig } from '@/types';
-import { TypedConfigInput, formatConfigValue, enumOptionsFromHint } from './TypedConfigInput';
+import { TypedConfigInput, formatConfigValue, enumOptionsFromHint, humanizeIdent } from './TypedConfigInput';
 
 function cfg(over: Partial<ZmConfig>): ZmConfig {
   return {
@@ -11,6 +11,35 @@ function cfg(over: Partial<ZmConfig>): ZmConfig {
     ...over,
   };
 }
+
+describe('humanizeIdent', () => {
+  it('title-cases a single lowercase token', () => {
+    expect(humanizeIdent('system')).toBe('System');
+    expect(humanizeIdent('logging')).toBe('Logging');
+  });
+  it('splits snake_case and dash-separated identifiers', () => {
+    expect(humanizeIdent('highbandwidth')).toBe('Highbandwidth');
+    expect(humanizeIdent('high_bandwidth')).toBe('High Bandwidth');
+    expect(humanizeIdent('high-bandwidth')).toBe('High Bandwidth');
+  });
+  it('keeps acronyms uppercase', () => {
+    expect(humanizeIdent('mqtt')).toBe('MQTT');
+    expect(humanizeIdent('onvif')).toBe('ONVIF');
+    expect(humanizeIdent('http_api')).toBe('HTTP API');
+    expect(humanizeIdent('x10')).toBe('X10');
+  });
+  it('handles mixed acronyms and words', () => {
+    expect(humanizeIdent('zm_path')).toBe('ZM Path');
+    expect(humanizeIdent('jpeg_quality')).toBe('JPEG Quality');
+  });
+  it('round-trips enum tokens through dropdown labels', () => {
+    expect(humanizeIdent('hashed')).toBe('Hashed');
+    expect(humanizeIdent('plain')).toBe('Plain');
+    expect(humanizeIdent('none')).toBe('None');
+    expect(humanizeIdent('builtin')).toBe('Builtin');
+    expect(humanizeIdent('remote')).toBe('Remote');
+  });
+});
 
 describe('enumOptionsFromHint', () => {
   it('returns the pipe-split tokens for an enum-shaped hint', () => {

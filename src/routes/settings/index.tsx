@@ -43,7 +43,7 @@ import { getConfigs, updateConfig } from '@/api/configs';
 import { useUiStore, type Skin } from '@/stores/ui';
 import { useAuthStore } from '@/stores/auth';
 import type { DaemonStatus, ZmConfig } from '@/types';
-import { TypedConfigInput, formatConfigValue } from '@/features/settings/TypedConfigInput';
+import { TypedConfigInput, formatConfigValue, humanizeIdent } from '@/features/settings/TypedConfigInput';
 
 export const Route = createFileRoute('/settings/')({
   component: SettingsPage,
@@ -311,8 +311,8 @@ function SettingsPage() {
                     <h3 className="font-medium text-text-primary">ZoneMinder Configuration</h3>
                   </div>
                   {selectedCategory && (
-                    <span className="text-xs font-mono text-cyan px-2 py-0.5 rounded bg-cyan/10">
-                      {selectedCategory}
+                    <span className="text-xs text-cyan px-2 py-0.5 rounded bg-cyan/10">
+                      {humanizeIdent(selectedCategory)}
                     </span>
                   )}
                 </div>
@@ -361,7 +361,7 @@ function SettingsPage() {
                           {selectedCategory === name && (
                             <div className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 bg-cyan rounded-r" />
                           )}
-                          <span className="truncate">{name}</span>
+                          <span className="truncate">{humanizeIdent(name)}</span>
                           <span className="text-[10px] font-mono text-text-muted ml-2 flex-shrink-0">
                             {count}
                           </span>
