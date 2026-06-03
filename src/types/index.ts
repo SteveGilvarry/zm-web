@@ -437,6 +437,9 @@ export interface User {
   groups: string;
   devices: string;
   snapshots: string;
+  /** Phone is optional in the API response — `UserResponse` omits it but
+   *  the underlying `Users` table stores it. Treated as optional client-side. */
+  phone?: string | null;
 }
 
 // Orientation values from API
