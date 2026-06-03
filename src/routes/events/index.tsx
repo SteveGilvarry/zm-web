@@ -32,6 +32,7 @@ import { ColumnChooser } from '@/features/events/ColumnChooser';
 import { formatBytes } from '@/lib/format';
 import { sumEventDurations, sumEventDiskSpace, formatDuration } from '@/features/events/duration';
 import type { ZmEvent } from '@/types';
+import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from '@/types';
 
 interface EventsSearchParams {
   monitor_id?: number;
@@ -632,7 +633,7 @@ function JumpToPage({
   );
 }
 
-function EventCard({
+export function EventCard({
   event,
   monitorName,
   token,
@@ -689,12 +690,33 @@ function EventCard({
         params={{ eventId: String(event.id) }}
         className="flex items-center gap-4 flex-1 min-w-0"
       >
-        {/* Thumbnail */}
-      <div className="w-40 aspect-video relative rounded-lg overflow-hidden bg-abyss flex-shrink-0">
+        {/* Thumbnail — the backend's /thumbnail endpoint renders at the
+            sensor's native (landscape) aspect, so rotated cameras need a
+            CSS rotation to display the subject upright. For rotated
+            events the container itself goes portrait (9:16) so the
+            swap-dim style fills it without letterboxing — rows grow
+            taller but the operator gets a usable preview. */}
+      <div
+        className={clsx(
+          'w-40 relative rounded-lg overflow-hidden bg-abyss flex-shrink-0',
+          isOrientationRotated(event.orientation)
+            ? 'aspect-[9/16]'
+            : 'aspect-video',
+        )}
+      >
         <img
           src={getEventThumbnailUrl(event.id, token || undefined)}
           alt={event.name}
-          className="w-full h-full object-cover"
+          className={
+            isOrientationRotated(event.orientation)
+              ? 'object-cover bg-abyss'
+              : 'w-full h-full object-cover'
+          }
+          style={
+            isOrientationRotated(event.orientation)
+              ? getOrientationFillStyle(event.orientation)
+              : getOrientationStyle(event.orientation)
+          }
           onError={(e) => {
             e.currentTarget.style.display = 'none';
           }}
