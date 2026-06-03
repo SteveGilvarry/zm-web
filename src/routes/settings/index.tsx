@@ -43,6 +43,7 @@ import { getConfigs, updateConfig } from '@/api/configs';
 import { useUiStore, type Skin } from '@/stores/ui';
 import { useAuthStore } from '@/stores/auth';
 import type { DaemonStatus, ZmConfig } from '@/types';
+import { TypedConfigInput, formatConfigValue } from '@/features/settings/TypedConfigInput';
 
 export const Route = createFileRoute('/settings/')({
   component: SettingsPage,
@@ -649,21 +650,13 @@ function ConfigRow({
         <td className="px-4 py-2.5">
           {isEditing ? (
             <div className="flex items-center gap-2">
-              <input
-                type="text"
+              <TypedConfigInput
+                config={config}
                 value={editValue}
-                onChange={(e) => onEditValueChange(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') onSave();
-                  if (e.key === 'Escape') onCancel();
-                }}
+                onChange={onEditValueChange}
+                onCommit={onSave}
+                onCancel={onCancel}
                 autoFocus
-                className={clsx(
-                  'flex-1 px-2 py-1 text-xs font-mono',
-                  'bg-panel border border-cyan/50 rounded',
-                  'text-text-primary',
-                  'focus:outline-none focus:ring-1 focus:ring-cyan/30'
-                )}
               />
               <button
                 onClick={onSave}
@@ -684,7 +677,9 @@ function ConfigRow({
               )}
               title={config.value}
             >
-              {config.value || <span className="italic text-text-muted">empty</span>}
+              {config.value
+                ? formatConfigValue(config)
+                : <span className="italic text-text-muted">empty</span>}
             </span>
           )}
         </td>
