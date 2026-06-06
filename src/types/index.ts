@@ -17,12 +17,18 @@ export interface LoginRequest {
   password: string;
 }
 
-export interface LoginResponse {
+/** Response from POST /api/v3/auth/login and /auth/refresh.
+ *  Matches the backend `TokenResponse` schema (single object, not an array). */
+export interface TokenResponse {
   access_token: string;
   refresh_token: string;
   token_type: string;
-  expires_in: number;
+  /** Token lifetime in seconds. Wire field is `expire_in` (not `expires_in`). */
+  expire_in: number;
 }
+
+/** @deprecated Use {@link TokenResponse}. Kept as an alias for back-compat. */
+export type LoginResponse = TokenResponse;
 
 export interface UserClaims {
   iat: number;

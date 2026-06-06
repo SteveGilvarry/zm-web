@@ -1,8 +1,8 @@
-import type { LoginRequest, LoginResponse } from '@/types';
+import type { LoginRequest, TokenResponse } from '@/types';
 
 const API_BASE = '/api/v3';
 
-export async function login(credentials: LoginRequest): Promise<LoginResponse> {
+export async function login(credentials: LoginRequest): Promise<TokenResponse> {
   const response = await fetch(`${API_BASE}/auth/login`, {
     method: 'POST',
     headers: {
@@ -29,7 +29,7 @@ export async function logout(token: string): Promise<void> {
   });
 }
 
-export async function refreshToken(refreshToken: string): Promise<LoginResponse> {
+export async function refreshToken(refreshToken: string): Promise<TokenResponse> {
   // Backend's RefreshTokenRequest schema wants {token: ...} — the
   // previous {refresh_token: ...} shape returned 422 silently.
   const response = await fetch(`${API_BASE}/auth/refresh`, {
