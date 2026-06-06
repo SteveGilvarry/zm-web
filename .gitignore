@@ -41,6 +41,9 @@ dist-ssr
 !public/**/*.png
 !src/**/*.png
 
+# Local-only reference docs for agent verification (never committed)
+legacy-requirements/
+
 # Playwright + Vitest artifacts
 test-results/
 playwright-report/
