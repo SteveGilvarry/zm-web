@@ -30,9 +30,12 @@ workflow has run at least once, configure it under
 
 - Enable **Require status checks to pass before merging** and add **`CLA Assistant`**.
 - **Settings → Actions → General → Workflow permissions** must be **Read and write** so the
-  action can commit signatures to the `cla-signatures` branch.
+  action can commit signatures to the `cla-signatures` branch (already configured).
 
-Without the required-check setting the CLA status is advisory only.
+Without the required-check setting the CLA status is advisory only. Note: requiring a status
+check (branch protection / rulesets) on a **private** repo needs **GitHub Pro** — it becomes
+available for free once the repo is public. Until then the bot still comments and records
+signatures; it just can't block the merge button.
 
 ## 🛠️ Development workflow
 
