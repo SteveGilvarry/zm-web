@@ -1,106 +1,206 @@
-# zm-dashboard
+<div align="center">
 
-A modern React web dashboard for [ZoneMinder](https://zoneminder.com/) surveillance systems, built to replace the legacy PHP UI. It consumes the [`zm_api`](#related-projects) Rust REST backend and ships **two skins on one codebase**:
+# 🎛️ zm-dashboard
 
-- **Mission Control** — an opinionated dark "command center" theme with panels, adaptive layouts, and live thumbnails.
-- **Classic ZoneMinder** — a legacy-style top nav with dense tables, for operators migrating from the PHP UI.
+### A modern, two-skin web UI for [ZoneMinder](https://zoneminder.com) surveillance systems
 
-The skin is chosen at runtime (Settings → Appearance, or a `?skin=modern|classic` URL hint) and persisted; every route renders the same data through shared hooks, only the layout primitives differ.
+*Replacing ZoneMinder's aging PHP web interface with a fast React dashboard —
+one codebase that ships both an opinionated "Mission Control" theme and a
+familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 
-## Features
+![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)
+![Vite](https://img.shields.io/badge/Vite-7-646cff?logo=vite&logoColor=white)
+![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)
+![TanStack](https://img.shields.io/badge/TanStack-Router%20%2B%20Query-ff4154)
+![Tailwind](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)
+![Status](https://img.shields.io/badge/status-active%20development-yellow)
 
-- **Live view & Watch** — per-monitor live streaming over WebRTC (low latency) or HLS, with an integrated PTZ control surface (D-pad, speed/zoom/focus, presets, AUTO state) gated on monitor capabilities.
-- **Events** — browse, filter, and play back recorded events with codec-aware playback (direct progressive MP4 for H.264, HLS for HEVC, download fallback for unsupported codecs), a per-frame scrubber, tags, notes, and scores.
-- **Montage & Montage Review** — multi-camera grids and a synchronized master-clock timeline with per-monitor event bars.
-- **Cycle** — auto-cycling single-camera view.
-- **Console** — at-a-glance monitor status (modern panels or classic table).
-- **Groups, Filters, Logs, Reports, Audit** — full parity with the legacy UI, including a rule-row filter builder with auto-archive / auto-delete actions.
-- **Settings** — config editor, API tokens/sessions, and clustering servers.
-- **System status** — header strip with LOAD/CPU/MEM/DISK thresholds and a RUNNING toggle wired to system startup/shutdown.
+</div>
 
-## Tech stack
+---
 
-- **React 19** + **Vite 7** + **TypeScript**
-- **TanStack Router** (file-based routing) and **TanStack Query** (data fetching)
-- **Zustand** for auth/UI state
-- **Tailwind CSS v4** for styling
-- **hls.js** for HLS playback; native WebRTC for live streaming
-- **Vitest** + Testing Library (unit) and **Playwright** (e2e)
+## ✨ Why zm-dashboard?
 
-## Getting started
+ZoneMinder is a rock-solid surveillance platform, but its web UI is two decades of
+Perl and PHP. **zm-dashboard** is a clean React front end for the [`zm_api`](https://github.com/SteveGilvarry/zm-api)
+REST backend — and it doesn't force a redesign on operators who don't want one:
+
+- 🎨 **Two skins, one codebase** — switch between a modern dashboard and a classic ZoneMinder look at runtime.
+- ⚡ **Fast & live** — WebRTC and HLS streaming, live thumbnails, snappy navigation.
+- 🧩 **Feature-complete** — full parity with the legacy UI: events, montage, filters, logs, reports, audit, settings.
+- 🔒 **Auth-aware** — JWT auth, token-scoped media, capability-gated controls (PTZ, system start/stop).
+- 🧪 **Tested** — Vitest unit suite + Playwright e2e across Chromium and WebKit.
+
+---
+
+## 🖥️ The two skins
+
+| | **Mission Control** | **Classic ZoneMinder** |
+|---|---|---|
+| **Feel** | Dark "command center" — cyan accents, panels, glow | Legacy-style top nav + dense white tables |
+| **For** | New users, wall displays, adaptive layouts | Operators migrating from the PHP UI |
+| **Layout** | Sidebar + panel grids, live thumbnails | Top nav + tabular rows |
+
+Selection lives in a persisted Zustand store and is honoured by `<AppShell>`. A `?skin=modern|classic`
+URL hint switches once; operators also pick in **Settings → Appearance**. Every route renders the same
+data through shared hooks — only the layout primitives differ.
+
+---
+
+## 🚀 Features
+
+### 📹 Live View & Watch
+Per-monitor live streaming over **WebRTC** (low latency) or **HLS**, with an integrated **PTZ**
+control surface — D-pad, speed/zoom/focus rockers, presets, and AUTO state — capability-gated
+against each monitor.
+
+### 🎬 Events & Playback
+Browse, filter, and replay recorded events with **codec-aware playback**: progressive MP4 for
+H.264 (plays everywhere, byte-range seeking), HLS for HEVC, and a graceful download fallback for
+codecs the browser can't decode. Plus a per-frame scrubber, tags, notes, and Tot/Avg/Max scores.
+
+### 🧱 Montage & Review
+Multi-camera grids, and a **Montage Review** with a synchronized master clock and per-monitor
+event bars on a draggable timeline. Plus a **Cycle** auto-rotating single-camera view.
+
+### 📊 Operations parity
+**Console** status (panels or classic table), **Groups**, a rule-row **Filters** builder with
+auto-archive / auto-delete, **Logs** (level + component filters), **Reports**, and **Audit**.
+
+### ⚙️ Settings & System
+Config editor, API **tokens/sessions**, clustering **servers**, and a header status strip
+(LOAD/CPU/MEM/DISK with warn thresholds) plus a RUNNING toggle wired to system startup/shutdown.
+
+---
+
+## 🏗️ Architecture
+
+One data layer, two layouts — routes dispatch on the active skin and render either modern panels
+or classic tables, both fed by the same skin-agnostic feature hooks.
+
+```mermaid
+flowchart TD
+    API[("🦀 zm_api REST backend")] -->|/api proxy · JWT| Client
+
+    subgraph Client["React app"]
+        direction TB
+        Q["🔁 TanStack Query · API client (src/api)"] --> Hooks["🧩 Feature hooks (src/features)"]
+        Hooks --> Routes["🧭 TanStack Router routes"]
+        Routes -->|useUiStore.skin| Shell{"AppShell"}
+        Shell -->|modern| MC["🎛️ Mission Control chrome"]
+        Shell -->|classic| CL["🗂️ Classic chrome"]
+    end
+
+    Hooks -.live & playback.-> Stream["🎬 WebRTC manager · HLS hooks (src/streaming)"]
+    Stream -.-> API
+```
+
+| Layer | Path | Responsibility |
+|------|------|----------------|
+| **API** | `src/api/` | Typed REST client + per-resource endpoint wrappers |
+| **Features** | `src/features/` | Skin-agnostic data hooks & headless logic |
+| **Routes** | `src/routes/` | File-based routes; dispatch on the active skin |
+| **Skins** | `src/skins/` | `AppShell` + modern / classic chrome |
+| **Streaming** | `src/streaming/` | WebRTC manager + HLS playback hooks |
+| **Stores** | `src/stores/` | Zustand state (auth, UI) |
+
+---
+
+## 🧰 Tech Stack
+
+| | |
+|---|---|
+| **Framework** | [React 19](https://react.dev) + [Vite 7](https://vite.dev) + TypeScript |
+| **Routing** | [TanStack Router](https://tanstack.com/router) (file-based) |
+| **Data** | [TanStack Query](https://tanstack.com/query) |
+| **State** | [Zustand](https://github.com/pmndrs/zustand) |
+| **Styling** | [Tailwind CSS v4](https://tailwindcss.com) |
+| **Streaming** | [hls.js](https://github.com/video-dev/hls.js) + native WebRTC |
+| **Testing** | [Vitest](https://vitest.dev) + Testing Library · [Playwright](https://playwright.dev) |
+
+---
+
+## 🚀 Quick Start
 
 ### Prerequisites
 
-- Node.js 20+ (developed on Node 24)
-- A running [`zm_api`](#related-projects) backend reachable from your machine
-
-### Install
+- **Node.js 20+** (developed on Node 24) — install via [nvm](https://github.com/nvm-sh/nvm) or [the installer](https://nodejs.org)
+- A running [`zm_api`](https://github.com/SteveGilvarry/zm-api) backend reachable from your machine
 
 ```bash
+# 1. Clone
+git clone https://github.com/SteveGilvarry/zm-dashboard.git
+cd zm-dashboard
+
+# 2. Install
 npm install
-```
 
-### Configure the backend
-
-The Vite dev server proxies `/api` requests to the `zm_api` backend. Set the target in a local `.env` file (gitignored):
-
-```bash
+# 3. Point at your backend (gitignored .env)
 cp .env.example .env
-# then edit .env:
-# VITE_API_PROXY_TARGET=http://your-zm-api-host:8080
+#   then set VITE_API_PROXY_TARGET=http://your-zm-api-host:8080
+
+# 4. Run
+npm run dev                        # http://localhost:5173
 ```
 
-If unset, it defaults to `http://localhost:8080`.
+The Vite dev server proxies `/api` (and WebSocket upgrades) to `VITE_API_PROXY_TARGET`,
+defaulting to `http://localhost:8080` when unset.
 
-### Run
+---
 
-```bash
-npm run dev        # start the dev server (default http://localhost:5173)
-```
-
-## Scripts
+## 📜 Scripts
 
 | Command | Description |
-| --- | --- |
-| `npm run dev` | Start the Vite dev server with the `/api` proxy |
+|---|---|
+| `npm run dev` | Start the dev server with the `/api` proxy |
 | `npm run build` | Type-check (`tsc -b`) and build for production |
 | `npm run preview` | Preview the production build |
 | `npm run lint` | Run ESLint |
-| `npm test` | Run unit tests once (Vitest) |
+| `npm test` | Run the unit suite once (Vitest) |
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run test:ui` | Vitest interactive UI |
-| `npm run test:e2e` | Run Playwright e2e tests |
+| `npm run test:e2e` | Run Playwright e2e tests (`:webkit` / `:chromium` for one browser) |
 
-## Project structure
+---
+
+## 📁 Project Layout
 
 ```
 src/
-├── api/        # Typed REST client + per-resource endpoint wrappers
-├── components/ # common/ (Panel, …), console/, layout/
-├── features/   # Skin-agnostic data hooks + headless logic per feature
-├── routes/     # TanStack Router file-based routes (dispatch on skin)
-├── skins/      # AppShell + modern/ and classic/ chrome
-├── stores/     # Zustand stores (auth, UI)
-├── streaming/  # WebRTC manager + HLS hooks
-├── types/      # Shared TypeScript interfaces + helpers
-└── index.css   # Tailwind v4 theme and utilities
+├── api/         Typed REST client & per-resource endpoint wrappers
+├── components/  common/ (Panel, …) · console/ · layout/
+├── features/    Skin-agnostic data hooks + headless logic per feature
+├── routes/      TanStack Router file-based routes (dispatch on skin)
+├── skins/       AppShell + modern/ and classic/ chrome
+├── streaming/   WebRTC manager + HLS playback hooks
+├── stores/      Zustand stores (auth, UI)
+├── types/       Shared TypeScript interfaces + helpers
+└── index.css    Tailwind v4 theme & utilities
 ```
 
-See [`CLAUDE.md`](./CLAUDE.md) for deeper architecture notes (dual-skin design, API response conventions, streaming internals).
+See [`CLAUDE.md`](./CLAUDE.md) for deeper architecture notes — the dual-skin design,
+API response conventions, and streaming internals.
 
-## API conventions
+---
 
-A few backend quirks worth knowing (full details in `CLAUDE.md`):
+## 🔌 API conventions
 
-- Paginated responses use `{ items, total, per_page, current_page, last_page }`.
-- Boolean fields come back as integers (`0 | 1`) — use the `toBool()` helper.
-- Date fields are snake_case (`start_date_time`, `end_date_time`).
-- All live stream endpoints require a JWT, passed via `Authorization: Bearer` or a raw `?token=` query param (WebSockets must use `?token=`).
+A few `zm_api` quirks worth knowing (full details in [`CLAUDE.md`](./CLAUDE.md)):
 
-## Related projects
+- 📄 **Paginated** responses use `{ items, total, per_page, current_page, last_page }`.
+- 🔢 **Booleans** come back as integers (`0 | 1`) — use the `toBool()` helper.
+- 🗓️ **Dates** are snake_case (`start_date_time`, `end_date_time`).
+- 🔒 **Live endpoints** require a JWT via `Authorization: Bearer` or a raw `?token=` query param
+  (WebSockets must use `?token=` — browsers can't set headers on `new WebSocket()`).
 
-- **[`zm_api`](#)** — the Rust REST API backend for ZoneMinder that this dashboard consumes.
+---
 
-## License
+## 🤝 Related projects
 
-Private project — not currently licensed for redistribution.
+- 🦀 **[zm_api](https://github.com/SteveGilvarry/zm-api)** — the Rust REST API backend this dashboard consumes.
+
+---
+
+<div align="center">
+<sub>Built for the ZoneMinder community. 🎥</sub>
+</div>
