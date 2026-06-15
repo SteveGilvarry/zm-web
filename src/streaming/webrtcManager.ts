@@ -11,7 +11,7 @@
  * A WebRTC MediaStream can be attached to any number of <video> elements, so
  * each consumer attaches the shared stream to its own element.
  */
-import { getWebRtcWebsocketUrl } from '@/api/monitors';
+import { getWebRtcWebsocketUrl, startLiveStream } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import type {
   StreamConnectionState,
@@ -132,12 +132,62 @@ function closeTransport(session: Session) {
   session.pendingCandidates = [];
 }
 
-function connect(session: Session) {
+/**
+ * Schedule a reconnect with exponential backoff, or give up after the cap.
+ * Shared by the WS-close path and the `/start` failure path so both retry
+ * transient drops consistently.
+ */
+function scheduleReconnect(session: Session, reason: string) {
+  const { monitorId } = session;
+  clearTimers(session);
+  if (session.closing) return;
+
+  if (session.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+    const delay = Math.min(
+      BASE_RECONNECT_DELAY_MS * 2 ** session.reconnectAttempt,
+      MAX_RECONNECT_DELAY_MS,
+    );
+    session.reconnectAttempt++;
+    patchSnapshot(monitorId, {
+      state: 'connecting',
+      error: `${reason}, retrying (${session.reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})...`,
+    });
+    session.reconnectTimer = setTimeout(() => {
+      void connect(session);
+    }, delay);
+  } else {
+    patchSnapshot(monitorId, {
+      state: 'failed',
+      error: `${reason} after max retries`,
+    });
+  }
+}
+
+async function connect(session: Session) {
   const { monitorId } = session;
   closeTransport(session);
   patchSnapshot(monitorId, { state: 'connecting', error: null });
 
-  const ws = new WebSocket(getWebRtcWebsocketUrl(monitorId));
+  // Step 1 of the server-initiated signaling contract: enable the WebRTC track
+  // on the backend. The response's `webrtc_signaling` is the authoritative WS
+  // path; without this call the server has no track to offer over the socket.
+  let signalingPath: string | undefined;
+  try {
+    const resp = await startLiveStream(monitorId, { enable_webrtc: true });
+    signalingPath = resp.webrtc_signaling;
+  } catch (err) {
+    // A 401 here means the JWT is missing/insufficient (needs Stream:View).
+    const message =
+      err instanceof Error ? err.message : 'Failed to start WebRTC stream';
+    scheduleReconnect(session, message);
+    return;
+  }
+
+  // The session may have been torn down (logout / stopHard / grace expiry)
+  // while the start request was in flight — bail without resurrecting it.
+  if (session.closing || sessions.get(monitorId) !== session) return;
+
+  const ws = new WebSocket(getWebRtcWebsocketUrl(monitorId, signalingPath));
   session.ws = ws;
 
   ws.onopen = () => {
@@ -285,25 +335,7 @@ function connect(session: Session) {
 
   ws.onclose = () => {
     if (session.closing) return;
-    clearTimers(session);
-
-    if (session.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
-      const delay = Math.min(
-        BASE_RECONNECT_DELAY_MS * 2 ** session.reconnectAttempt,
-        MAX_RECONNECT_DELAY_MS,
-      );
-      session.reconnectAttempt++;
-      patchSnapshot(monitorId, {
-        state: 'connecting',
-        error: `Connection lost, retrying (${session.reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})...`,
-      });
-      session.reconnectTimer = setTimeout(() => connect(session), delay);
-    } else {
-      patchSnapshot(monitorId, {
-        state: 'failed',
-        error: 'Connection lost after max retries',
-      });
-    }
+    scheduleReconnect(session, 'Connection lost');
   };
 }
 
@@ -353,7 +385,7 @@ function acquire(monitorId: number) {
     closing: false,
   };
   sessions.set(monitorId, session);
-  connect(session);
+  void connect(session);
 }
 
 /** Drop a consumer's reference; tears down after a grace period at zero refs. */

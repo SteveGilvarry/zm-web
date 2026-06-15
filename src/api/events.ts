@@ -83,6 +83,30 @@ export async function getEventCountsByMonitor(hours: number = 24): Promise<Event
   return response?.counts ?? [];
 }
 
+/**
+ * Playback metadata for an event. Probe this first, then branch playback on
+ * `recommended_mode`: "direct" → progressive MP4 (`/stream/video.mp4`, Range
+ * supported, plays everywhere); "hls" → HLS playlist (HEVC, Safari /
+ * hardware-Chrome only).
+ */
+export interface EventVideoInfo {
+  event_id: number;
+  /** "H264" | "H265" | "Unknown" */
+  video_codec: string;
+  width: number;
+  height: number;
+  duration_seconds: number;
+  file_size: number;
+  /** True when the codec plays in any browser <video> (H.264). */
+  playable_direct: boolean;
+  /** "direct" | "hls" */
+  recommended_mode: string;
+}
+
+export async function getEventInfo(id: number): Promise<EventVideoInfo> {
+  return apiGet<EventVideoInfo>(`/events/${id}/info`);
+}
+
 // Event playback URLs - token param for media elements that can't send headers
 export function getEventVideoUrl(eventId: number, token?: string): string {
   const base = `/api/v3/events/${eventId}/video`;

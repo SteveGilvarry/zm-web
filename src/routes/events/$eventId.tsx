@@ -31,10 +31,12 @@ import { Panel } from '@/components/common/Panel';
 import {
   getEvent,
   getEvents,
-  getEventVideoUrl,
+  getEventInfo,
+  getEventStreamUrl,
   getEventThumbnailUrl,
   deleteEvent,
 } from '@/api/events';
+import { useEventVideo } from '@/hooks/useEventVideo';
 import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import {
@@ -97,6 +99,30 @@ function EventDetailPage() {
     queryFn: () => getMonitor(event!.monitor_id),
     enabled: isAuthenticated && !!event?.monitor_id,
   });
+
+  // Probe playback metadata so we can branch direct-MP4 vs HLS and detect an
+  // unsupported codec before touching the <video> element.
+  const { data: videoInfo } = useQuery({
+    queryKey: ['eventInfo', id],
+    queryFn: () => getEventInfo(id),
+    enabled: isAuthenticated && !isNaN(id),
+  });
+
+  // Attach the correct source (direct/HLS) to the shared <video> element.
+  const { mode: playbackMode, error: playbackError } = useEventVideo(
+    videoRef,
+    id,
+    videoInfo,
+  );
+
+  // Seed the scrubber length from /info up front; the precise duration from
+  // loadedmetadata refines it once playback starts. For an unsupported codec
+  // metadata never arrives, so this keeps the timeline labelled correctly.
+  useEffect(() => {
+    if (videoInfo?.duration_seconds) {
+      setDuration((prev) => (prev > 0 ? prev : videoInfo.duration_seconds));
+    }
+  }, [videoInfo]);
 
   // ----- Prev / next event navigation -----------------------------------
   //
@@ -251,7 +277,9 @@ function EventDetailPage() {
 
   const startTime = event.start_date_time ? new Date(event.start_date_time) : null;
   const endTime = event.end_date_time ? new Date(event.end_date_time) : null;
-  const videoUrl = getEventVideoUrl(event.id, accessToken || undefined);
+  // The hook owns the <video> source; this URL is only used for download (the
+  // Range-supported progressive MP4 endpoint).
+  const downloadUrl = getEventStreamUrl(event.id, accessToken || undefined);
   const thumbnailUrl = getEventThumbnailUrl(event.id, accessToken || undefined);
 
   // Container takes the camera's declared (post-rotation) aspect so a
@@ -269,10 +297,15 @@ function EventDetailPage() {
     ? getOrientationFillStyle(event.orientation)
     : getOrientationStyle(event.orientation);
 
-  // Source codec hint — falls back to "Unknown" when the backend hasn't
-  // stamped the event with a default_video filename yet (e.g. a still-
-  // recording event).
-  const codecHint = event.default_video?.trim() ? event.default_video : 'Unknown';
+  // Source codec hint — prefer the codec the backend detected from the actual
+  // stream (/info), falling back to the default_video filename when /info
+  // hasn't loaded or reports "Unknown".
+  const codecHint =
+    videoInfo?.video_codec && videoInfo.video_codec !== 'Unknown'
+      ? videoInfo.video_codec
+      : event.default_video?.trim()
+        ? event.default_video
+        : 'Unknown';
 
   const navPrev = () => {
     if (prevEventId != null) {
@@ -424,12 +457,14 @@ function EventDetailPage() {
                       portrait container instead of pillarboxing at center. */}
                   <video
                     ref={videoRef}
-                    src={videoUrl}
                     poster={thumbnailUrl}
                     className={useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
                     style={videoElementStyle}
                     onTimeUpdate={(e) => setCurrentTime(e.currentTarget.currentTime)}
-                    onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+                    onLoadedMetadata={(e) => {
+                      const d = e.currentTarget.duration;
+                      if (Number.isFinite(d) && d > 0) setDuration(d);
+                    }}
                     onPlay={() => setIsPlaying(true)}
                     onPause={() => setIsPlaying(false)}
                     onEnded={handleVideoEnded}
@@ -445,8 +480,35 @@ function EventDetailPage() {
                     />
                   )}
 
+                  {/* Unsupported-codec fallback — HEVC in a browser whose MSE
+                      can't decode it. Offer the download instead of a black
+                      frame. Takes precedence over the play overlay. */}
+                  {playbackMode === 'unsupported' && (
+                    <div
+                      data-testid="event-unsupported-overlay"
+                      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 p-6 text-center"
+                    >
+                      <AlertTriangle size={40} className="text-amber" />
+                      <p className="text-sm font-medium text-text-primary">
+                        {playbackError ?? 'This video codec is not supported in this browser.'}
+                      </p>
+                      <p className="text-xs text-text-muted">
+                        {codecHint} playback needs Safari or a browser with hardware
+                        HEVC support. You can still download the recording.
+                      </p>
+                      <a
+                        href={downloadUrl}
+                        download
+                        className="mt-1 flex items-center gap-2 px-4 py-2 rounded-lg bg-cyan text-void text-sm font-medium hover:bg-cyan-dim transition-colors"
+                      >
+                        <Download size={16} />
+                        Download Video
+                      </a>
+                    </div>
+                  )}
+
                   {/* Play overlay when paused */}
-                  {!isPlaying && (
+                  {!isPlaying && playbackMode !== 'unsupported' && (
                     <button
                       onClick={handlePlayPause}
                       className="absolute inset-0 flex items-center justify-center bg-black/30 transition-opacity hover:bg-black/40"
@@ -762,7 +824,7 @@ function EventDetailPage() {
               <Panel title="Actions">
                 <div className="space-y-2">
                   <a
-                    href={videoUrl}
+                    href={downloadUrl}
                     download
                     title="Backend generates the MP4 on demand (Range-supported) and streams it as a download."
                     className={clsx(

@@ -1,4 +1,21 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
+
+// connect() now POSTs /start with { enable_webrtc: true } before opening the WS.
+// Stub that call so tests exercise the ref-counting / signaling pipeline without
+// hitting the network. getWebRtcWebsocketUrl is left real (it only touches
+// window.location + the auth store).
+vi.mock('@/api/monitors', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('@/api/monitors')>();
+  return {
+    ...actual,
+    startLiveStream: vi.fn(async (monitorId: number) => ({
+      monitor_id: monitorId,
+      status: 'started',
+      webrtc_signaling: `/api/v3/live/${monitorId}/webrtc/ws`,
+    })),
+  };
+});
+
 import { webrtcManager } from './webrtcManager';
 
 /**

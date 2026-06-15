@@ -45,6 +45,17 @@ export async function startLiveStream(monitorId: number, options?: StartLiveRequ
     },
     body: JSON.stringify(options || { enable_hls: true }),
   });
+  // 409 Conflict ("Live stream already exists for monitor N") is not an error —
+  // /start is idempotent: the stream is already running and is exactly what we
+  // want to connect to. This happens routinely because stopping a stream closes
+  // the signaling socket WITHOUT a DELETE /stop (so other viewers aren't kicked),
+  // leaving the backend session alive; and because two monitors can share one
+  // RTSP camera. Return success so callers proceed to connect. The 409 body
+  // carries no signaling URLs, so callers fall back to the conventional paths
+  // (getWebRtcWebsocketUrl / getHlsPlaylistUrl).
+  if (response.status === 409) {
+    return { monitor_id: monitorId, status: 'already_running' };
+  }
   if (!response.ok) {
     let message = `HTTP ${response.status}`;
     try {
@@ -98,10 +109,39 @@ export function getHlsPlaylistUrl(monitorId: number, withToken = false): string 
   return token ? `${url}?token=${token}` : url;
 }
 
-export function getWebRtcWebsocketUrl(monitorId: number): string {
-  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const base = `${protocol}//${window.location.host}/api/v3/live/${monitorId}/webrtc/ws`;
-  // Browser WebSocket cannot send headers — the JWT must go via ?token=.
+/**
+ * Build the WebRTC signaling WebSocket URL for a monitor.
+ *
+ * The WS route is RBAC-guarded (Stream:View) and browsers cannot set headers on
+ * `new WebSocket()`, so the JWT is passed via `?token=` (raw — the backend ACL
+ * guard does not percent-decode it).
+ *
+ * `signalingPath` is the `webrtc_signaling` value returned by `POST /start`. When
+ * present it is preferred (the backend is the source of truth for the path);
+ * otherwise we fall back to the conventional `/api/v3/live/{id}/webrtc/ws`. The
+ * value may be a relative path, an absolute path, or a full http(s)/ws(s) URL —
+ * all are normalised to a ws(s) URL on the current origin.
+ */
+export function getWebRtcWebsocketUrl(monitorId: number, signalingPath?: string): string {
+  const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+
+  let base: string;
+  if (signalingPath) {
+    if (/^wss?:\/\//i.test(signalingPath)) {
+      base = signalingPath;
+    } else if (/^https?:\/\//i.test(signalingPath)) {
+      // Full http(s) URL — swap the scheme to ws(s), keep host + path.
+      base = signalingPath.replace(/^http/i, 'ws');
+    } else {
+      const path = signalingPath.startsWith('/') ? signalingPath : `/${signalingPath}`;
+      base = `${wsProtocol}//${window.location.host}${path}`;
+    }
+  } else {
+    base = `${wsProtocol}//${window.location.host}/api/v3/live/${monitorId}/webrtc/ws`;
+  }
+
   const token = getAuthToken();
-  return token ? `${base}?token=${token}` : base;
+  if (!token) return base;
+  const sep = base.includes('?') ? '&' : '?';
+  return `${base}${sep}token=${token}`;
 }
