@@ -13,7 +13,21 @@ familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarr
 ![TypeScript](https://img.shields.io/badge/TypeScript-5.9-3178c6?logo=typescript&logoColor=white)
 ![TanStack](https://img.shields.io/badge/TanStack-Router%20%2B%20Query-ff4154)
 ![Tailwind](https://img.shields.io/badge/Tailwind-v4-38bdf8?logo=tailwindcss&logoColor=white)
+[![License](https://img.shields.io/badge/license-AGPL--3.0-blue)](LICENSE)
 ![Status](https://img.shields.io/badge/status-active%20development-yellow)
+
+<br />
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/modern.png" alt="Mission Control skin — dark dashboard with stat cards and live monitor thumbnails" /></td>
+<td width="50%"><img src="docs/screenshots/classic.png" alt="Classic ZoneMinder skin — legacy top nav and dense console table" /></td>
+</tr>
+<tr>
+<td align="center"><strong>🎛️ Mission Control</strong> — modern dark dashboard</td>
+<td align="center"><strong>🗂️ Classic</strong> — legacy ZoneMinder look</td>
+</tr>
+</table>
 
 </div>
 
@@ -198,6 +212,22 @@ A few `zm_api` quirks worth knowing (full details in [`CLAUDE.md`](./CLAUDE.md))
 ## 🤝 Related projects
 
 - 🦀 **[zm_api](https://github.com/SteveGilvarry/zm-api)** — the Rust REST API backend this dashboard consumes.
+
+---
+
+## 📄 License
+
+zm-dashboard is **dual-licensed**:
+
+- 🆓 **Open source — [AGPL-3.0](LICENSE).** Free to use, modify, and self-host. If you
+  run a modified version as a network service, the AGPL requires you to publish your
+  changes — the same license as the [`zm_api`](https://github.com/SteveGilvarry/zm-api) backend.
+- 💼 **Commercial license.** For embedding zm-dashboard in a closed-source product, or running a
+  modified version as a hosted service without the AGPL's source-sharing obligation, a
+  commercial license is available. Contact the maintainer to enquire.
+
+Contributions are accepted under a Contributor License Agreement so the project can be offered
+under both licenses.
 
 ---
 
