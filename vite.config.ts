@@ -1,11 +1,17 @@
-import { defineConfig } from 'vite'
+import { defineConfig, loadEnv } from 'vite'
 import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { TanStackRouterVite } from '@tanstack/router-plugin/vite'
 import path from 'path'
 
 // https://vite.dev/config/
-export default defineConfig({
+export default defineConfig(({ mode }) => {
+  const env = loadEnv(mode, process.cwd(), '')
+  // Backend zm_api address for the dev proxy. Set VITE_API_PROXY_TARGET in a
+  // local (gitignored) .env file — see .env.example.
+  const apiTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8080'
+
+  return {
   plugins: [
     TanStackRouterVite({
       quoteStyle: 'single',
@@ -25,10 +31,11 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:8080',
+        target: apiTarget,
         changeOrigin: true,
         ws: true,
       },
     },
   },
+  }
 })

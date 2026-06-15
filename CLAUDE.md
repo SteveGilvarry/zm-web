@@ -11,7 +11,7 @@ This file is high-signal context for coding agents (Claude Code) working in this
 - **Routing**: TanStack Router (file-based routing)
 - **Data Fetching**: TanStack Query
 - **State Management**: Zustand (auth store)
-- **Backend**: Consumes `zm_api` REST API (running on `http://localhost:8080`)
+- **Backend**: Consumes `zm_api` REST API (address configured via `VITE_API_PROXY_TARGET`, see `.env.example`)
 
 ## Design Aesthetic
 
@@ -81,13 +81,15 @@ Key commands:
 ## API Proxy
 
 The Vite dev server proxies `/api` requests to the zm_api backend:
-- Dev target: `http://localhost:8080`
-- Configure in `vite.config.ts` if backend address changes
+- Dev target: set `VITE_API_PROXY_TARGET` in a local `.env` (see `.env.example`); defaults to `http://localhost:8080`
+- Wired up in `vite.config.ts`
 
 ## API Specification
 
-**OpenAPI Spec**: http://localhost:8080/api-docs/openapi.json
-**Swagger UI**: http://localhost:8080/swagger-ui/
+Relative to your `VITE_API_PROXY_TARGET` backend:
+
+**OpenAPI Spec**: `<backend>/api-docs/openapi.json`
+**Swagger UI**: `<backend>/swagger-ui/`
 
 ### Key API Response Patterns
 
@@ -139,7 +141,7 @@ A URL hint `?skin=modern|classic` switches once (`src/routes/__root.tsx`). Opera
 
 ## Implementation Plan — Full-parity legacy-UI replacement
 
-All eleven phases (P0–P10) are complete. The dashboard is feature-equivalent to the legacy ZoneMinder web UI at `http://localhost/zm/`, with the bandwidth-profile sub-UI deliberately omitted per user preference (see `MEMORY.md`).
+All eleven phases (P0–P10) are complete. The dashboard is feature-equivalent to the legacy ZoneMinder web UI (the PHP `/zm/` interface), with the bandwidth-profile sub-UI deliberately omitted per user preference (see `MEMORY.md`).
 
 - [x] **P0** — Two-skin foundation (UI store, AppShell, modern/classic shells, URL hint).
 - [x] **P1** — Watch + integrated PTZ control surface on `/monitors/$monitorId` (D-pad, speed dial, zoom/focus rockers, presets, AUTO state). Capability-gated against `/api/v3/monitors/$id/ptz`.

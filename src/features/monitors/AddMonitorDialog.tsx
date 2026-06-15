@@ -148,7 +148,7 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
               <input
                 value={form.host ?? ''}
                 onChange={(e) => update('host', e.target.value)}
-                placeholder="localhost or rtsp://…"
+                placeholder="192.168.1.100 or rtsp://…"
                 className="flex-1 px-2 py-1 text-sm font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               />
               <input
