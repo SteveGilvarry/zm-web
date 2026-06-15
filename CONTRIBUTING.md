@@ -14,11 +14,25 @@ contributions. You keep the copyright in your work — the CLA is a license gran
 assignment, that lets the maintainer license the project under both AGPL and commercial
 terms. Please read it before contributing.
 
-> **Maintainer note:** to enforce this automatically, add a
-> [CLA Assistant](https://github.com/contributor-assistant/github-action) workflow under
-> `.github/workflows/` and make its `CLA Assistant` status check **required** in
-> **Settings → Branches → branch protection rule for `main`**. Until that is wired up, the
-> CLA is accepted by opening a PR (per the paragraph above).
+The **CLA Assistant** workflow checks this automatically: if you haven't signed, a bot
+comments on your PR and the `CLA Assistant` status check fails. Reply on the PR with:
+
+> I have read the CLA Document and I hereby sign the CLA
+
+Your signature is then recorded in `signatures/version1/cla.json` (on the `cla-signatures`
+branch) and the check passes. You only sign once — future PRs are recognised automatically.
+
+### Maintainer note — branch protection
+
+The CLA check only *blocks* a merge if it is a **required status check**. After the
+workflow has run at least once, configure it under
+**Settings → Branches → branch protection rule for `main`**:
+
+- Enable **Require status checks to pass before merging** and add **`CLA Assistant`**.
+- **Settings → Actions → General → Workflow permissions** must be **Read and write** so the
+  action can commit signatures to the `cla-signatures` branch.
+
+Without the required-check setting the CLA status is advisory only.
 
 ## 🛠️ Development workflow
 
