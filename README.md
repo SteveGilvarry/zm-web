@@ -209,9 +209,23 @@ A few `zm_api` quirks worth knowing (full details in [`CLAUDE.md`](./CLAUDE.md))
 
 ---
 
-## 🤝 Related projects
+## 🔗 Related projects
 
 - 🦀 **[zm_api](https://github.com/SteveGilvarry/zm-api)** — the Rust REST API backend this dashboard consumes.
+
+---
+
+## 🤝 Contributing
+
+PRs welcome! Before opening one, run the quality gates:
+
+```bash
+npm run lint && npm test && npm run build
+```
+
+Keep changes focused, work tests-first, and make sure features work in **both skins**. Full
+workflow and conventions are in [`CONTRIBUTING.md`](CONTRIBUTING.md); contributions are
+covered by the [CLA](CLA.md).
 
 ---
 
@@ -226,8 +240,8 @@ zm-dashboard is **dual-licensed**:
   modified version as a hosted service without the AGPL's source-sharing obligation, a
   commercial license is available. Contact the maintainer to enquire.
 
-Contributions are accepted under a Contributor License Agreement so the project can be offered
-under both licenses.
+Contributions are accepted under a [Contributor License Agreement](CLA.md) so the project can be
+offered under both licenses — see [`CONTRIBUTING.md`](CONTRIBUTING.md).
 
 ---
 
