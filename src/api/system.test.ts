@@ -60,12 +60,12 @@ describe('getDaemons / getDaemon', () => {
     server.use(
       http.get('/api/v3/daemons/:name', ({ params }) => {
         receivedName = params.name as string;
-        return HttpResponse.json({ name: 'zmc', running: true });
+        return HttpResponse.json({ id: 'zmc', name: 'zmc', state: 'running' });
       }),
     );
     const out = await getDaemon('zmc');
     expect(receivedName).toBe('zmc');
-    expect(out.running).toBe(true);
+    expect(out.state).toBe('running');
   });
 });
 

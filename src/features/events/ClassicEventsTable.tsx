@@ -53,12 +53,12 @@ export function ClassicEventsTable({
 
   // Count visible columns (incl. checkbox + per-row download = +2) so the
   // footer-row colspan stays accurate as columns toggle on / off.
-  const visibleKeys: EventsColumnKey[] = [
+  const visibleKeys: EventsColumnKey[] = ([
     'id', 'monitor', 'name', 'cause', 'time',
     'duration', 'frames', 'alarm_frames',
     'tot_score', 'avg_score', 'max_score',
     'tags', 'disk_space', 'archived',
-  ].filter(isVisible) as EventsColumnKey[];
+  ] as EventsColumnKey[]).filter(isVisible);
 
   // Footer-row label spans every column up to (but not including) Duration.
   // If Duration itself is hidden, the label spans everything before Disk.

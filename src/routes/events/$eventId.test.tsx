@@ -364,13 +364,15 @@ describe('EventDetailPage — stats panel toggle', () => {
 });
 
 describe('EventDetailPage — Download Video button', () => {
-  it('renders a download link pointing at the events/{id}/video endpoint', async () => {
+  it('renders a download link pointing at the events/{id}/stream/video.mp4 endpoint', async () => {
     stubBase();
     await mount();
     await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
 
     const link = screen.getByRole('link', { name: /download video/i });
-    expect(link.getAttribute('href')).toMatch(/\/api\/v3\/events\/100\/video/);
+    // Codec-aware playback (commit 7e1c4c3) moved the download to the
+    // Range-supported HLS-adjacent endpoint: /events/{id}/stream/video.mp4.
+    expect(link.getAttribute('href')).toMatch(/\/api\/v3\/events\/100\/stream\/video\.mp4/);
     // Tooltip explains that the backend generates on demand.
     expect(link.getAttribute('title') ?? '').toMatch(/on demand/i);
   });

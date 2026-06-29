@@ -97,13 +97,13 @@ describe('startLiveStream / stopLiveStream', () => {
       http.post('/api/v3/live/5/start', async ({ request }) => {
         authHeader = request.headers.get('authorization');
         body = await request.json();
-        return HttpResponse.json({ session_id: 'abc' });
+        return HttpResponse.json({ monitor_id: 5, status: 'started' });
       }),
     );
     const out = await startLiveStream(5, { enable_hls: true });
     expect(authHeader).toMatch(/^Bearer /);
     expect(body).toEqual({ enable_hls: true });
-    expect(out.session_id).toBe('abc');
+    expect(out.status).toBe('started');
   });
 
   it('stopLiveStream tolerates 404 (already stopped) without throwing', async () => {
