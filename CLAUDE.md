@@ -141,7 +141,12 @@ A URL hint `?skin=modern|classic` switches once (`src/routes/__root.tsx`). Opera
 
 ## Implementation Plan — Full-parity legacy-UI replacement
 
-All eleven phases (P0–P10) are complete. The dashboard is feature-equivalent to the legacy ZoneMinder web UI (the PHP `/zm/` interface), with the bandwidth-profile sub-UI deliberately omitted per user preference (see `MEMORY.md`).
+The P0–P10 phases below shipped their initial versions (plus follow-on work through ~P28 — see git history). **The dashboard is NOT yet feature-equivalent to the legacy ZoneMinder UI.** A 2026-06-30 audit (each `legacy-requirements/*.md` spec vs the actual implementation, cross-checked against the live legacy box) measured **~56% per-feature parity**. The checkmarks below mean "a version shipped," not "full parity" — e.g. Filters (P6) lacks most legacy operators and Servers (P7) is create+delete only.
+
+- **Solid / often better than legacy**: Console, Events, Watch (WebRTC live), Cycle, Logs, Groups, Reports, Run-State.
+- **Weakest, needs work** (some backend-blocked): Audit gap-analysis (~22%), Devices/PTZ + X10 (~23%), Servers clustering (~30%), Zones motion-settings (~42%), Storage usage/scheme (~45%), Filters operators (~48%), Montage Review timeline, Monitor-editor field depth, Users permission matrix.
+
+The prioritized parity backlog (frontend vs backend-blocked) lives in `legacy-requirements/PUNCH-LIST.md`. The bandwidth-profile sub-UI is deliberately omitted (see `MEMORY.md`).
 
 - [x] **P0** — Two-skin foundation (UI store, AppShell, modern/classic shells, URL hint).
 - [x] **P1** — Watch + integrated PTZ control surface on `/monitors/$monitorId` (D-pad, speed dial, zoom/focus rockers, presets, AUTO state). Capability-gated against `/api/v3/monitors/$id/ptz`.
@@ -173,8 +178,9 @@ All eleven phases (P0–P10) are complete. The dashboard is feature-equivalent t
 
 ## Known Issues
 
-- Route tree needs regeneration when adding new routes (run dev server)
+- Route tree needs regeneration when adding new routes (run dev server). **Nesting gotcha**: with flat file routing, `monitors/$monitorId.zones.tsx` nests *under* `$monitorId.tsx`, which renders no `<Outlet/>`, so `/monitors/$id/zones` showed the Watch page instead of the editor. Fixed 2026-06-30 by un-nesting via the trailing-underscore convention (`$monitorId_.zones.tsx`) — same URL, standalone route.
 - Bundle size warning (>500KB) - consider code splitting for production
+- `npm run build` is green again as of 2026-06-30 (`tsc -b` went 356→0). Fix: `tsconfig.app.json` now declares `node` + `vitest/globals` types and `src/test/jest-dom-vitest.d.ts` pulls in the jest-dom matcher augmentation, so test files typecheck under the app config. `vitest.setup.ts` is deliberately kept OUT of `include` (the app config's `erasableSyntaxOnly` forbids its TS-only class syntax).
 - Backend notes:
   - `/api/v3/daemons` returns empty array (no ZM daemons configured on test system)
   - Storage stats not available from `/api/v3/system/status`
