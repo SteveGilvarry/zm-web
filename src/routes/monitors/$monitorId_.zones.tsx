@@ -8,7 +8,7 @@ import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 
-export const Route = createFileRoute('/monitors/$monitorId/zones')({
+export const Route = createFileRoute('/monitors/$monitorId_/zones')({
   component: MonitorZonesPage,
 });
 
