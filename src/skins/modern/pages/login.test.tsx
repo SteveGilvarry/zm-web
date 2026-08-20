@@ -50,7 +50,7 @@ describe('Login page', () => {
 
     await waitFor(() => expect(body).toEqual({ username: 'admin', password: 'secret' }));
     await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a.b.c'));
-    expect(navigate).toHaveBeenCalledWith({ to: '/' });
+    expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true });
   });
 
   it('shows the backend error message when login fails', async () => {
