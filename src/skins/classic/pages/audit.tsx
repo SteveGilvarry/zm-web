@@ -17,7 +17,7 @@ import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 export default function ClassicAuditPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Audit'));
-  const { isAuthenticated, loading, sortKey, sortDir, toggleSort, sorted, totals } = useAuditPage();
+  const { isAuthenticated, loading, error, sortKey, sortDir, toggleSort, sorted, totals } = useAuditPage();
 
   if (!isAuthenticated) return null;
 
@@ -34,7 +34,16 @@ export default function ClassicAuditPage() {
             {t('Per-monitor event-integrity rollup. Counts and disk usage across the standard timeframes. MissingFiles / ZeroSize columns require per-event filesystem checks and are not available in v1.')}
           </p>
 
-          {loading ? (
+          {error ? (
+            <div
+              role="alert"
+              data-testid="audit-error"
+              className="bg-white rounded border border-red-300 p-6 text-center text-sm text-red-700"
+            >
+              <p className="font-semibold">{t('Could not load the audit report')}</p>
+              <p className="font-mono text-xs mt-1">{error.message}</p>
+            </div>
+          ) : loading ? (
             <div className="bg-white rounded border border-zinc-300 p-8 space-y-2">
               {Array.from({ length: 5 }, (_, i) => (
                 <div key={i} className="h-8 bg-zinc-100 rounded animate-pulse" />

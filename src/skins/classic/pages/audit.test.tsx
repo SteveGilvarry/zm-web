@@ -123,4 +123,19 @@ describe('AuditPage — classic skin', () => {
     expect(screen.getByText(/^monitor$/i).closest('th')?.getAttribute('aria-sort')).toBe('none');
     expect(screen.getByText(/^id$/i).closest('th')?.getAttribute('aria-sort')).toBe('ascending');
   });
+
+  it('renders the backend error instead of an empty table', async () => {
+    server.use(
+      http.get('/api/v3/monitors', () =>
+        HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'monitors table locked' }, { status: 500 }),
+      ),
+      http.get('/api/v3/event-summaries', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 }),
+      ),
+    );
+    await mount();
+    const alert = await screen.findByTestId('audit-error');
+    expect(alert.textContent).toMatch(/monitors table locked/);
+    expect(screen.queryByTestId('audit-table')).toBeNull();
+  });
 });

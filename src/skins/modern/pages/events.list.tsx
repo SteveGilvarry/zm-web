@@ -8,7 +8,7 @@ export default function EventsListPage() {
   return (
     <EventsListLayout
       columnChooserVariant="modern"
-      renderList={({ events, monitorLookup, accessToken, selectedIds, toggleSelected }) => (
+      renderList={({ events, monitorLookup, accessToken, selectedIds, toggleSelected, showThumbs }) => (
         <div className="space-y-3 stagger-children">
           {events.map((event) => (
             <EventCard
@@ -18,6 +18,7 @@ export default function EventsListPage() {
               token={accessToken}
               isSelected={selectedIds.has(event.id)}
               onToggleSelected={() => toggleSelected(event.id)}
+              showThumbnail={showThumbs}
             />
           ))}
         </div>

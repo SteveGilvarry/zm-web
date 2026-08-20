@@ -13,12 +13,14 @@ import {
   ChevronRight,
   Tag as TagIcon,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { useDocumentTitle } from './useDocumentTitle';
 import { BulkActionBar } from '@/features/events/BulkActionBar';
 import { ColumnChooser } from '@/features/events/ColumnChooser';
+import { EventsSortBar } from '@/features/events/EventsSortBar';
 import { formatBytes } from '@/lib/format';
 import { formatDuration } from '@/features/events/duration';
 import {
@@ -42,13 +44,14 @@ export function EventsListLayout({
   useDocumentTitle(t('Events'));
   const state = useEventsListPage();
   const {
-    isAuthenticated, isLoading, refetch,
+    isAuthenticated, isLoading, error, refetch,
     events: filteredEvents, total, monitors, tags, causes, totals,
     searchQuery, setSearchQuery, notesQuery, setNotesQuery,
     monitorFilter, setMonitorFilter, causeFilter, setCauseFilter,
     tagFilter, setTagFilter, archivedFilter, setArchivedFilter,
-    dateFilter, setDateInput, showDefaultHourHint, clearDefaultDateFilter,
-    page, totalPages, setPage, prevPage, nextPage,
+    dateInputValue, setDateInput, showDefaultHourHint, clearDefaultDateFilter,
+    sortField, sortDir, toggleSort,
+    page, pageSize, pageSizeOptions, setPageSize, totalPages, setPage, prevPage, nextPage,
     selectedIds, clearSelection,
   } = state;
 
@@ -134,12 +137,13 @@ export function EventsListLayout({
                 <Filter className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
               </div>
 
-              {/* Date Filter */}
+              {/* Start ≥ filter — local wall-clock datetime, not a UTC date */}
               <div className="relative">
                 <Calendar className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
                 <input
-                  type="date"
-                  value={dateFilter ? dateFilter.slice(0, 10) : ''}
+                  type="datetime-local"
+                  aria-label={t('Events starting after')}
+                  value={dateInputValue}
                   onChange={(e) => {
                     setDateInput(e.target.value);
                   }}
@@ -216,6 +220,21 @@ export function EventsListLayout({
             </div>
 
             <div className="flex items-center gap-2">
+              {/* Page size — defaults from ZM_WEB_EVENTS_PER_PAGE */}
+              <label className="flex items-center gap-1.5 text-xs text-text-muted">
+                <span className="font-mono uppercase tracking-[0.16em]">{t('Per page')}</span>
+                <select
+                  aria-label={t('Events per page')}
+                  value={pageSize}
+                  onChange={(e) => setPageSize(Number(e.target.value))}
+                  className="px-2 py-2 text-sm bg-surface border border-border-subtle rounded-lg text-text-primary focus:outline-none focus:border-cyan/50"
+                >
+                  {pageSizeOptions.map((n) => (
+                    <option key={n} value={n}>{n}</option>
+                  ))}
+                </select>
+              </label>
+
               {/* Column chooser */}
               <ColumnChooser variant={columnChooserVariant} />
 
@@ -270,8 +289,32 @@ export function EventsListLayout({
             )}
           </div>
 
+          {/* Sort controls for the card list; the classic table sorts from
+              its column headers instead. */}
+          {columnChooserVariant === 'modern' && (
+            <EventsSortBar sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
+          )}
+
           {/* Events List — table in classic skin, card list in modern */}
-          {isLoading ? (
+          {error ? (
+            <Panel>
+              <div
+                role="alert"
+                className="flex flex-col items-center justify-center py-12 text-center"
+              >
+                <AlertTriangle size={32} className="mb-3 text-crimson" />
+                <p className="text-text-primary">{t('Could not load events')}</p>
+                <p className="mt-1 text-sm font-mono text-text-muted">{error.message}</p>
+                <button
+                  type="button"
+                  onClick={() => refetch()}
+                  className="mt-4 px-3 py-1.5 rounded-lg border border-border-subtle bg-surface text-sm text-text-secondary hover:border-cyan/50 hover:text-cyan transition-colors"
+                >
+                  {t('Retry')}
+                </button>
+              </div>
+            </Panel>
+          ) : isLoading ? (
             <div className="space-y-3">
               {[...Array(5)].map((_, i) => (
                 <div

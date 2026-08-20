@@ -40,12 +40,15 @@ export function EventCard({
   token,
   isSelected,
   onToggleSelected,
+  showThumbnail = true,
 }: {
   event: ZmEvent;
   monitorName: string;
   token?: string | null;
   isSelected: boolean;
   onToggleSelected: () => void;
+  /** `ZM_WEB_LIST_THUMBS` — off hides the image column entirely. */
+  showThumbnail?: boolean;
 }) {
   const { t } = useTranslation();
   const startTime = event.start_date_time ? new Date(event.start_date_time) : null;
@@ -92,6 +95,7 @@ export function EventCard({
         params={{ eventId: String(event.id) }}
         className="flex items-center gap-4 flex-1 min-w-0"
       >
+      {showThumbnail && (
       <div className="w-40 aspect-square relative flex-shrink-0">
         <img
           src={getEventThumbnailUrl(event.id, token || undefined)}
@@ -111,6 +115,7 @@ export function EventCard({
           </div>
         )}
       </div>
+      )}
 
       {/* Info */}
       <div className="flex-1 min-w-0">

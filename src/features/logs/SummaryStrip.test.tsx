@@ -14,7 +14,7 @@ describe('SummaryStrip', () => {
   it('renders one card per severity bucket with its count', () => {
     render(
       <SummaryStrip
-        summary={{ errors: 3, warnings: 7, info: 42 }}
+        summary={{ errors: 3, warnings: 7, info: 42, debug: 0 }}
         total={52}
         shownCount={52}
         page={1}
@@ -31,15 +31,16 @@ describe('SummaryStrip', () => {
   it('marks the active card via aria-pressed', () => {
     render(
       <SummaryStrip
-        summary={{ errors: 1, warnings: 0, info: 0 }}
+        summary={{ errors: 1, warnings: 0, info: 0, debug: 0 }}
         total={1}
         shownCount={1}
         page={1}
         pageSize={50}
-        activeLevel={-1}
+        activeLevel={-2}
         {...noopHandlers}
       />,
     );
+    // ZoneMinder: -2 is ERROR (-1 is WARNING, 0 INFO).
     expect(screen.getByRole('button', { name: /errors: 1/i }))
       .toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /warnings: 0/i }))
@@ -53,7 +54,7 @@ describe('SummaryStrip', () => {
     const onPickInfo = vi.fn();
     render(
       <SummaryStrip
-        summary={{ errors: 1, warnings: 1, info: 1 }}
+        summary={{ errors: 1, warnings: 1, info: 1, debug: 0 }}
         total={3}
         shownCount={3}
         page={1}
@@ -75,7 +76,7 @@ describe('SummaryStrip', () => {
   it('computes the "Displaying X–Y" range from page + pageSize + shownCount', () => {
     render(
       <SummaryStrip
-        summary={{ errors: 0, warnings: 0, info: 0 }}
+        summary={{ errors: 0, warnings: 0, info: 0, debug: 0 }}
         total={500}
         shownCount={50}
         page={3}
@@ -89,10 +90,28 @@ describe('SummaryStrip', () => {
     expect(screen.getByText(/101.*150/)).toBeInTheDocument();
   });
 
+  it('offers a Debug card when given a handler and says when counts are page-local', () => {
+    render(
+      <SummaryStrip
+        summary={{ errors: 0, warnings: 0, info: 2, debug: 5 }}
+        total={900}
+        shownCount={7}
+        page={2}
+        pageSize={50}
+        activeLevel={1}
+        {...noopHandlers}
+        onPickDebug={() => {}}
+        pageLocal
+      />,
+    );
+    expect(screen.getByRole('button', { name: /debug: 5/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByText(/matching on this page: 7/i)).toBeInTheDocument();
+  });
+
   it('shows 0–0 when the table is empty', () => {
     render(
       <SummaryStrip
-        summary={{ errors: 0, warnings: 0, info: 0 }}
+        summary={{ errors: 0, warnings: 0, info: 0, debug: 0 }}
         total={0}
         shownCount={0}
         page={1}

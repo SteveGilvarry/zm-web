@@ -94,7 +94,8 @@ const sampleEvents = [
     id: 1,
     monitor_id: 1,
     start_date_time: '2026-06-03T10:15:00Z',
-    length: 30,
+    // The API serialises the DECIMAL column as a string.
+    length: '30.00',
     max_score: 80,
     archived: 0,
   },
@@ -102,7 +103,7 @@ const sampleEvents = [
     id: 2,
     monitor_id: 1,
     start_date_time: '2026-06-03T11:00:00Z',
-    length: 12,
+    length: '12.50',
     max_score: 90,
     archived: 0,
   },
@@ -111,7 +112,7 @@ const sampleEvents = [
     id: 3,
     monitor_id: 1,
     start_date_time: '2026-06-03T12:00:00Z',
-    length: 9,
+    length: '9.00',
     max_score: 10,
     archived: 0,
   },
@@ -214,6 +215,9 @@ describe('ReportDetailPage — chart panel', () => {
     // high-score matches in the 10:00 and 11:00 buckets.
     const chart = await screen.findByTestId('events-per-hour-chart');
     expect(chart).toBeInTheDocument();
+    // One plotted point per non-empty bucket: the string lengths parsed to
+    // 30 s at 10:00 and 12.5 s at 11:00. A zero-sum chart draws no points.
+    expect(chart.querySelectorAll('circle')).toHaveLength(2);
   });
 
   it('shows the empty state when the report has no filter', async () => {

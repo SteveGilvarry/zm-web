@@ -9,14 +9,19 @@ import {
   getEventStreamUrl,
   getEventThumbnailUrl,
   deleteEvent,
+  updateEvent,
+  type EventUpdatePayload,
   type EventVideoInfo,
 } from '@/api/events';
+import { listEventData, type EventDataRow } from '@/api/eventData';
 import { getMonitor } from '@/api/monitors';
+import { getStorageList } from '@/api/storage';
 import { useEventVideo } from '@/hooks/useEventVideo';
 import { useAuthStore } from '@/stores/auth';
-import { useEventPlaybackStore, scaleToMaxWidth } from '@/stores/eventPlayback';
+import { useEventPlaybackStore, scaleToMaxWidth, PLAYBACK_RATES } from '@/stores/eventPlayback';
 import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from '@/types';
 import type { Monitor, ZmEvent } from '@/types';
+import { useEventHotkeys } from './useEventHotkeys';
 
 export function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -32,14 +37,75 @@ export function getCauseColor(cause: string): string {
   return 'bg-text-muted/20 text-text-secondary border-text-muted/30';
 }
 
+/* ------------------------------------------------------------------------ */
+/*  Prev / next                                                             */
+/* ------------------------------------------------------------------------ */
+
+type EventRef = Pick<ZmEvent, 'id' | 'start_date_time'>;
+
+function startMs(e: EventRef): number {
+  return e.start_date_time ? Date.parse(e.start_date_time) : NaN;
+}
+
+/** Chronological order with id as the tie-break, so equal starts still form a line. */
+function isAfter(a: EventRef, b: EventRef): boolean {
+  const da = startMs(a);
+  const db = startMs(b);
+  if (da !== db) return da > db;
+  return a.id > b.id;
+}
+
+/**
+ * The event that comes right after `current`, given events with
+ * `start_date_time >= current.start` in ascending order (the current event
+ * itself and any same-second siblings included).
+ */
+export function pickNextEvent(current: EventRef, ascending: EventRef[]): number | null {
+  if (!current.start_date_time) return null;
+  const hit = ascending.find((e) => e.id !== current.id && isAfter(e, current));
+  return hit ? hit.id : null;
+}
+
+/**
+ * The event right before `current`, given ascending events that start at or
+ * after the anchor (the newest event that had *ended* by `current.start`).
+ * The last one that still precedes `current` wins; that catches events on
+ * other monitors that began after the anchor but were still running when
+ * `current` started — which the `end_time` bound alone would skip.
+ */
+export function pickPrevEvent(current: EventRef, ascendingFromAnchor: EventRef[]): number | null {
+  if (!current.start_date_time) return null;
+  let best: EventRef | null = null;
+  for (const e of ascendingFromAnchor) {
+    if (e.id === current.id || !isAfter(current, e)) continue;
+    if (!best || isAfter(e, best)) best = e;
+  }
+  return best ? best.id : null;
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Page state                                                              */
+/* ------------------------------------------------------------------------ */
+
 type PlaybackStore = ReturnType<typeof useEventPlaybackStore.getState>;
+
+export interface EventEditDraft {
+  name: string;
+  cause: string;
+  notes: string;
+}
 
 export interface EventDetailPageState {
   isAuthenticated: boolean;
   eventLoading: boolean;
+  eventError: Error | null;
   event: ZmEvent | undefined;
   monitor: Monitor | undefined;
   videoInfo: EventVideoInfo | undefined;
+  /** `/storage` row name for `event.storage_id`; id 0 is ZoneMinder's implicit default store. */
+  storageName: string | null;
+  /** Rows from `/event-data?event_id=`: detector / trigger payloads per frame. */
+  eventData: EventDataRow[];
 
   videoRef: RefObject<HTMLVideoElement | null>;
   playbackMode: ReturnType<typeof useEventVideo>['mode'];
@@ -62,9 +128,15 @@ export interface EventDetailPageState {
   setShowStats: (v: boolean) => void;
   /** CSS max-width for the player frame, derived from `scale`. */
   playerMaxWidth: ReturnType<typeof scaleToMaxWidth>;
+  /** Playback speed (0.25× … 16×), applied to the <video>. */
+  rate: number;
+  setRate: (rate: number) => void;
+  rateOptions: readonly number[];
 
   prevEventId: number | null;
   nextEventId: number | null;
+  /** Monitor Prev/Next are confined to, or null for every monitor. */
+  navMonitorId: number | null;
   navPrev: () => void;
   navNext: () => void;
 
@@ -76,8 +148,26 @@ export interface EventDetailPageState {
   handleSkip: (seconds: number) => void;
   seekTo: (t: number) => void;
 
-  deleteEvent: () => void;
+  /** Archive / unarchive (PATCH `archived`). */
+  toggleArchived: () => void;
+  archivePending: boolean;
+  archiveError: string | null;
+
+  /** Name / cause / notes editor. */
+  editOpen: boolean;
+  openEdit: () => void;
+  closeEdit: () => void;
+  saveEdit: (draft: EventEditDraft) => void;
+  savePending: boolean;
+  saveError: string | null;
+
+  /** Delete flow: confirm dialog, then DELETE and router navigation to the list. */
+  deleteOpen: boolean;
+  requestDelete: () => void;
+  cancelDelete: () => void;
+  confirmDelete: () => void;
   deletePending: boolean;
+  deleteError: string | null;
 
   /** Derived presentation values; all undefined/empty until `event` loads. */
   startTime: Date | null;
@@ -91,9 +181,15 @@ export interface EventDetailPageState {
   codecHint: string;
 }
 
+function errorMessage(e: unknown): string | null {
+  if (!e) return null;
+  return e instanceof Error ? e.message : String(e);
+}
+
 /**
  * Data + playback state for the event detail page. Skin-agnostic: owns the
- * queries, the <video> element ref and every handler; pages only lay out.
+ * queries, the <video> element ref, the keyboard shortcuts and every
+ * handler; pages only lay out.
  */
 export function useEventDetailPage(id: number): EventDetailPageState {
   const { t } = useTranslation();
@@ -106,6 +202,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     scale, setScale,
     showZones, setShowZones,
     showStats, setShowStats,
+    rate, setRate,
+    navScope,
   } = useEventPlaybackStore();
 
   const [isPlaying, setIsPlaying] = useState(false);
@@ -114,6 +212,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   // Precise duration from the <video> loadedmetadata event; 0 until it fires.
   const [metaDuration, setMetaDuration] = useState(0);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
 
   // Track fullscreen so the rotated-video styling can switch between the
@@ -125,7 +225,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   }, []);
 
   // Fetch event details
-  const { data: event, isLoading: eventLoading } = useQuery({
+  const { data: event, isLoading: eventLoading, error: eventError } = useQuery({
     queryKey: ['event', id],
     queryFn: () => getEvent(id),
     enabled: isAuthenticated && !isNaN(id),
@@ -137,6 +237,32 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     queryFn: () => getMonitor(event!.monitor_id),
     enabled: isAuthenticated && !!event?.monitor_id,
   });
+
+  // Storage name. The list is tiny and rarely changes; share the cache with
+  // the Storage settings page.
+  const { data: storageData } = useQuery({
+    queryKey: ['storage'],
+    queryFn: () => getStorageList({ page: 1, page_size: 100 }),
+    enabled: isAuthenticated && !!event,
+    staleTime: 5 * 60_000,
+  });
+  const storageName = useMemo(() => {
+    if (!event) return null;
+    const row = storageData?.items.find((s) => s.id === event.storage_id);
+    if (row) return row.name;
+    // ZoneMinder's Storage id 0 is the implicit ZM_DIR_EVENTS store, which
+    // the legacy UI also labels "Default".
+    if (event.storage_id === 0) return t('Default');
+    return null;
+  }, [event, storageData, t]);
+
+  // Event_Data rows (object labels, plate reads, zmtrigger payloads).
+  const { data: eventDataPage } = useQuery({
+    queryKey: ['eventData', id],
+    queryFn: () => listEventData({ event_id: id, page: 1, page_size: 200 }),
+    enabled: isAuthenticated && !!event,
+  });
+  const eventData = useMemo(() => eventDataPage?.items ?? [], [eventDataPage]);
 
   // Probe playback metadata so we can branch direct-MP4 vs HLS and detect an
   // unsupported codec before touching the <video> element.
@@ -158,36 +284,85 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   // metadata never arrives, so this keeps the timeline labelled correctly.
   const duration = metaDuration > 0 ? metaDuration : (videoInfo?.duration_seconds || 0);
 
+  // Playback speed: applied whenever it changes and again after each source
+  // attach (some browsers reset the rate when `src` is swapped).
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.playbackRate = rate;
+  }, [rate, playbackMode, metaDuration]);
+
   // ----- Prev / next event navigation -----------------------------------
   //
-  // Pull a page of events from the same monitor (or all monitors if the
-  // current event has no monitor_id) sorted by id ascending. We then find
-  // the current id's index and use index±1 to get the adjacent ids.
-  //
-  // page_size=100 means we cover ~100 events around the current one; for a
-  // typical operator clicking through recent events this is plenty without
-  // putting heavy load on the backend.
-  const { data: neighborhood } = useQuery({
-    queryKey: ['eventNeighborhood', event?.monitor_id ?? null, id],
+  // Neighbours are looked up by time, bounded at the current event's own
+  // start, so they work for any event on a monitor with thousands of them
+  // (the old page-1-of-100-by-id approach only covered the oldest hundred).
+  // Scope: the monitor the events list was filtered to, every monitor when
+  // it was unfiltered, or — before the list has been visited — the event's
+  // own monitor. The timestamp goes back to the backend verbatim, so the
+  // dev box's server-local-stamped-Z values and the fixed build's true UTC
+  // both stay self-consistent.
+  const navMonitorId: number | null =
+    navScope === null ? (event?.monitor_id ?? null) : navScope.monitorId;
+  const scopeMonitor = navMonitorId ?? undefined;
+  const startAt = event?.start_date_time ?? null;
+
+  const { data: nextPage } = useQuery({
+    queryKey: ['eventNext', id, scopeMonitor, startAt],
     queryFn: () => getEvents({
-      monitor_id: event?.monitor_id,
-      sort: 'id',
+      monitor_id: scopeMonitor,
+      sort: 'start_time',
       direction: 'asc',
-      page_size: 100,
+      start_time: startAt!,
+      page_size: 10,
     }),
-    enabled: isAuthenticated && !!event,
+    enabled: isAuthenticated && !!event && !!startAt,
   });
 
-  const { prevEventId, nextEventId } = useMemo(() => {
-    if (!neighborhood?.items?.length) return { prevEventId: null, nextEventId: null };
-    const items = neighborhood.items;
-    const idx = items.findIndex((e) => e.id === id);
-    if (idx === -1) return { prevEventId: null, nextEventId: null };
-    return {
-      prevEventId: idx > 0 ? items[idx - 1].id : null,
-      nextEventId: idx < items.length - 1 ? items[idx + 1].id : null,
-    };
-  }, [neighborhood, id]);
+  // `end_time` bounds end_date_time, so this anchor is the newest event that
+  // had finished by the time the current one began.
+  const { data: prevAnchorPage } = useQuery({
+    queryKey: ['eventPrevAnchor', id, scopeMonitor, startAt],
+    queryFn: () => getEvents({
+      monitor_id: scopeMonitor,
+      sort: 'start_time',
+      direction: 'desc',
+      end_time: startAt!,
+      page_size: 1,
+    }),
+    enabled: isAuthenticated && !!event && !!startAt,
+  });
+  const anchor = prevAnchorPage?.items[0] ?? null;
+  const anchorStart = anchor?.start_date_time ?? null;
+
+  const { data: prevPage } = useQuery({
+    queryKey: ['eventPrev', id, scopeMonitor, anchorStart],
+    queryFn: () => getEvents({
+      monitor_id: scopeMonitor,
+      sort: 'start_time',
+      direction: 'asc',
+      start_time: anchorStart!,
+      page_size: 50,
+    }),
+    enabled: isAuthenticated && !!event && !!anchorStart,
+  });
+
+  const nextEventId = useMemo(
+    () => (event && nextPage ? pickNextEvent(event, nextPage.items) : null),
+    [event, nextPage],
+  );
+  const prevEventId = useMemo(() => {
+    if (!event || !anchor) return null;
+    // The anchor is itself a valid earlier event, so it stays a candidate in
+    // case the 50-row window from it does not reach the current event.
+    return pickPrevEvent(event, [anchor, ...(prevPage?.items ?? [])]);
+  }, [event, anchor, prevPage]);
+
+  const goTo = (eventId: number | null) => {
+    if (eventId != null) {
+      navigate({ to: '/events/$eventId', params: { eventId: String(eventId) } });
+    }
+  };
+  const navPrev = () => goTo(prevEventId);
+  const navNext = () => goTo(nextEventId);
 
   // When playback ends, apply the replay-mode policy. `single` does nothing
   // (the video just stops); `all` and `gapless` navigate to the next event
@@ -197,18 +372,49 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const handleVideoEnded = () => {
     setIsPlaying(false);
     if ((replayMode === 'all' || replayMode === 'gapless') && nextEventId != null) {
-      navigate({ to: '/events/$eventId', params: { eventId: String(nextEventId) } });
+      goTo(nextEventId);
     }
   };
 
-  // Delete mutation
+  // ----- Mutations ---------------------------------------------------------
+
+  const invalidateEvent = () => {
+    queryClient.invalidateQueries({ queryKey: ['event', id] });
+    queryClient.invalidateQueries({ queryKey: ['events'] });
+    queryClient.invalidateQueries({ queryKey: ['recentEvents'] });
+  };
+
+  const patchMutation = useMutation({
+    mutationFn: (payload: EventUpdatePayload) => updateEvent(id, payload),
+    onSuccess: invalidateEvent,
+  });
+  const archiveMutation = useMutation({
+    mutationFn: (archived: boolean) => updateEvent(id, { archived }),
+    onSuccess: invalidateEvent,
+  });
   const deleteMutation = useMutation({
     mutationFn: () => deleteEvent(id),
     onSuccess: () => {
+      queryClient.removeQueries({ queryKey: ['event', id] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
-      window.location.href = '/events';
+      queryClient.invalidateQueries({ queryKey: ['recentEvents'] });
+      setDeleteOpen(false);
+      navigate({ to: '/events' });
     },
   });
+
+  const saveEdit = (draft: EventEditDraft) => {
+    patchMutation.mutate(
+      {
+        name: draft.name.trim(),
+        cause: draft.cause.trim() || null,
+        notes: draft.notes.trim() || null,
+      },
+      { onSuccess: () => setEditOpen(false) },
+    );
+  };
+
+  // ----- Player handlers ---------------------------------------------------
 
   const handlePlayPause = () => {
     if (videoRef.current) {
@@ -262,16 +468,19 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     }
   };
 
-  const navPrev = () => {
-    if (prevEventId != null) {
-      navigate({ to: '/events/$eventId', params: { eventId: String(prevEventId) } });
-    }
-  };
-  const navNext = () => {
-    if (nextEventId != null) {
-      navigate({ to: '/events/$eventId', params: { eventId: String(nextEventId) } });
-    }
-  };
+  // ----- Keyboard ----------------------------------------------------------
+  // Off while a dialog is open so Space / Delete cannot act behind it.
+  useEventHotkeys(
+    {
+      ArrowLeft: navPrev,
+      ArrowRight: navNext,
+      ' ': handlePlayPause,
+      Delete: () => setDeleteOpen(true),
+    },
+    !!event && !editOpen && !deleteOpen,
+  );
+
+  // ----- Derived presentation ---------------------------------------------
 
   const startTime = event?.start_date_time ? new Date(event.start_date_time) : null;
   const endTime = event?.end_date_time ? new Date(event.end_date_time) : null;
@@ -314,9 +523,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   return {
     isAuthenticated,
     eventLoading,
+    eventError: (eventError as Error | null) ?? null,
     event,
     monitor,
     videoInfo,
+    storageName,
+    eventData,
 
     videoRef,
     playbackMode,
@@ -338,9 +550,13 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     showStats,
     setShowStats,
     playerMaxWidth,
+    rate,
+    setRate,
+    rateOptions: PLAYBACK_RATES,
 
     prevEventId,
     nextEventId,
+    navMonitorId,
     navPrev,
     navNext,
 
@@ -352,8 +568,23 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     handleSkip,
     seekTo,
 
-    deleteEvent: () => deleteMutation.mutate(),
+    toggleArchived: () => { if (event) archiveMutation.mutate(event.archived !== 1); },
+    archivePending: archiveMutation.isPending,
+    archiveError: errorMessage(archiveMutation.error),
+
+    editOpen,
+    openEdit: () => { patchMutation.reset(); setEditOpen(true); },
+    closeEdit: () => setEditOpen(false),
+    saveEdit,
+    savePending: patchMutation.isPending,
+    saveError: errorMessage(patchMutation.error),
+
+    deleteOpen,
+    requestDelete: () => { deleteMutation.reset(); setDeleteOpen(true); },
+    cancelDelete: () => setDeleteOpen(false),
+    confirmDelete: () => deleteMutation.mutate(),
     deletePending: deleteMutation.isPending,
+    deleteError: errorMessage(deleteMutation.error),
 
     startTime,
     endTime,

@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '@/api/logs';
 import {
   dateInputToMs,
+  matchesLevel,
   matchesMessageQuery,
   parseLogTime,
   summarizeLogs,
@@ -12,7 +13,7 @@ function makeLog(over: Partial<LogEntry> = {}): LogEntry {
   return {
     id: 1,
     time_key: '2026-06-01T10:00:00Z',
-    level: 1,
+    level: 0,
     code: 'INF',
     component: 'zmc',
     message: 'starting capture',
@@ -102,17 +103,37 @@ describe('dateInputToMs', () => {
 
 describe('summarizeLogs', () => {
   it('returns zeros for an empty list', () => {
-    expect(summarizeLogs([])).toEqual({ errors: 0, warnings: 0, info: 0 });
+    expect(summarizeLogs([])).toEqual({ errors: 0, warnings: 0, info: 0, debug: 0 });
   });
 
-  it('buckets entries by ZM severity convention (lower = more severe)', () => {
+  it('buckets entries on ZoneMinder\'s scale (0=INF, -1=WAR, -2=ERR, -3=FAT, -4=PNC, 1+=DBG)', () => {
     const logs = [
-      makeLog({ level: -2 }), // FATAL → error bucket
-      makeLog({ level: -1 }), // ERROR
-      makeLog({ level: 0 }),  // WARNING
-      makeLog({ level: 1 }),  // INFO
-      makeLog({ level: 2 }),  // DEBUG → info bucket
+      makeLog({ level: -4, code: 'PNC' }),
+      makeLog({ level: -3, code: 'FAT' }),
+      makeLog({ level: -2, code: 'ERR' }),
+      makeLog({ level: -1, code: 'WAR' }),
+      makeLog({ level: 0, code: 'INF' }),
+      makeLog({ level: 1, code: 'DBG' }),
+      makeLog({ level: 3, code: 'DBG' }),
     ];
-    expect(summarizeLogs(logs)).toEqual({ errors: 2, warnings: 1, info: 2 });
+    expect(summarizeLogs(logs)).toEqual({ errors: 3, warnings: 1, info: 1, debug: 2 });
+  });
+});
+
+describe('matchesLevel', () => {
+  it('matches everything when no level is picked', () => {
+    expect(matchesLevel(makeLog({ level: -2 }), undefined)).toBe(true);
+  });
+
+  it('matches the exact level for INFO and more severe', () => {
+    expect(matchesLevel(makeLog({ level: -1 }), -1)).toBe(true);
+    expect(matchesLevel(makeLog({ level: 0 }), -1)).toBe(false);
+    expect(matchesLevel(makeLog({ level: -2 }), -1)).toBe(false);
+  });
+
+  it('treats DEBUG as every debug depth', () => {
+    expect(matchesLevel(makeLog({ level: 1 }), 1)).toBe(true);
+    expect(matchesLevel(makeLog({ level: 5 }), 1)).toBe(true);
+    expect(matchesLevel(makeLog({ level: 0 }), 1)).toBe(false);
   });
 });

@@ -1,12 +1,18 @@
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { Archive, Download, Tag as TagIcon } from 'lucide-react';
+import { Archive, ChevronDown, ChevronUp, Download, Tag as TagIcon } from 'lucide-react';
 import type { ZmEvent } from '@/types';
 import { useEventsColumnsStore, type EventsColumnKey } from '@/stores/eventsColumns';
-import { getEventVideoUrl } from '@/api/events';
+import {
+  getEventThumbnailUrl,
+  getEventVideoUrl,
+  type EventSortField,
+  type SortDirection,
+} from '@/api/events';
 import { formatBytes } from '@/lib/format';
 import { eventDurationSeconds, formatDuration, sumEventDurations, sumEventDiskSpace } from './duration';
 import { useEventsColumnLabels } from './columnLabels';
+import { COLUMN_SORT_FIELD } from './sortColumns';
 
 interface ClassicEventsTableProps {
   events: ZmEvent[];
@@ -15,6 +21,14 @@ interface ClassicEventsTableProps {
   onToggleSelected: (id: number) => void;
   /** Auth token threaded through so per-row Download Video can authenticate. */
   token?: string | null;
+  /** Active server-side sort; headers of sortable columns become buttons. */
+  sortField?: EventSortField;
+  sortDir?: SortDirection;
+  onSort?: (field: EventSortField) => void;
+  /** `ZM_WEB_LIST_THUMBS`: leading thumbnail column. */
+  showThumbs?: boolean;
+  /** `ZM_WEB_LIST_THUMB_WIDTH`, px. */
+  thumbWidth?: number;
 }
 
 /**
@@ -30,6 +44,7 @@ interface ClassicEventsTableProps {
  */
 export function ClassicEventsTable({
   events, monitorLookup, selectedIds, onToggleSelected, token,
+  sortField, sortDir = 'asc', onSort, showThumbs = false, thumbWidth = 48,
 }: ClassicEventsTableProps) {
   const { t } = useTranslation();
   const labels = useEventsColumnLabels();
@@ -55,14 +70,32 @@ export function ClassicEventsTable({
   const totalDurationSec = sumEventDurations(events);
   const totalDiskSpace = sumEventDiskSpace(events);
 
-  // Count visible columns (incl. checkbox + per-row download = +2) so the
-  // footer-row colspan stays accurate as columns toggle on / off.
+  // Count visible columns (incl. checkbox + per-row download = +2, and the
+  // thumbnail when on) so the footer-row colspan stays accurate as columns
+  // toggle on / off.
   const visibleKeys: EventsColumnKey[] = ([
-    'id', 'monitor', 'name', 'cause', 'time',
+    'id', 'monitor', 'name', 'cause', 'time', 'end',
     'duration', 'frames', 'alarm_frames',
     'tot_score', 'avg_score', 'max_score',
     'tags', 'disk_space', 'archived',
   ] as EventsColumnKey[]).filter(isVisible);
+  const leadingCols = 1 + (showThumbs ? 1 : 0);
+
+  const header = (key: EventsColumnKey, numeric?: boolean) => {
+    const field = COLUMN_SORT_FIELD[key];
+    return (
+      <Th
+        key={key}
+        numeric={numeric}
+        sortable={!!field && !!onSort}
+        active={!!field && field === sortField}
+        dir={sortDir}
+        onClick={field && onSort ? () => onSort(field) : undefined}
+      >
+        {labels[key]}
+      </Th>
+    );
+  };
 
   // Footer-row label spans every column up to (but not including) Duration.
   // If Duration itself is hidden, the label spans everything before Disk.
@@ -84,20 +117,22 @@ export function ClassicEventsTable({
                 className="cursor-pointer"
               />
             </th>
-            {isVisible('id') && <Th>{labels.id}</Th>}
-            {isVisible('monitor') && <Th>{labels.monitor}</Th>}
-            {isVisible('name') && <Th>{labels.name}</Th>}
-            {isVisible('cause') && <Th>{labels.cause}</Th>}
-            {isVisible('time') && <Th>{labels.time}</Th>}
-            {isVisible('duration') && <Th numeric>{labels.duration}</Th>}
-            {isVisible('frames') && <Th numeric>{labels.frames}</Th>}
-            {isVisible('alarm_frames') && <Th numeric>{labels.alarm_frames}</Th>}
-            {isVisible('tot_score') && <Th numeric>{labels.tot_score}</Th>}
-            {isVisible('avg_score') && <Th numeric>{labels.avg_score}</Th>}
-            {isVisible('max_score') && <Th numeric>{labels.max_score}</Th>}
-            {isVisible('tags') && <Th>{labels.tags}</Th>}
-            {isVisible('disk_space') && <Th numeric>{labels.disk_space}</Th>}
-            {isVisible('archived') && <Th>{labels.archived}</Th>}
+            {showThumbs && <Th>{t('Thumbnail')}</Th>}
+            {isVisible('id') && header('id')}
+            {isVisible('monitor') && header('monitor')}
+            {isVisible('name') && header('name')}
+            {isVisible('cause') && header('cause')}
+            {isVisible('time') && header('time')}
+            {isVisible('end') && header('end')}
+            {isVisible('duration') && header('duration', true)}
+            {isVisible('frames') && header('frames', true)}
+            {isVisible('alarm_frames') && header('alarm_frames', true)}
+            {isVisible('tot_score') && header('tot_score', true)}
+            {isVisible('avg_score') && header('avg_score', true)}
+            {isVisible('max_score') && header('max_score', true)}
+            {isVisible('tags') && header('tags')}
+            {isVisible('disk_space') && header('disk_space', true)}
+            {isVisible('archived') && header('archived')}
             <Th>{/* Download */}</Th>
           </tr>
         </thead>
@@ -110,6 +145,8 @@ export function ClassicEventsTable({
               isSelected={selectedIds.has(e.id)}
               onToggleSelected={() => onToggleSelected(e.id)}
               token={token}
+              showThumbs={showThumbs}
+              thumbWidth={thumbWidth}
             />
           ))}
         </tbody>
@@ -125,7 +162,7 @@ export function ClassicEventsTable({
                   up to (but not including) the first totalled column. */}
               <td
                 className="px-3 py-2 font-semibold text-zinc-700 text-end"
-                colSpan={1 + (durationCol >= 0 ? durationCol : diskCol)}
+                colSpan={leadingCols + (durationCol >= 0 ? durationCol : diskCol)}
               >
                 {t('Totals ({{count}} rows)', { count: events.length })}
               </td>
@@ -169,23 +206,44 @@ export function ClassicEventsTable({
 }
 
 function Th({
-  children,
-  numeric,
+  children, numeric, sortable, active, dir, onClick,
 }: {
   children?: React.ReactNode;
   numeric?: boolean;
+  sortable?: boolean;
+  active?: boolean;
+  dir?: SortDirection;
+  onClick?: () => void;
 }) {
+  const align = numeric ? 'text-end' : 'text-start';
+  if (!sortable) {
+    return <th className={`px-3 py-2 font-semibold ${align}`}>{children}</th>;
+  }
   return (
     <th
-      className={
-        'px-3 py-2 font-semibold ' +
-        (numeric ? 'text-end' : 'text-start')
-      }
+      className={`px-3 py-2 font-semibold ${align}`}
+      aria-sort={active ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
     >
-      {children}
+      <button
+        type="button"
+        onClick={onClick}
+        className={
+          'inline-flex items-center gap-1 uppercase tracking-wider hover:text-cyan-700 ' +
+          (active ? 'text-cyan-700' : '')
+        }
+      >
+        {children}
+        {active && (dir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}
+      </button>
     </th>
   );
 }
+
+const TIME_FORMAT: Intl.DateTimeFormatOptions = {
+  year: '2-digit', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit',
+  hour12: false,
+};
 
 function Row({
   event,
@@ -193,16 +251,21 @@ function Row({
   isSelected,
   onToggleSelected,
   token,
+  showThumbs,
+  thumbWidth,
 }: {
   event: ZmEvent;
   monitorName?: string;
   isSelected: boolean;
   onToggleSelected: () => void;
   token?: string | null;
+  showThumbs: boolean;
+  thumbWidth: number;
 }) {
   const { t } = useTranslation();
   const isVisible = useEventsColumnsStore((s) => s.isVisible);
   const start = event.start_date_time ? new Date(event.start_date_time) : null;
+  const end = event.end_date_time ? new Date(event.end_date_time) : null;
   const durationSec = eventDurationSeconds(event.length);
 
   return (
@@ -221,6 +284,21 @@ function Row({
           className="cursor-pointer"
         />
       </td>
+      {showThumbs && (
+        <td className="px-3 py-1 align-middle">
+          <Link to="/events/$eventId" params={{ eventId: String(event.id) }}>
+            <img
+              src={getEventThumbnailUrl(event.id, token ?? undefined)}
+              alt={t('Thumbnail for event {{id}}', { id: event.id })}
+              width={thumbWidth}
+              style={{ width: thumbWidth }}
+              className="block h-auto max-w-none rounded-sm border border-zinc-200"
+              loading="lazy"
+              onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
+            />
+          </Link>
+        </td>
+      )}
       {isVisible('id') && (
         <td className="px-3 py-1.5 font-mono text-zinc-500 whitespace-nowrap">
           <Link
@@ -256,13 +334,12 @@ function Row({
       )}
       {isVisible('time') && (
         <td className="px-3 py-1.5 font-mono text-zinc-700 whitespace-nowrap text-[12px]">
-          {start
-            ? start.toLocaleString([], {
-                year: '2-digit', month: '2-digit', day: '2-digit',
-                hour: '2-digit', minute: '2-digit', second: '2-digit',
-                hour12: false,
-              })
-            : '—'}
+          {start ? start.toLocaleString([], TIME_FORMAT) : '—'}
+        </td>
+      )}
+      {isVisible('end') && (
+        <td className="px-3 py-1.5 font-mono text-zinc-700 whitespace-nowrap text-[12px]">
+          {end ? end.toLocaleString([], TIME_FORMAT) : '—'}
         </td>
       )}
       {isVisible('duration') && (

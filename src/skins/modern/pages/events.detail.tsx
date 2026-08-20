@@ -23,10 +23,18 @@ import {
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
   FileVideo,
+  Archive,
+  ArchiveRestore,
+  Pencil,
+  Gauge,
+  Database,
+  HardDrive,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { EventEditForm } from '@/features/events/EventEditForm';
 import { useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 import { TagChips } from '@/features/events/TagChips';
@@ -52,10 +60,11 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
     isPlaying, isMuted, currentTime, duration,
     replayMode, setReplayMode, scale, setScale,
     showZones, setShowZones, showStats, setShowStats,
-    prevEventId, nextEventId,
+    prevEventId, nextEventId, navMonitorId,
     startTime, endTime, downloadUrl, thumbnailUrl, codecHint,
     videoContainerW, videoContainerH, useSwappedRotation, videoElementStyle,
-    playerMaxWidth,
+    playerMaxWidth, rate, setRate, rateOptions,
+    storageName, eventData,
   } = s;
 
   useDocumentTitle(event ? t('Event {{id}}', { id: event.id }) : t('Events'));
@@ -89,7 +98,9 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
           <div className="text-center">
             <Video size={64} className="mx-auto mb-4 text-text-muted" />
             <h2 className="text-xl font-bold text-text-primary mb-2">{t('Event Not Found')}</h2>
-            <p className="text-text-muted mb-6">{t('The requested event could not be found.')}</p>
+            <p className="text-text-muted mb-6">
+              {s.eventError ? s.eventError.message : t('The requested event could not be found.')}
+            </p>
             <Link
               to="/events"
               className="px-6 py-3 bg-cyan text-void font-medium rounded-lg hover:bg-cyan-dim transition-colors"
@@ -125,12 +136,18 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
             data-testid="event-playback-toolbar"
             className="flex flex-wrap items-center gap-2 mb-4 px-3 py-2 rounded-lg border border-border-subtle bg-surface/40"
           >
-            <div className="flex items-center gap-1">
+            <div
+              className="flex items-center gap-1"
+              title={navMonitorId == null
+                ? t('Prev / Next walk every monitor (← →)')
+                : t('Prev / Next stay on {{monitor}} (← →)', { monitor: monitor?.name ?? t('Monitor {{id}}', { id: navMonitorId }) })}
+            >
               <button
                 type="button"
                 onClick={s.navPrev}
                 disabled={prevEventId == null}
                 aria-label={t('Previous event')}
+                aria-keyshortcuts="ArrowLeft"
                 className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeftIcon size={14} className="rtl:-scale-x-100" />
@@ -141,6 +158,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 onClick={s.navNext}
                 disabled={nextEventId == null}
                 aria-label={t('Next event')}
+                aria-keyshortcuts="ArrowRight"
                 className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 {t('Next')}
@@ -174,6 +192,21 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
               >
                 {scaleOptions.map((opt) => (
                   <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="flex items-center gap-1.5 text-xs text-text-muted">
+              <Gauge size={12} />
+              <span className="font-mono uppercase tracking-[0.16em]">{t('Speed')}</span>
+              <select
+                aria-label={t('Playback speed')}
+                value={rate}
+                onChange={(e) => setRate(Number(e.target.value))}
+                className="px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+              >
+                {rateOptions.map((r) => (
+                  <option key={r} value={r}>{r}×</option>
                 ))}
               </select>
             </label>
@@ -320,6 +353,8 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                         {/* Play/Pause */}
                         <button
                           onClick={s.handlePlayPause}
+                          aria-label={isPlaying ? t('Pause') : t('Play')}
+                          aria-keyshortcuts="Space"
                           className="p-2 rounded-lg bg-white/10 text-white hover:bg-white/20 transition-colors"
                         >
                           {isPlaying ? <Pause size={18} /> : <Play size={18} />}
@@ -468,6 +503,50 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                   </div>
                 </Panel>
               </div>
+
+              {/* Event_Data rows — only when a detector / trigger wrote some. */}
+              {eventData.length > 0 && (
+                <Panel title={t('Event Data')} icon={<Database size={16} />} noPadding>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs" data-testid="event-data-table">
+                      <thead className="bg-surface/70 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-muted">
+                        <tr>
+                          <th className="px-3 py-2 text-start">{t('Frame')}</th>
+                          <th className="px-3 py-2 text-start">{t('Timestamp')}</th>
+                          <th className="px-3 py-2 text-start">{t('Data')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {eventData.map((row) => (
+                          <tr key={row.id} className="border-b border-border-subtle/40">
+                            <td className="px-3 py-1.5 font-mono text-text-muted">
+                              {row.frame_id != null ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Frame n at the event's average rate.
+                                    const fps = event.frames && duration ? event.frames / duration : 0;
+                                    if (fps > 0 && row.frame_id != null) s.seekTo(row.frame_id / fps);
+                                  }}
+                                  className="hover:text-cyan"
+                                >
+                                  #{row.frame_id}
+                                </button>
+                              ) : '—'}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-text-secondary whitespace-nowrap">
+                              {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-text-primary whitespace-pre-wrap break-words">
+                              {row.data ?? '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              )}
             </div>
 
             {/* Sidebar - 4 columns */}
@@ -558,12 +637,12 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     </span>
                   </div>
 
-                  {event.storage_id && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-text-secondary">{t('Storage')}</span>
-                      <span className="font-mono text-text-primary">{t('ID: {{id}}', { id: event.storage_id })}</span>
-                    </div>
-                  )}
+                  <div className="flex items-center justify-between">
+                    <span className="text-text-secondary flex items-center gap-1.5"><HardDrive size={12} />{t('Storage')}</span>
+                    <span className="font-mono text-text-primary" data-testid="event-storage">
+                      {storageName ?? t('ID: {{id}}', { id: event.storage_id })}
+                    </span>
+                  </div>
 
                   {event.disk_space && (
                     <div className="flex items-center justify-between">
@@ -600,6 +679,38 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
               {/* Actions */}
               <Panel title={t('Actions')}>
                 <div className="space-y-2">
+                  <button
+                    type="button"
+                    onClick={s.toggleArchived}
+                    disabled={s.archivePending}
+                    aria-pressed={event.archived === 1}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
+                      'bg-surface border border-border-subtle',
+                      'text-text-primary hover:border-amber/50 transition-colors',
+                      'disabled:opacity-50 disabled:cursor-not-allowed'
+                    )}
+                  >
+                    {event.archived === 1 ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+                    {event.archived === 1 ? t('Unarchive') : t('Archive')}
+                  </button>
+                  {s.archiveError && (
+                    <p role="alert" className="text-xs text-crimson">{s.archiveError}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={s.openEdit}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
+                      'bg-surface border border-border-subtle',
+                      'text-text-primary hover:border-cyan/50 transition-colors'
+                    )}
+                  >
+                    <Pencil size={16} />
+                    {t('Edit')}
+                  </button>
+
                   <a
                     href={downloadUrl}
                     download
@@ -615,12 +726,9 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                   </a>
 
                   <button
-                    onClick={() => {
-                      if (confirm(t('Are you sure you want to delete this event?'))) {
-                        s.deleteEvent();
-                      }
-                    }}
+                    onClick={s.requestDelete}
                     disabled={s.deletePending}
+                    aria-keyshortcuts="Delete"
                     className={clsx(
                       'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
                       'bg-crimson/10 border border-crimson/30',
@@ -631,10 +739,37 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <Trash2 size={16} />
                     {t('Delete Event')}
                   </button>
+                  <p className="text-[10px] font-mono text-text-muted text-center">
+                    {t('Keys: ← → prev/next · Space play/pause · Delete')}
+                  </p>
                 </div>
               </Panel>
             </div>
           </div>
+
+          <ConfirmDialog
+            isOpen={s.deleteOpen}
+            onClose={s.cancelDelete}
+            onConfirm={s.confirmDelete}
+            title={t('Delete Event')}
+            message={s.deleteError
+              ? t('Delete failed: {{message}}', { message: s.deleteError })
+              : t('Delete event #{{id}} and its recording? This cannot be undone.', { id: event.id })}
+            confirmText={t('Delete')}
+            isLoading={s.deletePending}
+          />
+
+          {s.editOpen && (
+            <EventEditForm
+              isOpen
+              title={t('Edit event #{{id}}', { id: event.id })}
+              initial={{ name: event.name, cause: event.cause ?? '', notes: event.notes ?? '' }}
+              onClose={s.closeEdit}
+              onSubmit={(v) => s.saveEdit({ name: v.name, cause: v.cause, notes: v.notes })}
+              pending={s.savePending}
+              error={s.saveError}
+            />
+          )}
       </main>
     </AppShell>
   );

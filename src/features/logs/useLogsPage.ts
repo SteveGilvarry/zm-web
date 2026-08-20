@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/auth';
-import { listLogs, type LogEntry } from '@/api/logs';
+import { LOG_LEVEL, listLogs, type LogEntry } from '@/api/logs';
 import { listServers } from '@/api/servers';
 import { downloadCsv, logsToCsv, type LogColumnKey } from './csv';
 import {
   dateInputToMs,
+  matchesLevel,
   matchesMessageQuery,
   summarizeLogs,
   withinTimeRange,
@@ -32,17 +33,33 @@ const COMMON_COMPONENTS = [
   'zm_api', 'zmpkg', 'zmupdate', 'web',
 ];
 
-// ZM level convention: lower = more severe. We expose them at the natural
-// thresholds an operator wants ("Errors only", "Errors + Warnings", etc.).
-export const LEVEL_THRESHOLDS: ReadonlyArray<{ value: number | undefined; label: string }> = [
-  { value: undefined, label: 'All' },
-  { value: -1, label: 'Errors only' },
-  { value: 0,  label: 'Warnings+' },
-  { value: 1,  label: 'Info+' },
-  { value: 2,  label: 'Debug+' },
+/**
+ * Exact-level chips on ZoneMinder's scale (lower = more severe). The backend
+ * `level` parameter is a numeric `>=` bound — it returns the chosen level
+ * *and everything less severe* — so a chip sends `level=N` to trim the set
+ * server-side and then keeps only `level === N` rows within the page. The
+ * label is the ZM code; the page translates it.
+ */
+export const LEVEL_CHIPS: ReadonlyArray<{ value: number | undefined; code: string }> = [
+  { value: undefined, code: 'ALL' },
+  { value: LOG_LEVEL.PANIC,   code: 'PNC' },
+  { value: LOG_LEVEL.FATAL,   code: 'FAT' },
+  { value: LOG_LEVEL.ERROR,   code: 'ERR' },
+  { value: LOG_LEVEL.WARNING, code: 'WAR' },
+  { value: LOG_LEVEL.INFO,    code: 'INF' },
+  { value: LOG_LEVEL.DEBUG,   code: 'DBG' },
 ];
 
+export const LOGS_PAGE_SIZE_OPTIONS: readonly number[] = [25, 50, 100, 200, 500];
+
 const COLUMN_PREF_KEY = 'zm-dashboard.logs.columns';
+const PAGE_SIZE_PREF_KEY = 'zm-dashboard.logs.pageSize';
+
+function loadPageSizePref(): number {
+  if (typeof window === 'undefined') return 50;
+  const n = Number(window.localStorage.getItem(PAGE_SIZE_PREF_KEY));
+  return LOGS_PAGE_SIZE_OPTIONS.includes(n) ? n : 50;
+}
 
 function loadColumnPrefs(): LogColumnKey[] {
   if (typeof window === 'undefined') return DEFAULT_VISIBLE_LOG_COLUMNS;
@@ -82,13 +99,23 @@ export interface LogsPageState {
   isFetching: boolean;
   refetch: () => void;
 
-  /** Current page after client-side message/date filtering. */
+  /** Current page after client-side level/message/date filtering. */
   logs: LogEntry[];
+  /** Rows the server sent for this page, before client-side narrowing. */
+  pageRowCount: number;
   total: number;
   summary: ReturnType<typeof summarizeLogs>;
   page: number;
   pageSize: number;
+  pageSizeOptions: readonly number[];
+  setPageSize: (n: number) => void;
   totalPages: number;
+  /**
+   * True when a filter only applies within the fetched page (exact level,
+   * message search, date range) — the counts and "Displaying" range are
+   * then page-local, and the UI says so.
+   */
+  pageLocalFiltering: boolean;
 
   componentFilter: string;
   levelFilter: number | undefined;
@@ -127,7 +154,7 @@ export function useLogsPage(): LogsPageState {
   const search = useSearch({ from: '/logs/' });
   const navigate = useNavigate({ from: '/logs/' });
 
-  const [pageSize] = useState(50);
+  const [pageSize, setPageSizeState] = useState<number>(loadPageSizePref);
   const page = search.page ?? 1;
   const componentFilter = search.component ?? '';
   const levelFilter = search.level;
@@ -167,6 +194,13 @@ export function useLogsPage(): LogsPageState {
     });
   };
 
+  const setPageSize = (n: number) => {
+    if (!LOGS_PAGE_SIZE_OPTIONS.includes(n)) return;
+    setPageSizeState(n);
+    try { window.localStorage.setItem(PAGE_SIZE_PREF_KEY, String(n)); } catch { /* ignore */ }
+    setSearch({ page: undefined });
+  };
+
   const { data, isLoading, refetch, isFetching } = useQuery({
     queryKey: ['logs', page, pageSize, componentFilter, levelFilter, serverFilter],
     queryFn: () =>
@@ -174,6 +208,8 @@ export function useLogsPage(): LogsPageState {
         page,
         page_size: pageSize,
         component: componentFilter || undefined,
+        // `>=` on the server: trims rows more severe than the chip; the
+        // exact match happens below, per page.
         level: levelFilter,
         server_id: serverFilter,
       }),
@@ -196,14 +232,19 @@ export function useLogsPage(): LogsPageState {
   const startMs = useMemo(() => dateInputToMs(startInput), [startInput]);
   const endMs   = useMemo(() => dateInputToMs(endInput), [endInput]);
 
-  // Apply client-side message search + date range over the current page.
-  // The backend's other filters (component / level / server) round-trip
-  // through the URL and the query.
+  // Apply the exact level, message search and date range over the current
+  // page. Component / server are server-side; level is half-and-half (see
+  // LEVEL_CHIPS). All of them round-trip through the URL.
   const filteredLogs = useMemo(() => {
     return rawLogs.filter(
-      (l) => matchesMessageQuery(l, messageQuery) && withinTimeRange(l, startMs, endMs),
+      (l) =>
+        matchesLevel(l, levelFilter) &&
+        matchesMessageQuery(l, messageQuery) &&
+        withinTimeRange(l, startMs, endMs),
     );
-  }, [rawLogs, messageQuery, startMs, endMs]);
+  }, [rawLogs, levelFilter, messageQuery, startMs, endMs]);
+  const pageLocalFiltering =
+    levelFilter !== undefined || messageQuery.trim() !== '' || startMs !== null || endMs !== null;
 
   const summary = useMemo(() => summarizeLogs(filteredLogs), [filteredLogs]);
   const totalPages = data?.last_page ?? 1;
@@ -235,11 +276,15 @@ export function useLogsPage(): LogsPageState {
     refetch: () => { refetch(); },
 
     logs: filteredLogs,
+    pageRowCount: rawLogs.length,
     total: data?.total ?? 0,
     summary,
     page,
     pageSize,
+    pageSizeOptions: LOGS_PAGE_SIZE_OPTIONS,
+    setPageSize,
     totalPages,
+    pageLocalFiltering,
 
     componentFilter,
     levelFilter,

@@ -41,15 +41,33 @@ export const REPLAY_MODE_OPTIONS: ReadonlyArray<{ value: ReplayMode; label: stri
   { value: 'gapless', label: 'Gapless' },
 ];
 
+/** Playback speeds offered by the event player (legacy: 1/4× … 16×). */
+export const PLAYBACK_RATES: readonly number[] = [0.25, 0.5, 1, 2, 4, 8, 16];
+
+/**
+ * Which events Prev / Next on the detail page walk through. Written by the
+ * events list whenever its monitor filter changes: a monitor id, or `null`
+ * for "every monitor". Before the list has ever been visited the scope is
+ * unset and the detail page falls back to the event's own monitor.
+ */
+export interface EventNavScope {
+  monitorId: number | null;
+}
+
 interface EventPlaybackState {
   replayMode: ReplayMode;
   scale: PlaybackScale;
   showZones: boolean;
   showStats: boolean;
+  /** `HTMLMediaElement.playbackRate`; one of `PLAYBACK_RATES`. */
+  rate: number;
+  navScope: EventNavScope | null;
   setReplayMode: (mode: ReplayMode) => void;
   setScale: (scale: PlaybackScale) => void;
   setShowZones: (show: boolean) => void;
   setShowStats: (show: boolean) => void;
+  setRate: (rate: number) => void;
+  setNavScope: (scope: EventNavScope) => void;
 }
 
 /**
@@ -65,10 +83,15 @@ export const useEventPlaybackStore = create<EventPlaybackState>()(
       scale: 'auto',
       showZones: false,
       showStats: false,
+      rate: 1,
+      navScope: null,
       setReplayMode: (mode) => set({ replayMode: mode }),
       setScale: (scale) => set({ scale }),
       setShowZones: (show) => set({ showZones: show }),
       setShowStats: (show) => set({ showStats: show }),
+      setRate: (rate) => set({ rate: PLAYBACK_RATES.includes(rate) ? rate : 1 }),
+      setNavScope: (scope) =>
+        set((s) => (s.navScope?.monitorId === scope.monitorId ? {} : { navScope: scope })),
     }),
     {
       name: 'zm-event-playback',

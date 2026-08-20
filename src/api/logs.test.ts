@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { listLogs, getLog, levelLabel, levelColor } from './logs';
+import { listLogs, getLog, levelLabel, levelColor, levelRowTint } from './logs';
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
@@ -17,33 +17,44 @@ afterAll(() => {
   useAuthStore.getState().clearAuth();
 });
 
+// ZoneMinder's Logger scale, as written to the Logs table on a live box:
+// level -1 rows carry code WAR and level 0 rows carry INF.
 describe('levelLabel (pure)', () => {
-  it('maps known ZM severity numbers to labels', () => {
-    expect(levelLabel(-3)).toBe('PANIC');
-    expect(levelLabel(-2)).toBe('FATAL');
-    expect(levelLabel(-1)).toBe('ERROR');
-    expect(levelLabel(0)).toBe('WARNING');
-    expect(levelLabel(1)).toBe('INFO');
-    expect(levelLabel(2)).toBe('DEBUG');
+  it('maps ZoneMinder severity numbers to labels', () => {
+    expect(levelLabel(-4)).toBe('PANIC');
+    expect(levelLabel(-3)).toBe('FATAL');
+    expect(levelLabel(-2)).toBe('ERROR');
+    expect(levelLabel(-1)).toBe('WARNING');
+    expect(levelLabel(0)).toBe('INFO');
+    expect(levelLabel(1)).toBe('DEBUG');
   });
 
-  it('falls back to "LVL N" for unrecognised levels', () => {
-    expect(levelLabel(7)).toBe('LVL 7');
-    expect(levelLabel(-99)).toBe('LVL -99');
+  it('labels deeper debug levels and anything below PANIC sensibly', () => {
+    expect(levelLabel(7)).toBe('DEBUG 7');
+    expect(levelLabel(-99)).toBe('PANIC');
   });
 });
 
-describe('levelColor (pure)', () => {
-  it('maps the high-severity range (<= -1) to crimson', () => {
+describe('levelColor / levelRowTint (pure)', () => {
+  it('maps ERROR and worse to crimson', () => {
+    expect(levelColor(-4)).toBe('text-crimson');
     expect(levelColor(-3)).toBe('text-crimson');
     expect(levelColor(-2)).toBe('text-crimson');
-    expect(levelColor(-1)).toBe('text-crimson');
   });
 
-  it('maps WARNING/INFO to amber/cyan and DEBUG+ to muted', () => {
-    expect(levelColor(0)).toBe('text-amber');
-    expect(levelColor(1)).toBe('text-cyan');
-    expect(levelColor(2)).toBe('text-text-muted');
+  it('maps WARNING/INFO to amber/cyan and DEBUG to muted', () => {
+    expect(levelColor(-1)).toBe('text-amber');
+    expect(levelColor(0)).toBe('text-cyan');
+    expect(levelColor(1)).toBe('text-text-muted');
+    expect(levelColor(5)).toBe('text-text-muted');
+  });
+
+  it('tints rows for WARNING and worse only', () => {
+    expect(levelRowTint(-3)).toBe('bg-crimson/20');
+    expect(levelRowTint(-2)).toBe('bg-crimson/10');
+    expect(levelRowTint(-1)).toBe('bg-amber/10');
+    expect(levelRowTint(0)).toBe('');
+    expect(levelRowTint(1)).toBe('');
   });
 });
 
@@ -59,8 +70,8 @@ describe('listLogs', () => {
         });
       }),
     );
-    const out = await listLogs({ level: 1, component: 'zmc' });
-    expect(capturedUrl).toContain('level=1');
+    const out = await listLogs({ level: -1, component: 'zmc' });
+    expect(capturedUrl).toContain('level=-1');
     expect(capturedUrl).toContain('component=zmc');
     expect(out.items[0].component).toBe('zmc');
   });
@@ -73,12 +84,12 @@ describe('getLog', () => {
       http.get('/api/v3/logs/:id', ({ params }) => {
         id = params.id as string;
         return HttpResponse.json({
-          id: 42, time_key: 't', level: -1, code: 'ERR', component: 'zma', message: 'boom',
+          id: 42, time_key: 't', level: -2, code: 'ERR', component: 'zma', message: 'boom',
         });
       }),
     );
     const out = await getLog(42);
     expect(id).toBe('42');
-    expect(out.level).toBe(-1);
+    expect(out.level).toBe(-2);
   });
 });

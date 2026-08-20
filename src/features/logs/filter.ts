@@ -1,4 +1,4 @@
-import type { LogEntry } from '@/api/logs';
+import { LOG_LEVEL, type LogEntry } from '@/api/logs';
 
 /**
  * Parse a value out of a Logs `time_key` field. The backend ships these
@@ -57,24 +57,40 @@ export function dateInputToMs(value: string): number | null {
 }
 
 /**
- * Bucket a page of logs into legacy summary-strip counts:
- *   - errors:   level <= -1
- *   - warnings: level === 0
- *   - info:     level >= 1
+ * Bucket a page of logs into the summary-strip counts, on ZoneMinder's
+ * scale (lower = more severe):
+ *   - errors:   level <= -2  (ERROR, FATAL, PANIC)
+ *   - warnings: level === -1
+ *   - info:     level === 0
+ *   - debug:    level >= 1
  *
  * Useful when the operator has filtered to a single level (or none): the
  * summary still reflects what's in front of them, not the global table.
  */
 export function summarizeLogs(
   logs: LogEntry[],
-): { errors: number; warnings: number; info: number } {
+): { errors: number; warnings: number; info: number; debug: number } {
   let errors = 0;
   let warnings = 0;
   let info = 0;
+  let debug = 0;
   for (const log of logs) {
-    if (log.level <= -1) errors++;
-    else if (log.level === 0) warnings++;
-    else info++;
+    if (log.level <= LOG_LEVEL.ERROR) errors++;
+    else if (log.level === LOG_LEVEL.WARNING) warnings++;
+    else if (log.level === LOG_LEVEL.INFO) info++;
+    else debug++;
   }
-  return { errors, warnings, info };
+  return { errors, warnings, info, debug };
+}
+
+/**
+ * Exact-level match for the level chips. The backend's `level` query is a
+ * numeric `>=` (this severity and everything less severe), so the page
+ * narrows server-side and finishes here. DEBUG (1) matches every debug
+ * depth (1..9) because operators never want "debug level 3 only".
+ */
+export function matchesLevel(log: LogEntry, level: number | undefined): boolean {
+  if (level === undefined) return true;
+  if (level >= LOG_LEVEL.DEBUG) return log.level >= LOG_LEVEL.DEBUG;
+  return log.level === level;
 }

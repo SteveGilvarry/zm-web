@@ -2,7 +2,10 @@ import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Archive, ArrowRight } from 'lucide-react';
 
-/** Breadcrumb from the audit report to the archived-events list. */
+/**
+ * Breadcrumb from the audit report to the archived-events list. The events
+ * page reads `?archived=true` and sends it to the backend as a filter.
+ */
 export function ArchivedLink({ variant }: { variant: 'modern' | 'classic' }) {
   const { t } = useTranslation();
   const cls = variant === 'classic'

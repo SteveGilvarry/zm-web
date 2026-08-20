@@ -14,19 +14,54 @@ export async function updateEvent(id: number, payload: EventUpdatePayload): Prom
   return apiPatch<EventUpdatePayload, ZmEvent>(`/events/${id}`, payload);
 }
 
+/** `EventSortField` in the OpenAPI spec — anything else answers 400. */
+export const EVENT_SORT_FIELDS = [
+  'start_time', 'end_time', 'alarm_frames', 'max_score',
+  'avg_score', 'tot_score', 'length', 'id',
+] as const;
+export type EventSortField = (typeof EVENT_SORT_FIELDS)[number];
+export type SortDirection = 'asc' | 'desc';
+
+export function isEventSortField(v: unknown): v is EventSortField {
+  return typeof v === 'string' && (EVENT_SORT_FIELDS as readonly string[]).includes(v);
+}
+
+/**
+ * Map a legacy `ZM_WEB_EVENT_SORT_FIELD` value (the PHP UI's column names)
+ * onto the backend's sort enum. Columns the API cannot sort by (Name, Cause,
+ * MonitorName, DiskSpace, Frames) fall back to `start_time`, which is what
+ * the legacy default is anyway.
+ */
+export function legacySortFieldToApi(legacy: string): EventSortField {
+  switch (legacy.trim()) {
+    case 'Id': return 'id';
+    case 'StartDateTime': case 'StartTime': return 'start_time';
+    case 'EndDateTime': case 'EndTime': return 'end_time';
+    case 'Length': return 'length';
+    case 'AlarmFrames': return 'alarm_frames';
+    case 'TotScore': return 'tot_score';
+    case 'AvgScore': return 'avg_score';
+    case 'MaxScore': return 'max_score';
+    default: return isEventSortField(legacy) ? legacy : 'start_time';
+  }
+}
+
 export interface EventQueryParams {
   page?: number;
   page_size?: number;
   monitor_id?: number;
   /** ISO timestamp; events with start_date_time >= this. */
   start_time?: string;
-  /** ISO timestamp; events with start_date_time <= this. */
+  /**
+   * ISO timestamp; events with **end_date_time** <= this (not start — see
+   * zm_api `repo/events.rs`). An event still running at this instant is
+   * excluded.
+   */
   end_time?: string;
-  cause?: string;
   archived?: boolean;
   alarm_frames_min?: number;
-  sort?: 'id' | 'start_date_time' | 'max_score' | 'frames';
-  direction?: 'asc' | 'desc';
+  sort?: EventSortField;
+  direction?: SortDirection;
 }
 
 export async function getEvents(params?: EventQueryParams): Promise<PaginatedResponse<ZmEvent>> {

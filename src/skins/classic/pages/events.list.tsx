@@ -10,13 +10,21 @@ export default function ClassicEventsListPage() {
   return (
     <EventsListLayout
       columnChooserVariant="classic"
-      renderList={({ events, monitorLookup, accessToken, selectedIds, toggleSelected }) => (
+      renderList={({
+        events, monitorLookup, accessToken, selectedIds, toggleSelected,
+        sortField, sortDir, toggleSort, showThumbs, thumbWidth,
+      }) => (
         <ClassicEventsTable
           events={events}
           monitorLookup={monitorLookup}
           selectedIds={selectedIds}
           onToggleSelected={toggleSelected}
           token={accessToken}
+          sortField={sortField}
+          sortDir={sortDir}
+          onSort={toggleSort}
+          showThumbs={showThumbs}
+          thumbWidth={thumbWidth}
         />
       )}
     />

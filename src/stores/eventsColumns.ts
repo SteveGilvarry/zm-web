@@ -16,6 +16,7 @@ export type EventsColumnKey =
   | 'name'
   | 'cause'
   | 'time'
+  | 'end'
   | 'duration'
   | 'frames'
   | 'alarm_frames'
@@ -43,6 +44,7 @@ export const EVENTS_COLUMNS: EventsColumnDef[] = [
   { key: 'name',         label: 'Name',     defaultVisible: true },
   { key: 'cause',        label: 'Cause',    defaultVisible: true },
   { key: 'time',         label: 'Time',     defaultVisible: true },
+  { key: 'end',          label: 'End',      defaultVisible: false },
   { key: 'duration',     label: 'Duration', defaultVisible: true },
   { key: 'frames',       label: 'Frames',   defaultVisible: true },
   { key: 'alarm_frames', label: 'Alarm',    defaultVisible: true },

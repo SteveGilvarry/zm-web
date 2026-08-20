@@ -4,8 +4,17 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
-import { BulkActionBar } from './BulkActionBar';
 import { useAuthStore } from '@/stores/auth';
+
+// The bar navigates (View) through the router; shim it so the component
+// renders without a RouterProvider.
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+}));
+
+const { BulkActionBar } = await import('./BulkActionBar');
+const { bulkEditPayload } = await import('./bulkEdit');
 
 const server = setupServer();
 beforeAll(() => {
@@ -18,7 +27,10 @@ beforeAll(() => {
   });
   server.listen({ onUnhandledRequest: 'warn' });
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  mockNavigate.mockReset();
+});
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -32,14 +44,88 @@ describe('BulkActionBar — visibility', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('shows the count and all three action buttons when 1+ selected', () => {
+  it('shows the count and every action button when 1+ selected', () => {
     renderWithProviders(
       <BulkActionBar selectedIds={new Set([1, 2, 3])} onClear={() => {}} />,
     );
     expect(screen.getByText(/3 selected/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^archive$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^unarchive$/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^delete$/i })).toBeInTheDocument();
+    for (const name of [/^view$/i, /^edit$/i, /^archive$/i, /^unarchive$/i, /^delete$/i]) {
+      expect(screen.getByRole('button', { name })).toBeInTheDocument();
+    }
+  });
+});
+
+describe('BulkActionBar — view', () => {
+  it('opens the first selected event', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <BulkActionBar selectedIds={new Set([42, 7])} onClear={() => {}} />,
+    );
+    await user.click(screen.getByRole('button', { name: /^view$/i }));
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/events/$eventId', params: { eventId: '42' } });
+  });
+});
+
+describe('bulkEditPayload', () => {
+  it('sends only the fields the operator filled in', () => {
+    expect(bulkEditPayload({ name: '', cause: '', notes: '', archived: 'keep' })).toEqual({});
+    expect(bulkEditPayload({ name: ' Parcel ', cause: '', notes: 'x', archived: 'archive' }))
+      .toEqual({ name: 'Parcel', notes: 'x', archived: true });
+    expect(bulkEditPayload({ name: '', cause: 'Linked', notes: '', archived: 'unarchive' }))
+      .toEqual({ cause: 'Linked', archived: false });
+  });
+});
+
+describe('BulkActionBar — edit', () => {
+  it('PATCHes the filled-in fields to every selected id', async () => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+    const patched: Array<{ id: number; body: unknown }> = [];
+    server.use(
+      http.patch('/api/v3/events/:id', async ({ params, request }) => {
+        patched.push({ id: Number(params.id), body: await request.json() });
+        return HttpResponse.json({});
+      }),
+    );
+    renderWithProviders(
+      <BulkActionBar selectedIds={new Set([5, 6])} onClear={onClear} />,
+    );
+    await user.click(screen.getByRole('button', { name: /^edit$/i }));
+    await user.type(screen.getByLabelText(/event cause/i), 'Reviewed');
+    await user.click(screen.getByRole('radio', { name: /^archive$/i }));
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+
+    await waitFor(() => expect(patched).toHaveLength(2));
+    expect(patched.map((p) => p.id).sort()).toEqual([5, 6]);
+    expect(patched[0].body).toEqual({ cause: 'Reviewed', archived: true });
+    await waitFor(() => expect(onClear).toHaveBeenCalled());
+  });
+});
+
+describe('BulkActionBar — partial failure', () => {
+  it('keeps going, reports the ids that failed and keeps the selection', async () => {
+    const user = userEvent.setup();
+    const onClear = vi.fn();
+    const hit: number[] = [];
+    server.use(
+      http.patch('/api/v3/events/:id', ({ params }) => {
+        const id = Number(params.id);
+        hit.push(id);
+        return id === 2
+          ? HttpResponse.json({ kind: 'NOT_FOUND', error_message: 'no such event' }, { status: 404 })
+          : HttpResponse.json({});
+      }),
+    );
+    renderWithProviders(
+      <BulkActionBar selectedIds={new Set([1, 2, 3])} onClear={onClear} />,
+    );
+    await user.click(screen.getByRole('button', { name: /^archive$/i }));
+
+    const report = await screen.findByTestId('bulk-failures');
+    expect(hit.sort()).toEqual([1, 2, 3]);
+    expect(report.textContent).toMatch(/2 of 3 succeeded/);
+    expect(report.textContent).toMatch(/#2 \(no such event\)/);
+    expect(onClear).not.toHaveBeenCalled();
   });
 });
 

@@ -2,16 +2,16 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   Activity, ChevronLeft, ChevronRight, AlertOctagon, AlertTriangle,
-  Info, Bug, RefreshCw, Download, Columns3, Search,
+  Info, Bug, RefreshCw, Download, Columns3, Search, Skull,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
-import { levelLabel, levelColor, type LogEntry } from '@/api/logs';
+import { LOG_LEVEL, levelLabel, levelColor, levelRowTint, type LogEntry } from '@/api/logs';
 import { type LogColumnKey } from '@/features/logs/csv';
 import { ColumnPicker } from '@/features/logs/ColumnPicker';
 import { SummaryStrip } from '@/features/logs/SummaryStrip';
-import { LEVEL_THRESHOLDS, formatLogTime, useLogsPage } from '@/features/logs/useLogsPage';
+import { LEVEL_CHIPS, formatLogTime, useLogsPage } from '@/features/logs/useLogsPage';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Column headers, keyed by column id so `t()` sees literal keys. */
@@ -29,34 +29,47 @@ function useColumnLabels(): Record<LogColumnKey, string> {
   };
 }
 
-/** Labels for the level-threshold chips (values come from LEVEL_THRESHOLDS). */
-function useLevelThresholdLabel(): (value: number | undefined) => string {
+/**
+ * Display label for a numeric log level (wire value stays numeric).
+ * ZoneMinder's scale: -4 PANIC, -3 FATAL, -2 ERROR, -1 WARNING, 0 INFO, 1+ DEBUG.
+ */
+function useLevelLabel(): (level: number) => string {
   const { t } = useTranslation();
-  return (value) => {
-    switch (value) {
-      case -1: return t('Errors only');
-      case 0: return t('Warnings+');
-      case 1: return t('Info+');
-      case 2: return t('Debug+');
+  return (level) => {
+    if (level <= LOG_LEVEL.PANIC) return t('PANIC');
+    switch (level) {
+      case LOG_LEVEL.FATAL:   return t('FATAL');
+      case LOG_LEVEL.ERROR:   return t('ERROR');
+      case LOG_LEVEL.WARNING: return t('WARNING');
+      case LOG_LEVEL.INFO:    return t('INFO');
+      case LOG_LEVEL.DEBUG:   return t('DEBUG');
+      default: return levelLabel(level);
+    }
+  };
+}
+
+/** Chip labels by chip code (kept literal for the extractor). */
+function useChipLabel(): (code: string) => string {
+  const { t } = useTranslation();
+  return (code) => {
+    switch (code) {
+      case 'PNC': return t('Panic');
+      case 'FAT': return t('Fatal');
+      case 'ERR': return t('Error');
+      case 'WAR': return t('Warning');
+      case 'INF': return t('Info');
+      case 'DBG': return t('Debug');
       default: return t('All');
     }
   };
 }
 
-/** Display label for a numeric log level (wire value stays numeric). */
-function useLevelLabel(): (level: number) => string {
-  const { t } = useTranslation();
-  return (level) => {
-    switch (level) {
-      case -3: return t('PANIC');
-      case -2: return t('FATAL');
-      case -1: return t('ERROR');
-      case 0: return t('WARNING');
-      case 1: return t('INFO');
-      case 2: return t('DEBUG');
-      default: return levelLabel(level);
-    }
-  };
+function LevelIcon({ level }: { level: number }) {
+  if (level <= LOG_LEVEL.FATAL) return <Skull size={11} />;
+  if (level === LOG_LEVEL.ERROR) return <AlertOctagon size={11} />;
+  if (level === LOG_LEVEL.WARNING) return <AlertTriangle size={11} />;
+  if (level === LOG_LEVEL.INFO) return <Info size={11} />;
+  return <Bug size={11} />;
 }
 
 /** Log viewer — Mission Control. Summary strip, filter toolbar, dense table. */
@@ -64,10 +77,11 @@ export default function LogsPage() {
   const { t } = useTranslation();
   const s = useLogsPage();
   const columnLabels = useColumnLabels();
-  const thresholdLabel = useLevelThresholdLabel();
+  const chipLabel = useChipLabel();
   useDocumentTitle(t('Log'));
   const {
-    logs: filteredLogs, total, summary, page, pageSize, totalPages,
+    logs: filteredLogs, pageRowCount, total, summary, page, pageSize, totalPages,
+    pageSizeOptions, setPageSize, pageLocalFiltering,
     componentFilter, levelFilter, serverFilter, startInput, endInput, messageQuery,
     searchDraft, setSearchDraft, setSearch,
     allComponents, servers, showServerFilter, serverLookup,
@@ -87,10 +101,12 @@ export default function LogsPage() {
           shownCount={filteredLogs.length}
           page={page}
           pageSize={pageSize}
-          onPickErrors={() => setSearch({ level: -1, page: undefined })}
-          onPickWarnings={() => setSearch({ level: 0, page: undefined })}
-          onPickInfo={() => setSearch({ level: 1, page: undefined })}
+          onPickErrors={() => setSearch({ level: levelFilter === LOG_LEVEL.ERROR ? undefined : LOG_LEVEL.ERROR, page: undefined })}
+          onPickWarnings={() => setSearch({ level: levelFilter === LOG_LEVEL.WARNING ? undefined : LOG_LEVEL.WARNING, page: undefined })}
+          onPickInfo={() => setSearch({ level: levelFilter === LOG_LEVEL.INFO ? undefined : LOG_LEVEL.INFO, page: undefined })}
+          onPickDebug={() => setSearch({ level: levelFilter === LOG_LEVEL.DEBUG ? undefined : LOG_LEVEL.DEBUG, page: undefined })}
           activeLevel={levelFilter}
+          pageLocal={pageLocalFiltering}
         />
 
         {/* Toolbar */}
@@ -99,19 +115,24 @@ export default function LogsPage() {
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted me-1">
               {t('Level')}
             </span>
-            <div className="flex items-center gap-1 p-1 rounded-md bg-surface/50 border border-border-subtle">
-              {LEVEL_THRESHOLDS.map((lvl) => (
+            <div
+              role="group"
+              aria-label={t('Level')}
+              className="flex items-center gap-1 p-1 rounded-md bg-surface/50 border border-border-subtle"
+            >
+              {LEVEL_CHIPS.map((chip) => (
                 <button
-                  key={lvl.label}
-                  onClick={() => setSearch({ level: lvl.value, page: undefined })}
+                  key={chip.code}
+                  onClick={() => setSearch({ level: chip.value, page: undefined })}
+                  aria-pressed={levelFilter === chip.value}
                   className={clsx(
                     'px-2 py-0.5 text-[11px] font-medium rounded transition-colors',
-                    levelFilter === lvl.value
+                    levelFilter === chip.value
                       ? 'bg-cyan/20 text-cyan'
                       : 'text-text-muted hover:text-text-primary',
                   )}
                 >
-                  {thresholdLabel(lvl.value)}
+                  {chipLabel(chip.code)}
                 </button>
               ))}
             </div>
@@ -192,6 +213,20 @@ export default function LogsPage() {
           </div>
 
           <div className="flex items-center gap-2">
+            <label className="flex items-center gap-1 text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
+              {t('Per page')}
+              <select
+                aria-label={t('Rows per page')}
+                value={pageSize}
+                onChange={(e) => setPageSize(Number(e.target.value))}
+                className="px-2 py-1 text-xs bg-surface border border-border-subtle rounded-md text-text-primary focus:outline-none focus:border-cyan/50"
+              >
+                {pageSizeOptions.map((n) => (
+                  <option key={n} value={n}>{n}</option>
+                ))}
+              </select>
+            </label>
+
             <div className="relative">
               <button
                 onClick={s.toggleColumns}
@@ -231,6 +266,20 @@ export default function LogsPage() {
             </button>
           </div>
         </div>
+
+        {/* The backend can only bound `level` from below (>=), so an exact
+            level, a message search or a date range is finished client-side
+            on the rows of the current page. Say so rather than let "3 errors"
+            read as a site-wide count. */}
+        {pageLocalFiltering && (
+          <p
+            role="status"
+            data-testid="logs-page-local-note"
+            className="mb-2 text-[11px] text-amber font-mono"
+          >
+            {t('Level, search and date filters apply within the current page only ({{shown}} of {{rows}} rows match). Page through to see more.', { shown: filteredLogs.length, rows: pageRowCount })}
+          </p>
+        )}
 
         {/* Table */}
         <Panel icon={<Activity size={16} />} noPadding>
@@ -347,7 +396,13 @@ function LogRow({
   serverLookup: Record<number, string>;
 }) {
   return (
-    <tr className="border-b border-border-subtle/50 hover:bg-surface/40 transition-colors">
+    <tr
+      className={clsx(
+        'border-b border-border-subtle/50 hover:bg-surface/40 transition-colors',
+        levelRowTint(log.level),
+      )}
+      data-level={log.level}
+    >
       {columns.map((c) => (
         <LogCell key={c} column={c} log={log} serverLookup={serverLookup} />
       ))}
@@ -371,21 +426,15 @@ function LogCell({
           {formatLogTime(log.time_key)}
         </td>
       );
-    case 'level': {
-      const icon =
-        log.level <= -1 ? <AlertOctagon size={11} />
-        : log.level === 0 ? <AlertTriangle size={11} />
-        : log.level === 1 ? <Info size={11} />
-        :                   <Bug size={11} />;
+    case 'level':
       return (
         <td className={clsx('px-3 py-1.5 font-mono whitespace-nowrap', levelColor(log.level))}>
-          <span className="inline-flex items-center gap-1">
-            {icon}
+          <span className="inline-flex items-center gap-1" title={log.code}>
+            <LevelIcon level={log.level} />
             {levelText(log.level)}
           </span>
         </td>
       );
-    }
     case 'component':
       return (
         <td className="px-3 py-1.5 font-mono text-text-secondary whitespace-nowrap">

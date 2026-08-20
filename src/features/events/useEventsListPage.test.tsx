@@ -5,9 +5,11 @@ import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import {
   dateInputToStartTime,
   defaultStartTimeLowerBound,
+  startTimeToDateInput,
   useEventsListPage,
 } from './useEventsListPage';
 
@@ -54,13 +56,37 @@ function event(id: number, over: Record<string, unknown> = {}) {
   };
 }
 
-function stub(events = [event(1), event(2, { cause: 'Continuous', notes: 'parcel' })]) {
+// Values the dev box reports; individual tests override via `configs`.
+const DEFAULT_CONFIGS: Record<string, string> = {
+  ZM_WEB_EVENTS_PER_PAGE: '25',
+  ZM_WEB_EVENT_SORT_FIELD: 'StartDateTime',
+  ZM_WEB_EVENT_SORT_ORDER: 'asc',
+  ZM_WEB_LIST_THUMBS: '1',
+  ZM_WEB_LIST_THUMB_WIDTH: '48',
+};
+
+/** Query strings of every /events request, for asserting what hit the server. */
+let eventRequests: URLSearchParams[] = [];
+
+function stub(
+  events = [event(1), event(2, { cause: 'Continuous', notes: 'parcel' })],
+  configs: Record<string, string> = {},
+) {
+  eventRequests = [];
+  const cfg = { ...DEFAULT_CONFIGS, ...configs };
   server.use(
-    http.get('/api/v3/events', () =>
-      HttpResponse.json({
+    http.get('/api/v3/events', ({ request }) => {
+      eventRequests.push(new URL(request.url).searchParams);
+      return HttpResponse.json({
         items: events, total: events.length, per_page: 20, current_page: 1, last_page: 3,
-      }),
-    ),
+      });
+    }),
+    http.get('/api/v3/configs/:name', ({ params }) => {
+      const name = String(params.name);
+      return name in cfg
+        ? HttpResponse.json({ name, value: cfg[name], type: 'string' })
+        : HttpResponse.json({ kind: 'NOT_FOUND' }, { status: 404 });
+    }),
     http.get('/api/v3/monitors', () =>
       HttpResponse.json({
         items: [{ id: 1, name: 'Front Door' }], total: 1, per_page: 100, current_page: 1, last_page: 1,
@@ -78,10 +104,24 @@ describe('defaultStartTimeLowerBound / dateInputToStartTime', () => {
     expect(defaultStartTimeLowerBound(now)).toBe('2026-06-03T11:34:56Z');
   });
 
-  it('expands a date input to start-of-day UTC and passes full timestamps through', () => {
+  it('reads date and datetime-local inputs as local wall-clock time', () => {
     expect(dateInputToStartTime('')).toBe('');
-    expect(dateInputToStartTime('2026-06-03')).toBe('2026-06-03T00:00:00Z');
+    const localMidnight = new Date('2026-06-03T00:00').toISOString().replace(/\.\d{3}Z$/, 'Z');
+    expect(dateInputToStartTime('2026-06-03')).toBe(localMidnight);
+    const localAfternoon = new Date('2026-06-03T14:30').toISOString().replace(/\.\d{3}Z$/, 'Z');
+    expect(dateInputToStartTime('2026-06-03T14:30')).toBe(localAfternoon);
+    expect(dateInputToStartTime('not a date')).toBe('');
+  });
+
+  it('passes timestamps that already carry a zone through unchanged', () => {
     expect(dateInputToStartTime('2026-06-03T05:00:00Z')).toBe('2026-06-03T05:00:00Z');
+    expect(dateInputToStartTime('2026-06-03T05:00:00+10:00')).toBe('2026-06-03T05:00:00+10:00');
+  });
+
+  it('round-trips through the datetime-local input value', () => {
+    const iso = dateInputToStartTime('2026-06-03T14:30');
+    expect(startTimeToDateInput(iso)).toBe('2026-06-03T14:30');
+    expect(startTimeToDateInput('')).toBe('');
   });
 });
 
@@ -120,6 +160,81 @@ describe('useEventsListPage', () => {
     expect(result.current.monitorFilter).toBe(7);
     expect(result.current.causeFilter).toBe('Alarm');
     await waitFor(() => expect(result.current.isLoading).toBe(false));
+  });
+
+  it('filters by cause client-side and keeps the chosen cause in the options', async () => {
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events).toHaveLength(2));
+
+    act(() => result.current.setCauseFilter('Continuous'));
+    expect(result.current.events.map((e) => e.id)).toEqual([2]);
+    // Cause never goes to the server — it is not a backend parameter.
+    expect(eventRequests.every((q) => !q.has('cause'))).toBe(true);
+
+    act(() => result.current.setCauseFilter('Linked'));
+    expect(result.current.events).toEqual([]);
+    expect(result.current.causes).toEqual(['Continuous', 'Linked', 'Motion']);
+  });
+
+  it('honours ?archived=true from the URL as a server-side filter, without the last-hour bound', async () => {
+    mockSearch = { archived: true };
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    expect(result.current.archivedFilter).toBe('archived');
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(eventRequests[0].get('archived')).toBe('true');
+    // Audit's "Browse archived events" means every archived event, not the
+    // ones from the last hour (on the dev box that is zero of three).
+    expect(eventRequests[0].has('start_time')).toBe(false);
+    expect(result.current.dateFilter).toBe('');
+    expect(result.current.showDefaultHourHint).toBe(false);
+  });
+
+  it('takes page size and default sort from the ZM_WEB_* config rows', async () => {
+    stub(undefined, {
+      ZM_WEB_EVENTS_PER_PAGE: '50',
+      ZM_WEB_EVENT_SORT_FIELD: 'MaxScore',
+      ZM_WEB_EVENT_SORT_ORDER: 'desc',
+      ZM_WEB_LIST_THUMBS: '0',
+    });
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.pageSize).toBe(50));
+    await waitFor(() => expect(result.current.sortField).toBe('max_score'));
+    expect(result.current.sortDir).toBe('desc');
+    expect(result.current.showThumbs).toBe(false);
+    await waitFor(() => {
+      const last = eventRequests[eventRequests.length - 1];
+      expect(last.get('page_size')).toBe('50');
+      expect(last.get('sort')).toBe('max_score');
+      expect(last.get('direction')).toBe('desc');
+    });
+  });
+
+  it('toggles sort direction on the same header and resets on a new one', async () => {
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.sortField).toBe('start_time'));
+
+    act(() => result.current.toggleSort('start_time'));
+    expect(result.current.sortDir).toBe('desc');
+    act(() => result.current.toggleSort('id'));
+    expect(result.current.sortField).toBe('id');
+    expect(result.current.sortDir).toBe('asc');
+
+    act(() => result.current.setPage(2));
+    act(() => result.current.setPageSize(100));
+    expect(result.current.pageSize).toBe(100);
+    expect(result.current.page).toBe(1);
+    expect(result.current.pageSizeOptions).toEqual([5, 10, 25, 50, 100, 200, 500]);
+  });
+
+  it('publishes the monitor filter as the detail page\'s prev/next scope', async () => {
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(useEventPlaybackStore.getState().navScope).toEqual({ monitorId: null }));
+    act(() => result.current.setMonitorFilter(4));
+    expect(useEventPlaybackStore.getState().navScope).toEqual({ monitorId: 4 });
   });
 
   it('resets to page 1 when a filter changes and toggles selection', async () => {

@@ -148,6 +148,25 @@ describe('AuditPage — rendering', () => {
   });
 });
 
+describe('AuditPage — query errors', () => {
+  it('renders the backend error instead of an empty table', async () => {
+    server.use(
+      http.get('/api/v3/monitors', () =>
+        HttpResponse.json({
+          items: monitorsFixture, total: 3, per_page: 200, current_page: 1, last_page: 1,
+        }),
+      ),
+      http.get('/api/v3/event-summaries', () =>
+        HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'summaries view missing' }, { status: 500 }),
+      ),
+    );
+    await mount();
+    const alert = await screen.findByTestId('audit-error');
+    expect(alert.textContent).toMatch(/summaries view missing/);
+    expect(screen.queryByTestId('audit-table')).toBeNull();
+  });
+});
+
 describe('AuditPage — breadcrumb to archived events', () => {
   it('renders a "Browse archived events" link pointing at /events?archived=true', async () => {
     stubEndpoints();

@@ -166,6 +166,15 @@ function stubBase(opts?: {
         items: [], total: 0, per_page: 100, current_page: 1, last_page: 1,
       }),
     ),
+    http.get('/api/v3/storage', () =>
+      HttpResponse.json({
+        items: [{ id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 }],
+        total: 1, per_page: 100, current_page: 1, last_page: 1,
+      }),
+    ),
+    http.get('/api/v3/event-data', () =>
+      HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 }),
+    ),
   );
 }
 
@@ -290,6 +299,206 @@ describe('EventDetailPage — prev/next navigation', () => {
       to: '/events/$eventId',
       params: { eventId: '99' },
     });
+  });
+});
+
+describe('EventDetailPage — time-bounded neighbours', () => {
+  it('asks the backend for neighbours by start time around the current event, not page 1 by id', async () => {
+    const queries: URLSearchParams[] = [];
+    stubBase();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        queries.push(new URL(request.url).searchParams);
+        return HttpResponse.json({
+          items: [makeEvent({ id: 100, monitor_id: 1 })],
+          total: 1, per_page: 10, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    await mount();
+    await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
+
+    const next = queries.find((q) => q.get('direction') === 'asc');
+    const prev = queries.find((q) => q.get('direction') === 'desc');
+    expect(next?.get('sort')).toBe('start_time');
+    expect(next?.get('start_time')).toBe('2026-06-02T12:00:00Z');
+    expect(next?.get('monitor_id')).toBe('1');
+    expect(prev?.get('sort')).toBe('start_time');
+    expect(prev?.get('end_time')).toBe('2026-06-02T12:00:00Z');
+    expect(queries.every((q) => q.get('sort') !== 'id')).toBe(true);
+  });
+
+  it('walks every monitor when the list was unfiltered', async () => {
+    useEventPlaybackStore.setState({ navScope: { monitorId: null } });
+    const queries: URLSearchParams[] = [];
+    stubBase();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        queries.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [], total: 0, per_page: 10, current_page: 1, last_page: 1 });
+      }),
+    );
+    await mount();
+    await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
+    expect(queries.every((q) => !q.has('monitor_id'))).toBe(true);
+    useEventPlaybackStore.setState({ navScope: null });
+  });
+});
+
+describe('EventDetailPage — keyboard shortcuts', () => {
+  it('← and → navigate, Space toggles playback, Delete opens the confirm dialog', async () => {
+    stubBase();
+    const user = userEvent.setup();
+    await mount();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled();
+    });
+
+    await user.keyboard('{ArrowRight}');
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/events/$eventId', params: { eventId: '101' } });
+    await user.keyboard('{ArrowLeft}');
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/events/$eventId', params: { eventId: '99' } });
+
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    await user.keyboard(' ');
+    expect(play).toHaveBeenCalled();
+    play.mockRestore();
+
+    await user.keyboard('{Delete}');
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByText(/delete event #100/i)).toBeInTheDocument();
+  });
+
+  it('ignores shortcuts while typing in a form control', async () => {
+    stubBase();
+    const user = userEvent.setup();
+    await mount();
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled();
+    });
+    await user.click(screen.getByLabelText(/replay mode/i));
+    await user.keyboard('{ArrowRight}');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('EventDetailPage — actions', () => {
+  it('Archive PATCHes archived=true and Unarchive the reverse', async () => {
+    const bodies: unknown[] = [];
+    stubBase();
+    server.use(
+      http.patch('/api/v3/events/:id', async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(makeEvent({ id: 100, monitor_id: 1, archived: 1 }));
+      }),
+    );
+    const user = userEvent.setup();
+    await mount();
+    await user.click(await screen.findByRole('button', { name: /^archive$/i }));
+    await waitFor(() => expect(bodies).toEqual([{ archived: true }]));
+  });
+
+  it('Edit saves name / cause / notes through PATCH', async () => {
+    const bodies: unknown[] = [];
+    stubBase();
+    server.use(
+      http.patch('/api/v3/events/:id', async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(makeEvent({ id: 100, monitor_id: 1 }));
+      }),
+    );
+    const user = userEvent.setup();
+    await mount();
+    await user.click(await screen.findByRole('button', { name: /^edit$/i }));
+    const name = screen.getByLabelText(/event name/i);
+    await user.clear(name);
+    await user.type(name, 'Parcel at door');
+    await user.type(screen.getByLabelText(/event notes/i), 'courier');
+    await user.click(screen.getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(bodies).toEqual([
+      { name: 'Parcel at door', cause: 'Motion', notes: 'courier' },
+    ]));
+    await waitFor(() => expect(screen.queryByTestId('event-edit-form')).toBeNull());
+  });
+
+  it('Delete confirms, DELETEs and navigates to the list through the router', async () => {
+    let deleted: string | undefined;
+    stubBase();
+    server.use(
+      http.delete('/api/v3/events/:id', ({ params }) => {
+        deleted = String(params.id);
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const user = userEvent.setup();
+    await mount();
+    await user.click(await screen.findByRole('button', { name: /delete event/i }));
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }));
+    await waitFor(() => expect(deleted).toBe('100'));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/events' }));
+  });
+
+  it('shows the delete error inside the dialog instead of closing it', async () => {
+    stubBase();
+    server.use(
+      http.delete('/api/v3/events/:id', () =>
+        HttpResponse.json({ kind: 'FORBIDDEN', error_message: 'event is locked' }, { status: 403 }),
+      ),
+    );
+    const user = userEvent.setup();
+    await mount();
+    await user.click(await screen.findByRole('button', { name: /delete event/i }));
+    await user.click(await screen.findByRole('button', { name: /^delete$/i }));
+    expect(await screen.findByText(/event is locked/)).toBeInTheDocument();
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('EventDetailPage — playback speed', () => {
+  it('offers 0.25× to 16× and applies the choice to the <video>', async () => {
+    stubBase();
+    const user = userEvent.setup();
+    const { container } = await mount();
+    const select = await screen.findByLabelText(/playback speed/i) as HTMLSelectElement;
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(
+      ['0.25×', '0.5×', '1×', '2×', '4×', '8×', '16×'],
+    );
+    await user.selectOptions(select, '4');
+    expect(useEventPlaybackStore.getState().rate).toBe(4);
+    await waitFor(() => expect(container.querySelector('video')!.playbackRate).toBe(4));
+  });
+});
+
+describe('EventDetailPage — storage and event data', () => {
+  it('shows the storage name from /storage', async () => {
+    stubBase();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('event-storage').textContent).toBe('Default'));
+  });
+
+  it('labels storage id 0 as the implicit Default store', async () => {
+    const ev = { ...makeEvent({ id: 100, monitor_id: 1 }), storage_id: 0 };
+    stubBase({ event: ev });
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('event-storage').textContent).toBe('Default'));
+  });
+
+  it('renders Event_Data rows when the backend has some', async () => {
+    stubBase();
+    server.use(
+      http.get('/api/v3/event-data', () =>
+        HttpResponse.json({
+          items: [
+            { id: 1, event_id: 100, monitor_id: 1, frame_id: 12, timestamp: '2026-06-02T12:00:05Z', data: 'person 0.91' },
+          ],
+          total: 1, per_page: 200, current_page: 1, last_page: 1,
+        }),
+      ),
+    );
+    await mount();
+    const table = await screen.findByTestId('event-data-table');
+    expect(table.textContent).toMatch(/#12/);
+    expect(table.textContent).toMatch(/person 0\.91/);
   });
 });
 

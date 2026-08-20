@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { ShieldCheck, ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
+import { ShieldCheck, ChevronDown, ChevronUp, HelpCircle, AlertTriangle } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
@@ -23,7 +23,7 @@ import { useDocumentTitle } from '../layouts/useDocumentTitle';
 export default function AuditPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Audit'));
-  const { isAuthenticated, loading, sortKey, sortDir, toggleSort, sorted, totals } = useAuditPage();
+  const { isAuthenticated, loading, error, sortKey, sortDir, toggleSort, sorted, totals } = useAuditPage();
 
   if (!isAuthenticated) return null;
 
@@ -47,7 +47,17 @@ export default function AuditPage() {
           }
           noPadding
         >
-          {loading ? (
+          {error ? (
+            <div
+              role="alert"
+              data-testid="audit-error"
+              className="flex flex-col items-center gap-2 py-12 text-center text-sm"
+            >
+              <AlertTriangle size={28} className="text-crimson" />
+              <p className="text-text-primary">{t('Could not load the audit report')}</p>
+              <p className="font-mono text-xs text-text-muted">{error.message}</p>
+            </div>
+          ) : loading ? (
             <div className="p-8 space-y-2" data-testid="audit-loading">
               {Array.from({ length: 5 }, (_, i) => (
                 <div key={i} className="h-8 bg-surface/50 rounded animate-pulse" />

@@ -14,6 +14,7 @@ export function useEventsColumnLabels(): Record<EventsColumnKey, string> {
     name: t('Name'),
     cause: t('Cause'),
     time: t('Time'),
+    end: t('End'),
     duration: t('Duration'),
     frames: t('Frames'),
     alarm_frames: t('Alarm'),

@@ -6,7 +6,7 @@ function makeLog(over: Partial<LogEntry> = {}): LogEntry {
   return {
     id: 1,
     time_key: '2026-06-01T10:00:00Z',
-    level: 1,
+    level: 0,
     code: 'INF',
     component: 'zmc',
     message: 'starting capture',
