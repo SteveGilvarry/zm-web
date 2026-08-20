@@ -83,3 +83,42 @@ describe('useAccountForm — edit (F-18 / zm-api#23)', () => {
     expect(body).toMatchObject({ username: 'new', password: 'pw', email: 'n@example.com', enabled: 1 });
   });
 });
+
+describe('username pattern and self-edit', () => {
+  it('rejects usernames outside [A-Za-z0-9 .@]+ before any request', async () => {
+    const { isValidUsername } = await import('./useAccountForm');
+    expect(isValidUsername('ops.user@site 2')).toBe(true);
+    expect(isValidUsername('bad/name')).toBe(false);
+    expect(isValidUsername('')).toBe(false);
+
+    let hits = 0;
+    server.use(http.post('/api/v3/users', () => { hits += 1; return HttpResponse.json({}, { status: 201 }); }));
+    const { result } = renderHook(() => useAccountForm(null, () => {}), { wrapper });
+    act(() => {
+      result.current.setField('username', 'no#way');
+      result.current.setField('password', 'pw');
+      result.current.setField('confirmPassword', 'pw');
+    });
+    expect(result.current.usernameError).toMatch(/letters, digits/);
+    expect(result.current.submitDisabled).toBe(true);
+    act(() => result.current.submit());
+    expect(hits).toBe(0);
+  });
+
+  it('self-edit sends only email', async () => {
+    let body: Record<string, unknown> | null = null;
+    server.use(http.put('/api/v3/users/7', async ({ request }) => {
+      body = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json({ ...existing, email: 'new@example.com' });
+    }));
+    const { result } = renderHook(() => useAccountForm(existing, () => {}, { selfEdit: true }), { wrapper });
+    expect(result.current.selfEdit).toBe(true);
+    act(() => {
+      result.current.setField('email', 'new@example.com');
+      result.current.toggleEnabled();
+    });
+    act(() => result.current.submit());
+    await waitFor(() => expect(body).not.toBeNull());
+    expect(body).toEqual({ email: 'new@example.com' });
+  });
+});

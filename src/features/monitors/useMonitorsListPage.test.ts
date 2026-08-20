@@ -7,6 +7,11 @@ import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorsListPage } from './useMonitorsListPage';
 
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({}),
+  useNavigate: () => vi.fn(),
+}));
+
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({

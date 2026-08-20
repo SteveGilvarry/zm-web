@@ -5,14 +5,25 @@ import { login } from '@/api/auth';
 import { useAuthStore } from '@/stores/auth';
 import { safeRedirectTarget } from './redirect';
 
+/** Why the user landed here, from `?reason=`; only `expired` has a message today. */
+export type LoginReason = 'expired' | null;
+
+export function parseLoginReason(raw: unknown): LoginReason {
+  return raw === 'expired' ? 'expired' : null;
+}
+
 /**
  * Login form state. Once the auth store is populated, goes to
  * `?redirect=<path>` when that is a same-app path, else to the console.
+ * `?reason=expired` shows the session-expired notice (the auth store
+ * clears tokens when refresh fails; whoever bounces to /login sets it).
  */
 export function useLoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { redirect } = useSearch({ from: '/login' });
+  const loose = useSearch({ strict: false }) as { reason?: unknown };
+  const reason = parseLoginReason(loose.reason);
   const { setTokens, isAuthenticated } = useAuthStore();
 
   const [username, setUsername] = useState('');
@@ -49,7 +60,11 @@ export function useLoginPage() {
     }
   };
 
+  const notice = reason === 'expired' ? t('Your session has expired. Please sign in again.') : null;
+
   return {
+    reason,
+    notice,
     username,
     setUsername,
     password,

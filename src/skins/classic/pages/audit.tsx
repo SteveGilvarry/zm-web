@@ -1,183 +1,109 @@
-import { Link } from '@tanstack/react-router';
-import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronUp, HelpCircle } from 'lucide-react';
-
 import { AppShell } from '@/skins/AppShell';
-import { formatBytes } from '@/lib/format';
-import { ArchivedLink } from '@/features/audit/ArchivedLink';
-import { useAuditPage, type AuditSortDir } from '@/features/audit/useAuditPage';
-import type { AuditSortKey } from '@/features/audit/useAuditData';
+import { QueryState } from '@/components/common/QueryState';
+import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
+import { useAuditCells } from '@/features/audit/AuditTableBody';
+import { useAuditPage } from '@/features/audit/useAuditPage';
+import type { AuditSortKey } from '@/features/audit/auditRows';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
+import { ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead } from '../components/events/primitives';
+import { classicInput, classicLink } from '../components/events/styles';
 
 /**
- * Event-integrity audit — classic skin. Same data as Mission Control in a
- * dense white table matching legacy `?view=report_event_audit`.
+ * Audit Events Report — classic skin, after legacy `?view=report_event_audit`:
+ * monitor filter bar, "Event Start Time … to …" window, then the per-monitor
+ * table (Id, Name, Server, Events, FirstEvent, LastEvent, MinGap, MaxGap,
+ * MissingFiles, ZeroSize).
  */
 export default function ClassicAuditPage() {
   const { t } = useTranslation();
-  useDocumentTitle(t('Audit'));
-  const { isAuthenticated, loading, error, sortKey, sortDir, toggleSort, sorted, totals } = useAuditPage();
+  useDocumentTitle(t('Audit Events Report'));
+  const s = useAuditPage();
+  const cells = useAuditCells(s);
 
-  if (!isAuthenticated) return null;
+  if (!s.isAuthenticated) return null;
+
+  const th = (label: string, key: AuditSortKey, numeric = false) => (
+    <ClassicTh sortable numeric={numeric} active={s.sortKey === key} dir={s.sortDir} onSort={() => s.toggleSort(key)}>
+      {label}
+    </ClassicTh>
+  );
 
   return (
-    <AppShell title={t('Audit')}>
-      <main className="flex-1 p-4 overflow-auto bg-zinc-50">
-        <div className="max-w-screen-2xl mx-auto space-y-4">
-          <div className="flex items-center justify-between">
-            <h1 className="text-xl text-zinc-800 font-semibold">{t('Audit Events Report')}</h1>
-            <ArchivedLink variant="classic" />
+    <AppShell title={t('Audit Events Report')}>
+      <main className="flex-1 overflow-auto bg-white text-zinc-900">
+        <div className="px-4 py-2 border-b border-[#dee2e6] space-y-2">
+          <MonitorFilterBar monitors={s.allMonitors} onChange={s.setVisibleMonitors} />
+          <div className="flex flex-wrap items-center gap-2 text-sm">
+            <label className="font-semibold text-zinc-700">{t('Event Start Time')}</label>
+            <input type="datetime-local" step={1} aria-label={t('Window start')} value={s.minInput} onChange={(e) => s.setWindow(e.target.value, s.maxInput)} className={classicInput} />
+            <span>{t('to')}</span>
+            <input type="datetime-local" step={1} aria-label={t('Window end')} value={s.maxInput} onChange={(e) => s.setWindow(s.minInput, e.target.value)} className={classicInput} />
           </div>
-
-          <p className="text-xs text-zinc-600 max-w-3xl">
-            {t('Per-monitor event-integrity rollup. Counts and disk usage across the standard timeframes. MissingFiles / ZeroSize columns require per-event filesystem checks and are not available in v1.')}
+          <p className="text-xs text-zinc-500">
+            {t('Events that start after the window opens and have ended by the time it closes. MissingFiles / ZeroSize need per-event file checks (zm-api#36).')}
+            {s.truncatedMonitorIds.length > 0 && (
+              <span className="ms-1 text-[#856404]">
+                {t('Monitors {{ids}} have more events than the audit reads; their counts are lower bounds.', { ids: s.truncatedMonitorIds.join(', ') })}
+              </span>
+            )}
           </p>
+        </div>
 
-          {error ? (
-            <div
-              role="alert"
-              data-testid="audit-error"
-              className="bg-white rounded border border-red-300 p-6 text-center text-sm text-red-700"
-            >
-              <p className="font-semibold">{t('Could not load the audit report')}</p>
-              <p className="font-mono text-xs mt-1">{error.message}</p>
-            </div>
-          ) : loading ? (
-            <div className="bg-white rounded border border-zinc-300 p-8 space-y-2">
-              {Array.from({ length: 5 }, (_, i) => (
-                <div key={i} className="h-8 bg-zinc-100 rounded animate-pulse" />
-              ))}
-            </div>
-          ) : sorted.length === 0 ? (
-            <div className="bg-white rounded border border-zinc-300 p-12 text-center text-zinc-500">
-              {t('No monitors configured.')}
-            </div>
-          ) : (
-            <div className="bg-white rounded border border-zinc-300 overflow-hidden">
-              <table className="w-full text-sm text-zinc-800" data-testid="audit-table">
-                <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
-                  <tr>
-                    <Th label={t('ID')}       sortKey="id"       active={sortKey} dir={sortDir} onClick={toggleSort} />
-                    <Th label={t('Monitor')}  sortKey="name"     active={sortKey} dir={sortDir} onClick={toggleSort} />
-                    <Th label={t('Total')}    sortKey="total"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-                    <Th label={t('Hour')}     sortKey="hour"     active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-                    <Th label={t('Day')}      sortKey="day"      active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-                    <Th label={t('Week')}     sortKey="week"     active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-                    <Th label={t('Month')}    sortKey="month"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-                    <Th label={t('Archived')} sortKey="archived" active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-                    <th
-                      className="px-3 py-2 text-center font-semibold text-zinc-500"
-                      title={t('MissingFiles / ZeroSize requires per-event filesystem checks (not implemented in v1).')}
-                    >
-                      <span className="inline-flex items-center gap-1">
-                        {t('Files')}
-                        <HelpCircle size={10} />
-                      </span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sorted.map(({ monitor, summary }) => (
-                    <tr
-                      key={monitor.id}
-                      data-testid={`audit-row-${monitor.id}`}
-                      className="border-b border-zinc-200 hover:bg-zinc-50 transition-colors"
-                    >
-                      <td className="px-3 py-2 font-mono tabular-nums text-zinc-600">{monitor.id}</td>
-                      <td className="px-3 py-2">
-                        <Link
-                          to="/monitors/$monitorId"
-                          params={{ monitorId: String(monitor.id) }}
-                          className="text-cyan-700 hover:underline"
-                        >
-                          {monitor.name}
-                        </Link>
-                      </td>
-                      <CountCell count={summary.total_events}    disk={summary.total_event_disk_space} />
-                      <CountCell count={summary.hour_events}     disk={summary.hour_event_disk_space} />
-                      <CountCell count={summary.day_events}      disk={summary.day_event_disk_space} />
-                      <CountCell count={summary.week_events}     disk={summary.week_event_disk_space} />
-                      <CountCell count={summary.month_events}    disk={summary.month_event_disk_space} />
-                      <CountCell count={summary.archived_events} disk={summary.archived_event_disk_space} />
-                      <td
-                        className="px-3 py-2 text-center text-zinc-400"
-                        title={t('MissingFiles / ZeroSize requires per-event filesystem checks (not implemented in v1).')}
-                      >
-                        —
-                      </td>
+        <div className="p-4">
+          <QueryState
+            isLoading={s.monitorsLoading}
+            isError={!!s.monitorsError}
+            error={s.monitorsError}
+            onRetry={s.refetch}
+            empty={s.sorted.length === 0}
+            emptyMessage={t('No monitors match the filter.')}
+          >
+            <ClassicTable testId="audit-table">
+              <ClassicThead>
+                <tr>
+                  {th(t('Id'), 'id')}
+                  {th(t('Name'), 'name')}
+                  {th(t('Server'), 'server')}
+                  {th(t('Events'), 'events', true)}
+                  {th(t('FirstEvent'), 'first')}
+                  {th(t('LastEvent'), 'last')}
+                  {th(t('MinGap'), 'minGap', true)}
+                  {th(t('MaxGap'), 'maxGap', true)}
+                  <ClassicTh center>{t('MissingFiles')}</ClassicTh>
+                  <ClassicTh center>{t('ZeroSize')}</ClassicTh>
+                </tr>
+              </ClassicThead>
+              <ClassicTbody>
+                {s.sorted.map((row) => {
+                  const c = cells(row, classicLink);
+                  return (
+                    <tr key={row.monitor.id} data-testid={`audit-row-${row.monitor.id}`}>
+                      <ClassicTd>{c.id}</ClassicTd>
+                      <ClassicTd>{c.name}</ClassicTd>
+                      <ClassicTd>{c.server}</ClassicTd>
+                      <ClassicTd numeric>{c.events}</ClassicTd>
+                      <ClassicTd className="whitespace-nowrap">{c.first}</ClassicTd>
+                      <ClassicTd className="whitespace-nowrap">{c.last}</ClassicTd>
+                      <ClassicTd numeric>{c.minGap}</ClassicTd>
+                      <ClassicTd numeric>{c.maxGap}</ClassicTd>
+                      <ClassicTd center className="text-zinc-400">{c.placeholder}</ClassicTd>
+                      <ClassicTd center className="text-zinc-400">{c.placeholder}</ClassicTd>
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot className="bg-zinc-50 border-t border-zinc-300 text-xs">
-                  <tr data-testid="audit-totals">
-                    <td className="px-3 py-2 font-semibold text-zinc-700" colSpan={2}>
-                      {t('Total ({{count}} monitors)', { count: sorted.length })}
-                    </td>
-                    <FootCell count={totals.total}    disk={totals.total_disk} />
-                    <FootCell count={totals.hour}     disk={totals.hour_disk} />
-                    <FootCell count={totals.day}      disk={totals.day_disk} />
-                    <FootCell count={totals.week}     disk={totals.week_disk} />
-                    <FootCell count={totals.month}    disk={totals.month_disk} />
-                    <FootCell count={totals.archived} disk={totals.archived_disk} />
-                    <td className="px-3 py-2" />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
+                  );
+                })}
+              </ClassicTbody>
+              <tfoot className="bg-[#f8f9fa]">
+                <tr data-testid="audit-totals">
+                  <ClassicTd colSpan={3} className="font-semibold">{t('Total ({{count}} monitors)', { count: s.sorted.length })}</ClassicTd>
+                  <ClassicTd numeric className="font-semibold">{s.totals.events}</ClassicTd>
+                  <ClassicTd colSpan={6} />
+                </tr>
+              </tfoot>
+            </ClassicTable>
+          </QueryState>
         </div>
       </main>
     </AppShell>
-  );
-}
-
-interface ThProps {
-  label: string;
-  sortKey: AuditSortKey;
-  active: AuditSortKey;
-  dir: AuditSortDir;
-  onClick: (k: AuditSortKey) => void;
-  numeric?: boolean;
-}
-
-function Th({ label, sortKey, active, dir, onClick, numeric }: ThProps) {
-  const isActive = active === sortKey;
-  return (
-    <th
-      className={clsx(
-        'px-3 py-2 font-semibold cursor-pointer select-none hover:bg-zinc-200 transition-colors',
-        numeric ? 'text-end' : 'text-start',
-      )}
-      onClick={() => onClick(sortKey)}
-      aria-sort={isActive ? (dir === 'asc' ? 'ascending' : 'descending') : 'none'}
-    >
-      <span className={clsx('inline-flex items-center gap-1', isActive && 'text-cyan-700')}>
-        {label}
-        {isActive && (dir === 'asc' ? <ChevronUp size={12} /> : <ChevronDown size={12} />)}
-      </span>
-    </th>
-  );
-}
-
-function CountCell({ count, disk }: { count: number; disk: number }) {
-  return (
-    <td className="px-3 py-2 text-end font-mono tabular-nums">
-      <div className={count === 0 ? 'text-zinc-400' : ''}>{count}</div>
-      {count > 0 && disk > 0 && (
-        <div className="text-[10px] text-zinc-500">{formatBytes(disk)}</div>
-      )}
-    </td>
-  );
-}
-
-function FootCell({ count, disk }: { count: number; disk: number }) {
-  return (
-    <td className="px-3 py-2 text-end font-mono tabular-nums font-semibold text-zinc-800">
-      {count}
-      <div className="text-[10px] font-normal text-zinc-500">
-        {disk > 0 ? formatBytes(disk) : '—'}
-      </div>
-    </td>
   );
 }

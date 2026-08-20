@@ -11,6 +11,11 @@ import {
   useMontageReviewPage,
 } from './useMontageReviewPage';
 
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({}),
+  useNavigate: () => vi.fn(),
+}));
+
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
@@ -80,7 +85,8 @@ describe('useMontageReviewPage', () => {
     stubMonitors();
     const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.allMonitors).toHaveLength(3));
-    expect(result.current.enabled).toEqual([]);
+    // Before the filter bar reports, every capturing monitor is offered.
+    expect(result.current.enabled.map((m) => m.id)).toEqual([1, 2]);
 
     act(() => result.current.setFilteredMonitors(result.current.allMonitors));
     expect(result.current.enabled.map((m) => m.id)).toEqual([1, 2]);

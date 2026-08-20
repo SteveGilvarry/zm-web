@@ -33,6 +33,7 @@ export type PageKey =
   | 'cycle'
   | 'events.list'
   | 'events.detail'
+  | 'events.frames'
   | 'filters'
   | 'groups'
   | 'logs'
@@ -58,6 +59,7 @@ export interface PagePropsMap {
   cycle: Record<never, never>;
   'events.list': Record<never, never>;
   'events.detail': { eventId: number };
+  'events.frames': { eventId: number };
   filters: Record<never, never>;
   groups: Record<never, never>;
   logs: Record<never, never>;

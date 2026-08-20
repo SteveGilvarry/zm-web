@@ -1,5 +1,6 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, render, screen, fireEvent } from '@testing-library/react';
+import { act, screen, fireEvent } from '@testing-library/react';
+import { renderWithProviders } from '@/test/render';
 import userEvent from '@testing-library/user-event';
 import type { PtzCapabilities } from '@/api/ptz';
 
@@ -79,21 +80,21 @@ describe('PtzControls — capability gating', () => {
   it('omits the D-pad when can_move=false', () => {
     const caps = fullCaps();
     caps.pan_tilt.can_move = false;
-    render(<PtzControls monitorId={1} capabilities={caps} />);
+    renderWithProviders(<PtzControls monitorId={1} capabilities={caps} />);
     expect(screen.queryByRole('button', { name: /move up/i })).toBeNull();
   });
 
   it('omits the Zoom section when caps.zoom.can=false', () => {
     const caps = fullCaps();
     caps.zoom = { ...axisOff };
-    render(<PtzControls monitorId={1} capabilities={caps} />);
+    renderWithProviders(<PtzControls monitorId={1} capabilities={caps} />);
     expect(screen.queryByText(/zoom/i)).toBeNull();
   });
 
   it('omits the Focus section when caps.focus.can=false', () => {
     const caps = fullCaps();
     caps.focus = { ...axisOff };
-    render(<PtzControls monitorId={1} capabilities={caps} />);
+    renderWithProviders(<PtzControls monitorId={1} capabilities={caps} />);
     // Focus heading shouldn't render — neither should Auto/Near/Far buttons.
     expect(screen.queryByText('Near')).toBeNull();
     expect(screen.queryByText('Far')).toBeNull();
@@ -103,7 +104,7 @@ describe('PtzControls — capability gating', () => {
     const caps = fullCaps({
       presets: { has_presets: false, num_presets: 0, can_set_presets: false, has_home_preset: false },
     });
-    render(<PtzControls monitorId={1} capabilities={caps} />);
+    renderWithProviders(<PtzControls monitorId={1} capabilities={caps} />);
     expect(screen.queryByText(/presets/i)).toBeNull();
   });
 });
@@ -111,7 +112,7 @@ describe('PtzControls — capability gating', () => {
 describe('PtzControls — D-pad continuous vs step', () => {
   it('continuous move: pointerDown → ptz.move({pan,tilt} only); pointerUp → ptz.stopMove', () => {
     const caps = fullCaps();
-    render(<PtzControls monitorId={42} capabilities={caps} />);
+    renderWithProviders(<PtzControls monitorId={42} capabilities={caps} />);
 
     const upBtn = screen.getByRole('button', { name: /^move up$/i });
     fireEvent.pointerDown(upBtn, { pointerId: 1 });
@@ -125,7 +126,7 @@ describe('PtzControls — D-pad continuous vs step', () => {
   it('step (non-continuous) move: pointerDown adds duration_ms and pointerUp does NOT call stopMove', () => {
     const caps = fullCaps();
     caps.pan_tilt.can_move_con = false; // step-only camera
-    render(<PtzControls monitorId={42} capabilities={caps} />);
+    renderWithProviders(<PtzControls monitorId={42} capabilities={caps} />);
 
     const upBtn = screen.getByRole('button', { name: /^move up$/i });
     fireEvent.pointerDown(upBtn, { pointerId: 1 });
@@ -143,14 +144,14 @@ describe('PtzControls — D-pad continuous vs step', () => {
 describe('PtzControls — Home + presets', () => {
   it('calls ptz.home(monitorId) on Home button click', async () => {
     const user = userEvent.setup();
-    render(<PtzControls monitorId={42} capabilities={fullCaps()} />);
+    renderWithProviders(<PtzControls monitorId={42} capabilities={fullCaps()} />);
     await user.click(screen.getByRole('button', { name: /^home$/i }));
     expect(ptzMock.home).toHaveBeenCalledWith(42);
   });
 
   it('clicking preset slot N calls ptz.gotoPreset(monitorId, N)', async () => {
     const user = userEvent.setup();
-    render(<PtzControls monitorId={42} capabilities={fullCaps()} />);
+    renderWithProviders(<PtzControls monitorId={42} capabilities={fullCaps()} />);
     // Preset slot buttons advertise their accessible name via title attribute.
     await user.click(screen.getByTitle('Go to preset 2'));
     expect(ptzMock.gotoPreset).toHaveBeenCalledWith(42, 2);
@@ -160,7 +161,7 @@ describe('PtzControls — Home + presets', () => {
 describe('PtzControls — Focus Auto', () => {
   it('calls ptz.focus(monitorId, "auto") when the Auto button is clicked', async () => {
     const user = userEvent.setup();
-    render(<PtzControls monitorId={42} capabilities={fullCaps()} />);
+    renderWithProviders(<PtzControls monitorId={42} capabilities={fullCaps()} />);
     await user.click(screen.getByRole('button', { name: /^auto$/i }));
     expect(ptzMock.focus).toHaveBeenCalledWith(42, 'auto');
   });
@@ -171,7 +172,7 @@ describe('PtzControls — command failures are shown, not swallowed', () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     try {
       ptzMock.home.mockRejectedValueOnce(new Error('Camera unreachable'));
-      render(<PtzControls monitorId={1} capabilities={fullCaps()} />);
+      renderWithProviders(<PtzControls monitorId={1} capabilities={fullCaps()} />);
       fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
       const alert = await screen.findByRole('alert');
       expect(alert).toHaveTextContent('Home: Camera unreachable');
@@ -184,7 +185,7 @@ describe('PtzControls — command failures are shown, not swallowed', () => {
 
   it('a failed move during press-and-hold is reported too', async () => {
     ptzMock.move.mockRejectedValueOnce(new Error('timeout'));
-    render(<PtzControls monitorId={1} capabilities={fullCaps()} />);
+    renderWithProviders(<PtzControls monitorId={1} capabilities={fullCaps()} />);
     const up = screen.getByRole('button', { name: /move up$/i });
     (up as HTMLElement & { setPointerCapture: () => void }).setPointerCapture = () => {};
     fireEvent.pointerDown(up, { pointerId: 1 });

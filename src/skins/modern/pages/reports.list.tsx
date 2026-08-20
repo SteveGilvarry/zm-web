@@ -5,6 +5,8 @@ import { FileText, Plus, Trash2, Calendar, Filter as FilterIcon } from 'lucide-r
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { formatDateRange } from '@/features/reports/datetime';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 import {
@@ -28,6 +30,7 @@ export default function ReportsListPage() {
           <h2 className="text-sm font-mono uppercase tracking-[0.18em] text-text-muted">
             {t('Saved reports')}
           </h2>
+          <RequirePerm feature="events" level="Edit">
           <button
             onClick={s.toggleCreate}
             className={clsx(
@@ -40,6 +43,7 @@ export default function ReportsListPage() {
             <Plus size={12} />
             {t('New report')}
           </button>
+          </RequirePerm>
         </div>
 
         {showCreate && (
@@ -49,11 +53,14 @@ export default function ReportsListPage() {
         )}
 
         <Panel icon={<FileText size={16} />} noPadding>
-          {reports.length === 0 ? (
-            <div className="py-12 text-center text-text-muted text-sm">
-              {t('No reports yet. Create one to start.')}
-            </div>
-          ) : (
+          <QueryState
+            isLoading={s.isLoading}
+            isError={s.isError}
+            error={s.error}
+            onRetry={s.refetch}
+            empty={reports.length === 0}
+            emptyMessage={t('No reports yet. Create one to start.')}
+          >
             <table className="w-full text-sm">
               <thead className="bg-surface/70 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-muted">
                 <tr>
@@ -88,23 +95,25 @@ export default function ReportsListPage() {
                       {r.interval != null ? t('{{count}} min', { count: r.interval }) : t('one-off')}
                     </td>
                     <td className="px-3 py-2 text-end">
-                      <button
-                        onClick={() => {
-                          if (confirm(t('Delete report "{{name}}"?', { name: r.name ?? `#${r.id}` }))) {
-                            s.remove(r.id);
-                          }
-                        }}
-                        aria-label={t('Delete report')}
-                        className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
-                      >
-                        <Trash2 size={12} />
-                      </button>
+                      <RequirePerm feature="events" level="Edit">
+                        <button
+                          onClick={() => {
+                            if (confirm(t('Delete report "{{name}}"?', { name: r.name ?? `#${r.id}` }))) {
+                              s.remove(r.id);
+                            }
+                          }}
+                          aria-label={t('Delete report')}
+                          className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </RequirePerm>
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          )}
+          </QueryState>
         </Panel>
       </main>
     </AppShell>

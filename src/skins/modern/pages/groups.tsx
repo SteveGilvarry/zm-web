@@ -13,18 +13,23 @@ import {
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import type { Group, GroupMonitor } from '@/api/groups';
 import type { Monitor } from '@/types';
 import { GroupEditDialog } from '@/features/groups/GroupEditDialog';
 import { GROUP_REPARENT_ISSUE_URL, useGroupsPage } from '@/features/groups/useGroupsPage';
-import { useDocumentTitle } from '../layouts/useDocumentTitle';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
 /** Groups — Mission Control. Tree on the left, membership editor on the right. */
 export default function GroupsPage() {
   const { t } = useTranslation();
   const s = useGroupsPage();
-  useDocumentTitle(t('Groups'));
+  const { can } = usePerms();
+  useSiteTitle(t('Groups'));
   const { groups, monitors, tree, effectiveSelected, memberships, memberIds } = s;
+  const canEdit = can('groups', 'Edit');
 
   if (!s.isAuthenticated) return null;
 
@@ -57,27 +62,32 @@ export default function GroupsPage() {
           <div className="col-span-4 space-y-4">
             <Panel title={t('Groups')} icon={<Users size={16} />}>
               <div className="flex items-center justify-between mb-3">
-                <button
-                  onClick={s.openCreate}
-                  className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded bg-cyan/20 text-cyan hover:bg-cyan/30 transition-colors"
-                >
-                  <Plus size={12} />
-                  {t('New group')}
-                </button>
+                <RequirePerm feature="groups" level="Edit" fallback={<span />}>
+                  <button
+                    onClick={s.openCreate}
+                    className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded bg-cyan/20 text-cyan hover:bg-cyan/30 transition-colors"
+                  >
+                    <Plus size={12} />
+                    {t('New group')}
+                  </button>
+                </RequirePerm>
                 <span className="text-[10px] text-text-muted">
                   {t('{{count}} total', { count: groups.length })}
                 </span>
               </div>
-              <ul
-                aria-label={t('Groups tree')}
-                className="-mx-1 space-y-0.5 max-h-[60vh] overflow-y-auto"
+              <QueryState
+                isLoading={s.isLoading}
+                isError={s.isError}
+                error={s.error}
+                onRetry={s.refetch}
+                empty={tree.length === 0}
+                emptyMessage={t('No groups yet. Click "New group" to create one.')}
               >
-                {tree.length === 0 ? (
-                  <li className="text-xs text-text-muted italic px-1 py-4 text-center">
-                    {t('No groups yet. Click "New group" to create one.')}
-                  </li>
-                ) : (
-                  tree.map(({ group, depth }) => (
+                <ul
+                  aria-label={t('Groups tree')}
+                  className="-mx-1 space-y-0.5 max-h-[60vh] overflow-y-auto"
+                >
+                  {tree.map(({ group, depth }) => (
                     <GroupRow
                       key={group.id}
                       group={group}
@@ -85,12 +95,12 @@ export default function GroupsPage() {
                       memberCount={s.memberCount(group.id)}
                       active={effectiveSelected?.id === group.id}
                       onSelect={() => s.select(group.id)}
-                      onEdit={() => s.openEdit(group)}
-                      onDelete={() => s.handleDelete(group)}
+                      onEdit={canEdit ? () => s.openEdit(group) : undefined}
+                      onDelete={canEdit ? () => s.handleDelete(group) : undefined}
                     />
-                  ))
-                )}
-              </ul>
+                  ))}
+                </ul>
+              </QueryState>
             </Panel>
           </div>
 
@@ -118,7 +128,7 @@ export default function GroupsPage() {
                       membership={memberships.find((gm) => gm.monitor_id === m.id)}
                       onAttach={() => s.attach(m.id)}
                       onDetach={s.detach}
-                      pending={s.membershipPending}
+                      pending={s.membershipPending || !canEdit}
                     />
                   ))}
                 </ul>
@@ -149,8 +159,8 @@ function GroupRow({
   memberCount: number;
   active: boolean;
   onSelect: () => void;
-  onEdit: () => void;
-  onDelete: () => void;
+  onEdit?: () => void;
+  onDelete?: () => void;
 }) {
   const { t } = useTranslation();
   // 16px per depth level — visually obvious, doesn't blow up the column.
@@ -180,20 +190,24 @@ function GroupRow({
             {t('{{count}} monitor', { count: memberCount })}
           </span>
         </button>
-        <button
-          onClick={onEdit}
-          aria-label={t('Edit group {{name}}', { name: group.name })}
-          className="p-1 rounded text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors opacity-0 group-hover:opacity-100"
-        >
-          <Pencil size={12} />
-        </button>
-        <button
-          onClick={onDelete}
-          aria-label={t('Delete group {{name}}', { name: group.name })}
-          className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors opacity-0 group-hover:opacity-100"
-        >
-          <Trash2 size={12} />
-        </button>
+        {onEdit && (
+          <button
+            onClick={onEdit}
+            aria-label={t('Edit group {{name}}', { name: group.name })}
+            className="p-1 rounded text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <Pencil size={12} />
+          </button>
+        )}
+        {onDelete && (
+          <button
+            onClick={onDelete}
+            aria-label={t('Delete group {{name}}', { name: group.name })}
+            className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors opacity-0 group-hover:opacity-100"
+          >
+            <Trash2 size={12} />
+          </button>
+        )}
       </div>
     </li>
   );

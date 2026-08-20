@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MosaicView } from '@/features/montage/MosaicView';
 import { SavedLayoutsMenu } from '@/features/montage/SavedLayoutsMenu';
 import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
@@ -71,7 +72,7 @@ export default function MontagePage() {
 
   return (
     <AppShell title={t('Montage')}>
-      <main className="flex-1 p-6 overflow-hidden flex flex-col gap-4">
+      <main className="flex-1 p-4 sm:p-6 overflow-hidden flex flex-col gap-4 min-w-0">
         {/* Shared filter bar — hides cells whose monitor is filtered out. */}
         <div className="flex-shrink-0">
           <MonitorFilterBar
@@ -84,11 +85,12 @@ export default function MontagePage() {
         <div className="flex items-center justify-between flex-shrink-0 gap-3 flex-wrap">
           <div className="flex items-center gap-3 flex-wrap">
             {/* Preset layout picker */}
-            <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
-              <LayoutGrid size={14} className="ms-2 text-text-muted" />
+            <div role="group" aria-label={t('Layout presets')} className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
+              <LayoutGrid size={14} className="ms-2 text-text-muted" aria-hidden />
               {presets.map((p) => (
                 <button
                   key={p.id}
+                  type="button"
                   onClick={() => page.applyPreset(p)}
                   className="px-2.5 py-1 rounded text-[11px] font-mono font-medium text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors"
                   title={t('Apply {{layout}} layout', { layout: presetLabel(p) })}
@@ -110,8 +112,10 @@ export default function MontagePage() {
             />
 
             {/* Protocol toggle */}
-            <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
+            <div role="group" aria-label={t('Stream protocol')} className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
               <button
+                type="button"
+                aria-pressed={protocol === 'webrtc'}
                 onClick={() => page.changeProtocol('webrtc')}
                 className={clsx(
                   'flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors',
@@ -124,6 +128,8 @@ export default function MontagePage() {
                 WebRTC
               </button>
               <button
+                type="button"
+                aria-pressed={protocol === 'hls'}
                 onClick={() => page.changeProtocol('hls')}
                 className={clsx(
                   'flex items-center gap-1 px-3 py-1 rounded text-xs font-medium transition-colors',
@@ -181,6 +187,7 @@ export default function MontagePage() {
 
           <div className="flex items-center gap-2">
             <button
+              type="button"
               onClick={page.restartAll}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface text-text-secondary border border-border-subtle hover:border-cyan/40 hover:text-cyan transition-colors text-sm"
               title={t('Restart all streams')}
@@ -189,6 +196,7 @@ export default function MontagePage() {
               {t('Restart')}
             </button>
             <button
+              type="button"
               onClick={page.toggleFullscreen}
               className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-surface text-text-secondary border border-border-subtle hover:border-cyan/40 hover:text-cyan transition-colors text-sm"
               title={t('Fullscreen')}
@@ -203,6 +211,7 @@ export default function MontagePage() {
             display:flex so the MosaicView wrapper can take its own flex
             share and resolve percentage heights inside the tree. */}
         <div ref={gridRef} dir="ltr" className="flex flex-col flex-1 min-h-0 rounded-lg bg-abyss/60 border border-border-subtle overflow-hidden">
+          <RequirePerm feature="stream" level="View" fallback="message">
           <MosaicView
             tree={tree}
             onChange={(next) => setTree(next)}
@@ -255,6 +264,7 @@ export default function MontagePage() {
             onClose={page.close}
             onChooseMonitor={page.chooseMonitor}
           />
+          </RequirePerm>
         </div>
 
         {/* Monitor picker — shown when an operator clicks a vacant cell */}
@@ -334,6 +344,7 @@ function MonitorPicker({
             {monitors.map((m) => (
               <li key={m.id}>
                 <button
+                  type="button"
                   onClick={() => onPick(m.id)}
                   className="w-full flex items-center gap-2 px-2 py-1.5 rounded text-start text-sm text-text-primary hover:bg-cyan/10 hover:text-cyan transition-colors"
                 >
@@ -347,6 +358,7 @@ function MonitorPicker({
         )}
         <div className="flex justify-end pt-2 border-t border-border-subtle">
           <button
+            type="button"
             onClick={onCancel}
             className="text-[11px] text-text-muted hover:text-text-primary"
           >

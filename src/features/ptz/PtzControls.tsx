@@ -8,6 +8,7 @@ import {
   Home, Plus, Minus, Focus as FocusIcon, Save, Trash2, AlertTriangle,
 } from 'lucide-react';
 import { ptz, type PtzCapabilities, type PtzDirection } from '@/api/ptz';
+import { useControlPresets } from './useControlPresets';
 
 interface PtzControlsProps {
   monitorId: number;
@@ -60,6 +61,8 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
 
   const pt = caps.pan_tilt;
   const presetSlots = Math.min(caps.presets.num_presets ?? 0, 16);
+  // Names from `/control_presets`; slots without one show their number.
+  const presetLabels = useControlPresets(monitorId, caps.presets.has_presets && presetSlots > 0);
 
   // Continuous (press-and-hold) when the camera supports it, otherwise a
   // 300 ms timed step on each press.
@@ -231,10 +234,17 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 key={n}
                 type="button"
                 onClick={() => run(t('Preset {{n}}', { n }), ptz.gotoPreset(monitorId, n))}
-                className="w-9 h-9 rounded-md border-2 border-border bg-surface text-cyan font-mono tabular-nums text-xs select-none transition-all hover:border-cyan/50 hover:bg-cyan/10 hover:shadow-[0_0_8px_rgba(0,212,255,0.15)] active:scale-95"
-                title={t('Go to preset {{n}}', { n })}
+                className={clsx(
+                  'min-w-9 h-9 px-1.5 rounded-md border-2 border-border bg-surface text-cyan font-mono tabular-nums text-xs select-none transition-all hover:border-cyan/50 hover:bg-cyan/10 hover:shadow-[0_0_8px_rgba(0,212,255,0.15)] active:scale-95',
+                  presetLabels[n] && 'flex flex-col items-center justify-center leading-none gap-0.5',
+                )}
+                title={presetLabels[n] ? t('Go to preset {{n}}: {{label}}', { n, label: presetLabels[n] }) : t('Go to preset {{n}}', { n })}
+                aria-label={presetLabels[n] ? t('Go to preset {{n}}: {{label}}', { n, label: presetLabels[n] }) : t('Go to preset {{n}}', { n })}
               >
                 {n}
+                {presetLabels[n] && (
+                  <span className="text-[9px] font-sans normal-case text-text-secondary max-w-16 truncate">{presetLabels[n]}</span>
+                )}
               </button>
             ))}
           </div>
@@ -248,7 +258,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 aria-label={t('Preset slot')}
               >
                 {Array.from({ length: presetSlots }, (_, i) => i + 1).map((n) => (
-                  <option key={n} value={n}>#{n}</option>
+                  <option key={n} value={n}>{presetLabels[n] ? `#${n} ${presetLabels[n]}` : `#${n}`}</option>
                 ))}
               </select>
               <input
@@ -275,6 +285,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 onClick={() => run(t('Clear preset'), ptz.clearPreset(monitorId, presetSlot))}
                 className="flex items-center px-2.5 py-1.5 text-xs rounded-md border-2 border-border text-text-muted hover:border-crimson/60 hover:text-crimson hover:bg-crimson/5 active:scale-95 transition-all"
                 title={t('Clear preset in selected slot')}
+                aria-label={t('Clear preset in selected slot')}
               >
                 <Trash2 size={12} strokeWidth={2.5} />
               </button>

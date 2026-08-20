@@ -14,7 +14,11 @@ import {
   PURGE_WHEN_FULL_QUERY_JSON, PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW,
 } from '@/features/filters/liveFixtures';
 
+let mockSearch: Record<string, unknown> = {};
+const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => mockSearch,
+  useNavigate: () => mockNavigate,
   Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string }) => (
     <a href={to ?? '#'} {...rest}>{children}</a>
   ),
@@ -27,11 +31,11 @@ vi.mock('@/skins/AppShell', () => ({
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { user: 'admin', iat: 0, exp: 0 } as never, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'error' });
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => { server.resetHandlers(); mockSearch = {}; mockNavigate.mockReset(); });
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -59,6 +63,8 @@ function stub(items: unknown[] = [PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW, un
         items: [{ id: 1, name: 'Front Door' }, { id: 2, name: 'Driveway' }],
         total: 2, per_page: 200, current_page: 1, last_page: 1,
       })),
+    http.get('/api/v3/users', () =>
+      HttpResponse.json({ items: [{ id: 1, username: 'admin' }], total: 1, per_page: 100, current_page: 1, last_page: 1 })),
     http.get('/api/v3/storage', () =>
       HttpResponse.json({
         items: [{ id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 }],

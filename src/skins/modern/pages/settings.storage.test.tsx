@@ -9,6 +9,12 @@ import { useAuthStore } from '@/stores/auth';
 vi.mock('@/skins/AppShell', () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
 }));
+// The Events deep-link is a router <Link>; no router is mounted here.
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string }) => (
+    <a href={to ?? '#'} {...rest}>{children}</a>
+  ),
+}));
 
 const { default: StoragePage } = await import('./settings.storage');
 
@@ -16,7 +22,7 @@ const server = setupServer();
 
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'warn' });
 });

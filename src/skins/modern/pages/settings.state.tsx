@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { Trans, useTranslation } from 'react-i18next';
 import {
@@ -11,21 +11,29 @@ import {
   Trash2,
   CheckCircle2,
   Loader2,
+  Pencil,
+  ChevronDown,
+  ChevronRight,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { parseDefinition, type DaemonAction } from '@/api/states';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
+import { parseDefinition, type DaemonAction, type State } from '@/api/states';
 import { isProtectedState, useRunStatePage } from '@/features/state/useRunStatePage';
-import { useDocumentTitle } from '../layouts/useDocumentTitle';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
 /** Settings → Run State — Mission Control. */
 export default function SettingsStatePage() {
   const { t } = useTranslation();
   const rs = useRunStatePage();
-  useDocumentTitle(t('Run State'));
+  const { can } = usePerms();
+  useSiteTitle(t('Run State'));
   const { states, monitors, busy, applyTarget, deleteTarget, daemonTarget } = rs;
+  const canEdit = can('system', 'Edit');
 
   if (!rs.isAuthenticated) return null;
 
@@ -44,6 +52,7 @@ export default function SettingsStatePage() {
                 </Trans>
               </p>
               <div className="flex flex-wrap items-center gap-2">
+                <RequirePerm feature="system" level="Edit" fallback="message">
                 <DaemonButton
                   action="start"
                   icon={<Play size={12} />}
@@ -68,6 +77,7 @@ export default function SettingsStatePage() {
                   disabled={busy}
                   tone="amber"
                 />
+                </RequirePerm>
                 {rs.daemonPending && (
                   <span className="flex items-center gap-1 text-xs text-text-muted">
                     <Loader2 size={11} className="animate-spin" />
@@ -96,17 +106,14 @@ export default function SettingsStatePage() {
               icon={<Layers size={16} />}
               noPadding
             >
-              {rs.statesLoading ? (
-                <div className="p-6 text-center text-text-muted text-sm">{t('Loading states…')}</div>
-              ) : rs.statesError ? (
-                <div className="p-6 text-center text-crimson text-sm" role="alert">
-                  {t('Failed to load states: {{message}}', { message: rs.statesError.message })}
-                </div>
-              ) : states.length === 0 ? (
-                <div className="p-6 text-center text-text-muted text-sm">
-                  {t('No saved states yet. Snapshot the current monitor configuration on the right.')}
-                </div>
-              ) : (
+              <QueryState
+                isLoading={rs.statesLoading}
+                isError={rs.statesIsError}
+                error={rs.statesRawError}
+                onRetry={rs.refetchStates}
+                empty={states.length === 0}
+                emptyMessage={t('No saved states yet. Snapshot the current monitor configuration on the right.')}
+              >
                 <table className="w-full text-xs">
                   <thead className="bg-surface/70 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-muted">
                     <tr>
@@ -124,12 +131,43 @@ export default function SettingsStatePage() {
                         parsed.length === 0
                           ? '—'
                           : t('{{count}} monitor', { count: parsed.length });
+                      const renaming = rs.renameTarget?.id === s.id;
+                      const expanded = rs.previewId === s.id;
                       return (
+                        <Fragment key={s.id}>
                         <tr
-                          key={s.id}
                           className="border-b border-border-subtle/40 hover:bg-surface/40"
                         >
-                          <td className="px-3 py-2 font-medium text-text-primary">{s.name}</td>
+                          <td className="px-3 py-2 font-medium text-text-primary">
+                            {renaming ? (
+                              <input
+                                value={rs.renameValue}
+                                onChange={(e) => rs.setRenameValue(e.target.value)}
+                                onKeyDown={(e) => {
+                                  if (e.key === 'Enter') rs.commitRename();
+                                  if (e.key === 'Escape') rs.cancelRename();
+                                }}
+                                onBlur={rs.commitRename}
+                                autoFocus
+                                aria-label={t('New name for {{name}}', { name: s.name })}
+                                className="w-40 px-2 py-1 text-xs bg-surface border border-cyan/50 rounded text-text-primary focus:outline-none"
+                              />
+                            ) : (
+                              <span className="inline-flex items-center gap-1">
+                                {s.name}
+                                {canEdit && !isProtected && (
+                                  <button
+                                    type="button"
+                                    onClick={() => rs.startRename(s)}
+                                    aria-label={t('Rename {{name}}', { name: s.name })}
+                                    className="p-0.5 rounded text-text-muted hover:text-cyan"
+                                  >
+                                    <Pencil size={10} />
+                                  </button>
+                                )}
+                              </span>
+                            )}
+                          </td>
                           <td className="px-3 py-2">
                             {s.is_active === 1 ? (
                               <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-mono uppercase">
@@ -140,13 +178,22 @@ export default function SettingsStatePage() {
                               <span className="text-text-muted text-[10px] font-mono uppercase">—</span>
                             )}
                           </td>
-                          <td
-                            className="px-3 py-2 text-text-muted font-mono truncate max-w-[18rem]"
-                            title={s.definition}
-                          >
-                            {preview}
+                          <td className="px-3 py-2 text-text-muted font-mono max-w-[18rem]">
+                            {parsed.length === 0 ? preview : (
+                              <button
+                                type="button"
+                                onClick={() => rs.togglePreview(s.id)}
+                                aria-expanded={expanded}
+                                aria-label={t('Show definition of {{name}}', { name: s.name })}
+                                className="inline-flex items-center gap-1 hover:text-text-primary"
+                              >
+                                {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} className="rtl:-scale-x-100" />}
+                                {preview}
+                              </button>
+                            )}
                           </td>
                           <td className="px-3 py-2 text-end">
+                            <RequirePerm feature="system" level="Edit">
                             <div className="inline-flex items-center gap-1">
                               <button
                                 onClick={() => rs.setApplyTarget(s)}
@@ -177,19 +224,23 @@ export default function SettingsStatePage() {
                                 <Trash2 size={12} />
                               </button>
                             </div>
+                            </RequirePerm>
                           </td>
                         </tr>
+                        {expanded && <DefinitionPreviewRow state={s} rs={rs} />}
+                        </Fragment>
                       );
                     })}
                   </tbody>
                 </table>
-              )}
+              </QueryState>
             </Panel>
           </div>
 
           {/* Save current */}
           <div className="col-span-12 lg:col-span-4">
             <Panel title={t('Save current as…')} icon={<Save size={16} />}>
+              <RequirePerm feature="system" level="Edit" fallback="message">
               <p className="text-xs text-text-muted mb-3">
                 <Trans>
                   Snapshots every monitor's <span className="font-mono">Capturing</span>/
@@ -236,6 +287,7 @@ export default function SettingsStatePage() {
                   {t('{{count}} monitor will be captured.', { count: monitors.length })}
                 </p>
               </form>
+              </RequirePerm>
             </Panel>
           </div>
         </div>
@@ -330,5 +382,41 @@ function DaemonButton({ icon, label, onClick, disabled, tone }: DaemonButtonProp
       {icon}
       {label}
     </button>
+  );
+}
+
+/** Expanded row: the `Id:Capturing:Analysing:Recording` triples with monitor names. */
+function DefinitionPreviewRow({ state, rs }: { state: State; rs: ReturnType<typeof useRunStatePage> }) {
+  const { t } = useTranslation();
+  const rows = rs.definitionRows(state);
+  return (
+    <tr className="bg-panel/30 border-b border-border-subtle/40">
+      <td colSpan={4} className="px-3 py-2">
+        <table className="w-full text-[11px]" aria-label={t('Definition of {{name}}', { name: state.name })}>
+          <thead className="text-[10px] uppercase tracking-wider text-text-muted">
+            <tr>
+              <th className="text-start px-2 py-1">{t('Monitor')}</th>
+              <th className="text-start px-2 py-1">{t('Capturing')}</th>
+              <th className="text-start px-2 py-1">{t('Analysing')}</th>
+              <th className="text-start px-2 py-1">{t('Recording')}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.id} className={clsx(!r.known && 'text-text-muted italic')}>
+                <td className="px-2 py-1">
+                  <span className="font-mono text-text-muted me-1">#{r.id}</span>
+                  {r.name}
+                  {!r.known && <span className="ms-1">({t('no longer exists')})</span>}
+                </td>
+                <td className="px-2 py-1 font-mono">{r.capturing}</td>
+                <td className="px-2 py-1 font-mono">{r.analysing}</td>
+                <td className="px-2 py-1 font-mono">{r.recording}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </td>
+    </tr>
   );
 }

@@ -1,7 +1,7 @@
 /**
- * Integration-style tests for the audit page (classic skin). Same harness
- * as the Mission Control page test; asserts the legacy-style table renders
- * the same joined data.
+ * Integration-style tests for the audit page (classic skin): the legacy
+ * per-monitor window semantic — Events / FirstEvent / LastEvent / MinGap /
+ * MaxGap from each monitor's events inside the window — and its deep links.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -10,27 +10,30 @@ import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 
+let mockSearch: Record<string, unknown> = {};
+const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => mockSearch,
+  useNavigate: () => mockNavigate,
   Link: ({
-    children, to, search,
-    ...rest
+    children, to, params, search, ...rest
   }: {
     children: React.ReactNode;
     to?: string;
+    params?: Record<string, string>;
     search?: Record<string, unknown>;
     [k: string]: unknown;
   }) => {
+    const path = to && params
+      ? Object.entries(params).reduce((acc, [k, v]) => acc.replace(`$${k}`, String(v)), to)
+      : (to ?? '#');
     const qs = search ? `?${new URLSearchParams(
       Object.entries(search).reduce((acc, [k, v]) => {
         if (v != null) acc[k] = String(v);
         return acc;
       }, {} as Record<string, string>),
     ).toString()}` : '';
-    return (
-      <a href={`${to ?? '#'}${qs}`} {...rest}>
-        {children}
-      </a>
-    );
+    return <a href={`${path}${qs}`} {...rest}>{children}</a>;
   },
 }));
 
@@ -45,7 +48,7 @@ beforeAll(() => {
   });
   server.listen({ onUnhandledRequest: 'error' });
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => { server.resetHandlers(); mockSearch = {}; mockNavigate.mockReset(); });
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -56,72 +59,90 @@ async function mount() {
   return renderWithProviders(<Page />);
 }
 
-function monitor(id: number, name: string) {
-  return { id, name } as unknown as Record<string, unknown>;
+function paged<T>(items: T[]) {
+  return { items, total: items.length, per_page: 500, current_page: 1, last_page: 1 };
 }
 
-function summary(
-  monitor_id: number,
-  total: number,
-  hour = 0, day = 0, week = 0, month = 0, archived = 0,
-) {
-  return {
-    monitor_id,
-    total_events: total,    total_event_disk_space: total * 1024,
-    hour_events: hour,      hour_event_disk_space: hour * 1024,
-    day_events: day,        day_event_disk_space: day * 1024,
-    week_events: week,      week_event_disk_space: week * 1024,
-    month_events: month,    month_event_disk_space: month * 1024,
-    archived_events: archived, archived_event_disk_space: archived * 1024,
-  };
-}
+const ev = (id: number, monitor_id: number, start: string, end: string) => ({
+  id, monitor_id, name: `Event ${id}`, start_date_time: start, end_date_time: end, length: 30,
+});
+
+/** Requests to /events by monitor id, for asserting the window bounds. */
+let eventRequests: URLSearchParams[] = [];
 
 function stubEndpoints() {
-  const mons = [monitor(2, 'Driveway East'), monitor(1, 'Front Door'), monitor(3, 'Garage')];
-  const sums = [
-    summary(1, 5000, 4, 87, 612, 2000, 25),
-    summary(2,    0, 0,  0,   0,    0,  0),
-    summary(3,   12, 0, 12,  12,   12,  0),
-  ];
+  eventRequests = [];
   server.use(
-    http.get('/api/v3/monitors', () =>
-      HttpResponse.json({
-        items: mons, total: mons.length, per_page: 200, current_page: 1, last_page: 1,
-      }),
-    ),
-    http.get('/api/v3/event-summaries', () =>
-      HttpResponse.json({
-        items: sums, total: sums.length, per_page: 200, current_page: 1, last_page: 1,
-      }),
-    ),
+    http.get('/api/v3/monitors', () => HttpResponse.json(paged([
+      { id: 1, name: 'Front Door', server_id: 2 }, { id: 2, name: 'Driveway East', server_id: null },
+    ]))),
+    http.get('/api/v3/servers', () => HttpResponse.json(paged([{ id: 2, name: 'edge-01', status: 'Running' }]))),
+    http.get('/api/v3/groups', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/events', ({ request }) => {
+      const q = new URL(request.url).searchParams;
+      eventRequests.push(q);
+      if (q.get('monitor_id') === '1') {
+        return HttpResponse.json(paged([
+          ev(28876, 1, '2026-08-21T06:40:00Z', '2026-08-21T06:45:00Z'),
+          ev(28880, 1, '2026-08-21T06:47:00Z', '2026-08-21T06:50:00Z'),
+          ev(28888, 1, '2026-08-21T07:00:00Z', '2026-08-21T07:05:00Z'),
+        ]));
+      }
+      return HttpResponse.json(paged([]));
+    }),
   );
 }
 
 describe('AuditPage — classic skin', () => {
-  it('renders the classic table layout', async () => {
+  it('computes Events / First / Last / MinGap / MaxGap per monitor inside the window', async () => {
+    mockSearch = { min_time: '2026-08-21 06:37:03', max_time: '2026-08-21 07:37:03' };
     stubEndpoints();
     await mount();
-    await waitFor(() => expect(screen.getByText('Front Door')).toBeInTheDocument());
+    const row = await screen.findByTestId('audit-row-1');
+    await waitFor(() => expect(within(row).getByRole('link', { name: '3' })).toBeInTheDocument());
 
-    // Heading is the classic-skin h1; the modern skin uses Panel's title h3 instead.
-    expect(
-      screen.getByRole('heading', { level: 1, name: /audit events report/i }),
-    ).toBeInTheDocument();
+    expect(within(row).getByText(/^28876 at /)).toBeInTheDocument();
+    expect(within(row).getByText(/^28888 at /)).toBeInTheDocument();
+    expect(within(row).getByText('120')).toBeInTheDocument();   // min gap 06:45 → 06:47
+    expect(within(row).getByText('600')).toBeInTheDocument();   // max gap 06:50 → 07:00
+    expect(within(row).getByText('edge-01')).toBeInTheDocument();
+    expect(within(row).getAllByText('needs zm-api#36')).toHaveLength(2);
 
-    // Same data should be reachable in both skins.
-    const row = screen.getByTestId('audit-row-1');
-    expect(within(row).getByText('5000')).toBeInTheDocument();
+    const empty = screen.getByTestId('audit-row-2');
+    await waitFor(() => expect(within(empty).getByRole('link', { name: '0' })).toBeInTheDocument());
+    expect(within(empty).getAllByText('none')).toHaveLength(2);
+
+    // The window went to the backend as start/end bounds for every monitor.
+    const req = eventRequests.find((q) => q.get('monitor_id') === '1')!;
+    expect(req.get('start_time')).toBe(new Date('2026-08-21T06:37:03').toISOString().replace(/\.\d{3}Z$/, 'Z'));
+    expect(req.get('sort')).toBe('start_time');
   });
 
-  it('keeps the archived-events breadcrumb and sortable headers', async () => {
+  it('deep-links Id/Name to montage review, Events to the list and First/Last to the event', async () => {
+    mockSearch = { min_time: '2026-08-21 06:37:03', max_time: '2026-08-21 07:37:03' };
     stubEndpoints();
     await mount();
-    await waitFor(() => expect(screen.getByText('Front Door')).toBeInTheDocument());
+    const row = await screen.findByTestId('audit-row-1');
+    await waitFor(() => expect(within(row).getByRole('link', { name: '3' })).toBeInTheDocument());
 
-    const link = screen.getByRole('link', { name: /browse archived events/i });
-    expect(link.getAttribute('href')).toBe('/events?archived=true');
-    expect(screen.getByText(/^monitor$/i).closest('th')?.getAttribute('aria-sort')).toBe('none');
-    expect(screen.getByText(/^id$/i).closest('th')?.getAttribute('aria-sort')).toBe('ascending');
+    expect(within(row).getByRole('link', { name: 'Front Door' }).getAttribute('href'))
+      .toBe('/montagereview?monitor_id=1&min_time=2026-08-21+06%3A37%3A03&max_time=2026-08-21+07%3A37%3A03');
+    expect(within(row).getByRole('link', { name: '3' }).getAttribute('href'))
+      .toBe('/events?monitor_id=1&start=2026-08-21T06%3A37%3A03&end=2026-08-21T07%3A37%3A03');
+    expect(within(row).getByRole('link', { name: /^28876 at/ }).getAttribute('href')).toBe('/events/28876');
+  });
+
+  it('defaults the window to the hour that ended an hour ago', async () => {
+    stubEndpoints();
+    await mount();
+    const start = await screen.findByLabelText('Window start') as HTMLInputElement;
+    const end = screen.getByLabelText('Window end') as HTMLInputElement;
+    const startMs = new Date(start.value).getTime();
+    const endMs = new Date(end.value).getTime();
+    expect(endMs - startMs).toBe(3_600_000);
+    expect(Date.now() - endMs).toBeGreaterThan(3_500_000);
+    expect(Date.now() - endMs).toBeLessThan(3_700_000);
   });
 
   it('renders the backend error instead of an empty table', async () => {
@@ -129,13 +150,13 @@ describe('AuditPage — classic skin', () => {
       http.get('/api/v3/monitors', () =>
         HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'monitors table locked' }, { status: 500 }),
       ),
-      http.get('/api/v3/event-summaries', () =>
-        HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 }),
-      ),
+      http.get('/api/v3/servers', () => HttpResponse.json(paged([]))),
+      http.get('/api/v3/groups', () => HttpResponse.json(paged([]))),
+      http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([]))),
     );
     await mount();
-    const alert = await screen.findByTestId('audit-error');
-    expect(alert.textContent).toMatch(/monitors table locked/);
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toMatch(/Cannot reach the server|Failed to load/);
     expect(screen.queryByTestId('audit-table')).toBeNull();
   });
 });

@@ -4,13 +4,16 @@ import { useTranslation } from 'react-i18next';
 import { HelpCircle, Loader2, RotateCcw } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
+import { QueryState } from '@/components/common/QueryState';
+import { usePerms } from '@/features/auth/usePerms';
 import { TypedConfigInput } from '@/features/settings/TypedConfigInput';
 import { configDefaultValue, formatConfigValue, isAtDefault } from '@/features/settings/configFormat';
 import { DISPLAY_TAB } from '@/features/settings/optionsTabs';
 import { useSettingsOptionsPage } from '@/features/settings/useSettingsOptionsPage';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { SkinSwitcher } from '@/skins/modern/components/settings/SkinSwitcher';
-import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
+import { ClassicButton, ClassicTable, classicTd, classicTh } from '../components/settings/primitives';
 import type { ZmConfig } from '@/types';
 
 /**
@@ -20,7 +23,9 @@ import type { ZmConfig } from '@/types';
 export default function ClassicSettingsOptionsPage() {
   const { t } = useTranslation();
   const s = useSettingsOptionsPage();
-  useDocumentTitle(t('Options'));
+  const { can } = usePerms();
+  useSiteTitle(t('Options'));
+  const canEdit = can('system', 'Edit');
 
   if (!s.isAuthenticated) return null;
 
@@ -84,6 +89,16 @@ export default function ClassicSettingsOptionsPage() {
                     <span className="ms-auto text-xs text-zinc-500">
                       {t('{{count}} config', { count: s.filteredConfigs.length })}
                     </span>
+                    {canEdit && (
+                      <ClassicButton
+                        tone="primary"
+                        onClick={s.saveAll}
+                        disabled={s.dirtyCount === 0 || s.isSavingAll}
+                        title={t('Write every row edited on this page')}
+                      >
+                        {s.isSavingAll ? t('Saving…') : s.dirtyCount > 0 ? t('Save ({{count}})', { count: s.dirtyCount }) : t('Save')}
+                      </ClassicButton>
+                    )}
                   </div>
 
                   {s.configSaveError && (
@@ -92,42 +107,52 @@ export default function ClassicSettingsOptionsPage() {
                     </p>
                   )}
 
-                  <div className="bg-white rounded border border-zinc-300 overflow-hidden">
-                    {s.configsLoading ? (
-                      <div className="p-8 text-center text-zinc-500 text-sm">{t('Loading configurations...')}</div>
-                    ) : s.paginatedConfigs.length === 0 ? (
-                      <div className="p-8 text-center text-zinc-500 text-sm">
-                        {s.configSearch ? t('No configs match your search') : t('No configs found')}
-                      </div>
-                    ) : (
-                      <table className="w-full text-sm text-zinc-800">
-                        <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
-                          <tr>
-                            <th className="px-3 py-2 text-start font-semibold w-[28%]">{t('Name')}</th>
-                            <th className="px-3 py-2 text-start font-semibold">{t('Description')}</th>
-                            <th className="px-3 py-2 text-start font-semibold w-[30%]">{t('Value')}</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {s.paginatedConfigs.map((config) => (
-                            <ClassicConfigRow
-                              key={config.name}
-                              config={config}
-                              isEditing={s.editingConfig === config.name}
-                              editValue={s.editValue}
-                              editError={s.editingConfig === config.name ? s.editError : null}
-                              onEditValueChange={s.setEditValue}
-                              onStartEdit={() => s.startEdit(config.name, config.value)}
-                              onSave={() => s.saveEdit(config.name)}
-                              onCancel={s.cancelEdit}
-                              onReset={() => s.resetToDefault(config)}
-                              isSaving={s.savingConfig === config.name}
-                            />
-                          ))}
-                        </tbody>
-                      </table>
-                    )}
-                  </div>
+                  {selected === 'version' && s.versionData && (
+                    <ClassicTable aria-label={t('Versions')}>
+                      <tbody>
+                        <tr><th scope="row" className={clsx(classicTh, 'w-[28%]')}>{t('ZoneMinder version')}</th><td className={clsx(classicTd, 'font-mono text-xs')}>{s.versionData.version}</td></tr>
+                        <tr><th scope="row" className={classicTh}>{t('API version')}</th><td className={clsx(classicTd, 'font-mono text-xs')}>{s.versionData.api_version}</td></tr>
+                        <tr><th scope="row" className={classicTh}>{t('Database version')}</th><td className={clsx(classicTd, 'font-mono text-xs')}>{s.versionData.db_version}</td></tr>
+                      </tbody>
+                    </ClassicTable>
+                  )}
+
+                  <QueryState
+                    isLoading={s.configsLoading}
+                    isError={s.configsIsError}
+                    error={s.configsError}
+                    onRetry={s.refetchConfigs}
+                    empty={s.paginatedConfigs.length === 0}
+                    emptyMessage={s.configSearch ? t('No configs match your search') : t('No configs found')}
+                  >
+                    <ClassicTable>
+                      <thead>
+                        <tr>
+                          <th className={clsx(classicTh, 'w-[28%]')}>{t('Name')}</th>
+                          <th className={classicTh}>{t('Description')}</th>
+                          <th className={clsx(classicTh, 'w-[30%]')}>{t('Value')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {s.paginatedConfigs.map((config) => (
+                          <ClassicConfigRow
+                            key={config.name}
+                            config={canEdit ? config : { ...config, readonly: 1 }}
+                            isEditing={s.editingConfig === config.name}
+                            editValue={s.editValue}
+                            editError={s.editingConfig === config.name ? s.editError : null}
+                            onEditValueChange={s.setEditValue}
+                            onStartEdit={() => s.startEdit(config.name, config.value)}
+                            onSave={() => s.saveEdit(config.name)}
+                            onCancel={s.cancelEdit}
+                            onReset={() => s.resetToDefault(config)}
+                            isSaving={s.savingConfig === config.name}
+                            dirtyValue={s.dirty[config.name]}
+                          />
+                        ))}
+                      </tbody>
+                    </ClassicTable>
+                  </QueryState>
 
                   {s.configTotalPages > 1 && (
                     <div className="flex items-center justify-between text-xs text-zinc-600">
@@ -175,6 +200,7 @@ function ClassicConfigRow({
   onCancel,
   onReset,
   isSaving,
+  dirtyValue,
 }: {
   config: ZmConfig;
   isEditing: boolean;
@@ -186,6 +212,7 @@ function ClassicConfigRow({
   onCancel: () => void;
   onReset: () => void;
   isSaving: boolean;
+  dirtyValue?: string;
 }) {
   const { t } = useTranslation();
   const [showHelp, setShowHelp] = useState(false);
@@ -195,12 +222,12 @@ function ClassicConfigRow({
 
   return (
     <>
-      <tr className="border-b border-zinc-200 hover:bg-zinc-50 align-top">
-        <td className="px-3 py-2 font-mono text-xs text-zinc-700">
+      <tr className={clsx('align-top', dirtyValue !== undefined && 'bg-amber-50')}>
+        <td className="px-3 py-2 font-mono text-xs text-zinc-700 border-b border-zinc-200">
           {config.name}
           {isReadonly && <span className="ms-1 text-[10px] text-zinc-400">({t('read-only')})</span>}
         </td>
-        <td className="px-3 py-2 text-xs text-zinc-700">
+        <td className="px-3 py-2 text-xs text-zinc-700 border-b border-zinc-200">
           <span>{config.prompt}</span>
           {config.help && (
             <button
@@ -217,7 +244,7 @@ function ClassicConfigRow({
             <p className="mt-1 text-[11px] text-zinc-500 whitespace-pre-line">{config.help.trim()}</p>
           )}
         </td>
-        <td className="px-3 py-2">
+        <td className="px-3 py-2 border-b border-zinc-200">
           {isEditing ? (
             <div className="space-y-1">
               <div className="flex items-center gap-2">
@@ -251,16 +278,19 @@ function ClassicConfigRow({
             <div className="flex items-center gap-2">
               <span
                 onClick={isReadonly ? undefined : onStartEdit}
-                title={isSecret ? undefined : config.value}
+                title={isSecret ? undefined : (dirtyValue ?? config.value)}
                 className={clsx(
                   'font-mono text-xs truncate max-w-[22rem]',
                   isReadonly ? 'text-zinc-500' : 'cursor-pointer text-zinc-900 hover:underline',
                 )}
               >
-                {config.value
-                  ? (isSecret ? '••••••••' : formatConfigValue(config))
-                  : <span className="italic text-zinc-400">{t('empty')}</span>}
+                {dirtyValue !== undefined
+                  ? (isSecret ? '••••••••' : formatConfigValue({ ...config, value: dirtyValue }))
+                  : config.value
+                    ? (isSecret ? '••••••••' : formatConfigValue(config))
+                    : <span className="italic text-zinc-400">{t('empty')}</span>}
               </span>
+              {dirtyValue !== undefined && <span className="text-[10px] text-amber-700">({t('unsaved')})</span>}
               {canReset && (
                 <button
                   type="button"

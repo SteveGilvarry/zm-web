@@ -3,10 +3,11 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { useRouteSearch, searchInt, searchString } from '@/features/monitors/useRouteSearch';
 import { useReviewClock, type ReviewClock } from './useReviewClock';
 import type { Monitor } from '@/types';
 
-export type ReviewRangePreset = '1h' | '8h' | '24h' | 'all' | 'live';
+export type ReviewRangePreset = '1h' | '8h' | '24h' | 'all' | 'live' | 'custom';
 
 export interface ReviewRangePresetOption {
   value: ReviewRangePreset;
@@ -39,7 +40,8 @@ export const REVIEW_RANGE_PRESETS: ReviewRangePresetOption[] = [
   { value: 'live', label: 'Live',      icon: 'live' },
 ];
 
-export const REVIEW_SPEEDS = [0.5, 1, 2, 4];
+/** Playback multipliers; browsers cap `playbackRate` around 16. */
+export const REVIEW_SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
 
 export function presetToRange(preset: ReviewRangePreset, now: Date): { start: Date; end: Date } {
   const ms = (h: number) => h * 60 * 60 * 1000;
@@ -49,6 +51,7 @@ export function presetToRange(preset: ReviewRangePreset, now: Date): { start: Da
     case '24h': return { start: new Date(now.getTime() - ms(24)),   end: now };
     case 'all': return { start: new Date(now.getTime() - ms(24 * 30)), end: now }; // last 30 days as "all"
     case 'live': return { start: now, end: new Date(now.getTime() + ms(1)) };
+    case 'custom': return { start: new Date(now.getTime() - ms(1)), end: now };
   }
 }
 
@@ -60,12 +63,51 @@ export function reviewGridColumns(count: number): number {
   return 4;
 }
 
+/**
+ * Legacy `minTime` / `maxTime` (`YYYY-MM-DD HH:MM:SS`, server-local) or ISO.
+ * Returns null for anything unparsable.
+ */
+export function parseLegacyTime(value: string | undefined): Date | null {
+  if (!value) return null;
+  const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(value) ? value.replace(' ', 'T') : value;
+  const d = new Date(iso);
+  return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/** Slide the window by `fraction` of its width (negative = earlier). */
+export function panRange(start: Date, end: Date, fraction: number): { start: Date; end: Date } {
+  const span = end.getTime() - start.getTime();
+  const delta = span * fraction;
+  return { start: new Date(start.getTime() + delta), end: new Date(end.getTime() + delta) };
+}
+
+/** Scale the window by `factor` around `around` (in: factor < 1, out: factor > 1). */
+export function zoomRange(start: Date, end: Date, factor: number, around: Date): { start: Date; end: Date } {
+  const a = around.getTime();
+  const s = a - (a - start.getTime()) * factor;
+  const e = a + (end.getTime() - a) * factor;
+  // Never collapse below one minute.
+  if (e - s < 60_000) return { start, end };
+  return { start: new Date(s), end: new Date(e) };
+}
+
 export interface MontageReviewPageState {
   isAuthenticated: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  refetch: () => void;
   preset: ReviewRangePreset;
   setPreset: (preset: ReviewRangePreset) => void;
+  /** Legacy Date Time >= / <= inputs; switches the preset to `custom`. */
+  setCustomRange: (start: Date, end: Date) => void;
+  pan: (fraction: number) => void;
+  zoom: (factor: number) => void;
   isLive: boolean;
   clock: ReviewClock;
+  /** Legacy scale slider 0.1–1.0 (cell size relative to the camera). */
+  scale: number;
+  setScale: (s: number) => void;
   /** Every monitor, for the filter bar. */
   allMonitors: Monitor[];
   setFilteredMonitors: (monitors: Monitor[]) => void;
@@ -79,40 +121,75 @@ export interface MontageReviewPageState {
 
 export function useMontageReviewPage(): MontageReviewPageState {
   const { isAuthenticated } = useAuthStore();
-  const [preset, setPreset] = useState<ReviewRangePreset>('24h');
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const search = useRouteSearch();
+  const urlMonitorId = searchInt(search, 'monitor_id');
+  const urlMin = parseLegacyTime(searchString(search, 'min_time'));
+  const urlMax = parseLegacyTime(searchString(search, 'max_time'));
+  const hasUrlRange = !!(urlMin && urlMax && urlMax > urlMin);
+
+  const [preset, setPresetState] = useState<ReviewRangePreset>(hasUrlRange ? 'custom' : '24h');
+  // A URL monitor preselects just that monitor; otherwise all once loaded.
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(
+    () => new Set(urlMonitorId != null ? [urlMonitorId] : []),
+  );
+  const [scale, setScale] = useState(1);
   const isLive = preset === 'live';
 
-  // Initial range
-  const initialRange = useMemo(() => presetToRange('24h', new Date()), []);
+  // Initial range: the URL's, else the last 24 h.
+  const initialRange = useMemo(
+    () => (hasUrlRange ? { start: urlMin!, end: urlMax! } : presetToRange('24h', new Date())),
+    // URL values are read once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
   const clock = useReviewClock(initialRange.start, initialRange.end);
 
-  // When the preset changes, recompute the range against "now" and reset the
-  // playhead to the start of the new range.
-  useEffect(() => {
-    const range = presetToRange(preset, new Date());
-    clock.setRange(range.start, range.end);
-    clock.setCurrentTime(range.start);
-    if (preset === 'live') clock.pause();
-    // intentionally only react to preset
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preset]);
+  const applyRange = (start: Date, end: Date) => {
+    clock.setRange(start, end);
+    clock.setCurrentTime(start);
+  };
+
+  const setPreset = (next: ReviewRangePreset) => {
+    setPresetState(next);
+    if (next === 'custom') return;
+    const range = presetToRange(next, new Date());
+    applyRange(range.start, range.end);
+    if (next === 'live') clock.pause();
+  };
+
+  const setCustomRange = (start: Date, end: Date) => {
+    if (!(end > start)) return;
+    setPresetState('custom');
+    applyRange(start, end);
+  };
+
+  const pan = (fraction: number) => {
+    const r = panRange(clock.rangeStart, clock.rangeEnd, fraction);
+    setPresetState('custom');
+    clock.setRange(r.start, r.end);
+  };
+  const zoom = (factor: number) => {
+    const r = zoomRange(clock.rangeStart, clock.rangeEnd, factor, clock.currentTime);
+    setPresetState('custom');
+    clock.setRange(r.start, r.end);
+  };
 
   // Fetch monitors (only enabled / capturing ones make sense for review).
-  const { data: monitorsData } = useQuery({
+  const monitorsQ = useQuery({
     queryKey: ['monitors'],
     queryFn: () => getMonitors({ page: 1, page_size: 100 }),
     enabled: isAuthenticated,
   });
-  const allMonitors: Monitor[] = monitorsData?.items ?? [];
+  const allMonitors: Monitor[] = monitorsQ.data?.items ?? [];
 
   // Shared <MonitorFilterBar/> output. Layered on top of the per-monitor
   // chip toggles further down — so the chip row only offers monitors that
   // survive the filter bar's group/source/etc. selections.
-  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[]>(allMonitors);
-  const enabled = filteredMonitors.filter((m) => m.capturing !== 'None');
+  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[] | null>(null);
+  const enabled = (filteredMonitors ?? allMonitors).filter((m) => m.capturing !== 'None');
 
-  // Default selection: all enabled monitors (once they load).
+  // Default selection: all enabled monitors (once they load), unless the
+  // URL named one.
   useEffect(() => {
     if (selectedIds.size === 0 && enabled.length > 0) {
       setSelectedIds(new Set(enabled.map((m) => m.id)));
@@ -133,10 +210,19 @@ export function useMontageReviewPage(): MontageReviewPageState {
 
   return {
     isAuthenticated,
+    isLoading: monitorsQ.isLoading,
+    isError: monitorsQ.isError,
+    error: monitorsQ.error,
+    refetch: () => { void monitorsQ.refetch(); },
     preset,
     setPreset,
+    setCustomRange,
+    pan,
+    zoom,
     isLive,
     clock,
+    scale,
+    setScale,
     allMonitors,
     setFilteredMonitors,
     enabled,

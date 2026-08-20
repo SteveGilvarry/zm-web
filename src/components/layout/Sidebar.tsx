@@ -1,3 +1,4 @@
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -20,6 +21,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
@@ -62,15 +64,60 @@ function useNavItems(): { main: NavItem[]; settings: NavItem[] } {
   };
 }
 
-export function Sidebar() {
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+/** Tailwind's `lg` breakpoint, as state: the drawer only exists below it. */
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia(DESKTOP_QUERY);
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    () => window.matchMedia(DESKTOP_QUERY).matches,
+    () => true,
+  );
+}
+
+interface SidebarProps {
+  /** Drawer state below `lg`; ignored on desktop. */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const { t } = useTranslation();
-  const { sidebarCollapsed: collapsed, toggleSidebar } = useUiStore();
+  const { sidebarCollapsed, toggleSidebar } = useUiStore();
+  const isDesktop = useIsDesktop();
+  // The drawer always shows labels; collapse is a desktop-only state.
+  const collapsed = isDesktop && sidebarCollapsed;
   const router = useRouterState();
   const navigate = useNavigate();
   const currentPath = router.location.pathname;
   const { user, clearAuth } = useAuthStore();
   const { perms } = usePerms();
   const items = useNavItems();
+  const asideRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
+
+  // Drawer a11y: Escape closes; focus moves in on open and back out on close.
+  const drawerActive = mobileOpen && !isDesktop;
+  useEffect(() => {
+    if (!drawerActive) return;
+    const opener = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onMobileClose?.();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      opener?.focus?.();
+    };
+  }, [drawerActive, onMobileClose]);
   // Legacy canView() rules: hide what the user cannot open.
   const navItems = items.main.filter((i) => canSeeNav(perms, i.path));
   const settingsItems = items.settings.filter((i) => canSeeNav(perms, i.path));
@@ -85,45 +132,63 @@ export function Sidebar() {
 
   return (
     <aside
+      id="app-sidebar"
+      ref={asideRef}
+      aria-label={t('Sidebar')}
+      aria-hidden={!isDesktop && !mobileOpen ? true : undefined}
       className={clsx(
         'fixed start-0 top-0 z-40 h-screen flex flex-col',
         'bg-surface border-e border-border-subtle',
-        'transition-all duration-300 ease-out-expo',
-        collapsed ? 'w-16' : 'w-56'
+        'transition-[transform,width] duration-300 ease-out-expo',
+        collapsed ? 'w-16' : 'w-56',
+        // Off-canvas below lg; always in place from lg up.
+        mobileOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
+        'lg:translate-x-0 lg:rtl:translate-x-0',
       )}
     >
       {/* Logo */}
       <div className="h-14 flex items-center justify-between px-4 border-b border-border-subtle">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Shield className="text-cyan" size={24} />
+            <Shield className="text-cyan" size={24} aria-hidden />
             <span className="font-mono font-semibold text-cyan tracking-tight">
               ZM<span className="text-text-secondary">dash</span>
             </span>
           </div>
         )}
-        {collapsed && <Shield className="text-cyan mx-auto" size={24} />}
+        {collapsed && <Shield className="text-cyan mx-auto" size={24} aria-hidden />}
+        {onMobileClose && (
+          <button
+            ref={closeRef}
+            type="button"
+            onClick={onMobileClose}
+            aria-label={t('Close menu')}
+            className="lg:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-panel transition-colors"
+          >
+            <X size={18} aria-hidden />
+          </button>
+        )}
       </div>
 
-      {/* Collapse toggle */}
+      {/* Collapse toggle (desktop only) */}
       <button
         type="button"
         onClick={toggleSidebar}
         aria-label={collapsed ? t('Expand sidebar') : t('Collapse sidebar')}
         aria-expanded={!collapsed}
         className={clsx(
-          'absolute -end-3 top-20 z-50',
+          'absolute -end-3 top-20 z-50 hidden lg:flex',
           'w-6 h-6 rounded-full',
           'bg-panel border border-border',
-          'flex items-center justify-center',
+          'items-center justify-center',
           'text-text-muted hover:text-text-primary',
           'transition-colors duration-fast',
           'hover:bg-elevated'
         )}
       >
         {collapsed
-          ? <ChevronRight size={14} className="rtl:-scale-x-100" />
-          : <ChevronLeft size={14} className="rtl:-scale-x-100" />}
+          ? <ChevronRight size={14} className="rtl:-scale-x-100" aria-hidden />
+          : <ChevronLeft size={14} className="rtl:-scale-x-100" aria-hidden />}
       </button>
 
       {/* Main navigation */}
@@ -184,7 +249,7 @@ export function Sidebar() {
             title={t('Log out')}
             aria-label={t('Log out')}
           >
-            <LogOut size={16} className="rtl:-scale-x-100" />
+            <LogOut size={16} className="rtl:-scale-x-100" aria-hidden />
           </button>
         </div>
       </div>

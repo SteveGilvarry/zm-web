@@ -29,10 +29,14 @@ import {
   Gauge,
   Database,
   HardDrive,
+  Film,
+  LayoutGrid,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { EventEditForm } from '@/features/events/EventEditForm';
 import { useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
@@ -73,19 +77,11 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
 
   if (!s.isAuthenticated) return null;
 
-  if (eventLoading) {
+  if (eventLoading || s.eventError) {
     return (
-      <AppShell title={t('Loading...')}>
+      <AppShell title={t('Event')}>
         <main className="flex-1 p-6">
-          <div className="animate-pulse space-y-6">
-            <div className="h-[500px] bg-surface rounded-xl" />
-            <div className="grid grid-cols-4 gap-4">
-              <div className="h-24 bg-surface rounded-xl" />
-              <div className="h-24 bg-surface rounded-xl" />
-              <div className="h-24 bg-surface rounded-xl" />
-              <div className="h-24 bg-surface rounded-xl" />
-            </div>
-          </div>
+          <QueryState isLoading={eventLoading} isError={!!s.eventError} error={s.eventError} />
         </main>
       </AppShell>
     );
@@ -99,7 +95,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
             <Video size={64} className="mx-auto mb-4 text-text-muted" />
             <h2 className="text-xl font-bold text-text-primary mb-2">{t('Event Not Found')}</h2>
             <p className="text-text-muted mb-6">
-              {s.eventError ? s.eventError.message : t('The requested event could not be found.')}
+              {t('The requested event could not be found.')}
             </p>
             <Link
               to="/events"
@@ -662,9 +658,19 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 </div>
               </Panel>
 
-              {/* Tags — chips + inline editor */}
+              {/* Tags — chips + inline editor (read-only without Events Edit) */}
               <Panel title={t('Tags')} icon={<TagIcon size={16} />}>
-                <TagChips eventId={event.id} currentTags={event.tags ?? []} />
+                <RequirePerm
+                  feature="events"
+                  level="Edit"
+                  fallback={(
+                    <p className="text-sm text-text-secondary">
+                      {(event.tags ?? []).map((tag) => tag.name).join(', ') || t('No tags')}
+                    </p>
+                  )}
+                >
+                  <TagChips eventId={event.id} currentTags={event.tags ?? []} />
+                </RequirePerm>
               </Panel>
 
               {/* Notes */}
@@ -679,6 +685,35 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
               {/* Actions */}
               <Panel title={t('Actions')}>
                 <div className="space-y-2">
+                  <Link
+                    to="/events/$eventId/frames"
+                    params={{ eventId: String(event.id) }}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
+                      'bg-surface border border-border-subtle',
+                      'text-text-primary hover:border-cyan/50 transition-colors'
+                    )}
+                  >
+                    <Film size={16} />
+                    {t('Frames')}
+                  </Link>
+
+                  {s.reviewSearch && (
+                    <Link
+                      to="/montagereview"
+                      search={s.reviewSearch}
+                      className={clsx(
+                        'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
+                        'bg-surface border border-border-subtle',
+                        'text-text-primary hover:border-cyan/50 transition-colors'
+                      )}
+                    >
+                      <LayoutGrid size={16} />
+                      {t('Montage Review')}
+                    </Link>
+                  )}
+
+                  <RequirePerm feature="events" level="Edit">
                   <button
                     type="button"
                     onClick={s.toggleArchived}
@@ -710,6 +745,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <Pencil size={16} />
                     {t('Edit')}
                   </button>
+                  </RequirePerm>
 
                   <a
                     href={downloadUrl}
@@ -725,20 +761,22 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     {t('Download Video')}
                   </a>
 
-                  <button
-                    onClick={s.requestDelete}
-                    disabled={s.deletePending}
-                    aria-keyshortcuts="Delete"
-                    className={clsx(
-                      'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
-                      'bg-crimson/10 border border-crimson/30',
-                      'text-crimson hover:bg-crimson/20 transition-colors',
-                      'disabled:opacity-50 disabled:cursor-not-allowed'
-                    )}
-                  >
-                    <Trash2 size={16} />
-                    {t('Delete Event')}
-                  </button>
+                  <RequirePerm feature="events" level="Edit">
+                    <button
+                      onClick={s.requestDelete}
+                      disabled={s.deletePending}
+                      aria-keyshortcuts="Delete"
+                      className={clsx(
+                        'flex items-center justify-center gap-2 w-full px-4 py-2 rounded-lg',
+                        'bg-crimson/10 border border-crimson/30',
+                        'text-crimson hover:bg-crimson/20 transition-colors',
+                        'disabled:opacity-50 disabled:cursor-not-allowed'
+                      )}
+                    >
+                      <Trash2 size={16} />
+                      {t('Delete Event')}
+                    </button>
+                  </RequirePerm>
                   <p className="text-[10px] font-mono text-text-muted text-center">
                     {t('Keys: ← → prev/next · Space play/pause · Delete')}
                   </p>

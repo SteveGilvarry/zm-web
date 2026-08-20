@@ -1,4 +1,4 @@
-import { Wifi, WifiOff, Cpu, MemoryStick, HardDrive, Gauge } from 'lucide-react';
+import { Wifi, WifiOff, Cpu, MemoryStick, HardDrive, Gauge, Menu } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
 import { API_BASE } from '@/api/base';
@@ -11,9 +11,12 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 
 interface HeaderProps {
   title?: string;
+  /** Opens the mobile navigation drawer; renders the menu button when set. */
+  onMenu?: () => void;
+  menuOpen?: boolean;
 }
 
-export function Header({ title }: HeaderProps) {
+export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
   const { t, i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language ?? undefined;
   const { isAuthenticated } = useAuthStore();
@@ -61,11 +64,23 @@ export function Header({ title }: HeaderProps) {
     : null;
 
   return (
-    <header className="h-14 bg-surface/80 backdrop-blur-sm border-b border-border-subtle flex items-center justify-between px-6 gap-4">
-      {/* Left: Title */}
-      <div className="flex items-center gap-4">
+    <header className="h-14 bg-surface/80 backdrop-blur-sm border-b border-border-subtle flex items-center justify-between px-3 sm:px-6 gap-3">
+      {/* Left: menu (mobile) + title */}
+      <div className="flex items-center gap-3 min-w-0">
+        {onMenu && (
+          <button
+            type="button"
+            onClick={onMenu}
+            aria-label={t('Open menu')}
+            aria-controls="app-sidebar"
+            aria-expanded={menuOpen}
+            className="lg:hidden p-2 -ms-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-panel transition-colors"
+          >
+            <Menu size={20} aria-hidden />
+          </button>
+        )}
         {title && (
-          <h1 className="text-lg font-semibold text-text-primary">{title}</h1>
+          <h1 className="text-lg font-semibold text-text-primary truncate">{title}</h1>
         )}
       </div>
 
@@ -171,18 +186,18 @@ export function Header({ title }: HeaderProps) {
         >
           {isConnected ? (
             <>
-              <Wifi className="text-emerald" size={14} />
-              <span className="text-xs font-medium text-emerald">{t('Connected')}</span>
+              <Wifi className="text-emerald" size={14} aria-hidden />
+              <span className="sr-only sm:not-sr-only text-xs font-medium text-emerald">{t('Connected')}</span>
             </>
           ) : (
             <>
-              <WifiOff className="text-crimson" size={14} />
-              <span className="text-xs font-medium text-crimson">{t('Disconnected')}</span>
+              <WifiOff className="text-crimson" size={14} aria-hidden />
+              <span className="sr-only sm:not-sr-only text-xs font-medium text-crimson">{t('Disconnected')}</span>
             </>
           )}
         </div>
 
-        <div className="flex flex-col items-end text-end">
+        <div className="hidden sm:flex flex-col items-end text-end">
           <span className="text-sm font-mono text-text-primary tabular-nums">
             {currentTime.toLocaleTimeString(locale, {
               hour12: false,

@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
+import { useToastStore } from '@/components/common/toastStore';
 
 // TanStack Router's Link/createFileRoute would hit the route tree at module-init.
 // Stub them so the page can render bare in the test harness.
@@ -28,7 +29,7 @@ const server = setupServer();
 
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'warn' });
 });
@@ -256,7 +257,7 @@ describe('Run State page — save current', () => {
         return HttpResponse.json({}, { status: 201 });
       }),
     );
-    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    useToastStore.getState().clear();
     const user = userEvent.setup();
     renderWithProviders(<RunStatePage />);
     await waitFor(() => expect(screen.getByText('default')).toBeInTheDocument());
@@ -264,9 +265,9 @@ describe('Run State page — save current', () => {
     await user.type(screen.getByLabelText(/new state name/i), 'restart');
     await user.click(screen.getByRole('button', { name: /save snapshot/i }));
 
-    expect(alertSpy).toHaveBeenCalled();
+    const toasts = useToastStore.getState().toasts;
+    expect(toasts.some((x) => x.tone === 'error' && /reserved name/.test(x.message))).toBe(true);
     expect(hits).toBe(0);
-    alertSpy.mockRestore();
   });
 });
 

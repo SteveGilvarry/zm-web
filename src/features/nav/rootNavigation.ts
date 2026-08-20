@@ -8,6 +8,8 @@ export interface RootNavInput {
   /** Raw search string, with or without the leading `?`. */
   searchString: string;
   isAuthenticated: boolean;
+  /** The session was dropped by a failed refresh → `/login?reason=expired`. */
+  sessionExpired?: boolean;
 }
 
 export interface RootNavPlan {
@@ -59,6 +61,7 @@ export function planRootNavigation(input: RootNavInput): RootNavPlan {
     const redirect = redirectParamFor(pathname, search);
     const qs = new URLSearchParams();
     if (redirect) qs.set('redirect', redirect);
+    if (input.sessionExpired) qs.set('reason', 'expired');
     const s = qs.toString();
     plan.href = `/login${s ? `?${s}` : ''}`;
     return plan;

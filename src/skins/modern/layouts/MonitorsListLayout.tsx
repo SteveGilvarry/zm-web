@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
-  Monitor,
   Search,
   Grid3X3,
   List,
@@ -12,7 +11,8 @@ import {
   Plus,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
-import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { AddMonitorDialog } from '@/features/monitors/AddMonitorDialog';
 import {
   MONITORS_STATUS_FILTERS,
@@ -37,7 +37,7 @@ export function MonitorsListLayout({
   const state = useMonitorsListPage();
   useDocumentTitle(t('Monitors'));
   const {
-    isAuthenticated, isLoading, monitors, filteredMonitors, total, totalPages, page, setPage,
+    isAuthenticated, isLoading, isError, error, monitors, filteredMonitors, total, totalPages, page, setPage,
     viewMode, setViewMode, searchQuery, setSearchQuery, statusFilter, setStatusFilter,
     showAdd, openAdd, closeAdd, refetch,
   } = state;
@@ -55,20 +55,21 @@ export function MonitorsListLayout({
 
   return (
     <AppShell title={t('Monitors')}>
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-4 sm:p-6 overflow-auto min-w-0">
           {/* Toolbar */}
-          <div className="flex items-center justify-between mb-6">
-            <div className="flex items-center gap-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+            <div className="flex flex-wrap items-center gap-3">
               {/* Search */}
               <div className="relative">
                 <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
                 <input
-                  type="text"
+                  type="search"
                   placeholder={t('Search monitors...')}
+                  aria-label={t('Search monitors')}
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
                   className={clsx(
-                    'ps-10 pe-4 py-2 w-64',
+                    'ps-10 pe-4 py-2 w-full sm:w-64',
                     'bg-surface border border-border-subtle rounded-lg',
                     'text-text-primary placeholder:text-text-muted',
                     'focus:outline-none focus:border-cyan/50',
@@ -78,10 +79,12 @@ export function MonitorsListLayout({
               </div>
 
               {/* Status Filter */}
-              <div className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
+              <div role="group" aria-label={t('Status filter')} className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
                 {MONITORS_STATUS_FILTERS.map((status) => (
                   <button
                     key={status}
+                    type="button"
+                    aria-pressed={statusFilter === status}
                     onClick={() => setStatusFilter(status)}
                     className={clsx(
                       'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
@@ -98,16 +101,20 @@ export function MonitorsListLayout({
 
             <div className="flex items-center gap-3">
               {/* Add monitor */}
-              <button
-                onClick={openAdd}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan/15 border border-cyan/40 text-cyan hover:bg-cyan/25 transition-colors text-sm font-medium"
-              >
-                <Plus size={14} />
-                {t('Add monitor')}
-              </button>
+              <RequirePerm feature="monitors" level="Edit">
+                <button
+                  type="button"
+                  onClick={openAdd}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan/15 border border-cyan/40 text-cyan hover:bg-cyan/25 transition-colors text-sm font-medium"
+                >
+                  <Plus size={14} aria-hidden />
+                  {t('Add monitor')}
+                </button>
+              </RequirePerm>
 
               {/* Refresh */}
               <button
+                type="button"
                 onClick={refetch}
                 aria-label={t('Refresh')}
                 title={t('Refresh')}
@@ -117,10 +124,12 @@ export function MonitorsListLayout({
               </button>
 
               {/* View Toggle */}
-              <div className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
+              <div role="group" aria-label={t('View')} className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
                 <button
+                  type="button"
                   onClick={() => setViewMode('grid')}
                   aria-label={t('Grid view')}
+                  aria-pressed={viewMode === 'grid'}
                   className={clsx(
                     'p-2 rounded-md transition-colors',
                     viewMode === 'grid'
@@ -131,8 +140,10 @@ export function MonitorsListLayout({
                   <Grid3X3 className="w-4 h-4" />
                 </button>
                 <button
+                  type="button"
                   onClick={() => setViewMode('list')}
                   aria-label={t('List view')}
+                  aria-pressed={viewMode === 'list'}
                   className={clsx(
                     'p-2 rounded-md transition-colors',
                     viewMode === 'list'
@@ -155,38 +166,22 @@ export function MonitorsListLayout({
           </div>
 
           {/* Content */}
-          {isLoading ? (
-            <div className={clsx(
-              viewMode === 'grid'
-                ? 'grid grid-cols-4 gap-4'
-                : 'flex flex-col gap-3'
-            )}>
-              {[...Array(8)].map((_, i) => (
-                <div
-                  key={i}
-                  className={clsx(
-                    'bg-surface border border-border-subtle rounded-xl animate-pulse',
-                    viewMode === 'grid' ? 'aspect-video' : 'h-20'
-                  )}
-                />
-              ))}
-            </div>
-          ) : filteredMonitors.length === 0 ? (
-            <Panel>
-              <div className="flex flex-col items-center justify-center py-16 text-text-muted">
-                <Monitor size={48} className="mb-4 opacity-50" />
-                <p className="text-lg">{t('No monitors found')}</p>
-                <p className="text-sm mt-1">{t('Try adjusting your filters')}</p>
-              </div>
-            </Panel>
-          ) : (
-            renderMonitors(state)
-          )}
+          <QueryState
+            isLoading={isLoading}
+            isError={isError}
+            error={error}
+            onRetry={refetch}
+            empty={filteredMonitors.length === 0}
+            emptyMessage={monitors.length === 0 ? t('No monitors found') : t('Try adjusting your filters')}
+          >
+            {renderMonitors(state)}
+          </QueryState>
 
           {/* Pagination */}
           {totalPages > 1 && (
-            <div className="flex items-center justify-center gap-2 mt-6">
+            <nav aria-label={t('Pagination')} className="flex items-center justify-center gap-2 mt-6">
               <button
+                type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
                 aria-label={t('Previous page')}
@@ -216,7 +211,10 @@ export function MonitorsListLayout({
                   return (
                     <button
                       key={pageNum}
+                      type="button"
                       onClick={() => setPage(pageNum)}
+                      aria-label={t('Page {{n}}', { n: pageNum })}
+                      aria-current={page === pageNum ? 'page' : undefined}
                       className={clsx(
                         'w-8 h-8 rounded-lg text-sm font-medium transition-colors',
                         page === pageNum
@@ -231,6 +229,7 @@ export function MonitorsListLayout({
               </div>
 
               <button
+                type="button"
                 onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                 disabled={page === totalPages}
                 aria-label={t('Next page')}
@@ -243,7 +242,7 @@ export function MonitorsListLayout({
               >
                 <ChevronRight className="w-4 h-4 rtl:-scale-x-100" />
               </button>
-            </div>
+            </nav>
           )}
       </main>
 

@@ -66,8 +66,15 @@ export function PermissionMatrix({
         <tbody className="divide-y divide-border-subtle">
           {rows.map((row) => (
             <tr key={row.key} className="hover:bg-panel/40 transition-colors">
-              <td className="px-3 py-2 align-top">
-                <div className="text-text-primary font-medium">{row.label}</div>
+              <td
+                className="px-3 py-2 align-top"
+                data-depth={row.depth}
+                style={row.depth ? { paddingInlineStart: `${0.75 + row.depth * 1.25}rem` } : undefined}
+              >
+                <div className="text-text-primary font-medium">
+                  {row.depth ? <span aria-hidden className="text-text-muted me-1">↳</span> : null}
+                  {row.label}
+                </div>
                 {row.sublabel && (
                   <div className="text-[11px] text-text-muted mt-0.5">{row.sublabel}</div>
                 )}

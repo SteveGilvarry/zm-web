@@ -5,17 +5,20 @@ import { Server as ServerIcon, Plus, Trash2, Pencil, Save, X, Activity } from 'l
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import type { Server } from '@/api/servers';
 import { useServersPage } from '@/features/servers/useServersPage';
 import { SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
-import { serverStatusTone, type ServerLoadSummary } from '@/features/servers/serverStats';
-import { useDocumentTitle } from '../layouts/useDocumentTitle';
+import { cpuLoadTone, freeTone, serverStatusTone, type LoadTone, type ServerLoadSummary } from '@/features/servers/serverStats';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
 /** Settings → Servers — Mission Control. */
 export default function SettingsServersPage() {
   const { t } = useTranslation();
   const s = useServersPage();
-  useDocumentTitle(t('Servers'));
+  useSiteTitle(t('Servers'));
 
   if (!s.isAuthenticated) return null;
 
@@ -24,6 +27,7 @@ export default function SettingsServersPage() {
       <main className="flex-1 p-6 overflow-auto">
         <div className="grid grid-cols-12 gap-6">
           <div className="col-span-5 space-y-6">
+            <RequirePerm feature="system" level="Edit">
             <Panel
               title={s.editing ? t('Edit server — {{name}}', { name: s.editing.name }) : t('New server')}
               icon={s.editing ? <Pencil size={16} /> : <Plus size={16} />}
@@ -39,6 +43,7 @@ export default function SettingsServersPage() {
             >
               <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} />
             </Panel>
+            </RequirePerm>
 
             {s.localLoad && (
               <Panel title={t('This host')} icon={<Activity size={16} />}>
@@ -57,11 +62,14 @@ export default function SettingsServersPage() {
                   {t('Load columns unavailable: {{message}}', { message: s.statsError })}
                 </p>
               )}
-              {s.rows.length === 0 ? (
-                <div className="py-10 text-center text-text-muted text-sm">
-                  {t('No servers registered. The default install is single-node.')}
-                </div>
-              ) : (
+              <QueryState
+                isLoading={s.isLoading}
+                isError={s.isError}
+                error={s.error}
+                onRetry={s.refetch}
+                empty={s.rows.length === 0}
+                emptyMessage={t('No servers registered. The default install is single-node.')}
+              >
                 <table className="w-full text-xs">
                   <thead className="bg-surface/70 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-muted">
                     <tr>
@@ -71,7 +79,8 @@ export default function SettingsServersPage() {
                       <th className="px-3 py-2 text-end">{t('Monitors')}</th>
                       <th className="px-3 py-2 text-end">{t('Load')}</th>
                       <th className="px-3 py-2 text-end">{t('CPU')}</th>
-                      <th className="px-3 py-2 text-end">{t('Memory')}</th>
+                      <th className="px-3 py-2 text-end">{t('Free mem')}</th>
+                      <th className="px-3 py-2 text-end">{t('Free swap')}</th>
                       <th className="px-3 py-2 text-end"></th>
                     </tr>
                   </thead>
@@ -90,6 +99,7 @@ export default function SettingsServersPage() {
                         </td>
                         <LoadCells load={load} layout="cells" />
                         <td className="px-3 py-1.5 text-end whitespace-nowrap">
+                          <RequirePerm feature="system" level="Edit">
                           <button
                             onClick={() => s.startEdit(server)}
                             aria-label={t('Edit {{name}}', { name: server.name })}
@@ -98,48 +108,80 @@ export default function SettingsServersPage() {
                             <Pencil size={12} />
                           </button>
                           <button
-                            onClick={() => s.confirmDelete(server)}
+                            onClick={() => s.requestDelete(server)}
                             aria-label={t('Delete {{name}}', { name: server.name })}
                             className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
                           >
                             <Trash2 size={12} />
                           </button>
+                          </RequirePerm>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
-              )}
+              </QueryState>
             </Panel>
           </div>
         </div>
       </main>
+
+      <ConfirmDialog
+        isOpen={!!s.deleteTarget}
+        onClose={s.cancelDelete}
+        onConfirm={s.confirmDelete}
+        title={t('Delete server')}
+        message={t('Delete server "{{name}}"?', { name: s.deleteTarget?.name })}
+        confirmText={t('Delete')}
+        variant="danger"
+        isLoading={s.isDeleting}
+      />
     </AppShell>
   );
 }
 
-/** Load / CPU% / Mem% — three table cells, or one inline strip. */
+const TONE_CLS: Record<LoadTone, string> = {
+  ok: 'text-text-secondary',
+  warn: 'text-amber',
+  error: 'text-crimson font-semibold',
+  none: 'text-text-muted',
+};
+
+/** Load / CPU% / free mem% / free swap% — table cells, or one inline strip. Legacy thresholds colour them. */
 function LoadCells({ load, layout }: { load: ServerLoadSummary | null; layout: 'cells' | 'inline' }) {
   const { t, i18n } = useTranslation();
   const fmt = (v: number | null, suffix = '') =>
     v == null ? '—' : `${v.toLocaleString(i18n.language, { maximumFractionDigits: 1 })}${suffix}`;
   const sampled = load ? new Date(load.sampledAt).toLocaleString(i18n.language) : undefined;
   const title = sampled ? t('Sampled {{time}}', { time: sampled }) : t('No stats sample yet');
+  const cpuLoad = load?.cpuLoad ?? null;
+  const memFree = load?.memFreePercent ?? null;
+  const swapFree = load?.swapFreePercent ?? null;
+  const cells: Array<[string, string, LoadTone]> = [
+    [t('Load'), fmt(cpuLoad), cpuLoadTone(cpuLoad)],
+    [t('CPU'), fmt(load?.cpuPercent ?? null, '%'), 'ok'],
+    [t('Free mem'), fmt(memFree, '%'), freeTone(memFree)],
+    [t('Free swap'), fmt(swapFree, '%'), freeTone(swapFree)],
+  ];
   if (layout === 'inline') {
     return (
-      <dl className="grid grid-cols-3 gap-3 text-xs" title={title}>
-        <div><dt className="text-[10px] uppercase tracking-wider text-text-muted">{t('Load')}</dt><dd className="font-mono text-text-primary">{fmt(load?.cpuLoad ?? null)}</dd></div>
-        <div><dt className="text-[10px] uppercase tracking-wider text-text-muted">{t('CPU')}</dt><dd className="font-mono text-text-primary">{fmt(load?.cpuPercent ?? null, '%')}</dd></div>
-        <div><dt className="text-[10px] uppercase tracking-wider text-text-muted">{t('Memory')}</dt><dd className="font-mono text-text-primary">{fmt(load?.memPercent ?? null, '%')}</dd></div>
+      <dl className="grid grid-cols-4 gap-3 text-xs" title={title}>
+        {cells.map(([label, value, tone]) => (
+          <div key={label}>
+            <dt className="text-[10px] uppercase tracking-wider text-text-muted">{label}</dt>
+            <dd className={clsx('font-mono', TONE_CLS[tone])} data-tone={tone}>{value}</dd>
+          </div>
+        ))}
       </dl>
     );
   }
-  const cell = 'px-3 py-1.5 text-end font-mono tabular-nums text-text-secondary';
   return (
     <>
-      <td className={cell} title={title}>{fmt(load?.cpuLoad ?? null)}</td>
-      <td className={cell} title={title}>{fmt(load?.cpuPercent ?? null, '%')}</td>
-      <td className={cell} title={title}>{fmt(load?.memPercent ?? null, '%')}</td>
+      {cells.map(([label, value, tone]) => (
+        <td key={label} className={clsx('px-3 py-1.5 text-end font-mono tabular-nums', TONE_CLS[tone])} title={title} data-tone={tone}>
+          {value}
+        </td>
+      ))}
     </>
   );
 }

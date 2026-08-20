@@ -7,7 +7,7 @@ import { Info, Loader2, Shield } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { PermissionMatrix } from '@/features/users/PermissionMatrix';
 import { buildTopLevelRows } from '@/features/users/permissions';
-import { USER_FIELDS_ISSUE_URL, useAccountForm } from '@/features/users/useAccountForm';
+import { USER_FIELDS_ISSUE_URL, USERNAME_PATTERN_SOURCE, useAccountForm } from '@/features/users/useAccountForm';
 import { useGroupPermissions } from '@/features/users/useGroupPermissions';
 import { useMonitorPermissions } from '@/features/users/useMonitorPermissions';
 import type { User } from '@/types';
@@ -18,16 +18,23 @@ type EditorTab = 'account' | 'global' | 'groups' | 'monitors';
 interface UserEditorProps {
   editing: User | null;
   onClose: () => void;
+  /**
+   * `self`: the signed-in user editing their own row under
+   * `ZM_USER_SELF_EDIT` without System Edit — account fields only, and of
+   * those only email saves on this backend.
+   */
+  mode?: 'admin' | 'self';
 }
 
 /**
  * Create / edit dialog. Mount it only while open, keyed on the user being
  * edited, so the tab resets to Account whenever it opens or switches user.
  */
-export function UserEditor({ editing, onClose }: UserEditorProps) {
+export function UserEditor({ editing, onClose, mode = 'admin' }: UserEditorProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<EditorTab>('account');
+  const selfEdit = mode === 'self';
   const tabs: ReadonlyArray<readonly [EditorTab, string]> = [
     ['account', t('Account')],
     ['global', t('Global Permissions')],
@@ -39,7 +46,7 @@ export function UserEditor({ editing, onClose }: UserEditorProps) {
     <Modal isOpen onClose={onClose} title={editing ? t('Edit {{name}}', { name: editing.username }) : t('Add User')}>
       <div className="-mx-5 -my-5">
         {/* Tabs (only meaningful when editing — create form is account-only). */}
-        {editing && (
+        {editing && !selfEdit && (
           <div className="flex items-center gap-1 px-5 pt-1 border-b border-border-subtle">
             {tabs.map(([key, label]) => (
               <button
@@ -62,6 +69,7 @@ export function UserEditor({ editing, onClose }: UserEditorProps) {
           {tab === 'account' && (
             <AccountForm
               editing={editing}
+              selfEdit={selfEdit}
               onSaved={() => {
                 queryClient.invalidateQueries({ queryKey: ['users'] });
                 onClose();
@@ -84,18 +92,27 @@ interface AccountFormProps {
   editing: User | null;
   onSaved: () => void;
   onCancel: () => void;
+  selfEdit?: boolean;
 }
 
-function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
+function AccountForm({ editing, onSaved, onCancel, selfEdit = false }: AccountFormProps) {
   const { t } = useTranslation();
-  const { formData, setField, toggleEnabled, error, isSaving, submitDisabled, submit, isLocked } =
-    useAccountForm(editing, onSaved);
+  const { formData, setField, toggleEnabled, error, usernameError, isSaving, submitDisabled, submit, isLocked } =
+    useAccountForm(editing, onSaved, { selfEdit });
   const lockedCls = 'opacity-60 cursor-not-allowed';
   const lockedTitle = t('Not editable on this zm_api build — see zm-api#23');
 
   return (
     <div className="space-y-4">
-      {editing && (
+      {editing && selfEdit && (
+        <div role="note" className="flex items-start gap-2 text-xs text-text-muted bg-panel border border-border-subtle rounded p-3">
+          <Info size={14} className="mt-0.5 shrink-0 text-amber" />
+          <p className="leading-relaxed">
+            {t('You are editing your own account. Legacy lets you change your password, language and home view here; this zm_api build only saves Email, so that is the one field offered.')}
+          </p>
+        </div>
+      )}
+      {editing && !selfEdit && (
         <div
           role="note"
           className="flex items-start gap-2 text-xs text-text-muted bg-panel border border-border-subtle rounded p-3"
@@ -120,13 +137,17 @@ function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
           value={formData.username}
           onChange={(e) => setField('username', e.target.value)}
           disabled={!!editing}
+          pattern={editing ? undefined : USERNAME_PATTERN_SOURCE}
+          aria-invalid={!!usernameError}
           className={clsx(
             'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg',
             'text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
             editing && 'opacity-60 cursor-not-allowed',
+            usernameError && 'border-crimson/60',
           )}
           placeholder={t('username')}
         />
+        {usernameError && <p role="alert" className="mt-1 text-[11px] text-crimson">{usernameError}</p>}
       </div>
 
       <div className="grid grid-cols-2 gap-4">
@@ -221,7 +242,10 @@ function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
               role="switch"
               aria-checked={formData.enabled === 1}
               aria-label={t('Enabled')}
+              disabled={selfEdit}
+              title={selfEdit ? t('Only an administrator can enable or disable accounts') : undefined}
               className={clsx(
+                selfEdit && 'opacity-60 cursor-not-allowed',
                 'relative w-10 h-5 rounded-full transition-colors',
                 formData.enabled === 1 ? 'bg-cyan' : 'bg-border',
               )}

@@ -2,23 +2,29 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
 import { AppShell } from '@/skins/AppShell';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import type { Server } from '@/api/servers';
 import { useServersPage } from '@/features/servers/useServersPage';
 import { SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
-import { serverStatusTone, type ServerLoadSummary } from '@/features/servers/serverStats';
+import { cpuLoadTone, freeTone, serverStatusTone, type LoadTone, type ServerLoadSummary } from '@/features/servers/serverStats';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
-import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
+import { ClassicButton, ClassicTable, classicInput, classicLink, classicTd, classicTh } from '../components/settings/primitives';
 
-const btn = 'px-2 py-0.5 text-xs border border-zinc-500 rounded-sm bg-zinc-100 hover:bg-zinc-200 disabled:opacity-40';
-const input = 'px-2 py-1 text-sm bg-white border border-zinc-400 rounded-sm text-zinc-900 focus:outline-none focus:border-zinc-600';
+const input = classicInput;
 
 /** Options → Servers — classic skin: legacy server table with load columns. */
 export default function ClassicSettingsServersPage() {
   const { t, i18n } = useTranslation();
   const s = useServersPage();
   const tabs = useOptionsTabs();
-  useDocumentTitle(t('Servers'));
+  const { can } = usePerms();
+  useSiteTitle(t('Servers'));
+  const canEdit = can('system', 'Edit');
 
   if (!s.isAuthenticated) return null;
 
@@ -38,80 +44,117 @@ export default function ClassicSettingsServersPage() {
                   {t('Load columns unavailable: {{message}}', { message: s.statsError })}
                 </p>
               )}
-              <div className="bg-white rounded border border-zinc-300 overflow-hidden">
-                <table className="w-full text-sm text-zinc-800">
-                  <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
+              <QueryState
+                isLoading={s.isLoading}
+                isError={s.isError}
+                error={s.error}
+                onRetry={s.refetch}
+                empty={s.rows.length === 0 && !s.localLoad}
+                emptyMessage={t('No servers registered. The default install is single-node.')}
+              >
+                <ClassicTable>
+                  <thead>
                     <tr>
-                      <th className="px-3 py-2 text-start font-semibold">{t('Name')}</th>
-                      <th className="px-3 py-2 text-start font-semibold">{t('Host')}</th>
-                      <th className="px-3 py-2 text-start font-semibold">{t('Status')}</th>
-                      <th className="px-3 py-2 text-end font-semibold">{t('Monitors')}</th>
-                      <th className="px-3 py-2 text-end font-semibold">{t('Load')}</th>
-                      <th className="px-3 py-2 text-end font-semibold">{t('CPU')}</th>
-                      <th className="px-3 py-2 text-end font-semibold">{t('Memory')}</th>
-                      <th className="px-3 py-2 text-end font-semibold">{t('Actions')}</th>
+                      <th className={classicTh}>{t('Name')}</th>
+                      <th className={classicTh}>{t('Host')}</th>
+                      <th className={classicTh}>{t('Status')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Monitors')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Load')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('CPU')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Free mem')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Free swap')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
                     {s.rows.length === 0 && (
                       <tr>
-                        <td colSpan={8} className="px-3 py-6 text-center text-zinc-500">
+                        <td colSpan={9} className={clsx(classicTd, 'py-6 text-center text-zinc-500')}>
                           {t('No servers registered. The default install is single-node.')}
                         </td>
                       </tr>
                     )}
                     {s.rows.map(({ server, monitorCount, load }) => (
-                      <tr key={server.id} className="border-b border-zinc-200 hover:bg-zinc-50">
-                        <td className="px-3 py-1.5">
-                          <button type="button" onClick={() => s.startEdit(server)} className="text-cyan-800 hover:underline">
-                            {server.name}
-                          </button>
+                      <tr key={server.id}>
+                        <td className={classicTd}>
+                          {canEdit ? (
+                            <button type="button" onClick={() => s.startEdit(server)} className={classicLink}>
+                              {server.name}
+                            </button>
+                          ) : server.name}
                         </td>
-                        <td className="px-3 py-1.5 font-mono text-xs">
+                        <td className={clsx(classicTd, 'font-mono text-xs')}>
                           {server.hostname}{server.port != null ? `:${server.port}` : ''}
                         </td>
-                        <td className="px-3 py-1.5 text-xs"><StatusText status={server.status} /></td>
-                        <td className="px-3 py-1.5 text-end font-mono tabular-nums">{monitorCount}</td>
+                        <td className={clsx(classicTd, 'text-xs')}><StatusText status={server.status} /></td>
+                        <td className={clsx(classicTd, 'text-end font-mono tabular-nums')}>{monitorCount}</td>
                         <LoadTds load={load} pct={pct} />
-                        <td className="px-3 py-1.5 text-end whitespace-nowrap">
-                          <button type="button" onClick={() => s.startEdit(server)} aria-label={t('Edit {{name}}', { name: server.name })} className={btn}>{t('Edit')}</button>{' '}
-                          <button type="button" onClick={() => s.confirmDelete(server)} aria-label={t('Delete {{name}}', { name: server.name })} className={btn}>{t('Delete')}</button>
+                        <td className={clsx(classicTd, 'text-end whitespace-nowrap')}>
+                          <RequirePerm feature="system" level="Edit">
+                            <ClassicButton onClick={() => s.startEdit(server)} aria-label={t('Edit {{name}}', { name: server.name })}>{t('Edit')}</ClassicButton>{' '}
+                            <ClassicButton onClick={() => s.requestDelete(server)} aria-label={t('Delete {{name}}', { name: server.name })}>{t('Delete')}</ClassicButton>
+                          </RequirePerm>
                         </td>
                       </tr>
                     ))}
                     {s.localLoad && (
-                      <tr className="border-t border-zinc-300 bg-zinc-50 text-zinc-600">
-                        <td className="px-3 py-1.5 italic" colSpan={3}>
+                      <tr className="text-zinc-600">
+                        <td className={clsx(classicTd, 'italic')} colSpan={3}>
                           {t('This host')}
                           <span className="ms-1 text-[10px] not-italic text-zinc-400">
                             ({t('stats recorded without a server id')})
                           </span>
                         </td>
-                        <td className="px-3 py-1.5 text-end">—</td>
+                        <td className={clsx(classicTd, 'text-end')}>—</td>
                         <LoadTds load={s.localLoad} pct={pct} />
-                        <td />
+                        <td className={classicTd} />
                       </tr>
                     )}
                   </tbody>
-                </table>
-              </div>
+                </ClassicTable>
+              </QueryState>
 
-              <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} onCancel={s.cancelEdit} />
+              <RequirePerm feature="system" level="Edit">
+                <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} onCancel={s.cancelEdit} />
+              </RequirePerm>
             </div>
           </div>
         </div>
       </main>
+
+      <ConfirmDialog
+        isOpen={!!s.deleteTarget}
+        onClose={s.cancelDelete}
+        onConfirm={s.confirmDelete}
+        title={t('Delete server')}
+        message={t('Delete server "{{name}}"?', { name: s.deleteTarget?.name })}
+        confirmText={t('Delete')}
+        variant="danger"
+        isLoading={s.isDeleting}
+      />
     </AppShell>
   );
 }
 
+/** Legacy `server.php` paints CpuLoad > 5 and free mem/swap < 10% red. */
+const TONE_CLS: Record<LoadTone, string> = {
+  ok: '',
+  warn: 'text-amber-700',
+  error: 'text-red-700 font-semibold',
+  none: 'text-zinc-400',
+};
+
 function LoadTds({ load, pct }: { load: ServerLoadSummary | null; pct: (v: number | null, suffix?: string) => string }) {
-  const cell = 'px-3 py-1.5 text-end font-mono tabular-nums';
+  const cell = clsx(classicTd, 'text-end font-mono tabular-nums');
+  const cpuLoad = load?.cpuLoad ?? null;
+  const memFree = load?.memFreePercent ?? null;
+  const swapFree = load?.swapFreePercent ?? null;
   return (
     <>
-      <td className={cell}>{pct(load?.cpuLoad ?? null)}</td>
+      <td className={clsx(cell, TONE_CLS[cpuLoadTone(cpuLoad)])} data-tone={cpuLoadTone(cpuLoad)}>{pct(cpuLoad)}</td>
       <td className={cell}>{pct(load?.cpuPercent ?? null, '%')}</td>
-      <td className={cell}>{pct(load?.memPercent ?? null, '%')}</td>
+      <td className={clsx(cell, TONE_CLS[freeTone(memFree)])} data-tone={freeTone(memFree)}>{pct(memFree, '%')}</td>
+      <td className={clsx(cell, TONE_CLS[freeTone(swapFree)])} data-tone={freeTone(swapFree)}>{pct(swapFree, '%')}</td>
     </>
   );
 }
@@ -149,8 +192,8 @@ function ServerForm({ editing, onSaved, onCancel }: { editing: Server | null; on
       </div>
       {f.error && <p role="alert" className="text-xs text-red-700">{t('Save failed: {{message}}', { message: f.error })}</p>}
       <div className="flex gap-2">
-        <button type="submit" disabled={f.submitDisabled} className={btn}>{editing ? t('Save') : t('Register')}</button>
-        {editing && <button type="button" onClick={onCancel} className={btn}>{t('Cancel')}</button>}
+        <ClassicButton type="submit" tone="primary" disabled={f.submitDisabled}>{editing ? t('Save') : t('Register')}</ClassicButton>
+        {editing && <ClassicButton onClick={onCancel}>{t('Cancel')}</ClassicButton>}
       </div>
     </form>
   );

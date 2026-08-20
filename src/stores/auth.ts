@@ -8,10 +8,13 @@ interface AuthState {
   refreshToken: string | null;
   user: UserClaims | null;
   isAuthenticated: boolean;
+  /** True when the last sign-out was caused by a failed token refresh. */
+  sessionExpired: boolean;
 
   // Actions
   setTokens: (accessToken: string, refreshToken: string) => void;
-  clearAuth: () => void;
+  /** Drop the session; `reason: 'expired'` marks it as a forced sign-out. */
+  clearAuth: (reason?: 'expired') => void;
   getAccessToken: () => string | null;
   /**
    * Force-refresh the access token using the stored refresh token. Returns
@@ -104,6 +107,7 @@ export const useAuthStore = create<AuthState>()(
         refreshToken: null,
         user: null,
         isAuthenticated: false,
+        sessionExpired: false,
 
         setTokens: (accessToken: string, refreshToken: string) => {
           const user = parseJwt(accessToken);
@@ -112,11 +116,12 @@ export const useAuthStore = create<AuthState>()(
             refreshToken,
             user,
             isAuthenticated: !isTokenExpired(user),
+            sessionExpired: false,
           });
           scheduleRefresh();
         },
 
-        clearAuth: () => {
+        clearAuth: (reason) => {
           clearRefreshTimer();
           inflightRefresh = null;
           set({
@@ -124,6 +129,7 @@ export const useAuthStore = create<AuthState>()(
             refreshToken: null,
             user: null,
             isAuthenticated: false,
+            sessionExpired: reason === 'expired',
           });
         },
 
@@ -145,8 +151,8 @@ export const useAuthStore = create<AuthState>()(
               return resp.access_token;
             } catch {
               // Refresh failed — the refresh token has likely expired too.
-              // Clear auth so the root route bounces to login.
-              get().clearAuth();
+              // Clear auth so the root route bounces to login?reason=expired.
+              get().clearAuth('expired');
               return null;
             } finally {
               inflightRefresh = null;

@@ -7,6 +7,7 @@ import {
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
 import { LOG_LEVEL, levelLabel, levelColor, levelRowTint, type LogEntry } from '@/api/logs';
 import { type LogColumnKey } from '@/features/logs/csv';
 import { ColumnPicker } from '@/features/logs/ColumnPicker';
@@ -86,7 +87,7 @@ export default function LogsPage() {
     searchDraft, setSearchDraft, setSearch,
     allComponents, servers, showServerFilter, serverLookup,
     showColumns, visibleColumns, setVisibleColumns,
-    isLoading, isFetching,
+    isLoading, isFetching, isError, error,
   } = s;
 
   if (!s.isAuthenticated) return null;
@@ -283,6 +284,14 @@ export default function LogsPage() {
 
         {/* Table */}
         <Panel icon={<Activity size={16} />} noPadding>
+          <QueryState
+            isLoading={isLoading}
+            isError={isError}
+            error={error}
+            onRetry={s.refetch}
+            empty={filteredLogs.length === 0}
+            emptyMessage={t('No log entries match the current filters.')}
+          >
           <div className="overflow-x-auto">
             <table className="w-full text-xs">
               <thead className="bg-surface/70 border-b border-border-subtle">
@@ -295,30 +304,18 @@ export default function LogsPage() {
                 </tr>
               </thead>
               <tbody>
-                {isLoading ? (
-                  <SkeletonRows columns={visibleColumns.length} />
-                ) : filteredLogs.length === 0 ? (
-                  <tr>
-                    <td
-                      colSpan={visibleColumns.length}
-                      className="py-12 text-center text-text-muted"
-                    >
-                      {t('No log entries match the current filters.')}
-                    </td>
-                  </tr>
-                ) : (
-                  filteredLogs.map((l) => (
-                    <LogRow
-                      key={l.id}
-                      log={l}
-                      columns={visibleColumns}
-                      serverLookup={serverLookup}
-                    />
-                  ))
-                )}
+                {filteredLogs.map((l) => (
+                  <LogRow
+                    key={l.id}
+                    log={l}
+                    columns={visibleColumns}
+                    serverLookup={serverLookup}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
+          </QueryState>
 
           {/* Pagination */}
           {totalPages > 1 && (
@@ -479,18 +476,4 @@ function LogCell({
         </td>
       );
   }
-}
-
-function SkeletonRows({ columns }: { columns: number }) {
-  return (
-    <>
-      {Array.from({ length: 8 }, (_, i) => (
-        <tr key={i} className="border-b border-border-subtle/50">
-          <td colSpan={columns} className="px-3 py-2">
-            <div className="h-3 bg-surface rounded animate-pulse" />
-          </td>
-        </tr>
-      ))}
-    </>
-  );
 }

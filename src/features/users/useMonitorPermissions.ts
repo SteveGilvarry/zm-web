@@ -10,6 +10,7 @@ import {
   deleteMonitorPermission,
   type MonitorPermission,
 } from '@/api/monitorsPermissions';
+import { useToast } from '@/components/common/toastStore';
 import type { User } from '@/types';
 import { computeEffectivePermission, INHERIT_LEVEL_OPTIONS } from './permissions';
 
@@ -30,6 +31,7 @@ export interface MonitorPermissionRow {
  */
 export function useMonitorPermissions(user: User) {
   const queryClient = useQueryClient();
+  const toast = useToast();
   const userId = user.id;
   const globalMonitors = user.monitors || 'None';
 
@@ -98,6 +100,7 @@ export function useMonitorPermissions(user: User) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['monitors-permissions'] });
     },
+    onError: (err) => toast.apiError(err),
   });
 
   const visibleMonitors = allMonitors.filter((m) => m.deleted !== 1);

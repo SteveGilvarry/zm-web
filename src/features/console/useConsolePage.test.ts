@@ -24,6 +24,9 @@ const { fakeData } = vi.hoisted(() => {
       hourlyByMonitor: {},
       runtimeById: {},
       loading: { monitors: false, events: false },
+      isError: false,
+      error: null,
+      refetch: () => {},
     },
   };
 });

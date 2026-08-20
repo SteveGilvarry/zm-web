@@ -47,6 +47,11 @@ export interface ConsoleData {
     monitors: boolean;
     events: boolean;
   };
+  /** The monitors query failed (the page cannot render without it). */
+  isError: boolean;
+  error: unknown;
+  /** Refetch the monitor list. */
+  refetch: () => void;
 }
 
 /**
@@ -145,6 +150,9 @@ export function useConsoleData(): ConsoleData {
       monitors: monitorsQ.isLoading,
       events: eventsQ.isLoading,
     },
+    isError: monitorsQ.isError,
+    error: monitorsQ.error,
+    refetch: () => { void monitorsQ.refetch(); },
   };
 }
 

@@ -12,10 +12,12 @@ beforeAll(() => {
   // The Control tab fetches /api/v3/controls behind authedFetch, which reads
   // the access token from useAuthStore — provide a fake one so the request
   // gets through with an Authorization header attached.
+  // A token without a `perms` claim reads as Edit everywhere, so the Save
+  // buttons (behind <RequirePerm monitors Edit>) render.
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 0, user: 'admin' }, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledRequest: 'bypass' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -196,8 +198,9 @@ describe('MonitorEditor — ONVIF tab', () => {
     renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
     await user.click(screen.getByRole('button', { name: /^onvif$/i }));
 
+    // Event listener + SOAP WS-Addressing compliance.
     const switches = screen.getAllByRole('switch');
-    expect(switches).toHaveLength(1);
+    expect(switches).toHaveLength(2);
     await user.click(switches[0]);
     expect(switches[0]).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByText(/unsaved change/i)).toBeInTheDocument();

@@ -11,21 +11,28 @@ import {
   Loader2,
   Info,
   ShieldAlert,
+  Film,
 } from 'lucide-react';
 
+import { Link } from '@tanstack/react-router';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { Modal } from '@/components/common/Modal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
-import { useDocumentTitle } from '../layouts/useDocumentTitle';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
 /** Settings → Storage — Mission Control. */
 export default function SettingsStoragePage() {
   const { t } = useTranslation();
   const st = useStoragePage();
-  useDocumentTitle(t('Storage'));
+  const { can } = usePerms();
+  useSiteTitle(t('Storage'));
   const { filteredItems, page, totalPages, formData, editingStorage, deleteTarget } = st;
+  const canEdit = can('system', 'Edit');
 
   if (!st.isAuthenticated) return null;
 
@@ -55,17 +62,19 @@ export default function SettingsStoragePage() {
                   )}
                 />
               </div>
-              <button
-                onClick={st.openCreate}
-                className={clsx(
-                  'flex items-center gap-2 px-4 py-2 rounded-lg',
-                  'bg-cyan text-void text-sm font-medium',
-                  'hover:bg-cyan/80 transition-colors'
-                )}
-              >
-                <Plus size={16} />
-                {t('Add Storage')}
-              </button>
+              <RequirePerm feature="system" level="Edit">
+                <button
+                  onClick={st.openCreate}
+                  className={clsx(
+                    'flex items-center gap-2 px-4 py-2 rounded-lg',
+                    'bg-cyan text-void text-sm font-medium',
+                    'hover:bg-cyan/80 transition-colors'
+                  )}
+                >
+                  <Plus size={16} />
+                  {t('Add Storage')}
+                </button>
+              </RequirePerm>
             </div>
 
             {st.listError && (
@@ -75,14 +84,14 @@ export default function SettingsStoragePage() {
             )}
 
             {/* Table */}
-            {st.isLoading ? (
-              <div className="p-8 text-center text-text-muted text-sm">{t('Loading storage locations...')}</div>
-            ) : filteredItems.length === 0 ? (
-              <div className="p-8 text-center text-text-muted text-sm">
-                <HardDrive size={32} className="mx-auto mb-3 opacity-50" />
-                <p>{t('No storage locations found')}</p>
-              </div>
-            ) : (
+            <QueryState
+              isLoading={st.isLoading}
+              isError={st.isError}
+              error={st.error}
+              onRetry={st.refetch}
+              empty={filteredItems.length === 0}
+              emptyMessage={t('No storage locations found')}
+            >
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -91,6 +100,7 @@ export default function SettingsStoragePage() {
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Path')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Type')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Enabled')}</th>
+                      <th className="px-4 py-3 font-medium text-text-muted">{t('Events')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted text-end">{t('Actions')}</th>
                     </tr>
                   </thead>
@@ -110,9 +120,11 @@ export default function SettingsStoragePage() {
                             role="switch"
                             aria-checked={storage.enabled === 1}
                             aria-label={storage.enabled === 1 ? t('Disable {{name}}', { name: storage.name }) : t('Enable {{name}}', { name: storage.name })}
+                            disabled={!canEdit}
                             className={clsx(
                               'relative w-10 h-5 rounded-full transition-colors',
-                              storage.enabled === 1 ? 'bg-cyan' : 'bg-border'
+                              storage.enabled === 1 ? 'bg-cyan' : 'bg-border',
+                              !canEdit && 'opacity-60 cursor-not-allowed',
                             )}
                           >
                             <span
@@ -124,6 +136,17 @@ export default function SettingsStoragePage() {
                           </button>
                         </td>
                         <td className="px-4 py-3">
+                          <Link
+                            to="/events"
+                            className="inline-flex items-center gap-1 text-xs text-cyan hover:underline"
+                            title={t('Filtering the events list by storage area is not supported by this zm_api build yet (zm-api#24); this opens the full list.')}
+                          >
+                            <Film size={12} />
+                            {t('Events')}
+                          </Link>
+                        </td>
+                        <td className="px-4 py-3">
+                          <RequirePerm feature="system" level="Edit">
                           <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => st.openEdit(storage)}
@@ -153,13 +176,14 @@ export default function SettingsStoragePage() {
                               </button>
                             )}
                           </div>
+                          </RequirePerm>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
               </div>
-            )}
+            </QueryState>
 
             {/* Pagination */}
             {totalPages > 1 && (

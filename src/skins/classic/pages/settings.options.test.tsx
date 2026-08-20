@@ -36,7 +36,7 @@ const { default: ClassicOptionsPage } = await import('./settings.options');
 
 const server = setupServer();
 beforeAll(() => {
-  useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true });
+  useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true });
   server.listen({ onUnhandledRequest: 'warn' });
 });
 afterEach(() => {

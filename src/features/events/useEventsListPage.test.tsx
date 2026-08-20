@@ -3,7 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import type { ReactNode } from 'react';
+import { createContext, useContext, useState, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import {
@@ -13,10 +13,21 @@ import {
   useEventsListPage,
 } from './useEventsListPage';
 
-// The hook seeds its monitor/cause filters from the route's search params.
+// The hook keeps every filter in the URL: `useSearch` reads it and
+// `useNavigate` writes it. A tiny in-memory router stands in for both so
+// a setter call re-renders the hook with the new search, like the real one.
 let mockSearch: Record<string, unknown> = {};
+type SearchUpdater = Record<string, unknown> | ((prev: Record<string, unknown>) => Record<string, unknown>);
+const SearchCtx = createContext<{
+  search: Record<string, unknown>;
+  set: (u: SearchUpdater) => void;
+}>({ search: {}, set: () => {} });
 vi.mock('@tanstack/react-router', () => ({
-  useSearch: () => mockSearch,
+  useSearch: () => useContext(SearchCtx).search,
+  useNavigate: () => {
+    const { set } = useContext(SearchCtx);
+    return ({ search }: { search: SearchUpdater }) => set(search);
+  },
 }));
 
 const server = setupServer();
@@ -39,9 +50,15 @@ function wrapper() {
   const qc = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: 0, staleTime: 0 } },
   });
-  return ({ children }: { children: ReactNode }) => (
-    <QueryClientProvider client={qc}>{children}</QueryClientProvider>
-  );
+  return ({ children }: { children: ReactNode }) => {
+    const [search, setSearch] = useState(mockSearch);
+    const set = (u: SearchUpdater) => setSearch((prev) => (typeof u === 'function' ? u(prev) : u));
+    return (
+      <SearchCtx.Provider value={{ search, set }}>
+        <QueryClientProvider client={qc}>{children}</QueryClientProvider>
+      </SearchCtx.Provider>
+    );
+  };
 }
 
 function event(id: number, over: Record<string, unknown> = {}) {
@@ -95,6 +112,23 @@ function stub(
     http.get('/api/v3/tags', () =>
       HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 }),
     ),
+    http.get('/api/v3/groups', () =>
+      HttpResponse.json({
+        items: [{ id: 3, name: 'Front Yard' }], total: 1, per_page: 200, current_page: 1, last_page: 1,
+      }),
+    ),
+    http.get('/api/v3/groups-monitors', () =>
+      HttpResponse.json({
+        items: [{ id: 1, group_id: 3, monitor_id: 1 }, { id: 2, group_id: 3, monitor_id: 2 }],
+        total: 2, per_page: 1000, current_page: 1, last_page: 1,
+      }),
+    ),
+    http.get('/api/v3/storage', () =>
+      HttpResponse.json({
+        items: [{ id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 }],
+        total: 1, per_page: 100, current_page: 1, last_page: 1,
+      }),
+    ),
   );
 }
 
@@ -139,18 +173,53 @@ describe('useEventsListPage', () => {
     expect(result.current.showDefaultHourHint).toBe(true);
   });
 
-  it('filters client-side by search text and notes, and hides the hint once a filter is applied', async () => {
+  it('filters client-side by search text and notes inside the default hour', async () => {
     stub();
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
 
     act(() => result.current.setSearchQuery('continuous'));
-    expect(result.current.events.map((e) => e.id)).toEqual([2]);
-    expect(result.current.showDefaultHourHint).toBe(false);
+    // Free text is committed to the URL after a short pause.
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([2]));
+    // Narrowing further keeps the seeded hour (legacy keeps its prefilled term too).
+    expect(result.current.showDefaultHourHint).toBe(true);
 
     act(() => result.current.setSearchQuery(''));
     act(() => result.current.setNotesQuery('parcel'));
-    expect(result.current.events.map((e) => e.id)).toEqual([2]);
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([2]));
+  });
+
+  it('runs a group filter through /filters/preview with the group\'s monitor ids', async () => {
+    mockSearch = { group: 3 };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    expect(previewBody).toEqual({
+      where: { match: 'all', rules: [{ field: 'monitor_id', op: 'in', value: [1, 2] }] },
+      sort: { field: 'start_time', dir: 'asc' },
+    });
+    expect(eventRequests).toHaveLength(0);
+  });
+
+  it('exposes the active filters as ZoneMinder terms for the Filter button', async () => {
+    mockSearch = { monitor_id: 7, archived: true };
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    expect(result.current.filterTerms).toEqual([
+      { obr: '0', attr: 'MonitorId', op: '=', val: '7', cbr: '0' },
+      { cnj: 'and', obr: '0', attr: 'Archived', op: '=', val: '1', cbr: '0' },
+    ]);
+    expect(JSON.parse(result.current.filterLinkSearch.terms)).toHaveLength(2);
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
 
   it('seeds monitor and cause filters from the route search params', async () => {

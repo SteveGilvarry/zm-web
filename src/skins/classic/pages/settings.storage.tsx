@@ -1,15 +1,21 @@
 import { useTranslation } from 'react-i18next';
+import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 
 import { AppShell } from '@/skins/AppShell';
 import { Modal } from '@/components/common/Modal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
-import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
+import {
+  ClassicButton, ClassicSearch, ClassicTable, ClassicToolbar, classicLink, classicTd, classicTh,
+} from '../components/settings/primitives';
 
-const btn = 'px-2 py-0.5 text-xs border border-zinc-500 rounded-sm bg-zinc-100 hover:bg-zinc-200 disabled:opacity-40';
 const input = 'w-full px-2 py-1 text-sm bg-panel border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
 
 /** Options → Storage — classic skin: the legacy storage table. */
@@ -17,10 +23,12 @@ export default function ClassicSettingsStoragePage() {
   const { t } = useTranslation();
   const st = useStoragePage();
   const tabs = useOptionsTabs();
-  useDocumentTitle(t('Storage'));
+  const { can } = usePerms();
+  useSiteTitle(t('Storage'));
 
   if (!st.isAuthenticated) return null;
   const { formData, editingStorage, deleteTarget } = st;
+  const canEdit = can('system', 'Edit');
 
   return (
     <AppShell title={t('Storage')}>
@@ -30,78 +38,88 @@ export default function ClassicSettingsStoragePage() {
           <div className="flex items-start gap-4">
             <OptionsRail tabs={tabs} active="storage" />
             <div className="flex-1 min-w-0 space-y-3">
-              <div className="flex items-center gap-3">
-                <input
-                  type="search"
-                  value={st.searchQuery}
-                  onChange={(e) => st.setSearchQuery(e.target.value)}
-                  placeholder={t('Search storage...')}
-                  className="w-72 px-2 py-1 text-sm bg-white border border-zinc-400 rounded-sm text-zinc-900 focus:outline-none focus:border-zinc-600"
-                />
-                <button type="button" onClick={st.openCreate} className={btn}>{t('Add Storage')}</button>
-              </div>
+              <ClassicToolbar end={<ClassicSearch value={st.searchQuery} onChange={st.setSearchQuery} placeholder={t('Search')} />}>
+                <RequirePerm feature="system" level="Edit">
+                  <ClassicButton tone="primary" onClick={st.openCreate}>{t('Add New Storage')}</ClassicButton>
+                </RequirePerm>
+              </ClassicToolbar>
               {st.listError && (
                 <p role="alert" className="text-xs text-red-700">{t('Update failed: {{message}}', { message: st.listError })}</p>
               )}
-              <div className="bg-white rounded border border-zinc-300 overflow-hidden">
-                {st.isLoading ? (
-                  <div className="p-8 text-center text-zinc-500 text-sm">{t('Loading storage locations...')}</div>
-                ) : st.filteredItems.length === 0 ? (
-                  <div className="p-8 text-center text-zinc-500 text-sm">{t('No storage locations found')}</div>
-                ) : (
-                  <table className="w-full text-sm text-zinc-800">
-                    <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
-                      <tr>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Name')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Path')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Type')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Enabled')}</th>
-                        <th className="px-3 py-2 text-end font-semibold">{t('Actions')}</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {st.filteredItems.map((storage) => (
-                        <tr key={storage.id} className="border-b border-zinc-200 hover:bg-zinc-50">
-                          <td className="px-3 py-1.5">
-                            <button type="button" onClick={() => st.openEdit(storage)} className="text-cyan-800 hover:underline">
+              <QueryState
+                isLoading={st.isLoading}
+                isError={st.isError}
+                error={st.error}
+                onRetry={st.refetch}
+                empty={st.filteredItems.length === 0}
+                emptyMessage={t('No matching records found')}
+              >
+                <ClassicTable>
+                  <thead>
+                    <tr>
+                      <th className={classicTh}>{t('Name')}</th>
+                      <th className={classicTh}>{t('Path')}</th>
+                      <th className={classicTh}>{t('Type')}</th>
+                      <th className={classicTh}>{t('Enabled')}</th>
+                      <th className={classicTh}>{t('Events')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {st.filteredItems.map((storage) => (
+                      <tr key={storage.id}>
+                        <td className={classicTd}>
+                          {canEdit ? (
+                            <button type="button" onClick={() => st.openEdit(storage)} className={classicLink}>
                               {storage.name}
                             </button>
-                          </td>
-                          <td className="px-3 py-1.5 font-mono text-xs">{storage.path}</td>
-                          <td className="px-3 py-1.5 text-xs">{storage.type}</td>
-                          <td className="px-3 py-1.5">
+                          ) : storage.name}
+                        </td>
+                        <td className={clsx(classicTd, 'font-mono text-xs')}>{storage.path}</td>
+                        <td className={clsx(classicTd, 'text-xs')}>{storage.type}</td>
+                        <td className={classicTd}>
+                          {canEdit ? (
                             <input
                               type="checkbox"
                               checked={storage.enabled === 1}
                               onChange={() => st.toggleEnabled(storage)}
                               aria-label={storage.enabled === 1 ? t('Disable {{name}}', { name: storage.name }) : t('Enable {{name}}', { name: storage.name })}
                             />
-                          </td>
-                          <td className="px-3 py-1.5 text-end whitespace-nowrap">
-                            <button type="button" onClick={() => st.openEdit(storage)} aria-label={t('Edit {{name}}', { name: storage.name })} className={btn}>{t('Edit')}</button>{' '}
-                            <button
-                              type="button"
+                          ) : (storage.enabled === 1 ? t('Yes') : t('No'))}
+                        </td>
+                        <td className={clsx(classicTd, 'text-xs')}>
+                          <Link
+                            to="/events"
+                            className={classicLink}
+                            title={t('Filtering the events list by storage area is not supported by this zm_api build yet (zm-api#24); this opens the full list.')}
+                          >
+                            {t('Events')}
+                          </Link>
+                        </td>
+                        <td className={clsx(classicTd, 'text-end whitespace-nowrap')}>
+                          <RequirePerm feature="system" level="Edit">
+                            <ClassicButton onClick={() => st.openEdit(storage)} aria-label={t('Edit {{name}}', { name: storage.name })}>{t('Edit')}</ClassicButton>{' '}
+                            <ClassicButton
                               onClick={() => st.setDeleteTarget(storage)}
                               disabled={st.isProtected(storage)}
                               title={st.isProtected(storage) ? t('The Default storage area cannot be deleted') : undefined}
                               aria-label={t('Delete {{name}}', { name: storage.name })}
-                              className={btn}
                             >
                               {t('Delete')}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )}
-              </div>
+                            </ClassicButton>
+                          </RequirePerm>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </ClassicTable>
+              </QueryState>
               {st.totalPages > 1 && (
                 <div className="flex items-center justify-between text-xs text-zinc-600">
                   <span>{t('Page {{page}} of {{total}} ({{count}} total)', { page: st.page, total: st.totalPages, count: st.total })}</span>
                   <span className="flex items-center gap-2">
-                    <button onClick={st.prevPage} disabled={st.page === 1} className={btn}>{t('Prev')}</button>
-                    <button onClick={st.nextPage} disabled={st.page === st.totalPages} className={btn}>{t('Next')}</button>
+                    <ClassicButton onClick={st.prevPage} disabled={st.page === 1}>{t('Prev')}</ClassicButton>
+                    <ClassicButton onClick={st.nextPage} disabled={st.page === st.totalPages}>{t('Next')}</ClassicButton>
                   </span>
                 </div>
               )}

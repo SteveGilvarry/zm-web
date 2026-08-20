@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation } from '@tanstack/react-query';
 import { createUser, updateUser } from '@/api/users';
+import { useToast } from '@/components/common/toastStore';
 import type { User } from '@/types';
 
 /** zm_api issue tracking the missing `UpdateUserRequest` fields. */
@@ -14,6 +15,14 @@ export const USER_FIELDS_ISSUE_URL = 'https://github.com/SteveGilvarry/zm-api/is
 export const LOCKED_ON_EDIT = ['password', 'name', 'phone'] as const;
 export type LockedOnEdit = (typeof LOCKED_ON_EDIT)[number];
 
+/** Legacy `user.php` input pattern for Username. */
+export const USERNAME_PATTERN = /^[A-Za-z0-9 .@]+$/;
+export const USERNAME_PATTERN_SOURCE = '[A-Za-z0-9 .@]+';
+
+export function isValidUsername(username: string): boolean {
+  return USERNAME_PATTERN.test(username);
+}
+
 export interface AccountFormData {
   username: string;
   password: string;
@@ -24,14 +33,25 @@ export interface AccountFormData {
   enabled: number;
 }
 
+export interface AccountFormOptions {
+  /**
+   * Self-edit (`ZM_USER_SELF_EDIT`, user without System Edit on their own
+   * row): legacy allows password, language and home view; this backend
+   * persists only `email` on update, so that is all the form offers.
+   */
+  selfEdit?: boolean;
+}
+
 /**
  * Form state + create/update mutation for the user editor's Account tab.
  * `editing === null` means "create"; otherwise username is fixed and only
  * the fields the backend persists (`email`, `enabled`) are sent — see
  * `LOCKED_ON_EDIT`.
  */
-export function useAccountForm(editing: User | null, onSaved: () => void) {
+export function useAccountForm(editing: User | null, onSaved: () => void, options: AccountFormOptions = {}) {
   const { t } = useTranslation();
+  const toast = useToast();
+  const selfEdit = !!options.selfEdit && editing !== null;
   const [formData, setFormData] = useState<AccountFormData>({
     username: editing?.username || '',
     password: '',
@@ -45,15 +65,27 @@ export function useAccountForm(editing: User | null, onSaved: () => void) {
 
   const createMutation = useMutation({
     mutationFn: createUser,
-    onSuccess: onSaved,
-    onError: (e: Error) => setError(e.message),
+    onSuccess: () => {
+      toast.success(t('User created'));
+      onSaved();
+    },
+    onError: (e: Error) => {
+      setError(e.message);
+      toast.apiError(e);
+    },
   });
 
   const updateMutation = useMutation({
     mutationFn: ({ id, data }: { id: number; data: Parameters<typeof updateUser>[1] }) =>
       updateUser(id, data),
-    onSuccess: onSaved,
-    onError: (e: Error) => setError(e.message),
+    onSuccess: () => {
+      toast.success(t('User saved'));
+      onSaved();
+    },
+    onError: (e: Error) => {
+      setError(e.message);
+      toast.apiError(e);
+    },
   });
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
@@ -64,8 +96,17 @@ export function useAccountForm(editing: User | null, onSaved: () => void) {
   const toggleEnabled = () =>
     setFormData((f) => ({ ...f, enabled: f.enabled === 1 ? 0 : 1 }));
 
+  const usernameError =
+    !editing && formData.username && !isValidUsername(formData.username)
+      ? t('Username may only contain letters, digits, spaces, dots and @')
+      : null;
+
   const submit = () => {
     setError(null);
+    if (usernameError) {
+      setError(usernameError);
+      return;
+    }
     if (formData.password && formData.password !== formData.confirmPassword) {
       setError(t('Passwords do not match.'));
       return;
@@ -75,7 +116,7 @@ export function useAccountForm(editing: User | null, onSaved: () => void) {
       // zm-api#23); sending them would only make a silent no-op look saved.
       updateMutation.mutate({
         id: editing.id,
-        data: { email: formData.email, enabled: formData.enabled },
+        data: selfEdit ? { email: formData.email } : { email: formData.email, enabled: formData.enabled },
       });
     } else {
       createMutation.mutate({
@@ -89,9 +130,12 @@ export function useAccountForm(editing: User | null, onSaved: () => void) {
     }
   };
 
-  const submitDisabled = isSaving || !formData.username || (!editing && !formData.password);
+  const submitDisabled =
+    isSaving || !formData.username || !!usernameError || (!editing && !formData.password);
 
   const isLocked = (field: LockedOnEdit) => editing !== null && LOCKED_ON_EDIT.includes(field);
 
-  return { formData, setField, toggleEnabled, error, isSaving, submitDisabled, submit, isLocked };
+  return {
+    formData, setField, toggleEnabled, error, usernameError, isSaving, submitDisabled, submit, isLocked, selfEdit,
+  };
 }

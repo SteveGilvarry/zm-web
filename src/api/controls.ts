@@ -77,10 +77,58 @@ export interface Control {
   can_reboot: number;
   can_auto_scan: number;
   num_scan_paths: number;
+
+  // Per-axis ranges, steps and speeds (`ControlResponse`; all nullable).
+  min_pan_range?: number | null;
+  max_pan_range?: number | null;
+  min_pan_step?: number | null;
+  max_pan_step?: number | null;
+  min_pan_speed?: number | null;
+  max_pan_speed?: number | null;
+  turbo_pan_speed?: number | null;
+  min_tilt_range?: number | null;
+  max_tilt_range?: number | null;
+  min_tilt_step?: number | null;
+  max_tilt_step?: number | null;
+  min_tilt_speed?: number | null;
+  max_tilt_speed?: number | null;
+  turbo_tilt_speed?: number | null;
+  min_zoom_range?: number | null;
+  max_zoom_range?: number | null;
+  min_zoom_step?: number | null;
+  max_zoom_step?: number | null;
+  min_zoom_speed?: number | null;
+  max_zoom_speed?: number | null;
+  min_focus_range?: number | null;
+  max_focus_range?: number | null;
+  min_focus_step?: number | null;
+  max_focus_step?: number | null;
+  min_focus_speed?: number | null;
+  max_focus_speed?: number | null;
+  min_gain_range?: number | null;
+  max_gain_range?: number | null;
+  min_gain_step?: number | null;
+  max_gain_step?: number | null;
+  min_gain_speed?: number | null;
+  max_gain_speed?: number | null;
+  min_white_range?: number | null;
+  max_white_range?: number | null;
+  min_white_step?: number | null;
+  max_white_step?: number | null;
+  min_white_speed?: number | null;
+  max_white_speed?: number | null;
+  min_iris_range?: number | null;
+  max_iris_range?: number | null;
+  min_iris_step?: number | null;
+  max_iris_step?: number | null;
+  min_iris_speed?: number | null;
+  max_iris_speed?: number | null;
 }
 
-export type CreateControlPayload = Omit<Control, 'id'>;
-export type UpdateControlPayload = Partial<CreateControlPayload>;
+/** `CreateControlRequest`: only `name` and `type` are required; the rest default server-side. */
+export type CreateControlPayload = Pick<Control, 'name' | 'type'> & Partial<Omit<Control, 'id' | 'name' | 'type'>>;
+/** `UpdateControlRequest`: every field optional. */
+export type UpdateControlPayload = Partial<Omit<Control, 'id'>>;
 
 export async function listControls(params?: {
   page?: number; page_size?: number;

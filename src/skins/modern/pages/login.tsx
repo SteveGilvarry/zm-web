@@ -44,6 +44,13 @@ export default function LoginPage() {
             </p>
           </div>
 
+          {l.notice && (
+            <div role="status" className="mb-6 p-3 rounded-lg bg-amber/10 border border-amber/30 flex items-center gap-2">
+              <AlertCircle size={16} className="text-amber flex-shrink-0" />
+              <span className="text-sm text-amber">{l.notice}</span>
+            </div>
+          )}
+
           {/* Error message */}
           {l.error && (
             <div className="mb-6 p-3 rounded-lg bg-crimson/10 border border-crimson/30 flex items-center gap-2">

@@ -2,12 +2,17 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Eye, X, Loader2, Archive, ArchiveRestore, Trash2, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Eye, X, Loader2, Archive, ArchiveRestore, Trash2, ChevronLeft, ChevronRight, Download, LayoutGrid } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 
 import { updateEvent, deleteEvent } from '@/api/events';
 import type { FilterQuery } from '@/api/filters';
+import { useToast } from '@/components/common/toastStore';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { downloadCsv } from '@/features/logs/csv';
 import type { Monitor } from '@/types';
+import { matchesToCsv } from './matchesCsv';
+import type { ReviewSearch } from './reviewLink';
 import { useFilterPreview, CLIENT_PREVIEW_WINDOW } from './useFilterPreview';
 
 interface MatchesPreviewProps {
@@ -15,6 +20,10 @@ interface MatchesPreviewProps {
   monitors: Monitor[];
   /** Which of the draft's actions "Execute now" should apply. */
   actions: { archive: boolean; unarchive: boolean; delete: boolean };
+  /** Legacy "View Matches" target (Montage Review framed by the terms). */
+  reviewSearch?: ReviewSearch;
+  /** Flat classic buttons instead of the Mission Control toggles. */
+  variant?: 'modern' | 'classic';
 }
 
 /**
@@ -26,10 +35,12 @@ interface MatchesPreviewProps {
  * listed (one page in server mode), mirroring what the daemon would do for
  * them. The counts in the confirm prompt are for exactly that set.
  */
-export function MatchesPreview({ query, monitors, actions }: MatchesPreviewProps) {
+export function MatchesPreview({ query, monitors, actions, reviewSearch, variant = 'modern' }: MatchesPreviewProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const toast = useToast();
   const [open, setOpen] = useState(false);
+  const classic = variant === 'classic';
 
   const preview = useFilterPreview(query, { monitors, enabled: open });
   const listed = preview.items;
@@ -45,10 +56,39 @@ export function MatchesPreview({ query, monitors, actions }: MatchesPreviewProps
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['events'] });
       qc.invalidateQueries({ queryKey: ['filters', 'preview'] });
+      toast.success(t('Applied to {{count}} event', { count: listed.length }));
     },
+    onError: toast.apiError,
   });
 
   const hasAction = actions.archive || actions.unarchive || actions.delete;
+
+  const monitorName = (id: number) => monitors.find((m) => m.id === id)?.name ?? String(id);
+  const exportMatches = () => {
+    const csv = matchesToCsv(listed, monitorName, (id) => (id === 0 ? t('Default') : String(id)));
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    downloadCsv(`zm-filter-matches-${stamp}.csv`, csv);
+  };
+
+  const btn = (active: boolean, tone: 'cyan' | 'amber' | 'crimson' = 'cyan') => classic
+    ? clsx(
+      'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase border rounded-sm',
+      tone === 'crimson'
+        ? 'bg-[#d9534f] border-[#d43f3a] text-white hover:bg-[#c9302c]'
+        : active ? 'bg-[#286090] border-[#204d74] text-white' : 'bg-[#337ab7] border-[#2e6da4] text-white hover:bg-[#286090]',
+      'disabled:opacity-50 disabled:cursor-not-allowed',
+    )
+    : clsx(
+      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border-2 transition-all',
+      tone === 'crimson'
+        ? 'border-crimson/60 bg-crimson/15 text-crimson hover:bg-crimson/25'
+        : tone === 'amber'
+          ? 'border-amber/60 bg-amber/15 text-amber hover:bg-amber/25'
+          : active
+            ? 'border-cyan/60 bg-cyan/15 text-cyan'
+            : 'border-border-subtle bg-surface/50 text-text-muted hover:border-cyan/40 hover:text-cyan',
+      'disabled:opacity-40 disabled:cursor-not-allowed',
+    );
 
   const counter = () => {
     if (preview.isFetching && !preview.items.length) return t('loading…');
@@ -67,18 +107,32 @@ export function MatchesPreview({ query, monitors, actions }: MatchesPreviewProps
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
-          className={clsx(
-            'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border-2 transition-all',
-            open
-              ? 'border-cyan/60 bg-cyan/15 text-cyan'
-              : 'border-border-subtle bg-surface/50 text-text-muted hover:border-cyan/40 hover:text-cyan',
-          )}
+          className={btn(open)}
         >
           {open ? <X size={11} /> : <Eye size={11} />}
           {open ? t('Hide matches') : t('List matches')}
         </button>
 
+        {reviewSearch && (
+          <Link to="/montagereview" search={reviewSearch} className={btn(false)} title={t('Open Montage Review framed by these conditions')}>
+            <LayoutGrid size={11} />
+            {t('View matches')}
+          </Link>
+        )}
+
+        <button
+          type="button"
+          onClick={() => { if (!open) setOpen(true); else exportMatches(); }}
+          disabled={open && listed.length === 0}
+          title={open ? t('Download the listed matches as CSV') : t('List matches first, then export the page')}
+          className={btn(false)}
+        >
+          <Download size={11} />
+          {t('Export matches')}
+        </button>
+
         {hasAction && (
+          <RequirePerm feature="events" level="Edit">
           <button
             type="button"
             onClick={() => {
@@ -94,20 +148,15 @@ export function MatchesPreview({ query, monitors, actions }: MatchesPreviewProps
               if (confirm(prompt)) executeMutation.mutate();
             }}
             disabled={executeMutation.isPending || !open || listed.length === 0}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border-2 transition-all',
-              actions.delete
-                ? 'border-crimson/60 bg-crimson/15 text-crimson hover:bg-crimson/25'
-                : 'border-amber/60 bg-amber/15 text-amber hover:bg-amber/25',
-              'disabled:opacity-40 disabled:cursor-not-allowed',
-            )}
+            className={btn(false, actions.delete ? 'crimson' : 'amber')}
           >
             {executeMutation.isPending
               ? <Loader2 size={11} className="animate-spin" />
               : actions.delete ? <Trash2 size={11} />
                 : actions.archive ? <Archive size={11} /> : <ArchiveRestore size={11} />}
-            {t('Execute now')}
+            {t('Execute')}
           </button>
+          </RequirePerm>
         )}
 
         {open && (

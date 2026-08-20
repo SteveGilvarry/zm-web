@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { listServers, deleteServer, type Server } from '@/api/servers';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/components/common/toastStore';
 import { fetchLatestServerStats, summarizeStat, type ServerLoadSummary } from './serverStats';
 
 export interface ServerRow {
@@ -24,6 +25,7 @@ export function useServersPage() {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
+  const toast = useToast();
 
   const serversQ = useQuery({
     queryKey: ['servers'],
@@ -77,18 +79,33 @@ export function useServersPage() {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteServer(id),
-    onSuccess: invalidateServers,
+    onSuccess: (_r, id) => {
+      toast.success(t('Server deleted'));
+      if (editing?.id === id) setEditing(null);
+      invalidateServers();
+    },
+    onError: (err) => toast.apiError(err),
   });
 
-  const confirmDelete = (s: Server) => {
-    if (confirm(t('Delete server "{{name}}"?', { name: s.name }))) deleteMutation.mutate(s.id);
+  const [deleteTarget, setDeleteTarget] = useState<Server | null>(null);
+  const confirmDelete = () => {
+    if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+    setDeleteTarget(null);
   };
 
   return {
     isAuthenticated,
+    isLoading: serversQ.isLoading,
+    isError: serversQ.isError,
+    error: serversQ.error,
+    refetch: () => void serversQ.refetch(),
     servers,
     rows,
     localLoad,
+    deleteTarget,
+    requestDelete: setDeleteTarget,
+    cancelDelete: () => setDeleteTarget(null),
+    isDeleting: deleteMutation.isPending,
     statsError: statsQ.error?.message ?? null,
     confirmDelete,
     invalidateServers,

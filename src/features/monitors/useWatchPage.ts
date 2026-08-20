@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getMonitor, updateMonitor, getLiveStats, controlMonitorAlarm } from '@/api/monitors';
+import { getMonitor, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
+import { getAuthToken } from '@/api/client';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/components/common/toastStore';
+import { useRouteSearch, searchFlag } from './useRouteSearch';
+import { displayDimensions } from './orientation';
+import { DEFAULT_STAGE_SIZE, stageStyle, type StageSize } from './watchStage';
 import { useWebRtcStream, type StreamHookResult } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
 import { usePtzCapabilities, type PtzState } from '@/features/ptz/usePtz';
@@ -33,6 +38,19 @@ export interface WatchAlarmState {
   error: string | null;
   force: () => void;
   cancel: () => void;
+}
+
+/** Legacy `Stream | Stills` toggle: live video or a refreshing snapshot. */
+export type WatchViewMode = 'stream' | 'stills';
+
+/** The legacy Width / Height / Scale selects and the style they produce. */
+export interface WatchStageState {
+  size: StageSize;
+  setWidth: (v: string) => void;
+  setHeight: (v: string) => void;
+  setScale: (v: string) => void;
+  /** Inline style for the stage box (aspect ratio from the monitor). */
+  style: CSSProperties;
 }
 
 export interface WatchPageState {
@@ -74,6 +92,12 @@ export interface WatchPageState {
   retry: () => void;
   /** Refetch the monitor and its recent events. */
   refresh: () => void;
+  viewMode: WatchViewMode;
+  setViewMode: (mode: WatchViewMode) => void;
+  stage: WatchStageState;
+  /** Legacy "Download Image": save the current snapshot as a JPEG. */
+  downloadImage: () => void;
+  isDownloading: boolean;
 }
 
 /**
@@ -86,13 +110,19 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
+  const toast = useToast();
+  const search = useRouteSearch();
   const id = monitorId;
 
   const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
   const [fellBackToHls, setFellBackToHls] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
-  const [editorOpen, setEditorOpen] = useState(false);
+  // `?edit=true` (legacy `?view=monitor&mid=`) opens the editor on load.
+  const [editorOpen, setEditorOpen] = useState(() => searchFlag(search, 'edit'));
+  const [viewMode, setViewModeState] = useState<WatchViewMode>('stream');
+  const [stageSize, setStageSize] = useState<StageSize>(DEFAULT_STAGE_SIZE);
+  const [isDownloading, setIsDownloading] = useState(false);
 
   // Track fullscreen so the rotated-video styling can switch between the
   // portrait-container fit (inline) and the 16:9-screen fit (fullscreen).
@@ -144,7 +174,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   // when the protocol changes so a switch after auto-start plays too.
   const autoStarted = useRef<StreamProtocol | null>(null);
   useEffect(() => {
-    if (!monitor || autoStarted.current === protocol) return;
+    if (!monitor || autoStarted.current === protocol || viewMode !== 'stream') return;
     const isCapturing = monitor.capturing !== 'None';
     if (isCapturing) {
       // Always call start() so this view registers as a stream consumer —
@@ -156,7 +186,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
       }, 150);
       return () => clearTimeout(timer);
     }
-  }, [monitor, activeStream, protocol]);
+  }, [monitor, activeStream, protocol, viewMode]);
 
   // WebRTC exhausted its retries (no TURN, ICE never completes): move to
   // HLS once, automatically. A manual protocol pick clears the flag.
@@ -183,6 +213,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
       queryClient.invalidateQueries({ queryKey: ['monitor', id] });
       queryClient.invalidateQueries({ queryKey: ['monitors'] });
     },
+    onError: toast.apiError,
   });
 
   /* ----- Alarm control -------------------------------------------------- */
@@ -202,10 +233,12 @@ export function useWatchPage(monitorId: number): WatchPageState {
         : { action: 'cancel' }),
     onMutate: () => setAlarmError(null),
     onSuccess: (_data, action) => setAlarmForced(action === 'on'),
-    onError: (err: unknown, action) =>
+    onError: (err: unknown, action) => {
       setAlarmError(err instanceof Error
         ? err.message
-        : action === 'on' ? t('Failed to force alarm') : t('Failed to cancel alarm')),
+        : action === 'on' ? t('Failed to force alarm') : t('Failed to cancel alarm'));
+      toast.apiError(err);
+    },
   });
   const alarm: WatchAlarmState = {
     available: alarmStatusQ.isSuccess,
@@ -252,9 +285,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const toggleMute = () => {
     const video = activeStream.videoRef.current;
     if (video) {
-      // Event handler toggling a DOM property on the <video>; the compiler
-      // cannot see that this element is not React state.
-      // eslint-disable-next-line react-hooks/immutability
+      // Event handler toggling a DOM property on the <video>.
       video.muted = !video.muted;
       setIsMuted(video.muted);
     }
@@ -270,6 +301,54 @@ export function useWatchPage(monitorId: number): WatchPageState {
     queryClient.invalidateQueries({ queryKey: ['monitor', id] });
     queryClient.invalidateQueries({ queryKey: ['monitorEvents', id] });
     queryClient.invalidateQueries({ queryKey: ['monitorStatuses'] });
+  };
+
+  // Stills: tear the stream down and let the page poll snapshots instead.
+  const setViewMode = (mode: WatchViewMode) => {
+    if (mode === viewMode) return;
+    if (mode === 'stills' && isActive) {
+      activeStream.stop();
+      queryClient.invalidateQueries({ queryKey: ['liveSessions'] });
+    }
+    // Re-arm auto-start for the return trip.
+    if (mode === 'stream') autoStarted.current = null;
+    setViewModeState(mode);
+  };
+
+  const stage: WatchStageState = {
+    size: stageSize,
+    setWidth: (width) => setStageSize((s) => ({ ...s, width })),
+    setHeight: (height) => setStageSize((s) => ({ ...s, height })),
+    setScale: (scale) => setStageSize((s) => ({ ...s, scale })),
+    style: stageStyle(stageSize, monitor ? displayDimensions(monitor) : { width: 16, height: 9 }),
+  };
+
+  // The snapshot endpoint needs the bearer token, so an `<a download>` is
+  // not enough: fetch it, then hand the blob to the browser.
+  const downloadImage = async () => {
+    if (isDownloading) return;
+    setIsDownloading(true);
+    try {
+      const token = getAuthToken();
+      const res = await fetch(getMonitorSnapshotUrl(id), {
+        headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+      });
+      if (!res.ok) throw new Error(t('Snapshot unavailable ({{status}})', { status: res.status }));
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      a.href = url;
+      a.download = `${monitor?.name ?? `monitor-${id}`}-${stamp}.jpg`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch (err) {
+      toast.apiError(err);
+    } finally {
+      setIsDownloading(false);
+    }
   };
 
   return {
@@ -303,5 +382,10 @@ export function useWatchPage(monitorId: number): WatchPageState {
     toggleMute,
     retry,
     refresh,
+    viewMode,
+    setViewMode,
+    stage,
+    downloadImage: () => { void downloadImage(); },
+    isDownloading,
   };
 }

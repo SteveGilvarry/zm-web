@@ -17,7 +17,7 @@ const { MatchesPreview } = await import('./MatchesPreview');
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { user: 'admin', iat: 0, exp: 0 } as never, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'error' });
 });
@@ -130,10 +130,10 @@ describe('MatchesPreview — execute now', () => {
       http.delete('/api/v3/events/:id', ({ params }) => { deleted.push(params.id as string); return new HttpResponse(null, { status: 204 }); }),
     );
     const { rerender } = renderWithProviders(<MatchesPreview query={{ terms: [] }} monitors={[]} actions={noActions} />);
-    expect(screen.queryByRole('button', { name: /execute now/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^execute$/i })).toBeNull();
 
     rerender(<MatchesPreview query={{ terms: [] }} monitors={[]} actions={{ ...noActions, delete: true }} />);
-    const exec = screen.getByRole('button', { name: /execute now/i });
+    const exec = screen.getByRole('button', { name: /^execute$/i });
     expect(exec).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: /list matches/i }));

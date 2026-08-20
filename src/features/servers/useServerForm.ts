@@ -1,6 +1,8 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { createServer, updateServer, type Server } from '@/api/servers';
+import { useToast } from '@/components/common/toastStore';
 
 /** `Servers.Status` enum in ZoneMinder. */
 export const SERVER_STATUSES = ['Unknown', 'Running', 'NotRunning'] as const;
@@ -12,6 +14,8 @@ export const SERVER_STATUSES = ['Unknown', 'Running', 'NotRunning'] as const;
  * protocol/path/daemon flags have no backend yet.
  */
 export function useServerForm(editing: Server | null, onSaved: () => void) {
+  const { t } = useTranslation();
+  const toast = useToast();
   const [name, setName] = useState(editing?.name ?? '');
   const [hostname, setHostname] = useState(editing?.hostname ?? '');
   const [port, setPortRaw] = useState(editing?.port != null ? String(editing.port) : '');
@@ -26,7 +30,8 @@ export function useServerForm(editing: Server | null, onSaved: () => void) {
 
   const save = useMutation({
     mutationFn: () => (editing ? updateServer(editing.id, payload()) : createServer(payload())),
-    onSuccess: () => {
+    onSuccess: (saved) => {
+      toast.success(editing ? t('Server "{{name}}" saved', { name: saved.name }) : t('Server "{{name}}" registered', { name: saved.name }));
       onSaved();
       if (!editing) {
         setName('');
@@ -35,6 +40,7 @@ export function useServerForm(editing: Server | null, onSaved: () => void) {
         setStatus('Unknown');
       }
     },
+    onError: (err) => toast.apiError(err),
   });
 
   const setPort = (value: string) => setPortRaw(value.replace(/[^0-9]/g, ''));

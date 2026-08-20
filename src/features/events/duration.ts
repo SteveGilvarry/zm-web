@@ -30,3 +30,13 @@ export function sumEventDurations(events: Array<{ length: number | string | null
 export function sumEventDiskSpace(events: Array<{ disk_space?: number | null }>): number {
   return events.reduce((acc, e) => acc + (e.disk_space ?? 0), 0);
 }
+
+/** Legacy events-table shape: always `HH:MM:SS`. */
+export function formatDurationHms(secondsRaw: number | string | null | undefined): string {
+  const seconds = Math.max(0, eventDurationSeconds(secondsRaw));
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = seconds % 60;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  return `${pad(h)}:${pad(m)}:${pad(s)}`;
+}

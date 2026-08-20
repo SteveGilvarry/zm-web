@@ -17,11 +17,14 @@ import { listEventData, type EventDataRow } from '@/api/eventData';
 import { getMonitor } from '@/api/monitors';
 import { getStorageList } from '@/api/storage';
 import { useEventVideo } from '@/hooks/useEventVideo';
+import { useToast } from '@/components/common/toastStore';
 import { useAuthStore } from '@/stores/auth';
 import { useEventPlaybackStore, scaleToMaxWidth, PLAYBACK_RATES } from '@/stores/eventPlayback';
 import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from '@/types';
 import type { Monitor, ZmEvent } from '@/types';
+import { toLocalDatetime } from '@/features/reports/datetime';
 import { useEventHotkeys } from './useEventHotkeys';
+import { toZmDateTime } from './eventsSearch';
 
 export function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -169,6 +172,9 @@ export interface EventDetailPageState {
   deletePending: boolean;
   deleteError: string | null;
 
+  /** `/montagereview` search params framing this event (legacy "Montage Review" button). */
+  reviewSearch: { monitor_id: number; min_time: string; max_time: string } | null;
+
   /** Derived presentation values; all undefined/empty until `event` loads. */
   startTime: Date | null;
   endTime: Date | null;
@@ -196,6 +202,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const { isAuthenticated, accessToken } = useAuthStore();
   const queryClient = useQueryClient();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const {
     replayMode, setReplayMode,
@@ -387,13 +394,16 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const patchMutation = useMutation({
     mutationFn: (payload: EventUpdatePayload) => updateEvent(id, payload),
     onSuccess: invalidateEvent,
+    onError: toast.apiError,
   });
   const archiveMutation = useMutation({
     mutationFn: (archived: boolean) => updateEvent(id, { archived }),
     onSuccess: invalidateEvent,
+    onError: toast.apiError,
   });
   const deleteMutation = useMutation({
     mutationFn: () => deleteEvent(id),
+    onError: toast.apiError,
     onSuccess: () => {
       queryClient.removeQueries({ queryKey: ['event', id] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
@@ -484,6 +494,17 @@ export function useEventDetailPage(id: number): EventDetailPageState {
 
   const startTime = event?.start_date_time ? new Date(event.start_date_time) : null;
   const endTime = event?.end_date_time ? new Date(event.end_date_time) : null;
+  const reviewSearch = useMemo(() => {
+    if (!event || !startTime) return null;
+    const pad = 5 * 60_000;
+    const end = endTime ?? new Date(startTime.getTime() + (Number(event.length) || 0) * 1000);
+    return {
+      monitor_id: event.monitor_id,
+      min_time: toZmDateTime(toLocalDatetime(new Date(startTime.getTime() - pad))),
+      max_time: toZmDateTime(toLocalDatetime(new Date(end.getTime() + pad))),
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [event?.id, event?.monitor_id, event?.start_date_time, event?.end_date_time, event?.length]);
   // The hook owns the <video> source; this URL is only used for download (the
   // Range-supported progressive MP4 endpoint).
   const downloadUrl = event ? getEventStreamUrl(event.id, accessToken || undefined) : '';
@@ -586,6 +607,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     deletePending: deleteMutation.isPending,
     deleteError: errorMessage(deleteMutation.error),
 
+    reviewSearch,
     startTime,
     endTime,
     downloadUrl,

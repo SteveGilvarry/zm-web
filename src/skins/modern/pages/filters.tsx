@@ -1,12 +1,16 @@
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
+import { useState } from 'react';
 import {
   Filter, Plus, Trash2, Save, Archive, ArchiveRestore, Trash, Clock, Video, Terminal,
   Mail, MessageSquare, Copy, Move, Activity, Lock, Layers, HardDrive, Upload, AlertTriangle,
+  CopyPlus, RotateCcw, Bug,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { FILTER_SORT_FIELDS, type FilterColumns } from '@/api/filters';
 import { RuleBuilder } from '@/features/filters/RuleBuilder';
 import { MatchesPreview } from '@/features/filters/MatchesPreview';
@@ -19,6 +23,7 @@ import { useDocumentTitle } from '../layouts/useDocumentTitle';
 export default function FiltersPage() {
   const { t } = useTranslation();
   const s = useFiltersPage();
+  const [showDebug, setShowDebug] = useState(false);
   useDocumentTitle(t('Filters'));
   const sortLabels = useFilterSortFieldLabels();
   const {
@@ -40,6 +45,11 @@ export default function FiltersPage() {
     if (selectedId) s.save();
     else s.create();
   };
+  const onSaveAs = () => {
+    const name = prompt(t('Save filter as'), draftName ? t('{{name}} copy', { name: draftName }) : '');
+    if (name) s.saveAs(name);
+  };
+  const smallBtn = 'flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded border transition-colors disabled:opacity-50';
 
   return (
     <AppShell title={t('Filters')}>
@@ -56,13 +66,16 @@ export default function FiltersPage() {
                 {t('New filter')}
               </button>
 
+              <QueryState
+                isLoading={s.isLoading}
+                isError={s.isError}
+                error={s.error}
+                onRetry={s.refetch}
+                empty={filters.length === 0}
+                emptyMessage={t('No saved filters yet.')}
+              >
               <ul className="space-y-0.5 max-h-[60vh] overflow-y-auto">
-                {filters.length === 0 ? (
-                  <li className="text-xs text-text-muted italic py-4 text-center">
-                    {t('No saved filters yet.')}
-                  </li>
-                ) : (
-                  filters.map((f) => (
+                {filters.map((f) => (
                     <li key={f.id}>
                       <div
                         className={clsx(
@@ -84,20 +97,22 @@ export default function FiltersPage() {
                           {f.background === 1 && <span className="text-text-muted" title={t('Runs in background')}>*</span>}
                           {f.concurrent === 1 && <span className="text-text-muted" title={t('Runs concurrently')}>&amp;</span>}
                         </button>
-                        <button
-                          onClick={() => {
-                            if (confirm(t('Delete filter "{{name}}"?', { name: f.name }))) s.remove(f.id);
-                          }}
-                          className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
-                          aria-label={t('Delete {{name}}', { name: f.name })}
-                        >
-                          <Trash2 size={11} />
-                        </button>
+                        <RequirePerm feature="events" level="Edit">
+                          <button
+                            onClick={() => {
+                              if (confirm(t('Delete filter "{{name}}"?', { name: f.name }))) s.remove(f.id);
+                            }}
+                            className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+                            aria-label={t('Delete {{name}}', { name: f.name })}
+                          >
+                            <Trash2 size={11} />
+                          </button>
+                        </RequirePerm>
                       </div>
                     </li>
-                  ))
-                )}
+                  ))}
               </ul>
+              </QueryState>
             </Panel>
           </div>
 
@@ -107,14 +122,44 @@ export default function FiltersPage() {
               title={selectedFilter ? t('Editing — {{name}}', { name: selectedFilter.name }) : t('New filter')}
               icon={<Filter size={16} />}
               action={
-                <button
-                  onClick={onSave}
-                  disabled={!canSave || s.savePending || s.createPending}
-                  className="flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded border border-cyan/50 bg-cyan/15 text-cyan hover:bg-cyan/25 transition-colors disabled:opacity-50"
-                >
-                  {selectedId ? <Save size={11} /> : <Plus size={11} />}
-                  {selectedId ? t('Save') : t('Create')}
-                </button>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => setShowDebug((v) => !v)}
+                    aria-pressed={showDebug}
+                    className={clsx(smallBtn, 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan')}
+                  >
+                    <Bug size={11} />
+                    {t('Debug')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={s.reset}
+                    className={clsx(smallBtn, 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan')}
+                  >
+                    <RotateCcw size={11} />
+                    {t('Reset')}
+                  </button>
+                  <RequirePerm feature="events" level="Edit">
+                    <button
+                      type="button"
+                      onClick={onSaveAs}
+                      disabled={!draftQuery || s.createPending}
+                      className={clsx(smallBtn, 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan')}
+                    >
+                      <CopyPlus size={11} />
+                      {t('Save As')}
+                    </button>
+                    <button
+                      onClick={onSave}
+                      disabled={!canSave || s.savePending || s.createPending}
+                      className={clsx(smallBtn, 'border-cyan/50 bg-cyan/15 text-cyan hover:bg-cyan/25')}
+                    >
+                      {selectedId ? <Save size={11} /> : <Plus size={11} />}
+                      {selectedId ? t('Save') : t('Create')}
+                    </button>
+                  </RequirePerm>
+                </div>
               }
             >
               <div className="space-y-4">
@@ -329,12 +374,25 @@ export default function FiltersPage() {
                     <MatchesPreview
                       query={draftQuery}
                       monitors={monitors}
+                      reviewSearch={s.reviewSearch}
                       actions={{
                         archive: flag('auto_archive'),
                         unarchive: flag('auto_unarchive'),
                         delete: flag('auto_delete'),
                       }}
                     />
+                  </div>
+                )}
+
+                {/* Debug — the structured query the backend (or we) derived from the terms */}
+                {showDebug && s.debug && (
+                  <div data-testid="filter-debug">
+                    <h3 className={clsx(label, 'mb-2')}>
+                      {s.debug.source === 'backend' ? t('Debug — backend filter AST') : t('Debug — preview AST from the draft terms')}
+                    </h3>
+                    <pre className="p-2 rounded bg-abyss border border-border-subtle text-text-secondary overflow-x-auto font-mono text-[10px] whitespace-pre-wrap break-all">
+                      {JSON.stringify(s.debug.source === 'backend' ? s.debug.backendAst : s.debug.ast, null, 2)}
+                    </pre>
                   </div>
                 )}
 

@@ -1,23 +1,11 @@
-import { ClassicMonitorsTable } from '@/features/monitors/ClassicMonitorsTable';
-import { MonitorsListLayout } from '@/skins/modern/layouts/MonitorsListLayout';
+import ClassicConsolePage from './console';
 
 /**
- * Monitors list — classic skin. The dense legacy table sits inside the
- * shared toolbar / pagination frame, exactly as the skin branch did before.
+ * Monitors list — classic skin. Legacy ZoneMinder has no separate monitors
+ * page: the Console table *is* the list (Add / Clone / Edit / Delete live on
+ * its toolbar), so `/monitors` renders the Console. `?new=true` still opens
+ * the Add dialog there.
  */
 export default function ClassicMonitorsListPage() {
-  return (
-    <MonitorsListLayout
-      renderMonitors={({ filteredMonitors, liveSessionIds, runtimeById, clone, requestDelete, busy }) => (
-        <ClassicMonitorsTable
-          monitors={filteredMonitors}
-          liveSessionIds={liveSessionIds}
-          runtimeById={runtimeById}
-          onClone={clone}
-          onDelete={requestDelete}
-          busy={busy}
-        />
-      )}
-    />
-  );
+  return <ClassicConsolePage />;
 }

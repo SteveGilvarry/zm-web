@@ -97,6 +97,8 @@ export interface LogsPageState {
   isAuthenticated: boolean;
   isLoading: boolean;
   isFetching: boolean;
+  isError: boolean;
+  error: Error | null;
   refetch: () => void;
 
   /** Current page after client-side level/message/date filtering. */
@@ -201,7 +203,7 @@ export function useLogsPage(): LogsPageState {
     setSearch({ page: undefined });
   };
 
-  const { data, isLoading, refetch, isFetching } = useQuery({
+  const { data, isLoading, refetch, isFetching, isError, error } = useQuery({
     queryKey: ['logs', page, pageSize, componentFilter, levelFilter, serverFilter],
     queryFn: () =>
       listLogs({
@@ -273,6 +275,8 @@ export function useLogsPage(): LogsPageState {
     isAuthenticated,
     isLoading,
     isFetching,
+    isError,
+    error: (error as Error | null) ?? null,
     refetch: () => { refetch(); },
 
     logs: filteredLogs,

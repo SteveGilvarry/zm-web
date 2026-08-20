@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
@@ -14,6 +15,8 @@ import type { StreamProtocol, Monitor as MonitorType } from '@/types';
 import { isOrientationRotated } from '@/types';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { StatCard } from '@/components/console/StatCard';
 import { MonitorThumbnail } from '@/components/console/MonitorThumbnail';
 import { EventsFeed } from '@/components/console/EventsFeed';
@@ -49,14 +52,14 @@ export default function ConsolePage() {
 
   return (
     <AppShell title={t('Console')}>
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-4 sm:p-6 overflow-auto min-w-0">
         {/* Filter bar — shared across Console / Montage / Montage Review. */}
         <div className="mb-4">
           <MonitorFilterBar monitors={monitors} onChange={setFilteredMonitors} />
         </div>
 
         {/* Stats Row */}
-        <div className="grid grid-cols-4 gap-4 mb-6 stagger-children">
+        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6 stagger-children">
           <StatCard
             label={t('Monitors')}
             value={filteredMonitors.length}
@@ -100,15 +103,18 @@ export default function ConsolePage() {
         </div>
 
         {/* Main Grid */}
-        <div className="grid grid-cols-12 gap-6">
+        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           {/* Monitor Grid - takes 8 columns */}
-          <div className="col-span-8">
+          <div className="xl:col-span-8 min-w-0">
             <Panel
               title={t('Monitors')}
               icon={<Monitor size={16} />}
               action={
-                <div className="flex items-center gap-1 bg-surface rounded p-0.5 border border-border-subtle">
+                <div role="group" aria-label={t('Thumbnail mode')} className="flex items-center gap-1 bg-surface rounded p-0.5 border border-border-subtle">
                   <button
+                    type="button"
+                    aria-pressed={liveProtocol === 'webrtc'}
+                    aria-label={t('WebRTC live thumbnails')}
                     onClick={() => setLiveProtocol('webrtc')}
                     className={clsx(
                       'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
@@ -118,10 +124,13 @@ export default function ConsolePage() {
                     )}
                     title={t('WebRTC live thumbnails')}
                   >
-                    <Wifi size={10} />
+                    <Wifi size={10} aria-hidden />
                     RTC
                   </button>
                   <button
+                    type="button"
+                    aria-pressed={liveProtocol === 'hls'}
+                    aria-label={t('HLS live thumbnails')}
                     onClick={() => setLiveProtocol('hls')}
                     className={clsx(
                       'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
@@ -131,10 +140,13 @@ export default function ConsolePage() {
                     )}
                     title={t('HLS live thumbnails')}
                   >
-                    <Radio size={10} />
+                    <Radio size={10} aria-hidden />
                     HLS
                   </button>
                   <button
+                    type="button"
+                    aria-pressed={liveProtocol === null}
+                    aria-label={t('Static thumbnails (no streaming)')}
                     onClick={() => setLiveProtocol(null)}
                     className={clsx(
                       'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
@@ -144,54 +156,45 @@ export default function ConsolePage() {
                     )}
                     title={t('Static thumbnails (no streaming)')}
                   >
-                    <VideoOff size={10} />
+                    <VideoOff size={10} aria-hidden />
                     {t('Off')}
                   </button>
                 </div>
               }
             >
-              {loading.monitors ? (
-                <div className="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-4">
-                  {[...Array(6)].map((_, i) => (
-                    <div
-                      key={i}
-                      className="aspect-video rounded-lg bg-panel animate-pulse"
-                    />
-                  ))}
-                </div>
-              ) : filteredMonitors.length === 0 ? (
-                <div className="flex flex-col items-center justify-center py-12 text-text-muted">
-                  <Monitor size={48} className="mb-4 opacity-50" />
-                  <p>
-                    {monitors.length === 0
-                      ? t('No monitors configured')
-                      : t('No monitors match the current filter')}
-                  </p>
-                </div>
-              ) : (
-                <JustifiedMonitorGrid
-                  monitors={filteredMonitors.slice(0, 9)}
-                  liveSessions={liveSessions}
-                  liveProtocol={liveProtocol}
-                  data={data}
-                />
-              )}
+              <QueryState
+                isLoading={loading.monitors}
+                isError={data.isError}
+                error={data.error}
+                onRetry={data.refetch}
+                empty={filteredMonitors.length === 0}
+                emptyMessage={monitors.length === 0 ? t('No monitors configured') : t('No monitors match the current filter')}
+              >
+                <RequirePerm feature="stream" level="View" fallback="message">
+                  <JustifiedMonitorGrid
+                    monitors={filteredMonitors.slice(0, 9)}
+                    liveSessions={liveSessions}
+                    liveProtocol={liveProtocol}
+                    data={data}
+                  />
+                </RequirePerm>
+              </QueryState>
 
               {filteredMonitors.length > 9 && (
                 <div className="mt-4 text-center">
-                  <a
-                    href="/monitors"
+                  <Link
+                    to="/monitors"
                     className="text-sm text-cyan hover:text-cyan-dim transition-colors"
                   >
                     {t('View all {{count}} monitors →', { count: filteredMonitors.length })}
-                  </a>
+                  </Link>
                 </div>
               )}
             </Panel>
           </div>
 
           {/* Right sidebar - takes 4 columns */}
-          <div className="col-span-4 space-y-6">
+          <div className="xl:col-span-4 space-y-6 min-w-0">
             {/* System Status */}
             <Panel title={t('System')} icon={<Activity size={16} />}>
               <SystemStatus

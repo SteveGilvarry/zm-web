@@ -2,11 +2,13 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
 import { AppShell } from '@/skins/AppShell';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import { GroupEditDialog } from '@/features/groups/GroupEditDialog';
 import { GROUP_REPARENT_ISSUE_URL, useGroupsPage } from '@/features/groups/useGroupsPage';
-import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
-
-const btn = 'px-2 py-0.5 text-xs border border-zinc-500 rounded-sm bg-zinc-100 hover:bg-zinc-200 disabled:opacity-40';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
+import { ClassicButton, ClassicTable, classicTd, classicTh } from '../components/settings/primitives';
 
 /**
  * Groups — classic skin. Legacy `?view=groups`: an indented group table
@@ -16,10 +18,12 @@ const btn = 'px-2 py-0.5 text-xs border border-zinc-500 rounded-sm bg-zinc-100 h
 export default function ClassicGroupsPage() {
   const { t } = useTranslation();
   const s = useGroupsPage();
-  useDocumentTitle(t('Groups'));
+  const { can } = usePerms();
+  useSiteTitle(t('Groups'));
 
   if (!s.isAuthenticated) return null;
   const { groups, monitors, tree, effectiveSelected, memberIds, memberships } = s;
+  const canEdit = can('groups', 'Edit');
   const parentName = (id: number | null | undefined) => groups.find((g) => g.id === id)?.name ?? '';
 
   return (
@@ -28,7 +32,9 @@ export default function ClassicGroupsPage() {
         <div className="max-w-screen-2xl mx-auto space-y-4">
           <div className="flex items-center justify-between">
             <h1 className="text-xl text-zinc-800 font-semibold">{t('Groups')}</h1>
-            <button type="button" onClick={s.openCreate} className={btn}>{t('New group')}</button>
+            <RequirePerm feature="groups" level="Edit">
+              <ClassicButton tone="primary" onClick={s.openCreate}>{t('New group')}</ClassicButton>
+            </RequirePerm>
           </div>
 
           {s.parentWarning && (
@@ -42,48 +48,49 @@ export default function ClassicGroupsPage() {
           )}
 
           <div className="grid grid-cols-12 gap-4 items-start">
-            <div className="col-span-12 lg:col-span-7 bg-white rounded border border-zinc-300 overflow-hidden">
-              <table className="w-full text-sm text-zinc-800">
-                <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
-                  <tr>
-                    <th className="px-3 py-2 text-start font-semibold">{t('Name')}</th>
-                    <th className="px-3 py-2 text-start font-semibold">{t('Parent')}</th>
-                    <th className="px-3 py-2 text-end font-semibold">{t('Monitors')}</th>
-                    <th className="px-3 py-2 text-end font-semibold">{t('Actions')}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tree.length === 0 && (
+            <div className="col-span-12 lg:col-span-7">
+              <QueryState
+                isLoading={s.isLoading}
+                isError={s.isError}
+                error={s.error}
+                onRetry={s.refetch}
+                empty={tree.length === 0}
+                emptyMessage={t('No groups yet. Click "New group" to create one.')}
+              >
+                <ClassicTable>
+                  <thead>
                     <tr>
-                      <td colSpan={4} className="px-3 py-6 text-center text-zinc-500 italic">
-                        {t('No groups yet. Click "New group" to create one.')}
-                      </td>
+                      <th className={classicTh}>{t('Name')}</th>
+                      <th className={classicTh}>{t('Parent')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Monitors')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Actions')}</th>
                     </tr>
-                  )}
-                  {tree.map(({ group, depth }) => (
-                    <tr
-                      key={group.id}
-                      data-depth={depth}
-                      onClick={() => s.select(group.id)}
-                      className={clsx(
-                        'border-b border-zinc-200 cursor-pointer',
-                        effectiveSelected?.id === group.id ? 'bg-zinc-100' : 'hover:bg-zinc-50',
-                      )}
-                    >
-                      <td className="px-3 py-1.5" style={{ paddingInlineStart: `${0.75 + depth * 1.25}rem` }}>
-                        {depth > 0 && <span className="text-zinc-400 me-1">↳</span>}
-                        {group.name}
-                      </td>
-                      <td className="px-3 py-1.5 text-zinc-600">{parentName(group.parent_id) || '—'}</td>
-                      <td className="px-3 py-1.5 text-end font-mono tabular-nums">{s.memberCount(group.id)}</td>
-                      <td className="px-3 py-1.5 text-end whitespace-nowrap" onClick={(e) => e.stopPropagation()}>
-                        <button type="button" onClick={() => s.openEdit(group)} aria-label={t('Edit group {{name}}', { name: group.name })} className={btn}>{t('Edit')}</button>{' '}
-                        <button type="button" onClick={() => s.handleDelete(group)} aria-label={t('Delete group {{name}}', { name: group.name })} className={btn}>{t('Delete')}</button>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {tree.map(({ group, depth }) => (
+                      <tr
+                        key={group.id}
+                        data-depth={depth}
+                        onClick={() => s.select(group.id)}
+                        className={clsx('cursor-pointer', effectiveSelected?.id === group.id && '!bg-zinc-200')}
+                      >
+                        <td className={classicTd} style={{ paddingInlineStart: `${0.75 + depth * 1.25}rem` }}>
+                          {depth > 0 && <span className="text-zinc-400 me-1">↳</span>}
+                          {group.name}
+                        </td>
+                        <td className={clsx(classicTd, 'text-zinc-600')}>{parentName(group.parent_id) || '—'}</td>
+                        <td className={clsx(classicTd, 'text-end font-mono tabular-nums')}>{s.memberCount(group.id)}</td>
+                        <td className={clsx(classicTd, 'text-end whitespace-nowrap')} onClick={(e) => e.stopPropagation()}>
+                          <RequirePerm feature="groups" level="Edit">
+                            <ClassicButton onClick={() => s.openEdit(group)} aria-label={t('Edit group {{name}}', { name: group.name })}>{t('Edit')}</ClassicButton>{' '}
+                            <ClassicButton onClick={() => s.handleDelete(group)} aria-label={t('Delete group {{name}}', { name: group.name })}>{t('Delete')}</ClassicButton>
+                          </RequirePerm>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </ClassicTable>
+              </QueryState>
             </div>
 
             <div className="col-span-12 lg:col-span-5 bg-white rounded border border-zinc-300">
@@ -105,7 +112,7 @@ export default function ClassicGroupsPage() {
                           <input
                             type="checkbox"
                             checked={isMember}
-                            disabled={s.membershipPending}
+                            disabled={s.membershipPending || !canEdit}
                             onChange={() => (isMember && gm ? s.detach(gm) : s.attach(m.id))}
                             aria-label={isMember ? t('Remove {{name}} from group', { name: m.name }) : t('Add {{name}} to group', { name: m.name })}
                           />

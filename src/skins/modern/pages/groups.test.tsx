@@ -29,7 +29,7 @@ vi.mock('@/skins/AppShell', () => ({
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'error' });
 });

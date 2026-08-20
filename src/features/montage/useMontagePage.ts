@@ -3,8 +3,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMontageStore, type MontageStatusPosition } from '@/stores/montage';
 import { useUiStore } from '@/stores/ui';
+import { useRouteSearch, searchInt } from '@/features/monitors/useRouteSearch';
 import { autoColumns } from './classicPresets';
 import {
   bannerLayout,
@@ -62,6 +64,26 @@ export const MONTAGE_PRESETS: MontagePreset[] = [
 ];
 
 /* ------------------------------------------------------------------------ */
+/*  `?group=` (legacy `?view=montage&group=`)                                */
+/* ------------------------------------------------------------------------ */
+
+/**
+ * Apply the URL's group once to the shared filter store. Applied once per
+ * value so the operator can still change the chip afterwards.
+ */
+export function useMontageGroupParam(): void {
+  const search = useRouteSearch();
+  const group = searchInt(search, 'group');
+  const setGroupIds = useMonitorFilterStore((s) => s.setGroupIds);
+  const applied = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (group == null || applied.current === group) return;
+    applied.current = group;
+    setGroupIds([group]);
+  }, [group, setGroupIds]);
+}
+
+/* ------------------------------------------------------------------------ */
 /*  Mosaic editor (modern layout)                                           */
 /* ------------------------------------------------------------------------ */
 
@@ -103,6 +125,7 @@ export interface MontagePageState {
 export function useMontagePage(): MontagePageState {
   const { isAuthenticated } = useAuthStore();
   const gridRef = useRef<HTMLDivElement>(null);
+  useMontageGroupParam();
 
   const { tree, protocol, setTree, setProtocol, statusPosition, setStatusPosition } = useMontageStore();
   const maxLiveTiles = useUiStore((s) => s.maxLiveTiles);
@@ -252,11 +275,17 @@ export function useMontagePage(): MontagePageState {
 
 export interface MontageWallPageState {
   isAuthenticated: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  refetch: () => void;
   /** Every monitor, for the filter bar. */
   monitors: Monitor[];
   /** Capturing monitors that also survive the filter bar. */
   visibleMonitors: Monitor[];
   setFilteredMonitors: (monitors: Monitor[]) => void;
+  /** Capturing monitors — the wall before any filter. */
+  capturingMonitors: Monitor[];
 }
 
 /**
@@ -265,9 +294,10 @@ export interface MontageWallPageState {
  */
 export function useMontageWallPage(): MontageWallPageState {
   const { isAuthenticated } = useAuthStore();
-  const { data: monitorsData } = useQuery({
+  useMontageGroupParam();
+  const { data: monitorsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 50 }),
+    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
     enabled: isAuthenticated,
     refetchInterval: 30_000,
   });
@@ -284,15 +314,27 @@ export function useMontageWallPage(): MontageWallPageState {
     () => monitors.filter((m) => m.capturing !== 'None'),
     [monitors],
   );
-  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[]>(monitors);
+  // null = the filter bar has not reported yet: show everything capturing.
+  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[] | null>(null);
   // Intersect "capturing" (legacy gate) with the filter-bar selection so the
   // grid never shows a disabled cam, but operator chip filters still apply.
   const visibleMonitors = useMemo(() => {
+    if (!filteredMonitors) return capturingMonitors;
     const ids = new Set(filteredMonitors.map((m) => m.id));
     return capturingMonitors.filter((m) => ids.has(m.id));
   }, [capturingMonitors, filteredMonitors]);
 
-  return { isAuthenticated, monitors, visibleMonitors, setFilteredMonitors };
+  return {
+    isAuthenticated,
+    isLoading,
+    isError,
+    error,
+    refetch: () => { void refetch(); },
+    monitors,
+    visibleMonitors,
+    setFilteredMonitors,
+    capturingMonitors,
+  };
 }
 
 /* ------------------------------------------------------------------------ */

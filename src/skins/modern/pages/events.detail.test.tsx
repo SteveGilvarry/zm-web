@@ -56,7 +56,9 @@ const server = setupServer();
 
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', isAuthenticated: true,
+    // No `perms` claim → every feature reads as Edit (pre-RBAC token).
+    user: { user: 'admin', iat: 0, exp: 0 } as never,
   });
   server.listen({ onUnhandledRequest: 'error' });
 });

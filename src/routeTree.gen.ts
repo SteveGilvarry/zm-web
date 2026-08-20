@@ -31,6 +31,7 @@ import { Route as ReportsReportIdRouteImport } from './routes/reports/$reportId'
 import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
 import { Route as EventsEventIdRouteImport } from './routes/events/$eventId'
 import { Route as MonitorsMonitorIdZonesRouteImport } from './routes/monitors/$monitorId_.zones'
+import { Route as EventsEventIdFramesRouteImport } from './routes/events/$eventId_.frames'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -142,6 +143,11 @@ const MonitorsMonitorIdZonesRoute = MonitorsMonitorIdZonesRouteImport.update({
   path: '/monitors/$monitorId/zones',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EventsEventIdFramesRoute = EventsEventIdFramesRouteImport.update({
+  id: '/events/$eventId_/frames',
+  path: '/events/$eventId/frames',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -165,6 +171,7 @@ export interface FileRoutesByFullPath {
   '/montagereview/': typeof MontagereviewIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/events/$eventId/frames': typeof EventsEventIdFramesRoute
   '/monitors/$monitorId/zones': typeof MonitorsMonitorIdZonesRoute
 }
 export interface FileRoutesByTo {
@@ -189,6 +196,7 @@ export interface FileRoutesByTo {
   '/montagereview': typeof MontagereviewIndexRoute
   '/reports': typeof ReportsIndexRoute
   '/settings': typeof SettingsIndexRoute
+  '/events/$eventId/frames': typeof EventsEventIdFramesRoute
   '/monitors/$monitorId/zones': typeof MonitorsMonitorIdZonesRoute
 }
 export interface FileRoutesById {
@@ -214,6 +222,7 @@ export interface FileRoutesById {
   '/montagereview/': typeof MontagereviewIndexRoute
   '/reports/': typeof ReportsIndexRoute
   '/settings/': typeof SettingsIndexRoute
+  '/events/$eventId_/frames': typeof EventsEventIdFramesRoute
   '/monitors/$monitorId_/zones': typeof MonitorsMonitorIdZonesRoute
 }
 export interface FileRouteTypes {
@@ -240,6 +249,7 @@ export interface FileRouteTypes {
     | '/montagereview/'
     | '/reports/'
     | '/settings/'
+    | '/events/$eventId/frames'
     | '/monitors/$monitorId/zones'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -264,6 +274,7 @@ export interface FileRouteTypes {
     | '/montagereview'
     | '/reports'
     | '/settings'
+    | '/events/$eventId/frames'
     | '/monitors/$monitorId/zones'
   id:
     | '__root__'
@@ -288,6 +299,7 @@ export interface FileRouteTypes {
     | '/montagereview/'
     | '/reports/'
     | '/settings/'
+    | '/events/$eventId_/frames'
     | '/monitors/$monitorId_/zones'
   fileRoutesById: FileRoutesById
 }
@@ -313,6 +325,7 @@ export interface RootRouteChildren {
   MontagereviewIndexRoute: typeof MontagereviewIndexRoute
   ReportsIndexRoute: typeof ReportsIndexRoute
   SettingsIndexRoute: typeof SettingsIndexRoute
+  EventsEventIdFramesRoute: typeof EventsEventIdFramesRoute
   MonitorsMonitorIdZonesRoute: typeof MonitorsMonitorIdZonesRoute
 }
 
@@ -472,6 +485,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof MonitorsMonitorIdZonesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/events/$eventId_/frames': {
+      id: '/events/$eventId_/frames'
+      path: '/events/$eventId/frames'
+      fullPath: '/events/$eventId/frames'
+      preLoaderRoute: typeof EventsEventIdFramesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -497,6 +517,7 @@ const rootRouteChildren: RootRouteChildren = {
   MontagereviewIndexRoute: MontagereviewIndexRoute,
   ReportsIndexRoute: ReportsIndexRoute,
   SettingsIndexRoute: SettingsIndexRoute,
+  EventsEventIdFramesRoute: EventsEventIdFramesRoute,
   MonitorsMonitorIdZonesRoute: MonitorsMonitorIdZonesRoute,
 }
 export const routeTree = rootRouteImport

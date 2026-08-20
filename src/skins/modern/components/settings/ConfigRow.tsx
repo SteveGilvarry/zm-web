@@ -17,6 +17,7 @@ export function ConfigRow({
   onCancel,
   onReset,
   isSaving,
+  dirtyValue,
 }: {
   config: ZmConfig;
   isEditing: boolean;
@@ -30,6 +31,8 @@ export function ConfigRow({
   /** Write `default_value` back. Omit to hide the reset control. */
   onReset?: () => void;
   isSaving: boolean;
+  /** A value typed but not yet written (see "Save all"); shown in place of the stored one. */
+  dirtyValue?: string;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
@@ -97,12 +100,17 @@ export function ConfigRow({
                     ? 'text-text-muted'
                     : 'text-text-secondary cursor-pointer hover:text-cyan transition-colors'
                 )}
-                title={isSecret ? undefined : config.value}
+                title={isSecret ? undefined : (dirtyValue ?? config.value)}
               >
-                {config.value
-                  ? (isSecret ? '••••••••' : formatConfigValue(config))
-                  : <span className="italic text-text-muted">{t('empty')}</span>}
+                {dirtyValue !== undefined
+                  ? (isSecret ? '••••••••' : formatConfigValue({ ...config, value: dirtyValue }))
+                  : config.value
+                    ? (isSecret ? '••••••••' : formatConfigValue(config))
+                    : <span className="italic text-text-muted">{t('empty')}</span>}
               </span>
+              {dirtyValue !== undefined && (
+                <span className="text-[10px] px-1 rounded bg-amber/15 text-amber" title={t('Unsaved')}>{t('unsaved')}</span>
+              )}
               {canReset && (
                 <button
                   onClick={onReset}

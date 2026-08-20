@@ -26,11 +26,16 @@ import {
   Joystick,
   Square,
   Pencil,
+  Camera,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import type { CapturingMode, AnalysingMode, RecordingMode } from '@/types';
 import type { PagePropsMap } from '@/skins/types';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { MonitorPreview } from '@/components/monitors/MonitorPreview';
+import { SCALE_VALUES } from '@/features/monitors/watchStage';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { zoneViewDimensions } from '@/features/zones/useZonesPage';
@@ -50,6 +55,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, isFullscreen, isWide,
     editorOpen, openEditor, closeEditor, updateModes, isUpdating,
     startStream, stopStream, changeProtocol, toggleFullscreen, toggleMute, retry,
+    viewMode, setViewMode, stage, downloadImage, isDownloading,
   } = page;
   const id = monitorId;
   // Display labels for the capture/analysis/recording wire values. The
@@ -75,6 +81,18 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   if (!monitor) return <WatchNotFound />;
 
   const isEnabled = monitor.capturing !== 'None';
+  const stills = viewMode === 'stills';
+  // Only constrain the stage when a legacy Scale was picked; otherwise the
+  // adaptive layout sizes it.
+  const stageSized = stage.size.scale !== '0';
+  const scaleLabel = (v: string): string => {
+    switch (v) {
+      case '0': return t('Auto');
+      case '100': return t('Actual');
+      case 'fit_to_width': return t('Fit to width');
+      default: return t('Max {{size}}', { size: v });
+    }
+  };
 
   // Effective dimensions after orientation, used to drive the layout.
   const { width: effW, height: effH } = displayDimensions(monitor);
@@ -89,7 +107,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   // the container is screen-shaped. See features/monitors/orientation.ts.
   const videoClassName = clsx(
     stageVideoClass(monitor, isFullscreen),
-    !(isActive || isStreaming) && 'hidden',
+    (stills || !(isActive || isStreaming)) && 'hidden',
   );
   const videoElementStyle = stageVideoStyle(monitor, isFullscreen);
   const protocolLabel = protocol === 'webrtc' ? 'WebRTC' : fellBackToHls ? t('HLS · fallback') : 'HLS';
@@ -122,8 +140,18 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           playsInline
         />
 
+        {stills && isEnabled && (
+          <MonitorPreview
+            monitorId={monitor.id}
+            monitorName={monitor.name}
+            orientation={monitor.orientation}
+            isActive
+            rotationFit="fit"
+          />
+        )}
+
         {/* Connecting overlay */}
-        {isConnecting && (
+        {!stills && isConnecting && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60">
             <div className="text-center">
               <Loader2 size={40} className="mx-auto mb-3 text-cyan animate-spin" />
@@ -138,7 +166,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         )}
 
         {/* Stream controls overlay */}
-        {(isActive || isStreaming) && (
+        {!stills && (isActive || isStreaming) && (
           <div className="absolute inset-x-0 bottom-0 p-4 bg-gradient-to-t from-black/80 to-transparent z-10">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-3">
@@ -195,10 +223,11 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                   <Maximize2 size={16} />
                 </button>
                 <button
+                  type="button"
                   onClick={stopStream}
                   className="flex items-center gap-2 px-3 py-2 rounded-lg bg-crimson/80 text-white hover:bg-crimson transition-colors"
                 >
-                  <Pause size={14} />
+                  <Pause size={14} aria-hidden />
                   <span className="text-sm font-medium">{t('Stop')}</span>
                 </button>
               </div>
@@ -207,7 +236,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         )}
 
         {/* Error overlay */}
-        {streamError && streamState === 'failed' && (
+        {!stills && streamError && streamState === 'failed' && (
           <div className="absolute inset-0 flex items-center justify-center bg-black/60">
             <div className="text-center">
               <AlertTriangle size={32} className="mx-auto mb-2 text-amber" />
@@ -224,7 +253,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         )}
 
         {/* Non-fatal error toast */}
-        {streamError && streamState !== 'failed' && (
+        {!stills && streamError && streamState !== 'failed' && (
           <div className="absolute top-4 left-1/2 -translate-x-1/2">
             <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-amber/90 text-void text-xs font-medium">
               <AlertTriangle size={12} />
@@ -234,7 +263,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         )}
 
         {/* Not streaming placeholder */}
-        {!(isActive || isStreaming) && (
+        {(stills ? !isEnabled : !(isActive || isStreaming)) && (
           <div className="absolute inset-0 flex flex-col items-center justify-center">
             {isEnabled ? (
               <>
@@ -266,7 +295,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   );
 
   const infoCards = (
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
       <Panel>
         <div className="flex items-start gap-3">
           <div className="p-2 rounded-lg bg-cyan/10">
@@ -326,6 +355,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           <label className="text-sm text-text-secondary mb-2 block">{t('Stream Protocol')}</label>
           <div className="grid grid-cols-2 gap-2">
             <button
+              type="button"
+              aria-pressed={protocol === 'webrtc'}
               onClick={() => changeProtocol('webrtc')}
               className={clsx(
                 'flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border',
@@ -339,6 +370,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
               WebRTC
             </button>
             <button
+              type="button"
+              aria-pressed={protocol === 'hls'}
               onClick={() => changeProtocol('hls')}
               className={clsx(
                 'flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border',
@@ -359,6 +392,61 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           </p>
         </div>
 
+        {/* Legacy Stream / Stills, Scale, Download Image */}
+        <div>
+          <label className="text-sm text-text-secondary mb-2 block">{t('View')}</label>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label={t('View mode')}>
+            <button
+              type="button"
+              aria-pressed={!stills}
+              onClick={() => setViewMode('stream')}
+              className={clsx(
+                'flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-all duration-fast',
+                !stills ? 'bg-cyan/20 text-cyan border-cyan/30' : 'bg-surface/50 text-text-muted border-border hover:border-text-muted/50',
+              )}
+            >
+              <Video size={12} aria-hidden />
+              {t('Stream')}
+            </button>
+            <button
+              type="button"
+              aria-pressed={stills}
+              onClick={() => setViewMode('stills')}
+              className={clsx(
+                'flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium border transition-all duration-fast',
+                stills ? 'bg-cyan/20 text-cyan border-cyan/30' : 'bg-surface/50 text-text-muted border-border hover:border-text-muted/50',
+              )}
+            >
+              <Camera size={12} aria-hidden />
+              {t('Stills')}
+            </button>
+          </div>
+          <div className="mt-2 flex items-center gap-2">
+            <label className="flex-1 flex items-center gap-2 text-xs text-text-secondary">
+              <span>{t('Scale')}</span>
+              <select
+                value={stage.size.scale}
+                onChange={(e) => stage.setScale(e.target.value)}
+                className="flex-1 px-2 py-1.5 rounded-lg border border-border bg-surface text-text-primary text-xs"
+              >
+                {SCALE_VALUES.map((v) => (
+                  <option key={v} value={v}>{scaleLabel(v)}</option>
+                ))}
+              </select>
+            </label>
+            <button
+              type="button"
+              onClick={downloadImage}
+              disabled={!isEnabled || isDownloading}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium border border-border bg-surface/50 text-text-secondary hover:text-text-primary hover:border-text-muted/50 disabled:opacity-50 transition-colors"
+              title={t('Download the current snapshot as a JPEG')}
+            >
+              <ImageIcon size={12} aria-hidden />
+              {isDownloading ? t('Saving…') : t('Download Image')}
+            </button>
+          </div>
+        </div>
+
         {/* Capturing */}
         <div>
           <label className="text-sm text-text-secondary mb-2 block">{t('Capturing')}</label>
@@ -366,6 +454,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             {(['None', 'Ondemand', 'Always'] as CapturingMode[]).map((mode) => (
               <button
                 key={mode}
+                type="button"
+                aria-pressed={monitor.capturing === mode}
                 onClick={() => updateModes({ capturing: mode })}
                 disabled={isUpdating}
                 className={clsx(
@@ -390,6 +480,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             {(['None', 'Always'] as AnalysingMode[]).map((mode) => (
               <button
                 key={mode}
+                type="button"
+                aria-pressed={monitor.analysing === mode}
                 onClick={() => updateModes({ analysing: mode })}
                 disabled={isUpdating}
                 className={clsx(
@@ -414,6 +506,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             {(['None', 'OnMotion', 'Always'] as RecordingMode[]).map((mode) => (
               <button
                 key={mode}
+                type="button"
+                aria-pressed={monitor.recording === mode}
                 onClick={() => updateModes({ recording: mode })}
                 disabled={isUpdating}
                 className={clsx(
@@ -575,17 +669,20 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
       title={t('Motion zones')}
       icon={<Square size={16} />}
     >
-      <ZoneEditor
-        monitorId={monitor.id}
-        width={zoneView.width}
-        height={zoneView.height}
-      />
+      <RequirePerm feature="monitors" level="Edit" fallback="message">
+        <ZoneEditor
+          monitorId={monitor.id}
+          width={zoneView.width}
+          height={zoneView.height}
+        />
+      </RequirePerm>
     </Panel>
   ) : null;
 
   // Only mount the PTZ panel when the backend reports real capabilities;
   // non-PTZ monitors get no empty panel at all.
   const ptzPanel = ptzState.status === 'ready' ? (
+    <RequirePerm feature="control" level="Edit">
     <Panel
       title={t('Camera control')}
       icon={<Joystick size={16} />}
@@ -599,13 +696,14 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     >
       <PtzControls monitorId={id} capabilities={ptzState.capabilities} />
     </Panel>
+    </RequirePerm>
   ) : null;
 
   return (
     <AppShell title={monitor.name}>
-      <main className="flex-1 p-6 overflow-auto">
+      <main className="flex-1 p-4 sm:p-6 overflow-auto min-w-0">
         {/* Breadcrumb + Edit affordance */}
-          <div className="flex items-center justify-between mb-6">
+          <div className="flex items-center justify-between gap-3 flex-wrap mb-6">
             <div className="flex items-center gap-2 text-sm">
               <Link
                 to="/monitors"
@@ -617,12 +715,14 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
               <ChevronRight size={14} className="text-text-muted rtl:-scale-x-100" />
               <span className="text-text-primary">{monitor.name}</span>
             </div>
-            <div className="flex items-center gap-2">
+            <RequirePerm feature="monitors" level="Edit">
+            <div className="flex items-center gap-2 flex-wrap">
               {/* Force Alarm / Cancel — legacy watch buttons. Shown once the
                   alarm endpoint has answered for this (capturing) monitor. */}
               {alarm.available && (
                 <>
                   <button
+                    type="button"
                     onClick={() => {
                       if (window.confirm(t('Force alarm on "{{name}}"? This creates an event right now.', { name: monitor.name }))) {
                         alarm.force();
@@ -641,6 +741,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                     {alarm.forced ? t('Alarm forced') : t('Force Alarm')}
                   </button>
                   <button
+                    type="button"
                     onClick={alarm.cancel}
                     disabled={alarm.isPending}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-border bg-surface/50 text-text-secondary hover:text-text-primary hover:border-text-muted/50 transition-colors text-xs font-medium disabled:opacity-50"
@@ -652,13 +753,15 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                 </>
               )}
               <button
+                type="button"
                 onClick={openEditor}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 transition-colors text-xs font-medium"
               >
-                <Pencil size={12} />
+                <Pencil size={12} aria-hidden />
                 {t('Edit configuration')}
               </button>
             </div>
+            </RequirePerm>
           </div>
 
           {alarm.error && (
@@ -697,11 +800,13 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             <div className="space-y-6">
               {ptzPanel ? (
                 <div className="flex flex-col xl:flex-row gap-6">
-                  <div className="flex-1 min-w-0">{videoPanel}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="mx-auto" style={stageSized ? stage.style : undefined}>{videoPanel}</div>
+                  </div>
                   <div className="xl:w-[22rem] xl:flex-shrink-0">{ptzPanel}</div>
                 </div>
               ) : (
-                videoPanel
+                <div className="mx-auto" style={stageSized ? stage.style : undefined}>{videoPanel}</div>
               )}
               {infoCards}
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">

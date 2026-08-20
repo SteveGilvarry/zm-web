@@ -21,6 +21,7 @@ export const Route = createRootRoute({
       pathname: location.pathname,
       searchString: location.searchStr,
       isAuthenticated: useAuthStore.getState().isAuthenticated,
+      sessionExpired: useAuthStore.getState().sessionExpired,
     });
     if (plan.skin) useUiStore.getState().setSkin(plan.skin);
     if (plan.href) throw redirect({ href: plan.href, replace: true });
@@ -37,9 +38,13 @@ function RootComponent() {
   // the operator sits on a page (refresh token rejected, logout elsewhere).
   useEffect(() => {
     if (!isAuthenticated && location.pathname !== '/login') {
+      const expired = useAuthStore.getState().sessionExpired;
       void navigate({
         to: '/login',
-        search: { redirect: redirectParamFor(location.pathname, location.searchStr) },
+        search: {
+          redirect: redirectParamFor(location.pathname, location.searchStr),
+          ...(expired ? { reason: 'expired' as const } : {}),
+        },
         replace: true,
       });
     }

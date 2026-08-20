@@ -1,23 +1,37 @@
+import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 
 import { AppShell } from '@/skins/AppShell';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { useUsersPage } from '@/features/users/useUsersPage';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { UserEditor } from '@/skins/modern/components/settings/UserEditor';
-import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
+import {
+  ClassicButton, ClassicSearch, ClassicTable, ClassicToolbar, classicLink, classicTd, classicTh,
+} from '../components/settings/primitives';
 
-/** Options → Users — classic skin: the legacy user table, plain permission text. */
+/**
+ * Options → Users — classic skin. Legacy `?view=options&tab=users`: mark
+ * column, the permission columns as plain text, the signed-in user starred,
+ * [Add New User] [Delete] on the start side and Export on the end.
+ */
 export default function ClassicSettingsUsersPage() {
   const { t } = useTranslation();
   const u = useUsersPage();
   const tabs = useOptionsTabs();
-  useDocumentTitle(t('Users'));
+  useSiteTitle(t('Users'));
 
   if (!u.isAuthenticated) return null;
 
-  const btn = 'px-2 py-0.5 text-xs border border-zinc-500 rounded-sm bg-zinc-100 hover:bg-zinc-200 disabled:opacity-40';
+  const permCols = ['stream', 'events', 'control', 'monitors', 'groups', 'devices', 'snapshots', 'system'] as const;
+  const permLabel: Record<(typeof permCols)[number], string> = {
+    stream: t('Stream'), events: t('Events'), control: t('Control'), monitors: t('Monitors'),
+    groups: t('Groups'), devices: t('Devices'), snapshots: t('Snapshots'), system: t('System'),
+  };
 
   return (
     <AppShell title={t('Users')}>
@@ -27,116 +41,131 @@ export default function ClassicSettingsUsersPage() {
           <div className="flex items-start gap-4">
             <OptionsRail tabs={tabs} active="users" />
             <div className="flex-1 min-w-0 space-y-3">
-              <div className="flex items-center gap-3">
-                <input
-                  type="search"
-                  value={u.searchQuery}
-                  onChange={(e) => u.setSearchQuery(e.target.value)}
-                  placeholder={t('Search users...')}
-                  className="w-72 px-2 py-1 text-sm bg-white border border-zinc-400 rounded-sm text-zinc-900 focus:outline-none focus:border-zinc-600"
-                />
-                <button type="button" onClick={u.openCreate} className={btn}>{t('Add User')}</button>
-                <span className="ms-auto text-xs text-zinc-500">{t('{{count}} total', { count: u.total })}</span>
-              </div>
+              <RequirePerm feature="system" level="View" fallback="message">
+                <ClassicToolbar
+                  end={
+                    <>
+                      <ClassicSearch value={u.searchQuery} onChange={u.setSearchQuery} placeholder={t('Search')} />
+                      <ClassicButton onClick={() => u.exportUsers('csv')}>{t('Export CSV')}</ClassicButton>
+                      <ClassicButton onClick={() => u.exportUsers('json')}>{t('Export JSON')}</ClassicButton>
+                    </>
+                  }
+                >
+                  <RequirePerm feature="system" level="Edit">
+                    <ClassicButton tone="primary" onClick={u.openCreate}>{t('Add New User')}</ClassicButton>
+                    <ClassicButton
+                      tone="danger"
+                      disabled={u.selectedUsers.length === 0}
+                      onClick={() => u.requestDelete(u.selectedUsers)}
+                    >
+                      {t('Delete')}
+                    </ClassicButton>
+                  </RequirePerm>
+                </ClassicToolbar>
 
-              <div className="bg-white rounded border border-zinc-300 overflow-hidden">
-                {u.isLoading ? (
-                  <div className="p-8 text-center text-zinc-500 text-sm">{t('Loading users...')}</div>
-                ) : u.filteredUsers.length === 0 ? (
-                  <div className="p-8 text-center text-zinc-500 text-sm">{t('No users found')}</div>
-                ) : (
-                  <table className="w-full text-sm text-zinc-800">
-                    <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
+                <QueryState
+                  isLoading={u.isLoading}
+                  isError={u.isError}
+                  error={u.error}
+                  onRetry={u.refetch}
+                  empty={u.filteredUsers.length === 0}
+                  emptyMessage={t('No matching records found')}
+                >
+                  <ClassicTable>
+                    <thead>
                       <tr>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Username')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Name')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Email')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Enabled')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Stream')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Events')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Control')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Monitors')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Groups')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Devices')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('Snapshots')}</th>
-                        <th className="px-3 py-2 text-start font-semibold">{t('System')}</th>
-                        <th className="px-3 py-2 text-end font-semibold">{t('Actions')}</th>
+                        {u.canEdit && (
+                          <th className={clsx(classicTh, 'w-8')}>
+                            <input
+                              type="checkbox"
+                              aria-label={t('Select all')}
+                              checked={u.filteredUsers.filter((x) => !u.isCurrentUser(x)).every((x) => u.selectedIds.has(x.id)) && u.filteredUsers.some((x) => !u.isCurrentUser(x))}
+                              onChange={u.toggleAll}
+                            />
+                          </th>
+                        )}
+                        <th className={classicTh}>{t('Username')}</th>
+                        <th className={classicTh}>{t('Name')}</th>
+                        <th className={classicTh}>{t('Email')}</th>
+                        <th className={classicTh}>{t('Enabled')}</th>
+                        {permCols.map((k) => <th key={k} className={classicTh}>{permLabel[k]}</th>)}
                       </tr>
                     </thead>
                     <tbody>
-                      {u.filteredUsers.map((user) => (
-                        <tr key={user.id} className="border-b border-zinc-200 hover:bg-zinc-50">
-                          <td className="px-3 py-1.5">
-                            <button
-                              type="button"
-                              onClick={() => u.openEdit(user)}
-                              className="text-cyan-800 hover:underline"
-                            >
-                              {user.username}
-                            </button>
-                            {u.isCurrentUser(user) && (
-                              <span className="ms-1 text-[10px] text-zinc-500">({t('You')})</span>
+                      {u.filteredUsers.map((user) => {
+                        const self = u.isCurrentUser(user);
+                        const editable = u.canEditUser(user);
+                        return (
+                          <tr key={user.id}>
+                            {u.canEdit && (
+                              <td className={classicTd}>
+                                <input
+                                  type="checkbox"
+                                  aria-label={t('Mark {{name}}', { name: user.username })}
+                                  checked={u.selectedIds.has(user.id)}
+                                  disabled={self}
+                                  onChange={() => u.toggleSelected(user.id)}
+                                />
+                              </td>
                             )}
-                          </td>
-                          <td className="px-3 py-1.5">{user.name}</td>
-                          <td className="px-3 py-1.5 font-mono text-xs">{user.email}</td>
-                          <td className="px-3 py-1.5">
-                            <input
-                              type="checkbox"
-                              checked={user.enabled === 1}
-                              onChange={() => u.toggleEnabled(user)}
-                              aria-label={user.enabled === 1 ? t('Disable {{name}}', { name: user.username }) : t('Enable {{name}}', { name: user.username })}
-                            />
-                          </td>
-                          <td className="px-3 py-1.5 text-xs">{user.stream}</td>
-                          <td className="px-3 py-1.5 text-xs">{user.events}</td>
-                          <td className="px-3 py-1.5 text-xs">{user.control}</td>
-                          <td className="px-3 py-1.5 text-xs">{user.monitors}</td>
-                          <td className="px-3 py-1.5 text-xs">{user.groups}</td>
-                          <td className="px-3 py-1.5 text-xs">{user.devices}</td>
-                          <td className="px-3 py-1.5 text-xs">{user.snapshots}</td>
-                          <td className="px-3 py-1.5 text-xs">{user.system}</td>
-                          <td className="px-3 py-1.5 text-end whitespace-nowrap">
-                            <button type="button" onClick={() => u.openEdit(user)} className={btn}>{t('Edit')}</button>{' '}
-                            <button
-                              type="button"
-                              onClick={() => u.setDeleteTarget(user)}
-                              disabled={u.isCurrentUser(user)}
-                              title={u.isCurrentUser(user) ? t('Cannot delete yourself') : undefined}
-                              className={btn}
-                            >
-                              {t('Delete')}
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            <td className={classicTd}>
+                              {editable ? (
+                                <button type="button" onClick={() => u.openEdit(user)} className={classicLink}>
+                                  {user.username}
+                                </button>
+                              ) : user.username}
+                              {self && <span title={t('You')} className="ms-0.5">*</span>}
+                            </td>
+                            <td className={classicTd}>{user.name}</td>
+                            <td className={clsx(classicTd, 'font-mono text-xs')}>{user.email}</td>
+                            <td className={classicTd}>
+                              {u.canEdit && !self ? (
+                                <input
+                                  type="checkbox"
+                                  checked={user.enabled === 1}
+                                  onChange={() => u.toggleEnabled(user)}
+                                  aria-label={user.enabled === 1 ? t('Disable {{name}}', { name: user.username }) : t('Enable {{name}}', { name: user.username })}
+                                />
+                              ) : (user.enabled === 1 ? t('Yes') : t('No'))}
+                            </td>
+                            {permCols.map((k) => <td key={k} className={clsx(classicTd, 'text-xs')}>{user[k]}</td>)}
+                          </tr>
+                        );
+                      })}
                     </tbody>
-                  </table>
-                )}
-              </div>
+                  </ClassicTable>
+                </QueryState>
 
-              {u.totalPages > 1 && (
                 <div className="flex items-center justify-between text-xs text-zinc-600">
-                  <span>{t('Page {{page}} of {{total}} ({{count}} total)', { page: u.page, total: u.totalPages, count: u.total })}</span>
-                  <span className="flex items-center gap-2">
-                    <button onClick={u.prevPage} disabled={u.page === 1} className={btn}>{t('Prev')}</button>
-                    <button onClick={u.nextPage} disabled={u.page === u.totalPages} className={btn}>{t('Next')}</button>
-                  </span>
+                  <span>{t('Showing {{count}} of {{total}} rows', { count: u.filteredUsers.length, total: u.matchingCount })}</span>
+                  {u.totalPages > 1 && (
+                    <span className="flex items-center gap-2">
+                      <ClassicButton onClick={u.prevPage} disabled={u.page === 1}>{t('Prev')}</ClassicButton>
+                      <span>{t('Page {{page}} of {{total}}', { page: u.page, total: u.totalPages })}</span>
+                      <ClassicButton onClick={u.nextPage} disabled={u.page === u.totalPages}>{t('Next')}</ClassicButton>
+                    </span>
+                  )}
                 </div>
-              )}
+              </RequirePerm>
             </div>
           </div>
         </div>
       </main>
 
-      {u.editorOpen && <UserEditor key={u.editingUser?.id ?? 'new'} editing={u.editingUser} onClose={u.closeEditor} />}
+      {u.editorOpen && (
+        <UserEditor key={u.editingUser?.id ?? 'new'} editing={u.editingUser} mode={u.editorMode} onClose={u.closeEditor} />
+      )}
 
       <ConfirmDialog
-        isOpen={!!u.deleteTarget}
-        onClose={() => u.setDeleteTarget(null)}
+        isOpen={u.deleteTargets.length > 0}
+        onClose={u.clearDelete}
         onConfirm={u.confirmDelete}
         title={t('Delete User')}
-        message={t('Are you sure you want to delete user "{{name}}"? This cannot be undone.', { name: u.deleteTarget?.username })}
+        message={
+          u.deleteTargets.length === 1
+            ? t('Are you sure you want to delete user "{{name}}"? This cannot be undone.', { name: u.deleteTargets[0]?.username })
+            : t('Delete {{count}} user? This cannot be undone.', { count: u.deleteTargets.length })
+        }
         confirmText={t('Delete')}
         variant="danger"
         isLoading={u.isDeleting}

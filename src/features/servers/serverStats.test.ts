@@ -81,3 +81,29 @@ describe('serverStatusTone', () => {
     expect(serverStatusTone('')).toBe('unknown');
   });
 });
+
+describe('legacy load thresholds', () => {
+  it('summarizeStat reports free memory and swap percentages', async () => {
+    const { summarizeStat: summarize } = await import('./serverStats');
+    const s = summarize(row({ cpu_load: '5.5', total_mem: 1000, free_mem: 50, total_swap: 200, free_swap: 100 }));
+    expect(s.cpuLoad).toBe(5.5);
+    expect(s.memFreePercent).toBe(5);
+    expect(s.memPercent).toBe(95);
+    expect(s.swapFreePercent).toBe(50);
+    const none = summarize(row({ total_mem: null, free_mem: null }));
+    expect(none.memFreePercent).toBeNull();
+    expect(none.swapFreePercent).toBeNull();
+  });
+
+  it('paints CpuLoad > 5 and free mem/swap < 10% as errors, like server.php', async () => {
+    const { cpuLoadTone, freeTone } = await import('./serverStats');
+    expect(cpuLoadTone(5.01)).toBe('error');
+    expect(cpuLoadTone(5)).toBe('warn');
+    expect(cpuLoadTone(1)).toBe('ok');
+    expect(cpuLoadTone(null)).toBe('none');
+    expect(freeTone(9.9)).toBe('error');
+    expect(freeTone(10)).toBe('warn');
+    expect(freeTone(50)).toBe('ok');
+    expect(freeTone(null)).toBe('none');
+  });
+});

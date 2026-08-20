@@ -380,7 +380,9 @@ function StreamVideo({
               </p>
             )}
             <button
+              type="button"
               onClick={handleRetry}
+              aria-label={t('Retry stream for {{name}}', { name: monitorName ?? String(monitorId) })}
               className={clsx(
                 'flex items-center gap-1 mx-auto rounded',
                 'text-xs font-medium text-cyan hover:text-cyan-dim transition-colors',
@@ -435,13 +437,15 @@ function StreamVideo({
       {showControls && isConnected && (
         <div className="absolute top-1.5 end-1.5 flex items-center gap-1">
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
               stop();
             }}
+            aria-label={t('Stop stream for {{name}}', { name: monitorName ?? String(monitorId) })}
             className="p-1 rounded bg-black/60 text-text-muted hover:text-crimson transition-colors"
           >
-            <span className="text-[10px] font-mono font-bold">{t('STOP')}</span>
+            <span className="text-[10px] font-mono font-bold" aria-hidden>{t('STOP')}</span>
           </button>
         </div>
       )}

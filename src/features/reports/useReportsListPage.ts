@@ -1,12 +1,17 @@
 import { useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/components/common/toastStore';
 import { listReports, createReport, deleteReport, type Report } from '@/api/reports';
 import { listFilters } from '@/api/filters';
 import { toLocalDatetime } from './datetime';
 
 export interface ReportsListPageState {
   isAuthenticated: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  error: Error | null;
+  refetch: () => void;
   reports: Report[];
   filters: Array<{ id: number; name: string }>;
   filterLookup: Map<number, string>;
@@ -21,6 +26,7 @@ export interface ReportsListPageState {
 export function useReportsListPage(): ReportsListPageState {
   const { isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
+  const toast = useToast();
 
   const reportsQ = useQuery({
     queryKey: ['reports'],
@@ -41,10 +47,15 @@ export function useReportsListPage(): ReportsListPageState {
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteReport(id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['reports'] }),
+    onError: toast.apiError,
   });
 
   return {
     isAuthenticated,
+    isLoading: reportsQ.isLoading,
+    isError: reportsQ.isError,
+    error: (reportsQ.error as Error | null) ?? null,
+    refetch: () => { reportsQ.refetch(); },
     reports,
     filters,
     filterLookup,
@@ -75,6 +86,7 @@ export interface CreateReportFormState {
 
 /** Draft state + POST for the "New report" form. Defaults to the last 7 days. */
 export function useCreateReportForm(onCreated: () => void): CreateReportFormState {
+  const toast = useToast();
   const [name, setName] = useState('');
   const [start, setStart] = useState(() => {
     const d = new Date();
@@ -95,6 +107,7 @@ export function useCreateReportForm(onCreated: () => void): CreateReportFormStat
         interval: interval === '' ? null : interval,
       }),
     onSuccess: onCreated,
+    onError: toast.apiError,
   });
 
   const submit = (e: FormEvent) => {

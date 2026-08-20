@@ -36,20 +36,54 @@ export async function fetchLatestServerStats(pageSize = 200): Promise<Map<number
 export interface ServerLoadSummary {
   cpuLoad: number | null;
   cpuPercent: number | null;
+  /** Used memory as a percentage of total. */
   memPercent: number | null;
+  /** Free memory / swap as a percentage of total (legacy colours these). */
+  memFreePercent: number | null;
+  swapFreePercent: number | null;
   sampledAt: string;
 }
 
+function freePercent(total: number | null | undefined, free: number | null | undefined): number | null {
+  return total && total > 0 && free != null ? (free / total) * 100 : null;
+}
+
 export function summarizeStat(stat: ServerStat): ServerLoadSummary {
-  const total = stat.total_mem ?? null;
-  const free = stat.free_mem ?? null;
-  const memPercent = total && total > 0 && free != null ? ((total - free) / total) * 100 : null;
+  const memFreePercent = freePercent(stat.total_mem, stat.free_mem);
   return {
     cpuLoad: statNumber(stat.cpu_load),
     cpuPercent: statNumber(stat.cpu_usage_percent),
-    memPercent,
+    memPercent: memFreePercent == null ? null : 100 - memFreePercent,
+    memFreePercent,
+    swapFreePercent: freePercent(stat.total_swap, stat.free_swap),
     sampledAt: stat.time_stamp,
   };
+}
+
+/**
+ * Legacy `server.php` thresholds: CpuLoad over 5 and free memory or swap
+ * under 10% are painted red (`class="error"`); between those and the
+ * comfortable range, amber.
+ */
+export const CPU_LOAD_WARN = 2.5;
+export const CPU_LOAD_ERROR = 5;
+export const FREE_PERCENT_WARN = 20;
+export const FREE_PERCENT_ERROR = 10;
+
+export type LoadTone = 'ok' | 'warn' | 'error' | 'none';
+
+export function cpuLoadTone(load: number | null): LoadTone {
+  if (load == null) return 'none';
+  if (load > CPU_LOAD_ERROR) return 'error';
+  if (load > CPU_LOAD_WARN) return 'warn';
+  return 'ok';
+}
+
+export function freeTone(freePct: number | null): LoadTone {
+  if (freePct == null) return 'none';
+  if (freePct < FREE_PERCENT_ERROR) return 'error';
+  if (freePct < FREE_PERCENT_WARN) return 'warn';
+  return 'ok';
 }
 
 /** `Servers.Status` (`Unknown` / `Running` / `NotRunning`) plus older spellings. */

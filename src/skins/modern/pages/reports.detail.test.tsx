@@ -16,7 +16,9 @@ import { useAuthStore } from '@/stores/auth';
 // The route parses the id param and hands it to the page as a number.
 const REPORT_ID = 42;
 
+const mockNavigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
   Link: ({
     children,
     to,
@@ -51,7 +53,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test',
     refreshToken: 'test',
-    user: null,
+    user: { user: 'admin', iat: 0, exp: 0 } as never,
     isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'error' });

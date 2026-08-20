@@ -15,6 +15,8 @@ import {
 } from '@/api/system';
 import { getConfigs, updateConfig } from '@/api/configs';
 import { useAuthStore } from '@/stores/auth';
+import { useTranslation } from 'react-i18next';
+import { useToast } from '@/components/common/toastStore';
 import { useZmConfig } from '@/features/config/useZmConfig';
 import { configDefaultValue, configPatternError } from './configFormat';
 import { DISPLAY_TAB, buildOptionsTabs, visibleCategories } from './optionsTabs';
@@ -47,8 +49,10 @@ export function formatBytes(bytes: number): string {
  * straight to a tab, as legacy `?view=options&tab=web` did.
  */
 export function useSettingsOptionsPage() {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
+  const toast = useToast();
   const x10Enabled = useZmConfig('ZM_OPT_X10', false);
   const search = useSearch({ strict: false }) as { category?: unknown };
   const navigate = useNavigate();
@@ -76,11 +80,12 @@ export function useSettingsOptionsPage() {
   });
 
   // Fetch all configs in one request (API has no category filter param)
-  const { data: allConfigsData, isLoading: configsLoading } = useQuery({
+  const configsQ = useQuery({
     queryKey: ['configs', 'all'],
     queryFn: () => getConfigs({ page: 1, page_size: 500 }),
     enabled: isAuthenticated,
   });
+  const { data: allConfigsData, isLoading: configsLoading } = configsQ;
 
   const allConfigs = useMemo(() => allConfigsData?.items ?? [], [allConfigsData]);
 
@@ -170,6 +175,7 @@ export function useSettingsOptionsPage() {
       queryClient.invalidateQueries({ queryKey: ['systemStatus'] });
       queryClient.invalidateQueries({ queryKey: ['daemons'] });
     },
+    onError: (err) => toast.apiError(err),
   });
 
   // Daemon mutations
@@ -187,6 +193,7 @@ export function useSettingsOptionsPage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['daemons'] });
     },
+    onError: (err) => toast.apiError(err),
   });
 
   // Inline config edit
@@ -195,15 +202,58 @@ export function useSettingsOptionsPage() {
 
   const configMutation = useMutation({
     mutationFn: ({ name, value }: { name: string; value: string }) => updateConfig(name, value),
-    onSuccess: () => {
+    onSuccess: (_saved, { name }) => {
+      setEditingConfig(null);
+      setDirty((d) => {
+        if (!(name in d)) return d;
+        const next = { ...d };
+        delete next[name];
+        return next;
+      });
+      queryClient.invalidateQueries({ queryKey: ['configs'] });
+      queryClient.invalidateQueries({ queryKey: ['config', name] });
+    },
+    onError: (err) => toast.apiError(err),
+  });
+
+  /**
+   * Legacy Options saves the whole tab at once. Rows the operator edited
+   * but did not commit are kept here (name → value) so "Save all" can write
+   * them in one go; each row still saves on Enter as before.
+   */
+  const [dirty, setDirty] = useState<Record<string, string>>({});
+  const saveAllMutation = useMutation({
+    mutationFn: async (entries: Array<[string, string]>) => {
+      const failed: string[] = [];
+      for (const [name, value] of entries) {
+        try {
+          await updateConfig(name, value);
+          setDirty((d) => {
+            const next = { ...d };
+            delete next[name];
+            return next;
+          });
+        } catch {
+          failed.push(name);
+        }
+      }
+      return { saved: entries.length - failed.length, failed };
+    },
+    onSuccess: ({ saved, failed }) => {
+      if (saved > 0) toast.success(t('{{count}} setting saved', { count: saved }));
+      if (failed.length > 0) toast.error(t('Failed to save: {{names}}', { names: failed.join(', ') }));
       setEditingConfig(null);
       queryClient.invalidateQueries({ queryKey: ['configs'] });
+      queryClient.invalidateQueries({ queryKey: ['config'] });
     },
+    onError: (err) => toast.apiError(err),
   });
 
   const startEdit = (name: string, currentValue: string) => {
+    // Moving to another row parks the unsaved value instead of dropping it.
+    if (editingConfig && editingConfig !== name) parkEdit();
     setEditingConfig(name);
-    setEditValue(currentValue);
+    setEditValue(dirty[name] ?? currentValue);
   };
   const editingRow = editingConfig ? allConfigs.find((c) => c.name === editingConfig) ?? null : null;
   /** Pattern mismatch for the value being typed; null while valid or unchecked. */
@@ -212,7 +262,41 @@ export function useSettingsOptionsPage() {
     if (editError) return;
     configMutation.mutate({ name, value: editValue });
   };
-  const cancelEdit = () => setEditingConfig(null);
+  /** Keep the typed value as dirty without writing it. */
+  const parkEdit = () => {
+    if (!editingRow) return;
+    if (editValue !== editingRow.value && !editError) {
+      setDirty((d) => ({ ...d, [editingRow.name]: editValue }));
+    } else if (editValue === editingRow.value) {
+      setDirty((d) => {
+        if (!(editingRow.name in d)) return d;
+        const next = { ...d };
+        delete next[editingRow.name];
+        return next;
+      });
+    }
+    setEditingConfig(null);
+  };
+  const cancelEdit = () => parkEdit();
+  const discardDirty = (name?: string) => {
+    if (name === undefined) setDirty({});
+    else setDirty((d) => {
+      const next = { ...d };
+      delete next[name];
+      return next;
+    });
+  };
+  const dirtyEntries = Object.entries(dirty).filter(([name, value]) => {
+    const row = allConfigs.find((c) => c.name === name);
+    return row && row.value !== value;
+  });
+  const saveAll = () => {
+    // Include the row currently open in the editor.
+    const entries = new Map(dirtyEntries);
+    if (editingRow && editValue !== editingRow.value && !editError) entries.set(editingRow.name, editValue);
+    if (entries.size === 0) return;
+    saveAllMutation.mutate([...entries]);
+  };
 
   /** Write `default_value` back (legacy "reset" per row); no-op without one. */
   const resetToDefault = (config: ZmConfig) => {
@@ -248,6 +332,9 @@ export function useSettingsOptionsPage() {
     // configs
     allConfigs,
     configsLoading,
+    configsIsError: configsQ.isError,
+    configsError: configsQ.error,
+    refetchConfigs: () => void configsQ.refetch(),
     categoryList,
     tabs,
     selectedCategory,
@@ -272,5 +359,11 @@ export function useSettingsOptionsPage() {
     isConfigSaving: configMutation.isPending,
     configSaveError: configMutation.error?.message ?? null,
     savingConfig: configMutation.isPending ? configMutation.variables?.name ?? null : null,
+    // save all dirty rows
+    dirty,
+    dirtyCount: dirtyEntries.length + (editingRow && editValue !== editingRow.value && !editError ? 1 : 0),
+    saveAll,
+    isSavingAll: saveAllMutation.isPending,
+    discardDirty,
   };
 }

@@ -64,6 +64,8 @@ export interface PermissionMatrixRow {
   label: string;
   /** Optional sub-label rendered under `label` in a muted style. */
   sublabel?: string;
+  /** Tree depth (0 = root) — indents the label like legacy's group table. */
+  depth?: number;
   /** Current selected level for this row. */
   value: string;
   /** Allowed levels for this row (e.g. `monitors` includes `Create`). */

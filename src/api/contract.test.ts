@@ -41,6 +41,7 @@ type Schema = {
   anyOf?: Schema[];
   type?: string | string[];
   enum?: unknown[];
+  minimum?: number;
   properties?: Record<string, Schema>;
   required?: string[];
 };
@@ -295,6 +296,25 @@ const CALLS: Record<string, Record<string, Call>> = {
     serializeCoords: 'pure',
     insertMidpoint: 'pure',
   },
+  // Wave 4 — monitor editor lookups, presets and ONVIF discovery.
+  manufacturers: {
+    listManufacturers: { args: [] },
+    createManufacturer: { args: ['m'] },
+  },
+  models: {
+    listModels: { args: [{ manufacturer_id: 1 }] },
+    createModel: { args: [{ name: 'm', manufacturer_id: 1 }] },
+  },
+  monitorPresets: {
+    listMonitorPresets: { args: [] },
+  },
+  controlPresets: {
+    listControlPresets: { args: [{ monitor_id: 1 }] },
+  },
+  discovery: {
+    probeCameras: { args: [2000] },
+    inspectCamera: { args: [{ xaddr: 'http://cam/onvif/device_service', username: '', password: '' }] },
+  },
 };
 
 /**
@@ -478,4 +498,43 @@ describe('MONITOR_ENUMS mirror the request enums', () => {
       expect([...members].sort()).toEqual([...(resolve(props[field])!.enum as string[])].sort());
     });
   }
+});
+
+/* ------------------------------------------------------------------------ */
+/*  (f) wave-4 field metadata vs the schema                                 */
+/* ------------------------------------------------------------------------ */
+
+describe('monitor editor field metadata matches the request schema', () => {
+  const update = schemas.UpdateMonitorRequest.properties!;
+  const fields = TABS.flatMap((t) => t.fields).filter((f) => f.kind !== 'group');
+  const types = resolve(update.type)!.enum as string[];
+
+  it('selects with a null option are nullable in the schema', () => {
+    const bad = fields
+      .filter((f) => f.nullOption)
+      .filter((f) => !([] as string[]).concat(resolve(update[f.key])!.type ?? []).includes('null'))
+      .map((f) => f.key);
+    expect(bad).toEqual([]);
+  });
+
+  it('every `show` type is a MonitorType enum member', () => {
+    const used = new Set(fields.flatMap((f) => [...(f.show?.types ?? []), ...(f.show?.notTypes ?? [])]));
+    expect([...used].filter((t) => !types.includes(t))).toEqual([]);
+  });
+
+  it('numeric bounds never sit below the schema minimum', () => {
+    const bad = fields
+      .filter((f) => f.min != null)
+      .filter((f) => { const min = resolve(update[f.key])?.minimum; return min != null && f.min! < min; })
+      .map((f) => f.key);
+    expect(bad).toEqual([]);
+  });
+
+  it('lookup selects bind to integer foreign keys', () => {
+    const lookups = fields.filter((f) => /-select$/.test(f.kind) && f.kind !== 'select');
+    const bad = lookups
+      .filter((f) => !([] as string[]).concat(resolve(update[f.key])!.type ?? []).includes('integer'))
+      .map((f) => `${f.kind}:${f.key}`);
+    expect(bad).toEqual([]);
+  });
 });

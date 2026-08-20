@@ -9,6 +9,11 @@ import { useMontageStore } from '@/stores/montage';
 import { leaf, leafCount, leafMonitors, split } from './mosaic';
 import { MONTAGE_PRESETS, autoLayout, useMontagePage, useMontageWallPage } from './useMontagePage';
 
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({}),
+  useNavigate: () => vi.fn(),
+}));
+
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
@@ -127,8 +132,8 @@ describe('useMontageWallPage (flat wall)', () => {
     stubMonitors();
     const { result } = renderHook(() => useMontageWallPage(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.monitors).toHaveLength(3));
-    // Nothing visible until the filter bar reports its (initially full) selection.
-    expect(result.current.visibleMonitors).toEqual([]);
+    // Every capturing monitor shows until the filter bar reports.
+    expect(result.current.visibleMonitors.map((m) => m.id)).toEqual([1, 2]);
     act(() => result.current.setFilteredMonitors(result.current.monitors));
     expect(result.current.visibleMonitors.map((m) => m.id)).toEqual([1, 2]);
     act(() => result.current.setFilteredMonitors([result.current.monitors[1], result.current.monitors[2]]));

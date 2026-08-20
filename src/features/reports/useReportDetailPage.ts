@@ -1,6 +1,8 @@
 import { useMemo, useState, type FormEvent } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/components/common/toastStore';
 import { getReport, updateReport, deleteReport, type Report } from '@/api/reports';
 import { listFilters, getFilter, parseFilterQuery } from '@/api/filters';
 import { getEvents } from '@/api/events';
@@ -13,6 +15,8 @@ export interface ReportDetailPageState {
   isLoading: boolean;
   /** True when the fetch failed or returned nothing. */
   isError: boolean;
+  error: Error | null;
+  refetch: () => void;
   report: Report | undefined;
   filters: Array<{ id: number; name: string }>;
   /** Invalidate this report + the list after a successful save. */
@@ -38,7 +42,9 @@ export function useReportDetailPage(id: number): ReportDetailPageState {
   return {
     isAuthenticated,
     isLoading: reportQ.isLoading,
-    isError: reportQ.isError || !reportQ.data,
+    isError: reportQ.isError || (!reportQ.isLoading && !reportQ.data),
+    error: (reportQ.error as Error | null) ?? null,
+    refetch: () => { reportQ.refetch(); },
     report: reportQ.data,
     filters: filtersQ.data?.items ?? [],
     onSaved: () => {
@@ -70,6 +76,8 @@ export interface ReportFormState {
 /** Edit-form draft, PATCH and DELETE for a loaded report. */
 export function useReportForm(report: Report, onSaved: () => void): ReportFormState {
   const qc = useQueryClient();
+  const navigate = useNavigate();
+  const toast = useToast();
 
   const [name, setName] = useState(report.name ?? '');
   const [filterId, setFilterId] = useState<number | ''>(report.filter_id ?? '');
@@ -112,16 +120,16 @@ export function useReportForm(report: Report, onSaved: () => void): ReportFormSt
         interval: interval === '' ? null : interval,
       }),
     onSuccess: () => onSaved(),
+    onError: toast.apiError,
   });
 
   const deleteMutation = useMutation({
     mutationFn: () => deleteReport(report.id),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['reports'] });
-      // Navigate back to the list. Using location rather than router.navigate
-      // keeps this component decoupled from the router dependency injection.
-      window.location.href = '/reports';
+      navigate({ to: '/reports' });
     },
+    onError: toast.apiError,
   });
 
   const submit = (e: FormEvent) => {

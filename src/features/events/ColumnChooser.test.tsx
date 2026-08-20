@@ -43,7 +43,7 @@ describe('ColumnChooser', () => {
     await user.click(screen.getByRole('button', { name: /columns/i }));
     await user.click(screen.getByRole('button', { name: /defaults/i }));
 
-    expect(useEventsColumnsStore.getState().isVisible('disk_space')).toBe(false);
-    expect(useEventsColumnsStore.getState().isVisible('archived')).toBe(false);
+    expect(useEventsColumnsStore.getState().isVisible('emailed')).toBe(false);
+    expect(useEventsColumnsStore.getState().isVisible('archived')).toBe(true);
   });
 });

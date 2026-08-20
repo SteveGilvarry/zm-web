@@ -3,8 +3,11 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Archive, ArchiveRestore, Eye, Pencil, Trash2, X, AlertTriangle } from 'lucide-react';
-import { updateEvent, deleteEvent } from '@/api/events';
+import { Archive, ArchiveRestore, Download, Eye, Pencil, Trash2, X, AlertTriangle } from 'lucide-react';
+import { updateEvent, deleteEvent, getEventVideoUrl } from '@/api/events';
+import { useAuthStore } from '@/stores/auth';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { useToast } from '@/components/common/toastStore';
 import { EventEditForm, type EventEditValues } from './EventEditForm';
 import { bulkEditPayload } from './bulkEdit';
 import { useBulkFanOut } from './bulkFanOut';
@@ -12,6 +15,12 @@ import { useBulkFanOut } from './bulkFanOut';
 interface BulkActionBarProps {
   selectedIds: Set<number>;
   onClear: () => void;
+  /**
+   * `modern` floats a cyan bar at the bottom once rows are selected;
+   * `classic` renders an inline flat-Bootstrap button row that is always
+   * visible (legacy's toolbar icons, disabled until something is checked).
+   */
+  variant?: 'modern' | 'classic';
 }
 
 /**
@@ -22,11 +31,13 @@ interface BulkActionBarProps {
  * request per id; the bar shows progress while it runs and lists any ids
  * that failed instead of pretending the whole batch went through.
  */
-export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
+export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: BulkActionBarProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { progress, start, dismiss } = useBulkFanOut();
+  const toast = useToast();
+  const accessToken = useAuthStore((s) => s.accessToken);
   const [editOpen, setEditOpen] = useState(false);
 
   const invalidate = () => {
@@ -35,7 +46,8 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
   };
 
   const ids = Array.from(selectedIds);
-  if (ids.length === 0 && !progress.action) return null;
+  const classic = variant === 'classic';
+  if (!classic && ids.length === 0 && !progress.action) return null;
 
   const runAction = async (label: string, run: (id: number) => Promise<unknown>) => {
     const failed = await start(label, ids, run);
@@ -46,7 +58,24 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
     if (failed.length === 0) {
       dismiss();
       onClear();
+    } else {
+      toast.error(t('{{action}}: {{count}} event failed', { action: label, count: failed.length }));
     }
+  };
+
+  // Legacy "Download Video": one MP4 per selected event. Browsers only allow
+  // a few scripted downloads in a row, so they are spaced out slightly.
+  const downloadAll = () => {
+    ids.forEach((id, i) => {
+      setTimeout(() => {
+        const a = document.createElement('a');
+        a.href = getEventVideoUrl(id, accessToken ?? undefined);
+        a.download = `event-${id}.mp4`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+      }, i * 400);
+    });
   };
 
   const busy = progress.running;
@@ -63,62 +92,84 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
     <div
       role="region"
       aria-label={t('Bulk event actions')}
+      data-variant={variant}
       className={clsx(
-        'fixed bottom-6 start-1/2 -translate-x-1/2 rtl:translate-x-1/2 z-30',
-        'flex flex-col gap-2 px-3 py-2 rounded-xl',
-        'bg-panel/95 backdrop-blur-md border border-cyan/40',
-        'shadow-[0_8px_32px_rgba(0,0,0,0.4)] shadow-cyan/10',
-        'animate-in fade-in slide-in-from-bottom-2 duration-200',
+        classic
+          ? 'flex flex-col gap-1'
+          : [
+            'fixed bottom-6 start-1/2 -translate-x-1/2 rtl:translate-x-1/2 z-30',
+            'flex flex-col gap-2 px-3 py-2 rounded-xl',
+            'bg-panel/95 backdrop-blur-md border border-cyan/40',
+            'shadow-[0_8px_32px_rgba(0,0,0,0.4)] shadow-cyan/10',
+            'animate-in fade-in slide-in-from-bottom-2 duration-200',
+          ],
       )}
     >
       <div className="flex items-center gap-1">
-        <span className="px-2 text-xs font-mono text-cyan tabular-nums">
+        <span className={clsx('px-2 text-xs tabular-nums', classic ? 'text-zinc-600' : 'font-mono text-cyan')}>
           {t('{{count}} selected', { count: ids.length })}
         </span>
-        <div className="w-px h-5 bg-border-subtle mx-1" />
+        {!classic && <div className="w-px h-5 bg-border-subtle mx-1" />}
 
         <BulkBtn
+          variant={variant}
           icon={<Eye size={12} />}
           label={t('View')}
           onClick={() => navigate({ to: '/events/$eventId', params: { eventId: String(ids[0]) } })}
           disabled={busy || ids.length === 0}
         />
         <BulkBtn
-          icon={<Pencil size={12} />}
-          label={t('Edit')}
-          onClick={() => setEditOpen(true)}
+          variant={variant}
+          icon={<Download size={12} />}
+          label={t('Download')}
+          onClick={downloadAll}
           disabled={busy || ids.length === 0}
         />
-        <BulkBtn
-          icon={<Archive size={12} />}
-          label={t('Archive')}
-          onClick={() => void runAction(t('Archive'), (id) => updateEvent(id, { archived: true }))}
-          disabled={busy || ids.length === 0}
-        />
-        <BulkBtn
-          icon={<ArchiveRestore size={12} />}
-          label={t('Unarchive')}
-          onClick={() => void runAction(t('Unarchive'), (id) => updateEvent(id, { archived: false }))}
-          disabled={busy || ids.length === 0}
-        />
-        <BulkBtn
-          icon={<Trash2 size={12} />}
-          label={t('Delete')}
-          tone="crimson"
-          onClick={() => {
-            if (confirm(t("Delete {{count}} event? This can't be undone.", { count: ids.length }))) {
-              void runAction(t('Delete'), (id) => deleteEvent(id));
-            }
-          }}
-          disabled={busy || ids.length === 0}
-        />
+        <RequirePerm feature="events" level="Edit">
+          <BulkBtn
+          variant={variant}
+            icon={<Pencil size={12} />}
+            label={t('Edit')}
+            onClick={() => setEditOpen(true)}
+            disabled={busy || ids.length === 0}
+          />
+          <BulkBtn
+          variant={variant}
+            icon={<Archive size={12} />}
+            label={t('Archive')}
+            onClick={() => void runAction(t('Archive'), (id) => updateEvent(id, { archived: true }))}
+            disabled={busy || ids.length === 0}
+          />
+          <BulkBtn
+          variant={variant}
+            icon={<ArchiveRestore size={12} />}
+            label={t('Unarchive')}
+            onClick={() => void runAction(t('Unarchive'), (id) => updateEvent(id, { archived: false }))}
+            disabled={busy || ids.length === 0}
+          />
+          <BulkBtn
+          variant={variant}
+            icon={<Trash2 size={12} />}
+            label={t('Delete')}
+            tone="crimson"
+            onClick={() => {
+              if (confirm(t("Delete {{count}} event? This can't be undone.", { count: ids.length }))) {
+                void runAction(t('Delete'), (id) => deleteEvent(id));
+              }
+            }}
+            disabled={busy || ids.length === 0}
+          />
+        </RequirePerm>
 
-        <div className="w-px h-5 bg-border-subtle mx-1" />
+        {!classic && <div className="w-px h-5 bg-border-subtle mx-1" />}
         <button
           onClick={() => { dismiss(); onClear(); }}
-          disabled={busy}
+          disabled={busy || (classic && ids.length === 0 && !progress.action)}
           aria-label={t('Clear selection')}
-          className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors disabled:opacity-50"
+          className={clsx(
+            'p-1.5 rounded transition-colors disabled:opacity-50',
+            classic ? 'text-zinc-500 hover:text-zinc-800' : 'text-text-muted hover:text-text-primary hover:bg-surface',
+          )}
         >
           <X size={12} />
         </button>
@@ -171,23 +222,28 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
 }
 
 function BulkBtn({
-  icon, label, onClick, disabled, tone = 'cyan',
+  icon, label, onClick, disabled, tone = 'cyan', variant = 'modern',
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled: boolean;
   tone?: 'cyan' | 'crimson';
+  variant?: 'modern' | 'classic';
 }) {
-  const cls = tone === 'crimson'
-    ? 'border-crimson/40 text-crimson hover:bg-crimson/15'
-    : 'border-cyan/40 text-cyan hover:bg-cyan/15';
+  const cls = variant === 'classic'
+    ? (tone === 'crimson'
+      ? 'rounded-sm bg-[#d9534f] border-[#d43f3a] text-white hover:bg-[#c9302c]'
+      : 'rounded-sm bg-[#e9ecef] border-[#adb5bd] text-zinc-800 hover:bg-[#dde1e5]')
+    : (tone === 'crimson'
+      ? 'rounded-md border-crimson/40 text-crimson hover:bg-crimson/15'
+      : 'rounded-md border-cyan/40 text-cyan hover:bg-cyan/15');
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-medium transition-colors',
+        'flex items-center gap-1.5 px-3 py-1.5 border text-xs font-medium transition-colors',
         cls,
         disabled && 'opacity-60 cursor-not-allowed',
       )}

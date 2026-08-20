@@ -227,20 +227,24 @@ export async function resolveStorageId(candidate: number | null | undefined): Pr
   return id;
 }
 
-/** A skeleton CreateMonitorRequest with the essential fields overridden. */
-export interface MonitorCreateInput {
-  name: string;
-  type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'Libvlc' | 'Curl' | 'WebSite' | 'Vnc';
-  host?: string | null;
-  port?: string;
-  user?: string | null;
-  pass?: string | null;
-  path?: string | null;
-  width?: number;
-  height?: number;
-  function?: 'None' | 'Monitor' | 'Modect' | 'Record' | 'Mocord' | 'Nodect';
-  /** Defaults to the first storage area. */
-  storage_id?: number;
+/**
+ * What the Add dialog, the preset picker and ONVIF discovery can set on a
+ * new monitor: `name` plus any request field. Everything else comes from
+ * `MONITOR_CREATE_DEFAULTS`. `type`/`function` are narrowed to the request
+ * enums so a typo fails to compile rather than 422 at runtime.
+ */
+export type MonitorCreateInput =
+  Partial<Omit<MonitorCreatePayload, 'name' | 'type' | 'function' | 'storage_id'>> & {
+    name: string;
+    type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'Libvlc' | 'Curl' | 'WebSite' | 'Vnc';
+    function?: 'None' | 'Monitor' | 'Modect' | 'Record' | 'Mocord' | 'Nodect';
+    /** Defaults to the first storage area. */
+    storage_id?: number;
+  };
+
+/** Drop `undefined` so a partial input never knocks out a required default. */
+function defined<T extends object>(input: T): Partial<T> {
+  return Object.fromEntries(Object.entries(input).filter(([, v]) => v !== undefined)) as Partial<T>;
 }
 
 export async function createMonitor(input: MonitorCreateInput): Promise<Monitor> {
@@ -250,7 +254,7 @@ export async function createMonitor(input: MonitorCreateInput): Promise<Monitor>
   const fn = input.function ?? 'Modect';
   const payload: MonitorCreatePayload = {
     ...MONITOR_CREATE_DEFAULTS,
-    ...input,
+    ...defined(input),
     storage_id: await resolveStorageId(input.storage_id),
     function: fn,
     // Function None is ZoneMinder's "disabled": nothing captures, so no daemon starts.

@@ -4,7 +4,9 @@ import { useTranslation } from 'react-i18next';
 import { getMonitors, getLiveSessions } from '@/api/monitors';
 import { cloneMonitor, deleteMonitor } from '@/api/monitors-crud';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/components/common/toastStore';
 import { useMonitorStatuses, type MonitorRuntime } from './useMonitorStatuses';
+import { useRouteSearch, searchFlag } from './useRouteSearch';
 import type { Monitor } from '@/types';
 
 export type MonitorsViewMode = 'grid' | 'list';
@@ -18,6 +20,8 @@ export const MONITORS_PAGE_SIZE = 24;
 export interface MonitorsListPageState {
   isAuthenticated: boolean;
   isLoading: boolean;
+  isError: boolean;
+  error: unknown;
   /** Monitors on the current page, unfiltered. */
   monitors: Monitor[];
   /** Monitors on the current page that pass the search + status filters. */
@@ -56,23 +60,34 @@ export function useMonitorsListPage(): MonitorsListPageState {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
+  const toast = useToast();
+  const search = useRouteSearch();
   const [viewMode, setViewMode] = useState<MonitorsViewMode>('grid');
-  const [showAdd, setShowAdd] = useState(false);
+  // `?new=true` (legacy `?view=monitor` with no id) opens the Add dialog.
+  const [showAdd, setShowAdd] = useState(() => searchFlag(search, 'new'));
 
   const cloneMutation = useMutation({
     mutationFn: (id: number) => cloneMonitor(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['monitors'] }),
+    onSuccess: (created) => {
+      qc.invalidateQueries({ queryKey: ['monitors'] });
+      toast.success(t('Cloned as "{{name}}"', { name: created.name }));
+    },
+    onError: toast.apiError,
   });
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteMonitor(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['monitors'] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['monitors'] });
+      toast.success(t('Monitor deleted'));
+    },
+    onError: toast.apiError,
   });
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState<MonitorsStatusFilter>('all');
   const [page, setPage] = useState(1);
   const pageSize = MONITORS_PAGE_SIZE;
 
-  const { data: monitorsData, isLoading, refetch } = useQuery({
+  const { data: monitorsData, isLoading, isError, error, refetch } = useQuery({
     queryKey: ['monitors', page, pageSize],
     queryFn: () => getMonitors({ page, page_size: pageSize }),
     enabled: isAuthenticated,
@@ -122,6 +137,8 @@ export function useMonitorsListPage(): MonitorsListPageState {
   return {
     isAuthenticated,
     isLoading,
+    isError,
+    error,
     monitors,
     filteredMonitors,
     total: monitorsData?.total,

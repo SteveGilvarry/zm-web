@@ -16,25 +16,31 @@ import {
   FileText,
   Loader2,
   Layers,
+  Save,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import { humanizeIdent } from '@/features/settings/configFormat';
 import { formatBytes, useSettingsOptionsPage } from '@/features/settings/useSettingsOptionsPage';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { ConfigRow } from '../components/settings/ConfigRow';
 import { DaemonRow } from '../components/settings/DaemonRow';
 import { LoadBar } from '../components/settings/LoadBar';
 import { SkinSwitcher } from '../components/settings/SkinSwitcher';
-import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Settings → Options — Mission Control. */
 export default function SettingsOptionsPage() {
   const { t } = useTranslation();
   const s = useSettingsOptionsPage();
-  useDocumentTitle(t('Settings'));
+  const { can } = usePerms();
+  useSiteTitle(t('Settings'));
   const { systemStatus, versionData, stats, daemons, selectedCategory, confirmAction } = s;
+  const canEdit = can('system', 'Edit');
 
   if (!s.isAuthenticated) return null;
 
@@ -82,6 +88,9 @@ export default function SettingsOptionsPage() {
                     </span>
                     <span>
                       {t('API:')} <span className="font-mono text-text-primary">{versionData.api_version}</span>
+                    </span>
+                    <span>
+                      {t('DB:')} <span className="font-mono text-text-primary">{versionData.db_version}</span>
                     </span>
                   </div>
                 )}
@@ -210,18 +219,37 @@ export default function SettingsOptionsPage() {
                       </p>
                     )}
 
+                    {s.dirtyCount > 0 && (
+                      <div role="status" className="flex items-center gap-3 px-4 py-2 text-xs border-b border-border-subtle bg-amber/10 text-amber">
+                        <span className="flex-1">{t('{{count}} unsaved change', { count: s.dirtyCount })}</span>
+                        <button
+                          type="button"
+                          onClick={() => s.discardDirty()}
+                          className="px-2 py-1 rounded border border-border-subtle text-text-secondary hover:text-text-primary"
+                        >
+                          {t('Discard')}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={s.saveAll}
+                          disabled={s.isSavingAll}
+                          className="inline-flex items-center gap-1 px-2 py-1 rounded bg-cyan text-void font-medium disabled:opacity-50"
+                        >
+                          {s.isSavingAll ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
+                          {t('Save all')}
+                        </button>
+                      </div>
+                    )}
+
                     {/* Config table */}
-                    {s.configsLoading ? (
-                      <div className="p-8 text-center text-text-muted text-sm">
-                        <Loader2 size={20} className="animate-spin mx-auto mb-2 text-cyan/50" />
-                        {t('Loading configurations...')}
-                      </div>
-                    ) : s.paginatedConfigs.length === 0 ? (
-                      <div className="p-8 text-center text-text-muted text-sm">
-                        <Settings size={24} className="mx-auto mb-2 opacity-30" />
-                        {s.configSearch ? t('No configs match your search') : t('No configs found')}
-                      </div>
-                    ) : (
+                    <QueryState
+                      isLoading={s.configsLoading}
+                      isError={s.configsIsError}
+                      error={s.configsError}
+                      onRetry={s.refetchConfigs}
+                      empty={s.paginatedConfigs.length === 0}
+                      emptyMessage={s.configSearch ? t('No configs match your search') : t('No configs found')}
+                    >
                       <div className="overflow-x-auto">
                         <table className="w-full text-sm">
                           <thead>
@@ -238,7 +266,7 @@ export default function SettingsOptionsPage() {
                             {s.paginatedConfigs.map((config) => (
                               <ConfigRow
                                 key={config.name}
-                                config={config}
+                                config={canEdit ? config : { ...config, readonly: 1 }}
                                 isEditing={s.editingConfig === config.name}
                                 editValue={s.editValue}
                                 onEditValueChange={s.setEditValue}
@@ -246,14 +274,15 @@ export default function SettingsOptionsPage() {
                                 onStartEdit={() => s.startEdit(config.name, config.value)}
                                 onSave={() => s.saveEdit(config.name)}
                                 onCancel={s.cancelEdit}
-                                onReset={() => s.resetToDefault(config)}
+                                onReset={canEdit ? () => s.resetToDefault(config) : undefined}
                                 isSaving={s.savingConfig === config.name}
+                                dirtyValue={s.dirty[config.name]}
                               />
                             ))}
                           </tbody>
                         </table>
                       </div>
-                    )}
+                    </QueryState>
 
                     {/* Pagination */}
                     {s.configTotalPages > 1 && (
@@ -300,6 +329,7 @@ export default function SettingsOptionsPage() {
             <div className="col-span-4 space-y-6">
               {/* System Actions */}
               <Panel title={t('System Actions')} icon={<Activity size={18} />}>
+                <RequirePerm feature="system" level="Edit" fallback="message">
                 <div className="space-y-3">
                   <button
                     onClick={() =>
@@ -379,6 +409,7 @@ export default function SettingsOptionsPage() {
                     {t('Rotate Logs')}
                   </button>
                 </div>
+                </RequirePerm>
               </Panel>
 
               {/* Daemon Control */}
@@ -391,8 +422,8 @@ export default function SettingsOptionsPage() {
                       <DaemonRow
                         key={daemon.name}
                         daemon={daemon}
-                        onAction={(action) => s.runDaemonAction({ name: daemon.name, action })}
-                        isLoading={s.isDaemonActionPending}
+                        onAction={(action) => { if (canEdit) s.runDaemonAction({ name: daemon.name, action }); }}
+                        isLoading={s.isDaemonActionPending || !canEdit}
                       />
                     ))}
                   </div>

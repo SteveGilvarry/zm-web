@@ -24,8 +24,10 @@ export type EventsColumnKey =
   | 'avg_score'
   | 'max_score'
   | 'tags'
+  | 'storage'
   | 'disk_space'
-  | 'archived';
+  | 'archived'
+  | 'emailed';
 
 export interface EventsColumnDef {
   key: EventsColumnKey;
@@ -39,23 +41,24 @@ export interface EventsColumnDef {
  * order operators see in the table header.
  */
 export const EVENTS_COLUMNS: EventsColumnDef[] = [
-  { key: 'id',           label: 'ID',       defaultVisible: true },
-  { key: 'monitor',      label: 'Monitor',  defaultVisible: true },
-  { key: 'name',         label: 'Name',     defaultVisible: true },
-  { key: 'cause',        label: 'Cause',    defaultVisible: true },
-  { key: 'time',         label: 'Time',     defaultVisible: true },
-  { key: 'end',          label: 'End',      defaultVisible: false },
-  { key: 'duration',     label: 'Duration', defaultVisible: true },
-  { key: 'frames',       label: 'Frames',   defaultVisible: true },
-  { key: 'alarm_frames', label: 'Alarm',    defaultVisible: true },
-  { key: 'tot_score',    label: 'Tot',      defaultVisible: true },
-  { key: 'avg_score',    label: 'Avg',      defaultVisible: true },
-  { key: 'max_score',    label: 'Max',      defaultVisible: true },
-  { key: 'tags',         label: 'Tags',     defaultVisible: true },
-  // Off by default — the spec calls these out as legacy columns operators
-  // sometimes want, but the default-on set should match what we shipped.
-  { key: 'disk_space',   label: 'DiskSpace', defaultVisible: false },
-  { key: 'archived',     label: 'Archived',  defaultVisible: false },
+  // Legacy `?view=events` order (after the Thumbnail column).
+  { key: 'id',           label: 'Id',           defaultVisible: true },
+  { key: 'name',         label: 'Name',         defaultVisible: true },
+  { key: 'archived',     label: 'Archived',     defaultVisible: true },
+  { key: 'emailed',      label: 'Emailed',      defaultVisible: false },
+  { key: 'monitor',      label: 'Monitor',      defaultVisible: true },
+  { key: 'cause',        label: 'Cause',        defaultVisible: true },
+  { key: 'tags',         label: 'Tags',         defaultVisible: true },
+  { key: 'time',         label: 'Start Time',   defaultVisible: true },
+  { key: 'end',          label: 'End Time',     defaultVisible: true },
+  { key: 'duration',     label: 'Duration',     defaultVisible: true },
+  { key: 'frames',       label: 'Frames',       defaultVisible: true },
+  { key: 'alarm_frames', label: 'Alarm Frames', defaultVisible: true },
+  { key: 'tot_score',    label: 'Total Score',  defaultVisible: true },
+  { key: 'avg_score',    label: 'Avg. Score',   defaultVisible: true },
+  { key: 'max_score',    label: 'Max. Score',   defaultVisible: true },
+  { key: 'storage',      label: 'Storage',      defaultVisible: true },
+  { key: 'disk_space',   label: 'DiskSpace',    defaultVisible: true },
 ];
 
 interface EventsColumnsState {

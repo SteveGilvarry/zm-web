@@ -7,6 +7,11 @@ import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useWatchPage } from './useWatchPage';
 
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => ({}),
+  useNavigate: () => vi.fn(),
+}));
+
 // Both stream hooks are always mounted; stub them with inert results whose
 // start/stop we can observe.
 const { webrtcStream, hlsStream } = vi.hoisted(() => {

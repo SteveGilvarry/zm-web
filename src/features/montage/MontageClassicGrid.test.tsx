@@ -1,9 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { Monitor } from '@/types';
-import { useMontageStore } from '@/stores/montage';
 import { autoColumns, MONTAGE_PRESETS } from './classicPresets';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -99,26 +97,30 @@ describe('MontageClassicGrid — preset list', () => {
 });
 
 describe('MontageClassicGrid — live cells', () => {
-  it('renders a gated, auto-starting StreamCell per monitor on the stored protocol', () => {
+  it('renders a gated, auto-starting StreamCell per monitor on the given protocol', () => {
     streamCellProps.length = 0;
-    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} />);
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} columns={2} protocol="webrtc" />);
     expect(screen.getByTestId('stream-1')).toBeInTheDocument();
     expect(screen.getByTestId('stream-2')).toBeInTheDocument();
     expect(streamCellProps[0]).toMatchObject({ protocol: 'webrtc', autoStart: true, gated: true, compact: true });
   });
 
   it('captions each cell with runtime state + capture fps when known, id otherwise', () => {
-    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} />);
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} columns={2} protocol="webrtc" />);
     expect(screen.getByTestId('montage-classic-status-1')).toHaveTextContent('Connected · 10.9 fps');
     expect(screen.getByTestId('montage-classic-status-2')).toHaveTextContent('#2');
   });
 
-  it('switching the protocol select updates the shared montage store', async () => {
-    const user = userEvent.setup();
-    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} />);
-    await user.selectOptions(screen.getByRole('combobox', { name: /stream protocol/i }), 'hls');
-    expect(useMontageStore.getState().protocol).toBe('hls');
-    useMontageStore.setState({ protocol: 'webrtc' });
+  it('moves the caption inside the picture (or drops it) per the status position', () => {
+    streamCellProps.length = 0;
+    const { rerender } = render(
+      <MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="hls" statusPosition="inside" />,
+    );
+    expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
+    expect(streamCellProps.at(-1)).toMatchObject({ protocol: 'hls', showName: true, statusText: 'Connected · 10.9 fps' });
+    rerender(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="hls" statusPosition="hidden" />);
+    expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
+    expect(streamCellProps.at(-1)).toMatchObject({ showName: false });
   });
 });
 
@@ -126,6 +128,8 @@ describe('MontageClassicGrid — rendering', () => {
   it('renders one cell per monitor with the monitor name visible', () => {
     render(
       <MontageClassicGrid
+        columns={3}
+        protocol="webrtc"
         monitors={[
           makeMonitor({ id: 1, name: 'Front Door' }),
           makeMonitor({ id: 2, name: 'Garage' }),
@@ -142,63 +146,52 @@ describe('MontageClassicGrid — rendering', () => {
   });
 
   it('renders the empty placeholder when no monitors are passed', () => {
-    render(<MontageClassicGrid monitors={[]} />);
+    render(<MontageClassicGrid monitors={[]} columns={1} protocol="webrtc" />);
     expect(screen.getByTestId('montage-classic-empty')).toBeInTheDocument();
     expect(screen.queryByTestId('montage-classic-grid')).toBeNull();
   });
 
-  it('starts on the Auto preset which uses the heuristic column count', () => {
-    render(
-      <MontageClassicGrid
-        monitors={[
-          makeMonitor({ id: 1 }),
-          makeMonitor({ id: 2 }),
-          makeMonitor({ id: 3 }),
-          makeMonitor({ id: 4 }),
-        ]}
-      />,
-    );
-    // autoColumns(4) === 2
-    const grid = screen.getByTestId('montage-classic-grid');
-    expect(grid.getAttribute('data-columns')).toBe('2');
-  });
-});
-
-describe('MontageClassicGrid — preset selector', () => {
-  it('selecting "4 Wide" changes the grid column count to 4', async () => {
-    const user = userEvent.setup();
-    render(
-      <MontageClassicGrid
-        monitors={[
-          makeMonitor({ id: 1 }),
-          makeMonitor({ id: 2 }),
-          makeMonitor({ id: 3 }),
-        ]}
-      />,
-    );
-    // Auto on 3 monitors → 3 columns.
-    expect(screen.getByTestId('montage-classic-grid').getAttribute('data-columns')).toBe('3');
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: /montage layout preset/i }),
-      '4w',
-    );
+  it('lays the grid out with the column count it is given', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} columns={4} protocol="webrtc" />);
     expect(screen.getByTestId('montage-classic-grid').getAttribute('data-columns')).toBe('4');
   });
 
-  it('selecting "1 Wide" yields a single-column grid', async () => {
-    const user = userEvent.setup();
+  it('applies the per-cell style from the Width / Height / Scale selects', () => {
     render(
       <MontageClassicGrid
-        monitors={[
-          makeMonitor({ id: 1 }),
-          makeMonitor({ id: 2 }),
-        ]}
+        monitors={[makeMonitor({ id: 1 })]}
+        columns={1}
+        protocol="webrtc"
+        cellStyle={() => ({ width: '320px', aspectRatio: '4 / 3' })}
       />,
     );
-    await user.selectOptions(
-      screen.getByRole('combobox', { name: /montage layout preset/i }),
-      '1w',
+    expect(screen.getByTestId('montage-classic-cell-1')).toHaveStyle({ width: '320px' });
+  });
+});
+
+describe('MontageClassicGrid — edit layout', () => {
+  it('reports a drag-and-drop reorder as (from, to) ids in edit mode', () => {
+    const onReorder = vi.fn();
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]}
+        columns={2}
+        protocol="webrtc"
+        editMode
+        onReorder={onReorder}
+      />,
     );
-    expect(screen.getByTestId('montage-classic-grid').getAttribute('data-columns')).toBe('1');
+    const a = screen.getByTestId('montage-classic-cell-1');
+    const b = screen.getByTestId('montage-classic-cell-2');
+    expect(a).toHaveAttribute('draggable', 'true');
+    fireEvent.dragStart(a, { dataTransfer: { effectAllowed: 'move' } });
+    fireEvent.dragOver(b, { dataTransfer: { dropEffect: 'move' } });
+    fireEvent.drop(b, { dataTransfer: {} });
+    expect(onReorder).toHaveBeenCalledWith(1, 2);
+  });
+
+  it('is inert outside edit mode', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" />);
+    expect(screen.getByTestId('montage-classic-cell-1')).not.toHaveAttribute('draggable');
   });
 });

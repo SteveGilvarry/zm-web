@@ -8,16 +8,7 @@ import type { PageKey } from './types';
  * ever shrinks: give classic its own page, then delete the key here. Adding a
  * key means a new page shipped without a classic layout — do that knowingly.
  */
-const CLASSIC_BORROWS: readonly PageKey[] = [
-  'login',
-  'monitors.zones',
-  'montagereview',
-  'events.detail',
-  'filters',
-  'logs',
-  'reports.list',
-  'reports.detail',
-];
+const CLASSIC_BORROWS: readonly PageKey[] = [];
 
 describe('skin registry', () => {
   it('knows both skins and rejects unknown ids', () => {
@@ -50,7 +41,9 @@ describe('skin registry', () => {
     expect(own.ownPage).toBe(true);
     expect(own.from).toBe('classic');
 
-    const borrowed = resolvePage(skins.classic, CLASSIC_BORROWS[0]);
+    // A skin with no pages of its own borrows everything from the fallback.
+    const bare = { ...skins.classic, id: 'classic' as const, pages: {} };
+    const borrowed = resolvePage(bare, 'cycle');
     expect(borrowed.ownPage).toBe(false);
     expect(borrowed.from).toBe(fallbackSkinId);
     expect(borrowed.Page).toBeDefined();

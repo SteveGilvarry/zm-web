@@ -4,6 +4,7 @@ import { getStorageList, createStorage, updateStorage, deleteStorage, STORAGE_SC
 import { listServers } from '@/api/servers';
 import { previewFilter } from '@/api/filters';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/components/common/toastStore';
 import type { ZmStorage } from '@/types';
 
 export const STORAGE_TYPES = ['local', 's3fs'];
@@ -50,15 +51,17 @@ export function toStoragePayload(form: StorageFormData) {
 export function useStoragePage() {
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
+  const toast = useToast();
 
   const [page, setPage] = useState(1);
   const [searchQuery, setSearchQuery] = useState('');
 
-  const { data: storageData, isLoading } = useQuery({
+  const storageQ = useQuery({
     queryKey: ['storage', page, STORAGE_PAGE_SIZE],
     queryFn: () => getStorageList({ page, page_size: STORAGE_PAGE_SIZE }),
     enabled: isAuthenticated,
   });
+  const { data: storageData, isLoading } = storageQ;
 
   const serversQ = useQuery({
     queryKey: ['servers'],
@@ -140,6 +143,7 @@ export function useStoragePage() {
       setModalOpen(false);
       invalidateStorage();
     },
+    onError: (err) => toast.apiError(err),
   });
 
   const updateMutation = useMutation({
@@ -149,6 +153,7 @@ export function useStoragePage() {
       setModalOpen(false);
       invalidateStorage();
     },
+    onError: (err) => toast.apiError(err),
   });
 
   const deleteMutation = useMutation({
@@ -157,12 +162,17 @@ export function useStoragePage() {
       setDeleteTarget(null);
       invalidateStorage();
     },
+    onError: (err) => toast.apiError(err),
   });
 
   const toggleEnabledMutation = useMutation({
     mutationFn: ({ id, enabled }: { id: number; enabled: number }) =>
       updateStorage(id, { enabled }),
     onSuccess: () => {
+      invalidateStorage();
+    },
+    onError: (err) => {
+      toast.apiError(err);
       invalidateStorage();
     },
   });
@@ -210,6 +220,9 @@ export function useStoragePage() {
   return {
     isAuthenticated,
     isLoading,
+    isError: storageQ.isError,
+    error: storageQ.error,
+    refetch: () => void storageQ.refetch(),
     filteredItems,
     searchQuery,
     setSearchQuery,

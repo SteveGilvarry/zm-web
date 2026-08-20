@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
+import { useToast } from '@/components/common/toastStore';
 import { getMonitors } from '@/api/monitors';
 import {
   listGroups,
@@ -22,6 +23,10 @@ export const GROUP_REPARENT_ISSUE_URL = 'https://github.com/SteveGilvarry/zm-api
 
 export interface GroupsPageState {
   isAuthenticated: boolean;
+  isLoading: boolean;
+  isError: boolean;
+  error: unknown;
+  refetch: () => void;
   groups: Group[];
   groupMonitors: GroupMonitor[];
   monitors: Monitor[];
@@ -63,6 +68,7 @@ export function useGroupsPage(): GroupsPageState {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
+  const toast = useToast();
 
   const groupsQ = useQuery({
     queryKey: ['groups'],
@@ -141,7 +147,10 @@ export function useGroupsPage(): GroupsPageState {
       setSelectedId(g.id);
       closeDialog();
     },
-    onError: (e: Error) => setDialogError(e.message),
+    onError: (e: Error) => {
+      setDialogError(e.message);
+      toast.apiError(e);
+    },
   });
 
   const updateMutation = useMutation({
@@ -156,24 +165,31 @@ export function useGroupsPage(): GroupsPageState {
       invalidate();
       closeDialog();
     },
-    onError: (e: Error) => setDialogError(e.message),
+    onError: (e: Error) => {
+      setDialogError(e.message);
+      toast.apiError(e);
+    },
   });
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteGroup(id),
     onSuccess: () => {
+      toast.success(t('Group deleted'));
       invalidate();
       setSelectedId(null);
     },
+    onError: (err) => toast.apiError(err),
   });
   const attachMutation = useMutation({
     mutationFn: ({ groupId, monitorId }: { groupId: number; monitorId: number }) =>
       attachMonitorToGroup(groupId, monitorId),
     onSuccess: invalidate,
+    onError: (err) => toast.apiError(err),
   });
   const detachMutation = useMutation({
     mutationFn: (gmId: number) => detachMonitorFromGroup(gmId),
     onSuccess: invalidate,
+    onError: (err) => toast.apiError(err),
   });
 
   const handleSubmit = ({ name, parentId }: { name: string; parentId: number | null }) => {
@@ -208,6 +224,10 @@ export function useGroupsPage(): GroupsPageState {
 
   return {
     isAuthenticated,
+    isLoading: groupsQ.isLoading,
+    isError: groupsQ.isError,
+    error: groupsQ.error,
+    refetch: () => void groupsQ.refetch(),
     groups,
     groupMonitors,
     monitors,

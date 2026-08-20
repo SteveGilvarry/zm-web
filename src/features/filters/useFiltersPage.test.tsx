@@ -8,14 +8,21 @@ import { useAuthStore } from '@/stores/auth';
 import { useFiltersPage, columnsOf } from './useFiltersPage';
 import { PURGE_WHEN_FULL_QUERY_JSON, PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW } from './liveFixtures';
 
+let mockSearch: Record<string, unknown> = {};
+const mockNavigate = vi.fn();
+vi.mock('@tanstack/react-router', () => ({
+  useSearch: () => mockSearch,
+  useNavigate: () => mockNavigate,
+}));
+
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { user: 'admin', iat: 0, exp: 0 } as never, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'error' });
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => { server.resetHandlers(); mockSearch = {}; mockNavigate.mockReset(); });
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -46,6 +53,8 @@ function stub(items: unknown[] = [PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW, le
     http.get('/api/v3/monitors', () =>
       HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 }),
     ),
+    http.get('/api/v3/users', () =>
+      HttpResponse.json({ items: [{ id: 1, username: 'admin' }], total: 1, per_page: 100, current_page: 1, last_page: 1 })),
     http.get('/api/v3/storage', () =>
       HttpResponse.json({ items: [{ id: 1, name: 'Default', path: '/e', type: 'local', enabled: 1 }], total: 1, per_page: 200, current_page: 1, last_page: 1 }),
     ),

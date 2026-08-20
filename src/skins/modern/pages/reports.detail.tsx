@@ -13,6 +13,8 @@ import {
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import type { Report } from '@/api/reports';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 import { EventsPerHourChart } from '@/features/reports/EventsPerHourChart';
@@ -43,24 +45,22 @@ export default function ReportDetailPage({ reportId }: { reportId: number }) {
           </Link>
         </div>
 
-        {s.isLoading ? (
-          <div className="py-12 flex items-center justify-center gap-2 text-text-muted text-sm">
-            <Loader2 size={14} className="animate-spin" />
-            {t('Loading report…')}
-          </div>
-        ) : s.isError || !s.report ? (
-          <Panel>
-            <div className="py-8 text-center text-text-muted text-sm">
-              {t('Could not load report #{{id}}.', { id: reportId })}
-            </div>
-          </Panel>
-        ) : (
-          <ReportDetailBody
-            report={s.report}
-            filters={s.filters}
-            onSaved={s.onSaved}
-          />
-        )}
+        <QueryState
+          isLoading={s.isLoading}
+          isError={s.isError}
+          error={s.error}
+          onRetry={s.refetch}
+          empty={!s.report}
+          emptyMessage={t('Could not load report #{{id}}.', { id: reportId })}
+        >
+          {s.report && (
+            <ReportDetailBody
+              report={s.report}
+              filters={s.filters}
+              onSaved={s.onSaved}
+            />
+          )}
+        </QueryState>
       </main>
     </AppShell>
   );
@@ -138,6 +138,7 @@ function ReportDetailBody({
           </Field>
 
           <div className="flex items-center justify-end gap-2 pt-1">
+            <RequirePerm feature="events" level="Edit">
             <button
               type="button"
               onClick={() => {
@@ -169,6 +170,7 @@ function ReportDetailBody({
               )}
               {t('Save')}
             </button>
+            </RequirePerm>
           </div>
 
           {f.saveError && (

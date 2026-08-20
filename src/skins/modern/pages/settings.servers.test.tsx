@@ -16,7 +16,7 @@ const server = setupServer();
 
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'warn' });
 });
@@ -70,10 +70,11 @@ describe('Servers page', () => {
     await waitFor(() => expect(within(row1).getByText('40.2%')).toBeInTheDocument());
     expect(within(row1).getByText('2')).toBeInTheDocument();
     expect(within(row1).getByText('1.7')).toBeInTheDocument();
-    expect(within(row1).getByText('75%')).toBeInTheDocument();
+    // Free memory 25% (legacy colours < 10% red; 25% sits in the warn-free zone).
+    expect(within(row1).getByText('25%')).toBeInTheDocument();
     const row3 = screen.getByText('zm-edge-03').closest('tr')!;
     expect(within(row3).getByText('Unknown')).toBeInTheDocument();
-    expect(within(row3).getAllByText('—')).toHaveLength(3);
+    expect(within(row3).getAllByText('—')).toHaveLength(4);
   });
 
   it('shows the single-node hint plus the host sample when no servers exist', async () => {
