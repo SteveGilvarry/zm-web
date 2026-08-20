@@ -3,6 +3,8 @@
 // ============================================
 
 export interface ApiError {
+  /** zm_api's error envelope field ({kind, error_message, code, details}). */
+  error_message?: string;
   error: string;
   message: string;
   details?: Record<string, string>[];

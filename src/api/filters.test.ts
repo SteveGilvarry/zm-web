@@ -7,10 +7,20 @@ import {
   createFilter,
   updateFilter,
   deleteFilter,
+  previewFilter,
   parseFilterQuery,
   serializeFilterQuery,
+  FILTER_ATTRS,
+  FILTER_OPS,
+  FILTER_SORT_FIELDS,
   type FilterQuery,
 } from './filters';
+import {
+  PURGE_WHEN_FULL_QUERY_JSON,
+  PURGE_WHEN_FULL_ROW,
+  UPDATE_DISK_SPACE_QUERY_JSON,
+  UPDATE_DISK_SPACE_ROW,
+} from '@/features/filters/liveFixtures';
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
@@ -26,115 +36,110 @@ afterAll(() => {
   useAuthStore.getState().clearAuth();
 });
 
-describe('parseFilterQuery (pure)', () => {
-  it('returns an empty-rules object for null / undefined / empty input', () => {
-    expect(parseFilterQuery(null).rules).toEqual([]);
-    expect(parseFilterQuery(undefined).rules).toEqual([]);
-    expect(parseFilterQuery('').rules).toEqual([]);
-  });
-
-  it('falls back to the empty default on malformed JSON instead of throwing', () => {
-    const out = parseFilterQuery('not-json');
-    expect(out.rules).toEqual([]);
-    expect(out.sort).toEqual({ field: 'start_date_time', dir: 'desc' });
-  });
-
-  it('drops non-array rules to keep the shape sound', () => {
-    const out = parseFilterQuery(JSON.stringify({ rules: 'oops' }));
-    expect(out.rules).toEqual([]);
-  });
-
-  it('preserves valid rules + sort + limit', () => {
-    const q: FilterQuery = {
-      rules: [{ field: 'cause', operator: '=', value: 'Motion', conjunction: 'and' }],
-      sort: { field: 'id', dir: 'asc' },
-      limit: 50,
-    };
-    const parsed = parseFilterQuery(JSON.stringify(q));
-    expect(parsed.rules).toHaveLength(1);
-    expect(parsed.sort).toEqual({ field: 'id', dir: 'asc' });
-    expect(parsed.limit).toBe(50);
+describe('legacy vocabularies', () => {
+  it('has the 43 legacy attributes, 14 operators and 16 sort fields', () => {
+    expect(FILTER_ATTRS).toHaveLength(43);
+    expect(FILTER_OPS).toHaveLength(14);
+    expect(FILTER_SORT_FIELDS).toHaveLength(16);
+    expect(FILTER_OPS).not.toContain('contains');
   });
 });
 
-describe('parseFilterQuery ⇄ serializeFilterQuery round-trip', () => {
-  it('round-trips a non-trivial query unchanged', () => {
-    const q: FilterQuery = {
-      rules: [
-        { field: 'monitor_id', operator: '=', value: '4', conjunction: 'and' },
-        { field: 'archived', operator: '!=', value: '1', conjunction: 'and' },
-      ],
-      sort: { field: 'max_score', dir: 'desc' },
-      limit: 100,
-    };
-    const round = parseFilterQuery(serializeFilterQuery(q));
-    expect(round).toEqual(q);
+describe('parseFilterQuery — live ZoneMinder filters', () => {
+  it('reads PurgeWhenFull: three terms, sort, limit, skip_locked', () => {
+    const out = parseFilterQuery(PURGE_WHEN_FULL_QUERY_JSON);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.query.terms.map((t) => [t.attr, t.op, t.val])).toEqual([
+      ['Archived', '=', '0'],
+      ['DiskPercent', '>=', '80'],
+      ['EndDateTime', 'IS NOT', 'NULL'],
+    ]);
+    expect(out.query.terms[0].cnj).toBeUndefined();
+    expect(out.query.terms[1].cnj).toBe('and');
+    expect(out.query.sort_field).toBe('Id');
+    expect(out.query.sort_asc).toBe('1');
+    expect(out.query.limit).toBe('100');
+    expect(out.query.skip_locked).toBe('0');
   });
 
-  it('round-trips legacy operators (P19): =~, !~, =[], ![], IS, IS NOT, LIKE, NOT LIKE, >=, <=', () => {
-    const q: FilterQuery = {
-      rules: [
-        { field: 'cause',     operator: '=~',       value: '^Motion',       conjunction: 'and' },
-        { field: 'cause',     operator: '!~',       value: '.*spam.*',      conjunction: 'and' },
-        { field: 'monitor_id',operator: '=[]',      value: '1,2,3',         conjunction: 'and' },
-        { field: 'monitor_id',operator: '![]',      value: '7',             conjunction: 'and' },
-        { field: 'notes',     operator: 'IS',       value: 'NULL',          conjunction: 'and' },
-        { field: 'notes',     operator: 'IS NOT',   value: 'NULL',          conjunction: 'and' },
-        { field: 'name',      operator: 'LIKE',     value: '%cam%',         conjunction: 'and' },
-        { field: 'name',      operator: 'NOT LIKE', value: '%test%',        conjunction: 'and' },
-        { field: 'max_score', operator: '>=',       value: '50',            conjunction: 'and' },
-        { field: 'max_score', operator: '<=',       value: '90',            conjunction: 'and' },
-      ],
-    };
-    const round = parseFilterQuery(serializeFilterQuery(q));
-    expect(round.rules).toHaveLength(q.rules.length);
-    expect(round.rules.map((r) => r.operator)).toEqual(q.rules.map((r) => r.operator));
+  it('reads Update DiskSpace: first term without obr/cbr/cnj, no sort keys', () => {
+    const out = parseFilterQuery(UPDATE_DISK_SPACE_QUERY_JSON);
+    expect(out.ok).toBe(true);
+    if (!out.ok) return;
+    expect(out.query.terms).toHaveLength(2);
+    expect(out.query.terms[0]).toEqual({ attr: 'DiskSpace', op: 'IS', val: 'NULL' });
+    expect(out.query.sort_field).toBeUndefined();
   });
 
-  it('round-trips bracket grouping (obr/cbr equivalent)', () => {
-    const q: FilterQuery = {
-      rules: [
-        { field: 'monitor_id', operator: '=', value: '1', conjunction: 'and', bracket_open: 1, bracket_close: 0 },
-        { field: 'max_score',  operator: '>', value: '50', conjunction: 'and', bracket_open: 0, bracket_close: 1 },
-        { field: 'archived',   operator: '=', value: '0', conjunction: 'or',  bracket_open: 0, bracket_close: 0 },
-      ],
-    };
-    const round = parseFilterQuery(serializeFilterQuery(q));
-    expect(round.rules[0].bracket_open).toBe(1);
-    expect(round.rules[1].bracket_close).toBe(1);
-    expect(round.rules[2].conjunction).toBe('or');
+  it('round-trips both live filters byte-for-byte', () => {
+    for (const raw of [PURGE_WHEN_FULL_QUERY_JSON, UPDATE_DISK_SPACE_QUERY_JSON]) {
+      const out = parseFilterQuery(raw);
+      expect(out.ok).toBe(true);
+      if (out.ok) expect(serializeFilterQuery(out.query)).toBe(raw);
+    }
   });
 
-  it('round-trips filter-level options + actions through query_json', () => {
-    const q: FilterQuery = {
-      rules: [],
-      options: { background: true, concurrent: false, lock_rows: true },
-      actions: {
-        auto_video: true,
-        auto_execute: true, auto_execute_cmd: '/bin/echo %EI%',
-        auto_email: true, email_to: 'a@b', email_subject: 'subj',
-        email_body: 'body', email_format: 'Summary', email_server: 'smtp.local',
-        auto_message: false,
-        auto_copy: true, auto_copy_to: 2,
-        auto_move: true, auto_move_to: 3,
-      },
-    };
-    const round = parseFilterQuery(serializeFilterQuery(q));
-    expect(round.options).toEqual(q.options);
-    expect(round.actions).toEqual(q.actions);
+  it('preserves properties it does not know about', () => {
+    const raw = '{"terms":[{"attr":"Cause","op":"=","val":"Motion","future":"x"}],"sort_field":"Id","new_key":{"a":1}}';
+    const out = parseFilterQuery(raw);
+    expect(out.ok).toBe(true);
+    if (out.ok) {
+      expect(out.query.terms[0].future).toBe('x');
+      expect(out.query.new_key).toEqual({ a: 1 });
+      expect(serializeFilterQuery(out.query)).toBe(raw);
+    }
+  });
+});
+
+describe('parseFilterQuery — refusing what it cannot read', () => {
+  it('treats null / "" / "{}" as an empty rule set', () => {
+    for (const s of [null, undefined, '', '   ', '{}']) {
+      const out = parseFilterQuery(s);
+      expect(out.ok).toBe(true);
+      if (out.ok) expect(out.query.terms).toEqual([]);
+    }
+  });
+
+  it('rejects malformed JSON instead of returning empty', () => {
+    const out = parseFilterQuery('not-json');
+    expect(out).toMatchObject({ ok: false, raw: 'not-json' });
+  });
+
+  it("rejects the dashboard's retired private {rules} format", () => {
+    const raw = JSON.stringify({ rules: [{ field: 'cause', operator: 'contains', value: 'x' }] });
+    const out = parseFilterQuery(raw);
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.reason).toMatch(/terms/);
+  });
+
+  it('rejects a non-array terms, a term without attr, and an unknown operator', () => {
+    expect(parseFilterQuery('{"terms":"oops"}').ok).toBe(false);
+    expect(parseFilterQuery('{"terms":[{"op":"=","val":"1"}]}').ok).toBe(false);
+    expect(parseFilterQuery('{"terms":[{"attr":"Cause","op":"contains","val":"x"}]}').ok).toBe(false);
+    expect(parseFilterQuery('{"terms":[{"attr":"Cause","op":"=","val":"x","cnj":"xor"}]}').ok).toBe(false);
+  });
+
+  it('keeps the raw text for the read-only view', () => {
+    const out = parseFilterQuery('[1,2]');
+    expect(out.ok).toBe(false);
+    if (!out.ok) expect(out.raw).toBe('[1,2]');
   });
 });
 
 describe('listFilters / getFilter', () => {
-  it('listFilters GETs /filters with pagination', async () => {
+  it('listFilters GETs /filters and returns full rows', async () => {
     server.use(
       http.get('/api/v3/filters', () => HttpResponse.json({
-        items: [{ id: 1, name: 'Cars', query_json: '{}', auto_archive: 0, auto_delete: 0, execute_interval: 0 }],
-        total: 1, per_page: 20, current_page: 1, last_page: 1,
+        items: [PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW],
+        total: 2, per_page: 25, current_page: 1, last_page: 1,
       })),
     );
-    const out = await listFilters({ page: 1, page_size: 20 });
-    expect(out.items[0].name).toBe('Cars');
+    const out = await listFilters({ page: 1, page_size: 25 });
+    expect(out.items[0].auto_delete).toBe(1);
+    expect(out.items[0].background).toBe(1);
+    expect(out.items[1].update_disk_space).toBe(1);
+    expect(out.items[1].filter?.where).toMatchObject({ match: 'all' });
   });
 
   it('getFilter GETs /filters/{id}', async () => {
@@ -142,42 +147,79 @@ describe('listFilters / getFilter', () => {
     server.use(
       http.get('/api/v3/filters/:id', ({ params }) => {
         id = params.id as string;
-        return HttpResponse.json({ id: 9, name: 'Daily', query_json: '{}', auto_archive: 1, auto_delete: 0, execute_interval: 60 });
+        return HttpResponse.json(PURGE_WHEN_FULL_ROW);
       }),
     );
-    const out = await getFilter(9);
-    expect(id).toBe('9');
+    const out = await getFilter(1);
+    expect(id).toBe('1');
     expect(out.execute_interval).toBe(60);
   });
 });
 
 describe('createFilter / updateFilter / deleteFilter', () => {
-  it('createFilter POSTs the payload verbatim', async () => {
-    let body: unknown = null;
+  const query: FilterQuery = {
+    terms: [{ attr: 'Cause', op: 'LIKE', val: 'Motion' }],
+    sort_field: 'StartDateTime', sort_asc: '0', limit: '0', skip_locked: '0',
+  };
+
+  it('createFilter POSTs query_json plus the action / option columns', async () => {
+    let body: Record<string, unknown> = {};
     server.use(
       http.post('/api/v3/filters', async ({ request }) => {
-        body = await request.json();
-        return HttpResponse.json({ id: 42, name: 'New', query_json: '{}', auto_archive: 0, auto_delete: 0, execute_interval: 0 });
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...PURGE_WHEN_FULL_ROW, id: 42, name: 'New' }, { status: 201 });
       }),
     );
-    const out = await createFilter({ name: 'New', query_json: '{}' });
-    expect(body).toEqual({ name: 'New', query_json: '{}' });
+    const out = await createFilter({
+      name: 'New',
+      query_json: serializeFilterQuery(query),
+      auto_archive: 1,
+      background: 1,
+      execute_interval: 120,
+    });
+    expect(body.name).toBe('New');
+    expect(body.query_json).toBe('{"terms":[{"attr":"Cause","op":"LIKE","val":"Motion"}],"sort_field":"StartDateTime","sort_asc":"0","limit":"0","skip_locked":"0"}');
+    expect(body.auto_archive).toBe(1);
+    expect(body.background).toBe(1);
+    expect(body.execute_interval).toBe(120);
+    expect(body).not.toHaveProperty('query');
     expect(out.id).toBe(42);
   });
 
-  it('updateFilter PUTs the partial body', async () => {
-    let body: unknown = null;
+  it('updateFilter PUTs query_json (not "query") and the columns', async () => {
+    let body: Record<string, unknown> = {};
     let method: string | undefined;
     server.use(
-      http.put('/api/v3/filters/3', async ({ request }) => {
+      http.put('/api/v3/filters/1', async ({ request }) => {
         method = request.method;
-        body = await request.json();
-        return HttpResponse.json({ id: 3, name: 'Renamed', query_json: '{}', auto_archive: 0, auto_delete: 0, execute_interval: 0 });
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(PURGE_WHEN_FULL_ROW);
       }),
     );
-    await updateFilter(3, { name: 'Renamed' });
+    await updateFilter(1, {
+      name: 'PurgeWhenFull',
+      query_json: PURGE_WHEN_FULL_QUERY_JSON,
+      auto_delete: 1,
+      auto_unarchive: 0,
+      update_disk_space: 0,
+      auto_upload: 0,
+      auto_copy: 1,
+      auto_copy_to: 2,
+      background: 1,
+      concurrent: 0,
+      lock_rows: 1,
+      execute_interval: 60,
+      email_format: 'Summary',
+    });
     expect(method).toBe('PUT');
-    expect(body).toEqual({ name: 'Renamed' });
+    expect(body.query_json).toBe(PURGE_WHEN_FULL_QUERY_JSON);
+    expect(body).not.toHaveProperty('query');
+    expect(body).toMatchObject({
+      name: 'PurgeWhenFull',
+      auto_delete: 1, auto_unarchive: 0, update_disk_space: 0, auto_upload: 0,
+      auto_copy: 1, auto_copy_to: 2, background: 1, concurrent: 0, lock_rows: 1,
+      execute_interval: 60, email_format: 'Summary',
+    });
   });
 
   it('deleteFilter DELETEs /filters/{id}', async () => {
@@ -185,10 +227,30 @@ describe('createFilter / updateFilter / deleteFilter', () => {
     server.use(
       http.delete('/api/v3/filters/:id', ({ params }) => {
         id = params.id as string;
-        return HttpResponse.json({}, { status: 204 });
+        return new HttpResponse(null, { status: 204 });
       }),
     );
     await deleteFilter(7);
     expect(id).toBe('7');
+  });
+});
+
+describe('previewFilter', () => {
+  it('POSTs the AST to /filters/preview with page params in the query string', async () => {
+    let body: unknown = null;
+    let url: URL | undefined;
+    server.use(
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        url = new URL(request.url);
+        body = await request.json();
+        return HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 2, last_page: 0 });
+      }),
+    );
+    const ast = { where: { match: 'all' as const, rules: [{ field: 'archived' as const, op: 'eq' as const, value: 0 }] } };
+    const out = await previewFilter(ast, { page: 2, page_size: 50 });
+    expect(url?.searchParams.get('page')).toBe('2');
+    expect(url?.searchParams.get('page_size')).toBe('50');
+    expect(body).toEqual(ast);
+    expect(out.current_page).toBe(2);
   });
 });
