@@ -53,6 +53,12 @@ npm run build
 npm run lint
 ```
 
+## Testing
+
+- Unit: `npm test` (vitest + RTL + MSW; coverage over all of `src/**` with thresholds — `npm run test:coverage`).
+- E2E, seeded (hermetic, preferred): `npm run e2e:seed:up` (MariaDB from zm_api's docker recipe on :3308, loads `e2e/seed/seed.sql`), `npm run e2e:seed:api` (zm_api against it), then `npm run test:e2e:seeded`. See `e2e/seed/README.md`.
+- E2E, live: `npm run test:e2e` against `VITE_API_PROXY_TARGET` with `TEST_USERNAME`/`TEST_PASSWORD` (no fallback). It mutates the box (notes, archive flags) — only against a dev box.
+
 ## Browser Testing
 
 **ALWAYS use `playwright-cli`** for browser automation testing. Run `playwright-cli --help` for all available commands.
@@ -128,25 +134,28 @@ const monitorFn = getMonitorFunction(monitor.function);
 const color = functionColors[monitorFn];
 ```
 
-## Dual-skin architecture
+## Skin architecture
 
-`zm-dashboard` ships **two skins on one codebase**:
+`zm-dashboard` ships **two skins on one codebase**, and skins are real packages, not a theme toggle (contract: `src/skins/README.md`):
 
-- **Mission Control** (modern, opinionated dashboard) — dark cyan, panels, adaptive layouts, live thumbnails.
-- **Classic ZoneMinder** (legacy-style) — top nav + dense white tables, for operators migrating from the PHP UI.
+- **Mission Control** (`src/skins/modern/`) — modern dashboard; also the *fallback* skin.
+- **Classic ZoneMinder** (`src/skins/classic/`) — legacy layout for operators migrating from the PHP UI; fidelity target is ZM 1.39 on the dev box.
 
-Selection lives in `useUiStore.skin` (persisted) and is honoured by `<AppShell>` in `src/skins/AppShell.tsx`. Every route renders the same data via shared hooks/features (`src/features/<feature>/…`); only the layout primitives differ. The classic top nav is in `src/skins/classic/shell/TopNav.tsx`; the modern Sidebar in `src/components/layout/Sidebar.tsx`.
+Each skin exports a `SkinDefinition` (`id`, `Shell`, `rootClass` for its tokens, `pages`) and is registered in `src/skins/registry.ts`. Pages are auto-discovered from `src/skins/<id>/pages/<pageKey>.tsx` (default export, lazy — one chunk each). **Routes are thin**: `src/routes/**` only parses params and renders `<SkinPage page="events.list" />`. **All data, state and handlers live in `src/features/<feature>/use<Page>Page.ts` hooks** shared by every skin. Never branch on `useUiStore(s => s.skin)` inside pages/features — a skin *is* the branch. A page a skin lacks renders the fallback skin's page wrapped in `data-skin-fallback` (dev warning); `src/skins/registry.test.ts` keeps the explicit allow-list of borrowed classic pages — shrink it, never grow it silently.
 
-A URL hint `?skin=modern|classic` switches once (`src/routes/__root.tsx`). Operators also pick in Settings → Appearance.
+Selection: `useUiStore.skin` (persisted), URL hint `?skin=modern|classic` (validated against the registry in `src/routes/__root.tsx`), Settings → Appearance (built from the registry). Tokens: semantic classes (`bg-surface`, `text-text-primary`, …) bound per skin under `.skin-<id>` in `src/index.css`.
+
+## i18n and direction
+
+All user-visible text goes through `t('English text')` (react-i18next; key = English). `npm run i18n:extract` regenerates `src/locales/en/translation.json`; `npm run i18n:check` is a CI gate. Seed other languages from ZoneMinder's `web/lang/*.php` with `npm run i18n:seed -- --zm ../ZoneMinder`. Layout uses **logical** Tailwind utilities only (`ms-`/`me-`/`ps-`/`pe-`/`start-`/`end-`/`text-start`); `scripts/codemod-logical-css.mjs` rewrites physical ones. Directional icons get `rtl:-scale-x-100`; physical media (video, montage wall, timelines, PTZ pad, zone editor, charts) sits in `dir="ltr"`. Details: `docs/I18N.md`.
 
 ## Implementation Plan — Full-parity legacy-UI replacement
 
-The P0–P10 phases below shipped their initial versions (plus follow-on work through ~P28 — see git history). **The dashboard is NOT yet feature-equivalent to the legacy ZoneMinder UI.** A 2026-06-30 audit (each `legacy-requirements/*.md` spec vs the actual implementation, cross-checked against the live legacy box) measured **~56% per-feature parity**. The checkmarks below mean "a version shipped," not "full parity" — e.g. Filters (P6) lacks most legacy operators and Servers (P7) is create+delete only.
+The P0–P10 phases below shipped their initial versions (plus follow-on work through ~P28 — see git history). **The dashboard is NOT yet feature-equivalent to the legacy ZoneMinder UI.** The checkmarks below mean "a version shipped," not "full parity."
 
-- **Solid / often better than legacy**: Console, Events, Watch (WebRTC live), Cycle, Logs, Groups, Reports, Run-State.
-- **Weakest, needs work** (some backend-blocked): Audit gap-analysis (~22%), Devices/PTZ + X10 (~23%), Servers clustering (~30%), Zones motion-settings (~42%), Storage usage/scheme (~45%), Filters operators (~48%), Montage Review timeline, Monitor-editor field depth, Users permission matrix.
+**Current plan of record: `docs/PRODUCTION-READINESS-PLAN.md`** (2026-08-21). A nine-agent review verified every feature against the live legacy UI and live zm_api and measured **~42% functional parity, ~38% classic-skin fidelity, 54% real test coverage** (the earlier 56%/76% figures counted "a version shipped" and only test-imported files). It lists the verified-broken flows to fix first (filters never save and use a format incompatible with ZoneMinder's; Add/Clone monitor 422; zone units toggle corrupts coordinates; storage edit 405; secrets rendered), the backend ticket list, the test strategy, and a phased roadmap. Detailed per-area evidence: `legacy-requirements/review-2026-08-21/` (local, gitignored). The older `legacy-requirements/PUNCH-LIST.md` is superseded by that review.
 
-The prioritized parity backlog (frontend vs backend-blocked) lives in `legacy-requirements/PUNCH-LIST.md`. The bandwidth-profile sub-UI is deliberately omitted (see `MEMORY.md`).
+**Reference version**: the classic skin's fidelity target is the ZoneMinder **1.39** UI on the dev box (not 1.38.3). The bandwidth-profile sub-UI is deliberately omitted (see `MEMORY.md`).
 
 - [x] **P0** — Two-skin foundation (UI store, AppShell, modern/classic shells, URL hint).
 - [x] **P1** — Watch + integrated PTZ control surface on `/monitors/$monitorId` (D-pad, speed dial, zoom/focus rockers, presets, AUTO state). Capability-gated against `/api/v3/monitors/$id/ptz`.
@@ -164,8 +173,8 @@ The prioritized parity backlog (frontend vs backend-blocked) lives in `legacy-re
 
 - `src/api/<feature>.ts` — typed wrappers per backend resource.
 - `src/features/<feature>/` — skin-agnostic data hooks + headless logic (e.g. `useConsoleData`, `useReviewClock`, `RuleBuilder`).
-- `src/routes/` — TanStack Router routes; route bodies dispatch on `useUiStore.skin` and render either the modern panel layout or a classic table.
-- `src/skins/{modern,classic}/shell/` — the chrome (sidebar / header / top-nav / stat bar) chosen by `<AppShell>`.
+- `src/routes/` — TanStack Router routes; each renders `<SkinPage page="…" />` and nothing else.
+- `src/skins/<id>/{Shell.tsx,pages/,layouts/,components/}` — per-skin chrome and page layouts; `src/skins/registry.ts` is the only place skins are listed.
 
 ## Conventions
 

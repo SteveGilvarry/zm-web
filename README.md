@@ -41,7 +41,7 @@ REST backend — and it doesn't force a redesign on operators who don't want one
 
 - 🎨 **Two skins, one codebase** — switch between a modern dashboard and a classic ZoneMinder look at runtime.
 - ⚡ **Fast & live** — WebRTC and HLS streaming, live thumbnails, snappy navigation.
-- 🧩 **Feature-complete** — full parity with the legacy UI: events, montage, filters, logs, reports, audit, settings.
+- 🧩 **Heading for full parity** — every legacy page has a home (events, montage, filters, logs, reports, audit, settings), measured at ≈42% functional parity on 2026-08-21. The plan to 1.0 is in [`docs/PRODUCTION-READINESS-PLAN.md`](docs/PRODUCTION-READINESS-PLAN.md).
 - 🔒 **Auth-aware** — JWT auth, token-scoped media, capability-gated controls (PTZ, system start/stop).
 - 🧪 **Tested** — Vitest unit suite + Playwright e2e across Chromium and WebKit.
 
