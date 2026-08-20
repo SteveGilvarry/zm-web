@@ -52,7 +52,7 @@ test.describe('Monitor editor — notes round-trip', () => {
     await page.getByRole('button', { name: /edit configuration/i }).click();
     // The overlay header shows the monitor ID + name; the close button
     // confirms the overlay mounted.
-    await expect(page.getByRole('button', { name: /close editor/i })).toBeVisible();
+    await expect(page.getByRole('button', { name: /^(cancel|close editor)$/i })).toBeVisible();
 
     // General tab is selected by default. The Notes textarea sits below
     // the Name input. We aria-label by the "Notes" mono caption, but the
@@ -77,7 +77,7 @@ test.describe('Monitor editor — notes round-trip', () => {
     await expect(page.getByText(/no pending changes/i)).toBeVisible({ timeout: 5_000 });
 
     // Close the editor and reload to verify persistence.
-    await page.getByRole('button', { name: /close editor/i }).click();
+    await page.getByRole('button', { name: /^(cancel|close editor)$/i }).click();
     await page.reload();
     await page.getByRole('button', { name: /edit configuration/i }).click();
 
