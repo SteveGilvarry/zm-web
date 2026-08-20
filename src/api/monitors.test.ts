@@ -12,6 +12,8 @@ import {
   getLiveSessions,
   getMonitorSnapshotUrl,
   getHlsPlaylistUrl,
+  normalizeMonitor,
+  canonicalEnum,
 } from './monitors';
 import { useAuthStore } from '@/stores/auth';
 
@@ -39,6 +41,45 @@ describe('getMonitors', () => {
     const out = await getMonitors({ page: 1, page_size: 20 });
     expect(out.items).toHaveLength(1);
     expect(out.total).toBe(1);
+  });
+});
+
+describe('normalizeMonitor — response casing → request casing (BT-02)', () => {
+  // Values exactly as the dev box returns them.
+  const raw = {
+    id: 1, name: 'HIKVISION', orientation: 'ROTATE_90', event_close_mode: 'system',
+    default_codec: 'auto', rtsp2_web_type: 'WebRTC', output_container: null,
+    capturing: 'Always', decoding: 'Ondemand', analysing: 'None', recording: 'Always',
+    type: 'Ffmpeg', function: 'Monitor', importance: 'Normal', deleted: 0,
+  };
+
+  it('maps every enum field and leaves the rest alone', () => {
+    const out = normalizeMonitor(raw);
+    expect(out).toMatchObject({
+      orientation: 'Rotate90', event_close_mode: 'System', default_codec: 'Auto',
+      rtsp2_web_type: 'WebRtc', output_container: null, capturing: 'Always',
+      decoding: 'Ondemand', deleted: 0, name: 'HIKVISION',
+    });
+  });
+
+  it('is idempotent and passes unknown values through', () => {
+    const once = normalizeMonitor(raw);
+    expect(normalizeMonitor(once)).toEqual(once);
+    expect(canonicalEnum('FLIP_HORI', ['FlipHori'])).toBe('FlipHori');
+    expect(canonicalEnum('Sideways', ['Rotate0'])).toBe('Sideways');
+  });
+
+  it('getMonitors normalises every item; getMonitor the single record', async () => {
+    server.use(
+      http.get('/api/v3/monitors', () => HttpResponse.json({
+        items: [raw, { ...raw, id: 2, orientation: 'ROTATE_270' }],
+        total: 2, per_page: 20, current_page: 1, last_page: 1,
+      })),
+      http.get('/api/v3/monitors/1', () => HttpResponse.json(raw)),
+    );
+    const page = await getMonitors();
+    expect(page.items.map((m) => m.orientation)).toEqual(['Rotate90', 'Rotate270']);
+    expect((await getMonitor(1)).rtsp2_web_type).toBe('WebRtc');
   });
 });
 

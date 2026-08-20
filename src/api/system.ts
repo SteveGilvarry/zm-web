@@ -96,5 +96,5 @@ export async function getHealthCheck(): Promise<{ status: string }> {
 }
 
 export async function systemLogRotate(): Promise<void> {
-  return apiPost('/system/log_rotate');
+  return apiPost('/system/logrot');
 }

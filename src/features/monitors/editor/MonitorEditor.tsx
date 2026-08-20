@@ -6,6 +6,7 @@ import {
   X, Save, Undo2, Loader2, ChevronRight, AlertCircle, Eye, EyeOff,
 } from 'lucide-react';
 import { patchMonitor } from '@/api/monitors-crud';
+import { normalizeMonitor } from '@/api/monitors';
 import { listControls } from '@/api/controls';
 import type { Monitor } from '@/types';
 import { TABS, useMonitorTabs, type FieldDef, type TabDef } from './fields';
@@ -555,10 +556,15 @@ function ControlSelect({
 /*  Helpers                                                                 */
 /* ------------------------------------------------------------------------ */
 
-/** Snapshot every editable field from a Monitor record into draft shape. */
+/**
+ * Snapshot every editable field from a Monitor record into draft shape.
+ * Enum fields are mapped to the request casing first (`ROTATE_90` →
+ * `Rotate90`) so the selects show the stored value rather than their first
+ * option, and so the PATCH diff carries values the backend accepts.
+ */
 function extractEditableFields(monitor: Monitor): Record<string, FieldValue> {
   const out: Record<string, FieldValue> = {};
-  const m = monitor as unknown as Record<string, unknown>;
+  const m = normalizeMonitor(monitor) as unknown as Record<string, unknown>;
   for (const tab of TABS) {
     for (const f of tab.fields) {
       if (f.kind === 'group') continue;

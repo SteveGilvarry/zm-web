@@ -133,13 +133,13 @@ describe('getSystemStatus / systemStartup / systemShutdown / systemRestart / sys
       http.post('/api/v3/system/startup', () => { hits.push('startup'); return HttpResponse.json({}); }),
       http.post('/api/v3/system/shutdown', () => { hits.push('shutdown'); return HttpResponse.json({}); }),
       http.post('/api/v3/system/restart', () => { hits.push('restart'); return HttpResponse.json({}); }),
-      http.post('/api/v3/system/log_rotate', () => { hits.push('log_rotate'); return HttpResponse.json({}); }),
+      http.post('/api/v3/system/logrot', () => { hits.push('logrot'); return HttpResponse.json({}); }),
     );
     await systemStartup();
     await systemShutdown();
     await systemRestart();
     await systemLogRotate();
-    expect(hits).toEqual(['startup', 'shutdown', 'restart', 'log_rotate']);
+    expect(hits).toEqual(['startup', 'shutdown', 'restart', 'logrot']);
   });
 });
 

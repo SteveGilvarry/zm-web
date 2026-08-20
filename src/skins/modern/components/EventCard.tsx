@@ -13,6 +13,7 @@ import {
 import type { CSSProperties } from 'react';
 import { getEventThumbnailUrl, getEventVideoUrl } from '@/api/events';
 import type { ZmEvent } from '@/types';
+import { eventDurationSeconds } from '@/features/events/duration';
 
 // Rotation transform for events-list thumbnails (square layout footprint,
 // object-contain). No scale factor — the 1:1 footprint already handles
@@ -49,7 +50,7 @@ export function EventCard({
   const { t } = useTranslation();
   const startTime = event.start_date_time ? new Date(event.start_date_time) : null;
   const endTime = event.end_date_time ? new Date(event.end_date_time) : null;
-  const duration = event.length ? Math.round(event.length) : null;
+  const duration = eventDurationSeconds(event.length) || null;
 
   const getCauseColor = (cause: string) => {
     const lowerCause = cause.toLowerCase();

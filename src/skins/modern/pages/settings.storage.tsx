@@ -66,6 +66,12 @@ export default function SettingsStoragePage() {
               </button>
             </div>
 
+            {st.listError && (
+              <p role="alert" className="px-4 py-2 text-xs text-crimson border-b border-border-subtle">
+                {t('Update failed: {{message}}', { message: st.listError })}
+              </p>
+            )}
+
             {/* Table */}
             {st.isLoading ? (
               <div className="p-8 text-center text-text-muted text-sm">{t('Loading storage locations...')}</div>
@@ -263,6 +269,12 @@ export default function SettingsStoragePage() {
               />
             </button>
           </div>
+
+          {st.saveError && (
+            <p role="alert" className="text-xs text-crimson">
+              {t('Save failed: {{message}}', { message: st.saveError })}
+            </p>
+          )}
 
           <div className="flex items-center justify-end gap-3 pt-2">
             <button

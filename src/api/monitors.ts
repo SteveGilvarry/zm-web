@@ -1,16 +1,63 @@
 import { apiGet, apiPatch, apiDelete, getAuthToken } from './client';
+import { API_BASE, wsBase } from '@/api/base';
 import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, StartLiveResponse, LiveStats } from '@/types';
 
+/**
+ * Enum vocabularies of `Create/UpdateMonitorRequest` (OpenAPI components).
+ * GET responses echo the raw DB strings instead — `ROTATE_90`, `system`,
+ * `auto`, `WebRTC` — which the request enums reject, so a record read from
+ * the API could not be written back (backend ticket BT-02). Every monitor
+ * read goes through `normalizeMonitor()` so the rest of the app only ever
+ * sees the request casing. `contract.test.ts` checks these lists against
+ * the OpenAPI snapshot.
+ */
+export const MONITOR_ENUMS = {
+  type: ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'Curl', 'WebSite', 'Vnc'],
+  function: ['None', 'Monitor', 'Modect', 'Record', 'Mocord', 'Nodect'],
+  capturing: ['None', 'Ondemand', 'Always'],
+  decoding: ['None', 'Ondemand', 'KeyFrames', 'KeyFramesOndemand', 'Always'],
+  analysing: ['None', 'Always'],
+  analysis_source: ['Primary', 'Secondary'],
+  analysis_image: ['FullColour', 'YChannel'],
+  recording: ['None', 'OnMotion', 'Always'],
+  recording_source: ['Primary', 'Secondary', 'Both'],
+  orientation: ['Rotate0', 'Rotate90', 'Rotate180', 'Rotate270', 'FlipHori', 'FlipVert'],
+  event_close_mode: ['System', 'Time', 'Duration', 'Idle', 'Alarm'],
+  default_codec: ['Auto', 'Mp4', 'Mjpeg'],
+  output_container: ['Auto', 'Mp4', 'Mkv', 'Webm'],
+  rtsp2_web_type: ['Hls', 'Mse', 'WebRtc'],
+  importance: ['Normal', 'Less', 'Not'],
+} as const satisfies Partial<Record<keyof Monitor, readonly string[]>>;
+
+const foldEnum = (s: string) => s.replace(/_/g, '').toLowerCase();
+
+/** `ROTATE_90` → `Rotate90`, `WebRTC` → `WebRtc`. Unknown values pass through untouched. */
+export function canonicalEnum(value: string, members: readonly string[]): string {
+  const key = foldEnum(value);
+  return members.find((m) => foldEnum(m) === key) ?? value;
+}
+
+/** Map a monitor record's enum fields from the response spelling to the request spelling. Idempotent. */
+export function normalizeMonitor<T extends Partial<Monitor>>(raw: T): T {
+  const out: Record<string, unknown> = { ...raw };
+  for (const [key, members] of Object.entries(MONITOR_ENUMS)) {
+    const v = out[key];
+    if (typeof v === 'string') out[key] = canonicalEnum(v, members);
+  }
+  return out as T;
+}
+
 export async function getMonitors(params?: PaginationParams): Promise<PaginatedResponse<Monitor>> {
-  return apiGet<PaginatedResponse<Monitor>>('/monitors', params);
+  const page = await apiGet<PaginatedResponse<Monitor>>('/monitors', params);
+  return { ...page, items: page.items.map(normalizeMonitor) };
 }
 
 export async function getMonitor(id: number): Promise<Monitor> {
-  return apiGet<Monitor>(`/monitors/${id}`);
+  return normalizeMonitor(await apiGet<Monitor>(`/monitors/${id}`));
 }
 
 export async function updateMonitor(id: number, data: Partial<Monitor>): Promise<Monitor> {
-  return apiPatch<Partial<Monitor>, Monitor>(`/monitors/${id}`, data);
+  return normalizeMonitor(await apiPatch<Partial<Monitor>, Monitor>(`/monitors/${id}`, data));
 }
 
 export async function deleteMonitor(id: number): Promise<void> {
@@ -30,14 +77,14 @@ export interface AlarmControlRequest {
 }
 
 export async function controlMonitorAlarm(id: number, body: AlarmControlRequest): Promise<Monitor> {
-  return apiPatch<AlarmControlRequest, Monitor>(`/monitors/${id}/alarm`, body);
+  return normalizeMonitor(await apiPatch<AlarmControlRequest, Monitor>(`/monitors/${id}/alarm`, body));
 }
 
 // Live streaming — endpoints are protected by Feature::Stream + monitor ACL,
 // so a Bearer token is required (header is accepted; query fallback also works).
 export async function startLiveStream(monitorId: number, options?: StartLiveRequest): Promise<StartLiveResponse> {
   const token = getAuthToken();
-  const response = await fetch(`/api/v3/live/${monitorId}/start`, {
+  const response = await fetch(`${API_BASE}/live/${monitorId}/start`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -71,7 +118,7 @@ export async function startLiveStream(monitorId: number, options?: StartLiveRequ
 
 export async function stopLiveStream(monitorId: number): Promise<void> {
   const token = getAuthToken();
-  const response = await fetch(`/api/v3/live/${monitorId}/stop`, {
+  const response = await fetch(`${API_BASE}/live/${monitorId}/stop`, {
     method: 'DELETE',
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
@@ -91,7 +138,7 @@ export async function getLiveSessions(): Promise<number[]> {
 
 // Snapshot — returns JPEG, requires auth token as query param for <img> use
 export function getMonitorSnapshotUrl(monitorId: number, token?: string): string {
-  const base = `/api/v3/monitors/${monitorId}/snapshot`;
+  const base = `${API_BASE}/monitors/${monitorId}/snapshot`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
@@ -101,7 +148,7 @@ export function getMonitorSnapshotUrl(monitorId: number, token?: string): string
 // bare URL is correct for that path. Pass withToken=true only for the Safari
 // native-HLS fallback, where <video> src cannot carry headers.
 export function getHlsPlaylistUrl(monitorId: number, withToken = false): string {
-  const url = `/api/v3/live/${monitorId}/hls/master.m3u8`;
+  const url = `${API_BASE}/live/${monitorId}/hls/master.m3u8`;
   if (!withToken) return url;
   const token = getAuthToken();
   // Token is base64url-safe — pass raw, the backend's monitor ACL guard does not
@@ -118,7 +165,7 @@ export function getHlsPlaylistUrl(monitorId: number, withToken = false): string 
  *
  * `signalingPath` is the `webrtc_signaling` value returned by `POST /start`. When
  * present it is preferred (the backend is the source of truth for the path);
- * otherwise we fall back to the conventional `/api/v3/live/{id}/webrtc/ws`. The
+ * otherwise we fall back to the conventional `${API_BASE}/live/{id}/webrtc/ws`. The
  * value may be a relative path, an absolute path, or a full http(s)/ws(s) URL —
  * all are normalised to a ws(s) URL on the current origin.
  */
@@ -137,7 +184,7 @@ export function getWebRtcWebsocketUrl(monitorId: number, signalingPath?: string)
       base = `${wsProtocol}//${window.location.host}${path}`;
     }
   } else {
-    base = `${wsProtocol}//${window.location.host}/api/v3/live/${monitorId}/webrtc/ws`;
+    base = `${wsBase()}/live/${monitorId}/webrtc/ws`;
   }
 
   const token = getAuthToken();

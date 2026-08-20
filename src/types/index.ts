@@ -68,7 +68,6 @@ export interface Monitor {
   type: string;
   function: string; // API returns string, cast to MonitorFunction for display
   capturing: string;
-  enabled: number; // 0 or 1
   decoding_enabled: number; // 0 or 1
   decoding: string;
   rtsp2_web_enabled: number;
@@ -76,8 +75,10 @@ export interface Monitor {
   janus_enabled: number;
   janus_audio_enabled: number;
   janus_profile_override?: string | null;
-  janus_use_rtsp_restream: number;
-  janus_rtsp_user?: number | null;
+  /** Janus pulls from the RTSP restream instead of the camera (ZM `Janus_Use_RTSP_Restream`). 0/1. */
+  restream: number;
+  /** User id Janus authenticates to the RTSP server as (ZM `Janus_RTSP_User`). */
+  rtsp_user?: number | null;
   janus_rtsp_session_timeout?: number | null;
   linked_monitors?: string | null;
   triggers: string;
@@ -211,7 +212,8 @@ export interface ZmEvent {
   end_date_time?: string | null; // ISO8601 datetime
   width: number;
   height: number;
-  length: number; // Duration in seconds (decimal)
+  /** Duration in seconds. The API serialises the DECIMAL column as a string ("579.93"); use `eventDurationSeconds()`. */
+  length: string | number;
   frames: number;
   alarm_frames: number;
   default_video: string;

@@ -175,8 +175,10 @@ export function useReportChart(filterId: number | null): ReportChartState {
 
   const buckets = useMemo<DailyBucket[]>(() => {
     if (!filterQ.data || !eventsQ.data) return [];
-    const query = parseFilterQuery(filterQ.data.query_json);
-    const matched = evaluateFilter(query, eventsQ.data.items);
+    const parsed = parseFilterQuery(filterQ.data.query_json);
+    // An unreadable query_json cannot be evaluated; chart nothing rather than
+    // "everything matched".
+    const matched = parsed.ok ? evaluateFilter(parsed.query, eventsQ.data.items) : [];
     return bucketEventsByHour(matched);
   }, [filterQ.data, eventsQ.data]);
 

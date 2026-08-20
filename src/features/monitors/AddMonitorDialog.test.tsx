@@ -7,7 +7,13 @@ import { renderWithProviders } from '@/test/render';
 import { AddMonitorDialog } from './AddMonitorDialog';
 import { useAuthStore } from '@/stores/auth';
 
-const server = setupServer();
+// createMonitor resolves storage_id from the first storage area before POSTing.
+const server = setupServer(
+  http.get('/api/v3/storage', () => HttpResponse.json({
+    items: [{ id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 }],
+    total: 1, per_page: 1, current_page: 1, last_page: 1,
+  })),
+);
 beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,

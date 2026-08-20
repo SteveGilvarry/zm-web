@@ -175,6 +175,22 @@ export function buildTabs(t: Translate): TabDef[] {
     { value: 0,  label: t('Home preset') },
   ];
 
+  /** RTSP transport (`Monitors.Method`). Wire values are ZM's, labels are the legacy FFmpeg-source ones. */
+  const METHOD_OPTIONS = [
+    { value: 'rtpRtsp',     label: t('TCP') },
+    { value: 'rtpUni',      label: t('UDP') },
+    { value: 'rtpMulti',    label: t('UDP multicast') },
+    { value: 'rtpRtspHttp', label: t('HTTP tunnel') },
+  ];
+
+  /** `SaveJPEGs` is a 0–3 bitmask: bit 0 = capture frames, bit 1 = analysis frames. */
+  const SAVE_JPEGS_OPTIONS = [
+    { value: 0, label: t('Disabled') },
+    { value: 1, label: t('Frames only') },
+    { value: 2, label: t('Analysis images only (if available)') },
+    { value: 3, label: t('Frames + Analysis images') },
+  ];
+
   return [
     {
       id: 'general',
@@ -204,15 +220,15 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'group',     key: '_endpoint',    label: t('Stream') },
         { kind: 'text',      key: 'protocol',     label: t('Protocol'),
           help: t('e.g. rtsp, http. Leave blank to let FFmpeg autodetect.') },
-        { kind: 'text',      key: 'method',       label: t('Method'),
-          help: t('TCP or UDP for RTSP — TCP is more reliable, UDP lower latency.') },
+        { kind: 'select',    key: 'method',       label: t('Method'), options: METHOD_OPTIONS,
+          help: t('RTSP transport. TCP is the reliable default; UDP has lower latency but drops frames on a busy network.') },
         { kind: 'text',      key: 'host',         label: t('Host'), span: 2 },
         { kind: 'text',      key: 'port',         label: t('Port') },
         { kind: 'text',      key: 'path',         label: t('Path'), span: 2 },
         { kind: 'text',      key: 'second_path',  label: t('Secondary path'), span: 2,
           help: t('Optional low-res stream for analysis while keeping the primary for recording.') },
         { kind: 'text',      key: 'user',         label: t('Username') },
-        { kind: 'text',      key: 'pass',         label: t('Password') },
+        { kind: 'password',  key: 'pass',         label: t('Password') },
         { kind: 'text',      key: 'options',      label: t('Extra options'), span: 2 },
 
         { kind: 'group',     key: '_image',       label: t('Image') },
@@ -251,7 +267,7 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'select', key: 'recording',          label: t('Recording'),         options: RUN_MODE_RECORDING },
         { kind: 'select', key: 'recording_source',   label: t('Recording source'),  options: RECORDING_SOURCE_OPTIONS },
         { kind: 'number', key: 'storage_id',         label: t('Storage area ID') },
-        { kind: 'toggle', key: 'save_jpe_gs',        label: t('Save JPEGs'),
+        { kind: 'select', key: 'save_jpe_gs',        label: t('Save JPEGs'), options: SAVE_JPEGS_OPTIONS,
           help: t('Stores per-frame JPEGs in addition to the video — large disk cost; needed for some legacy tooling.') },
         { kind: 'toggle', key: 'record_audio',       label: t('Record audio') },
         { kind: 'select', key: 'output_container',   label: t('Output container'),  options: OUTPUT_CONTAINER_OPTIONS },
@@ -288,7 +304,8 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'text',   key: 'rtsp_stream_name',    label: t('RTSP stream name') },
         { kind: 'toggle', key: 'janus_enabled',       label: t('Janus WebRTC') },
         { kind: 'toggle', key: 'janus_audio_enabled', label: t('Janus audio') },
-        { kind: 'toggle', key: 'janus_use_rtsp_restream', label: t('Janus RTSP restream') },
+        { kind: 'toggle', key: 'restream',            label: t('Janus RTSP restream'),
+          help: t('Janus pulls from ZoneMinder’s RTSP server instead of opening a second connection to the camera.') },
         { kind: 'toggle', key: 'rtsp2_web_enabled',   label: t('RTSP-to-Web') },
         { kind: 'number', key: 'default_rate',        label: t('Default rate (%)') },
         { kind: 'text',   key: 'default_scale',       label: t('Default scale') },
@@ -325,8 +342,6 @@ export function buildTabs(t: Translate): TabDef[] {
           help: t('Free-form key=value pairs passed to the ONVIF client (e.g. ProfileToken=Profile_1).') },
         { kind: 'toggle',   key: 'onvif_event_listener', label: t('ONVIF event listener'),
           help: t('Subscribe to the camera’s ONVIF event push (motion / tamper). Polled if disabled.') },
-        { kind: 'toggle',   key: 'use_onvif',            label: t('Use ONVIF'),
-          help: t('Master switch — enable to drive PTZ and events via ONVIF instead of the vendor protocol.') },
       ],
     },
     {

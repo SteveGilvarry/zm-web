@@ -38,6 +38,7 @@ import {
   formatTime,
   getCauseColor,
 } from '@/features/events/useEventDetailPage';
+import { eventDurationSeconds } from '@/features/events/duration';
 
 /** Event detail — Mission Control. Player, scrubber, stats and sidebar. */
 export default function EventDetailPage({ eventId }: { eventId: number }) {
@@ -381,7 +382,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <StatRow label={t('Max Score')} value={event.max_score ?? 0} />
                     <StatRow
                       label={t('Duration')}
-                      value={t('{{seconds}}s', { seconds: Math.round(event.length ?? 0) })}
+                      value={t('{{seconds}}s', { seconds: eventDurationSeconds(event.length) })}
                     />
                     <StatRow
                       label={t('Disk Space')}
@@ -523,11 +524,11 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                   )}
 
                   {/* Duration */}
-                  {event.length && (
+                  {eventDurationSeconds(event.length) > 0 && (
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-text-secondary">{t('Duration')}</span>
                       <span className="text-sm font-mono text-text-primary">
-                        {t('{{seconds}}s', { seconds: Math.round(event.length) })}
+                        {t('{{seconds}}s', { seconds: eventDurationSeconds(event.length) })}
                       </span>
                     </div>
                   )}

@@ -81,9 +81,7 @@ const sampleFilters = [
     id: 7,
     name: 'High-score motion',
     query_json: JSON.stringify({
-      rules: [
-        { field: 'max_score', operator: '>', value: '50', conjunction: 'and' },
-      ],
+      terms: [{ attr: 'MaxScore', op: '>', val: '50' }],
     }),
     auto_archive: 0,
     auto_delete: 0,

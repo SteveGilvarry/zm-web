@@ -6,6 +6,7 @@ import { Video, Clock, AlertTriangle } from 'lucide-react';
 import { getEventThumbnailUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
 import type { ZmEvent } from '@/types';
+import { eventDurationSeconds } from '@/features/events/duration';
 
 interface EventsFeedProps {
   events: ZmEvent[];
@@ -26,7 +27,8 @@ function formatTimeAgo(dateString: string, t: TFunction): string {
   return t('{{count}}d ago', { count: diffDays });
 }
 
-function formatDuration(seconds?: number): string {
+function formatDuration(length: number | string | null | undefined): string {
+  const seconds = eventDurationSeconds(length);
   if (!seconds) return '--:--';
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);

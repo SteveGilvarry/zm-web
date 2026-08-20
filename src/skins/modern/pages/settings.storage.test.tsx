@@ -84,4 +84,58 @@ describe('Storage page', () => {
       name: 'Fast', path: '/mnt/fast', type: 'local', enabled: 1,
     }));
   });
+
+  it('toggles Enabled with a PATCH', async () => {
+    seedStorage();
+    let method = '';
+    let body: unknown = null;
+    server.use(
+      http.all('/api/v3/storage/2', async ({ request }) => {
+        method = request.method;
+        body = await request.json();
+        return HttpResponse.json({ id: 2, name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 1 });
+      }),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<StoragePage />);
+    await waitFor(() => expect(screen.getByText('Archive')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('switch', { name: /enable archive/i }));
+    await waitFor(() => expect(method).toBe('PATCH'));
+    expect(body).toEqual({ enabled: 1 });
+  });
+
+  it('shows the backend message when a toggle fails', async () => {
+    seedStorage();
+    server.use(
+      http.patch('/api/v3/storage/2', () => HttpResponse.json(
+        { error: 'Method Not Allowed', message: 'Method Not Allowed' }, { status: 405 },
+      )),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<StoragePage />);
+    await waitFor(() => expect(screen.getByText('Archive')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('switch', { name: /enable archive/i }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Update failed: Method Not Allowed'));
+  });
+
+  it('keeps the edit modal open and shows the message when save fails', async () => {
+    seedStorage();
+    server.use(
+      http.patch('/api/v3/storage/1', () => HttpResponse.json(
+        { error: 'Conflict', message: 'path already in use' }, { status: 409 },
+      )),
+    );
+    const user = userEvent.setup();
+    renderWithProviders(<StoragePage />);
+    await waitFor(() => expect(screen.getByText('Default')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: /edit default/i }));
+    fireEvent.change(screen.getByPlaceholderText('/var/cache/zoneminder'), { target: { value: '/mnt/archive' } });
+    await user.click(screen.getByRole('button', { name: /save changes/i }));
+
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Save failed: path already in use'));
+    expect(screen.getByRole('button', { name: /save changes/i })).toBeInTheDocument();
+  });
 });

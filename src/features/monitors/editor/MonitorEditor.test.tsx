@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, fireEvent } from '@testing-library/react';
+import { screen, fireEvent, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -156,3 +156,59 @@ describe('MonitorEditor — tab navigation', () => {
 
 // silence unused-import lint when imports are reordered later
 void fireEvent;
+
+/* ------------------------------------------------------------------------ */
+/*  Live-shaped record: raw DB enum casing                                  */
+/* ------------------------------------------------------------------------ */
+
+describe('MonitorEditor — record as the API returns it', () => {
+  // Copied from GET /monitors/1 on the dev box: the response echoes the DB
+  // strings (ROTATE_90, system, auto, WebRTC) while the request enums want
+  // Rotate90 / System / Auto / WebRtc.
+  const live = {
+    ...monitor,
+    orientation: 'ROTATE_90',
+    event_close_mode: 'system',
+    default_codec: 'auto',
+    rtsp2_web_type: 'WebRTC',
+    output_container: null,
+    method: 'rtpRtsp',
+    pass: 'hunter2',
+    save_jpe_gs: 3,
+    restream: 0,
+  } as unknown as Monitor;
+
+  it('starts clean and shows the stored Orientation, Method and Save JPEGs', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={live} onClose={() => {}} />);
+    expect(screen.getByText(/no pending changes/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    expect((screen.getByDisplayValue('Rotate right (90°)') as HTMLSelectElement).value).toBe('Rotate90');
+    expect((screen.getByDisplayValue('TCP') as HTMLSelectElement).value).toBe('rtpRtsp');
+    const pass = screen.getByDisplayValue('hunter2') as HTMLInputElement;
+    expect(pass.type).toBe('password');
+
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    expect((screen.getByDisplayValue('System') as HTMLSelectElement).value).toBe('System');
+    expect((screen.getByDisplayValue('Frames + Analysis images') as HTMLSelectElement).value).toBe('3');
+  });
+
+  it('PATCHes only the changed key, in request casing', async () => {
+    let patched: Record<string, unknown> = {};
+    server.use(http.patch('/api/v3/monitors/1', async ({ request }) => {
+      patched = await request.json() as Record<string, unknown>;
+      return HttpResponse.json({ ...live, ...patched });
+    }));
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={live} onClose={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    fireEvent.change(screen.getByDisplayValue('Rotate right (90°)'), { target: { value: 'Rotate180' } });
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    fireEvent.change(screen.getByDisplayValue('Frames + Analysis images'), { target: { value: '1' } });
+    await user.click(screen.getByRole('button', { name: /^save 2$/i }));
+
+    await waitFor(() => expect(patched).toEqual({ orientation: 'Rotate180', save_jpe_gs: 1 }));
+  });
+});

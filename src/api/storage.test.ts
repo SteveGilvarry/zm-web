@@ -57,18 +57,18 @@ describe('createStorage', () => {
 });
 
 describe('updateStorage', () => {
-  it('PUTs /storage/{id} with the partial body', async () => {
+  it('PATCHes /storage/{id} with the partial body', async () => {
     let body: unknown = null;
     let method: string | undefined;
     server.use(
-      http.put('/api/v3/storage/3', async ({ request }) => {
+      http.patch('/api/v3/storage/3', async ({ request }) => {
         method = request.method;
         body = await request.json();
         return HttpResponse.json({ id: 3, name: 'archive', path: '/mnt/archive', type: 'local', enabled: 0 });
       }),
     );
     await updateStorage(3, { enabled: 0 });
-    expect(method).toBe('PUT');
+    expect(method).toBe('PATCH');
     expect(body).toEqual({ enabled: 0 });
   });
 });

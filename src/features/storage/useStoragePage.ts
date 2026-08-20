@@ -54,12 +54,16 @@ export function useStoragePage() {
   const [deleteTarget, setDeleteTarget] = useState<ZmStorage | null>(null);
 
   const openCreate = () => {
+    createMutation.reset();
+    updateMutation.reset();
     setEditingStorage(null);
     setFormData(EMPTY_FORM);
     setModalOpen(true);
   };
 
   const openEdit = (storage: ZmStorage) => {
+    createMutation.reset();
+    updateMutation.reset();
     setEditingStorage(storage);
     setFormData({
       name: storage.name,
@@ -129,6 +133,10 @@ export function useStoragePage() {
   };
 
   const isSaving = createMutation.isPending || updateMutation.isPending;
+  /** Message from the last failed create/update, for the modal. */
+  const saveError = (editingStorage ? updateMutation.error : createMutation.error)?.message ?? null;
+  /** Message from the last failed toggle/delete, for the list. */
+  const listError = toggleEnabledMutation.error?.message ?? deleteMutation.error?.message ?? null;
   const submitDisabled = isSaving || !formData.name || !formData.path;
 
   const prevPage = () => setPage((p) => Math.max(1, p - 1));
@@ -155,6 +163,8 @@ export function useStoragePage() {
     closeModal,
     submitForm,
     isSaving,
+    saveError,
+    listError,
     submitDisabled,
     deleteTarget,
     setDeleteTarget,
