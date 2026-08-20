@@ -111,3 +111,36 @@ describe('ConsoleClassicTable — sort', () => {
     expect(names).toEqual(['Garage', 'Front Door', 'Driveway East']);
   });
 });
+
+describe('ConsoleClassicTable — runtime status', () => {
+  const withRuntime = {
+    ...data,
+    runtimeById: {
+      1: { monitorId: 1, status: 'Connected', captureFps: 10.89, analysisFps: 0, bandwidth: 1427762, updatedOn: '' },
+      2: { monitorId: 2, status: 'NotRunning', captureFps: 0, analysisFps: 0, bandwidth: 0, updatedOn: '' },
+    },
+  } as unknown as Parameters<typeof ConsoleClassicTable>[0]['data'];
+
+  it('paints the lens from the capture-process state and shows fps + bandwidth in the Function cell', () => {
+    renderWithProviders(<ConsoleClassicTable data={withRuntime} />);
+    expect(screen.getByLabelText('Connected').className).toContain('bg-emerald-500');
+    expect(screen.getByLabelText('NotRunning').className).toContain('bg-red-500');
+    expect(screen.getByTestId('console-runtime-1')).toHaveTextContent('Connected · 10.9 fps / 0.0 fps · 1.4 MB/s');
+    expect(screen.queryByTestId('console-runtime-3')).toBeNull(); // no row yet
+  });
+
+  it('shows the legacy status breakdown pills and footer totals', () => {
+    renderWithProviders(<ConsoleClassicTable data={withRuntime} />);
+    const pills = screen.getByTestId('console-status-pills');
+    expect(pills).toHaveTextContent('Capturing 1 (33%)');
+    expect(pills).toHaveTextContent('Not Running 1 (33%)');
+    expect(pills).toHaveTextContent('Unknown 1 (33%)');
+    expect(screen.getByTestId('console-runtime-totals')).toHaveTextContent('1.4 MB/s · 10.9 fps / 0.0 fps');
+  });
+
+  it('renders no pills or totals before the status poll has answered', () => {
+    renderWithProviders(<ConsoleClassicTable data={data} />);
+    expect(screen.queryByTestId('console-status-pills')).toBeNull();
+    expect(screen.queryByTestId('console-runtime-totals')).toBeNull();
+  });
+});

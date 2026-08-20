@@ -9,6 +9,7 @@ import { useAuthStore } from '@/stores/auth';
 const navigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => navigate,
+  useSearch: () => ({}),
 }));
 
 const { default: LoginPage } = await import('./login');

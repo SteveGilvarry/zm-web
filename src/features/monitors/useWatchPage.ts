@@ -1,17 +1,38 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { getMonitor, updateMonitor, getLiveStats } from '@/api/monitors';
+import { useTranslation } from 'react-i18next';
+import { getMonitor, updateMonitor, getLiveStats, controlMonitorAlarm } from '@/api/monitors';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
 import { useWebRtcStream, type StreamHookResult } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
 import { usePtzCapabilities, type PtzState } from '@/features/ptz/usePtz';
+import { useMonitorStatus, type MonitorRuntime } from './useMonitorStatuses';
 import type { LiveStats, Monitor, StreamProtocol, ZmEvent } from '@/types';
 
 export interface WatchModeUpdate {
   capturing?: string;
   analysing?: string;
   recording?: string;
+}
+
+/**
+ * Force Alarm / Cancel — the legacy watch buttons, backed by
+ * `PATCH /monitors/{id}/alarm`. On load the hook issues `action: 'status'`;
+ * the backend answers with the monitor record (it logs the shared-memory
+ * alarm state server-side but does not return it — backend ticket), so the
+ * call tells us the endpoint works for this monitor, not whether an alarm
+ * is currently forced. `forced` therefore tracks what this session did.
+ */
+export interface WatchAlarmState {
+  /** The alarm endpoint answered for this monitor. */
+  available: boolean;
+  /** This session forced an alarm and has not cancelled it. */
+  forced: boolean;
+  isPending: boolean;
+  error: string | null;
+  force: () => void;
+  cancel: () => void;
 }
 
 export interface WatchPageState {
@@ -23,6 +44,8 @@ export interface WatchPageState {
   events: ZmEvent[];
   /** HLS packet stats; only polled while an HLS stream is connected. */
   liveStats: LiveStats | undefined;
+  /** Capture-process state + fps from the shared 5 s `/monitor-status` poll. */
+  runtime: MonitorRuntime | undefined;
   protocol: StreamProtocol;
   /** The stream hook for the selected protocol. Both are always mounted. */
   activeStream: StreamHookResult;
@@ -30,7 +53,10 @@ export interface WatchPageState {
   isConnecting: boolean;
   /** Stream is anything other than idle. */
   isActive: boolean;
+  /** WebRTC gave up and the page moved itself to HLS. */
+  fellBackToHls: boolean;
   ptzState: PtzState;
+  alarm: WatchAlarmState;
   isMuted: boolean;
   isFullscreen: boolean;
   /** Viewport is at least 1024px wide. */
@@ -53,15 +79,17 @@ export interface WatchPageState {
 /**
  * Everything the Watch page needs for one monitor: the monitor record,
  * both stream hooks (only the selected protocol is started), PTZ
- * capabilities, recent events, mode mutations, and the transport handlers.
- * Both skins render from this.
+ * capabilities, runtime status, alarm control, recent events, mode
+ * mutations, and the transport handlers. Both skins render from this.
  */
 export function useWatchPage(monitorId: number): WatchPageState {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
   const id = monitorId;
 
   const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
+  const [fellBackToHls, setFellBackToHls] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [editorOpen, setEditorOpen] = useState(false);
@@ -89,6 +117,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const webrtc = useWebRtcStream(id);
   const hls = useHlsStream(id);
   const ptzState = usePtzCapabilities(id, isAuthenticated && !isNaN(id));
+  const runtime = useMonitorStatus(id, isAuthenticated && !isNaN(id));
 
   const activeStream = protocol === 'webrtc' ? webrtc : hls;
   const isStreaming = activeStream.state === 'connected';
@@ -111,22 +140,33 @@ export function useWatchPage(monitorId: number): WatchPageState {
     refetchInterval: 5000,
   });
 
-  // Auto-start stream once monitor data confirms it's capturing
-  const autoStarted = useRef(false);
+  // Auto-start the stream once monitor data confirms it's capturing. Re-arms
+  // when the protocol changes so a switch after auto-start plays too.
+  const autoStarted = useRef<StreamProtocol | null>(null);
   useEffect(() => {
-    if (!monitor || autoStarted.current) return;
+    if (!monitor || autoStarted.current === protocol) return;
     const isCapturing = monitor.capturing !== 'None';
     if (isCapturing) {
       // Always call start() so this view registers as a stream consumer —
       // even when the shared WebRTC stream is already running (navigated in
       // from the console). start() is reference-counted and idempotent.
       const timer = setTimeout(() => {
-        autoStarted.current = true;
+        autoStarted.current = protocol;
         activeStream.start();
       }, 150);
       return () => clearTimeout(timer);
     }
-  }, [monitor, activeStream]);
+  }, [monitor, activeStream, protocol]);
+
+  // WebRTC exhausted its retries (no TURN, ICE never completes): move to
+  // HLS once, automatically. A manual protocol pick clears the flag.
+  const webrtcFailed = webrtc.state === 'failed';
+  useEffect(() => {
+    if (protocol !== 'webrtc' || !webrtcFailed || fellBackToHls) return;
+    if (autoStarted.current !== 'webrtc') return;
+    setFellBackToHls(true);
+    setProtocol('hls');
+  }, [protocol, webrtcFailed, fellBackToHls]);
 
   // Fetch recent events for this monitor
   const { data: eventsData } = useQuery({
@@ -145,6 +185,37 @@ export function useWatchPage(monitorId: number): WatchPageState {
     },
   });
 
+  /* ----- Alarm control -------------------------------------------------- */
+  const alarmStatusQ = useQuery({
+    queryKey: ['monitorAlarmStatus', id],
+    queryFn: () => controlMonitorAlarm(id, { action: 'status' }),
+    enabled: isAuthenticated && !!monitor && monitor.capturing !== 'None',
+    retry: false,
+    staleTime: 60_000,
+  });
+  const [alarmForced, setAlarmForced] = useState(false);
+  const [alarmError, setAlarmError] = useState<string | null>(null);
+  const alarmMutation = useMutation({
+    mutationFn: (action: 'on' | 'cancel') =>
+      controlMonitorAlarm(id, action === 'on'
+        ? { action: 'on', cause: 'API', score: 100 }
+        : { action: 'cancel' }),
+    onMutate: () => setAlarmError(null),
+    onSuccess: (_data, action) => setAlarmForced(action === 'on'),
+    onError: (err: unknown, action) =>
+      setAlarmError(err instanceof Error
+        ? err.message
+        : action === 'on' ? t('Failed to force alarm') : t('Failed to cancel alarm')),
+  });
+  const alarm: WatchAlarmState = {
+    available: alarmStatusQ.isSuccess,
+    forced: alarmForced,
+    isPending: alarmMutation.isPending,
+    error: alarmError,
+    force: () => alarmMutation.mutate('on'),
+    cancel: () => alarmMutation.mutate('cancel'),
+  };
+
   const startStream = () => {
     activeStream.start();
   };
@@ -161,6 +232,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
       activeStream.stop();
       queryClient.invalidateQueries({ queryKey: ['liveSessions'] });
     }
+    setFellBackToHls(false);
     setProtocol(newProtocol);
   };
 
@@ -197,6 +269,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const refresh = () => {
     queryClient.invalidateQueries({ queryKey: ['monitor', id] });
     queryClient.invalidateQueries({ queryKey: ['monitorEvents', id] });
+    queryClient.invalidateQueries({ queryKey: ['monitorStatuses'] });
   };
 
   return {
@@ -206,12 +279,15 @@ export function useWatchPage(monitorId: number): WatchPageState {
     monitorLoading,
     events: eventsData?.items || [],
     liveStats,
+    runtime,
     protocol,
     activeStream,
     isStreaming,
     isConnecting,
     isActive,
+    fellBackToHls,
     ptzState,
+    alarm,
     isMuted,
     isFullscreen,
     isWide,

@@ -7,6 +7,15 @@ import { isOrientationRotated } from '@/types';
 import { StreamCell } from '@/components/common/StreamCell';
 import type { EventSummary } from '@/api/eventSummaries';
 import { formatBytes } from '@/lib/format';
+import { formatFps, runtimeTone, type MonitorRuntime, type RuntimeTone } from '@/features/monitors/useMonitorStatuses';
+
+/** Lens dot per runtime tone — legacy console colours. */
+const LENS: Record<RuntimeTone, string> = {
+  ok: 'bg-emerald',
+  warn: 'bg-amber',
+  down: 'bg-crimson',
+  unknown: 'bg-text-muted',
+};
 
 interface MonitorThumbnailProps {
   monitor: Monitor;
@@ -23,6 +32,9 @@ interface MonitorThumbnailProps {
   /** Optional fixed width in pixels — set by a justified-row layout
    *  outside the component. When omitted the tile flows naturally. */
   width?: number;
+  /** Capture-process state from `/monitor-status`; drives the lens colour
+   *  and the fps readout. Undefined = not polled yet (grey lens). */
+  runtime?: MonitorRuntime;
 }
 
 export function MonitorThumbnail({
@@ -34,9 +46,12 @@ export function MonitorThumbnail({
   summary,
   hourly,
   width,
+  runtime,
 }: MonitorThumbnailProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isEnabled = monitor.capturing !== 'None';
+  // A disabled monitor has no process; anything else reports what zmc is doing.
+  const tone: RuntimeTone = isEnabled ? runtimeTone(runtime?.status) : 'unknown';
   const rotated = isOrientationRotated(monitor.orientation);
   const effW = rotated ? (monitor.height || 9)  : (monitor.width || 16);
   const effH = rotated ? (monitor.width  || 16) : (monitor.height || 9);
@@ -141,15 +156,21 @@ export function MonitorThumbnail({
       <div className="space-y-1 px-2 py-1.5 bg-surface/70 border-t border-border-subtle/60">
         <div className="flex items-center gap-1.5 min-w-0">
           <span
-            className={clsx(
-              'flex-shrink-0 w-1.5 h-1.5 rounded-full',
-              isEnabled ? 'bg-emerald' : 'bg-text-muted',
-            )}
-            aria-label={isEnabled ? t('Capturing') : t('Idle')}
+            className={clsx('flex-shrink-0 w-1.5 h-1.5 rounded-full', LENS[tone])}
+            aria-label={isEnabled ? (runtime?.status ?? t('Capturing')) : t('Idle')}
+            title={isEnabled ? runtime?.status : undefined}
           />
           <span className="text-[12px] font-medium text-text-primary truncate flex-1">
             {monitor.name}
           </span>
+          {isEnabled && runtime && (
+            <span
+              className={clsx('text-[9px] font-mono tabular-nums', tone === 'ok' ? 'text-text-muted' : 'text-amber')}
+              data-testid="thumb-fps"
+            >
+              {formatFps(runtime.captureFps, i18n.language)}
+            </span>
+          )}
           <span className="text-[9px] font-mono text-text-dim tabular-nums opacity-0 group-hover:opacity-100 transition-opacity">
             {effW}×{effH}
           </span>

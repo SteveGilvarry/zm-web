@@ -1,7 +1,7 @@
 import { useRef, useMemo, type PointerEvent as ReactPointerEvent } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { useReviewEvents } from './useReviewEvents';
+import { eventEndMs, useReviewEvents } from './useReviewEvents';
 import type { Monitor, ZmEvent } from '@/types';
 
 interface MontageReviewTimelineProps {
@@ -159,7 +159,8 @@ function EventBar({ event, rangeStart, durationMs }: EventBarProps) {
   if (!event.start_date_time || durationMs <= 0) return null;
   const start = Date.parse(event.start_date_time);
   if (isNaN(start)) return null;
-  const end = event.end_date_time ? Date.parse(event.end_date_time) : start + 60_000;
+  // Same rule as the cell lookup: an in-progress event runs up to now.
+  const end = eventEndMs(event) ?? start;
   const leftPct = ((start - rangeStart.getTime()) / durationMs) * 100;
   const widthPct = Math.max(0.2, ((end - start) / durationMs) * 100);
 

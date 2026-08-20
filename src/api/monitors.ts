@@ -1,4 +1,4 @@
-import { apiGet, apiPatch, apiDelete, getAuthToken } from './client';
+import { apiGet, apiPost, apiPatch, apiDelete, getAuthToken, ApiClientError } from './client';
 import { API_BASE, wsBase } from '@/api/base';
 import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, StartLiveResponse, LiveStats } from '@/types';
 
@@ -80,51 +80,42 @@ export async function controlMonitorAlarm(id: number, body: AlarmControlRequest)
   return normalizeMonitor(await apiPatch<AlarmControlRequest, Monitor>(`/monitors/${id}/alarm`, body));
 }
 
-// Live streaming — endpoints are protected by Feature::Stream + monitor ACL,
-// so a Bearer token is required (header is accepted; query fallback also works).
+// Live streaming — endpoints are protected by Feature::Stream + monitor ACL.
+// Both calls go through the authed client so a stale access token gets the
+// same 401 → refresh → retry every other request does (a wake-from-sleep used
+// to burn every reconnect attempt on 401s).
 export async function startLiveStream(monitorId: number, options?: StartLiveRequest): Promise<StartLiveResponse> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE}/live/${monitorId}/start`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-    },
-    body: JSON.stringify(options || { enable_hls: true }),
-  });
-  // 409 Conflict ("Live stream already exists for monitor N") is not an error —
-  // /start is idempotent: the stream is already running and is exactly what we
-  // want to connect to. This happens routinely because stopping a stream closes
-  // the signaling socket WITHOUT a DELETE /stop (so other viewers aren't kicked),
-  // leaving the backend session alive; and because two monitors can share one
-  // RTSP camera. Return success so callers proceed to connect. The 409 body
-  // carries no signaling URLs, so callers fall back to the conventional paths
-  // (getWebRtcWebsocketUrl / getHlsPlaylistUrl).
-  if (response.status === 409) {
-    return { monitor_id: monitorId, status: 'already_running' };
-  }
-  if (!response.ok) {
-    let message = `HTTP ${response.status}`;
-    try {
-      const body = await response.json();
-      message = body.error_message || body.message || body.error || message;
-    } catch {
-      // Response wasn't JSON
+  try {
+    return await apiPost<StartLiveRequest, StartLiveResponse>(
+      `/live/${monitorId}/start`,
+      options || { enable_hls: true },
+    );
+  } catch (err) {
+    // 409 Conflict ("Live stream already exists for monitor N") is not an error —
+    // /start is idempotent: the stream is already running and is exactly what we
+    // want to connect to. This happens routinely because no client ever sends
+    // DELETE /stop (it would kick every other viewer), so the backend session
+    // outlives any one tab; and because two monitors can share one RTSP camera.
+    // The 409 body carries no signaling URLs, so callers fall back to the
+    // conventional paths (getWebRtcWebsocketUrl / getHlsPlaylistUrl).
+    if (err instanceof ApiClientError && err.status === 409) {
+      return { monitor_id: monitorId, status: 'already_running' };
     }
-    throw new Error(message);
+    throw err;
   }
-  return response.json();
 }
 
+/**
+ * Tear down the backend session for a monitor — for EVERY viewer. The stream
+ * hooks never call this (closing the socket / destroying hls.js is enough for
+ * one client); it exists for an explicit operator action.
+ */
 export async function stopLiveStream(monitorId: number): Promise<void> {
-  const token = getAuthToken();
-  const response = await fetch(`${API_BASE}/live/${monitorId}/stop`, {
-    method: 'DELETE',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
-  });
-  if (!response.ok && response.status !== 404) {
-    const text = await response.text();
-    throw new Error(text || `HTTP ${response.status}`);
+  try {
+    await apiDelete(`/live/${monitorId}/stop`);
+  } catch (err) {
+    if (err instanceof ApiClientError && err.status === 404) return; // already stopped
+    throw err;
   }
 }
 

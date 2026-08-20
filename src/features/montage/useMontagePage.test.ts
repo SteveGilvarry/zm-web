@@ -6,8 +6,8 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useMontageStore } from '@/stores/montage';
-import { leaf, leafCount, leafMonitors } from './mosaic';
-import { MONTAGE_PRESETS, useMontagePage, useMontageWallPage } from './useMontagePage';
+import { leaf, leafCount, leafMonitors, split } from './mosaic';
+import { MONTAGE_PRESETS, autoLayout, useMontagePage, useMontageWallPage } from './useMontagePage';
 
 const server = setupServer();
 beforeAll(() => {
@@ -17,7 +17,7 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
 beforeEach(() => {
-  useMontageStore.setState({ tree: leaf(null), protocol: 'webrtc' });
+  useMontageStore.setState({ tree: leaf(null), protocol: 'webrtc', statusPosition: 'inside' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -48,19 +48,47 @@ function stubMonitors() {
 }
 
 describe('useMontagePage (mosaic)', () => {
-  it('seeds an empty persisted tree with the first capturing monitor', async () => {
+  it('seeds a fresh install with the Auto layout sized to the fleet', async () => {
     stubMonitors();
     const { result } = renderHook(() => useMontagePage(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.monitors).toHaveLength(3));
     expect(result.current.enabledMonitors.map((m) => m.id)).toEqual([1, 2]);
-    await waitFor(() => expect(leafMonitors(result.current.tree)).toEqual([1]));
-    expect(result.current.cellsOnScreen).toBe(1);
+    // autoColumns(2) === 2 → one row of two.
+    await waitFor(() => expect(leafMonitors(result.current.tree)).toEqual([1, 2]));
+    expect(result.current.cellsOnScreen).toBe(2);
+  });
+
+  it('fills, but does not reshape, a vacant tree the operator already arranged', async () => {
+    stubMonitors();
+    useMontageStore.setState({ tree: split('column', [leaf(null), leaf(null), leaf(null)]) });
+    const { result } = renderHook(() => useMontagePage(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(leafMonitors(result.current.tree)).toEqual([1, 2, null]));
+    expect(result.current.tree.type).toBe('split');
+  });
+
+  it('exposes the persisted status position and the live-tile cap', async () => {
+    stubMonitors();
+    const { result } = renderHook(() => useMontagePage(), { wrapper: makeWrapper() });
+    expect(result.current.statusPosition).toBe('inside');
+    act(() => result.current.setStatusPosition('outside'));
+    expect(result.current.statusPosition).toBe('outside');
+    expect(useMontageStore.getState().statusPosition).toBe('outside');
+    act(() => result.current.setMaxLiveTiles(24));
+    expect(result.current.maxLiveTiles).toBe(24);
+  });
+
+  it('autoLayout follows the montage.php column heuristic', () => {
+    expect(leafMonitors(autoLayout([1, 2, 3, 4]))).toEqual([1, 2, 3, 4]);
+    const four = autoLayout([1, 2, 3, 4]);
+    expect(four.type === 'split' && four.children).toHaveLength(2); // 2 wide → 2 rows
+    expect(leafMonitors(autoLayout([1, 2, 3, 4, 5]))).toEqual([1, 2, 3, 4, 5, null]); // 3 wide → 2 rows
+    expect(autoLayout([])).toEqual(leaf(null));
   });
 
   it('applies a preset, reusing on-screen monitors then padding with unused ones', async () => {
     stubMonitors();
     const { result } = renderHook(() => useMontagePage(), { wrapper: makeWrapper() });
-    await waitFor(() => expect(leafMonitors(result.current.tree)).toEqual([1]));
+    await waitFor(() => expect(leafMonitors(result.current.tree)).toEqual([1, 2]));
 
     const twoByTwo = MONTAGE_PRESETS.find((p) => p.id === '2x2')!;
     act(() => result.current.applyPreset(twoByTwo));
@@ -84,13 +112,13 @@ describe('useMontagePage (mosaic)', () => {
   it('tracks the cell being picked for and assigns the chosen monitor', async () => {
     stubMonitors();
     const { result } = renderHook(() => useMontagePage(), { wrapper: makeWrapper() });
-    await waitFor(() => expect(leafMonitors(result.current.tree)).toEqual([1]));
+    await waitFor(() => expect(leafMonitors(result.current.tree)).toEqual([1, 2]));
     expect(result.current.picking).toBeNull();
-    act(() => result.current.chooseMonitor([]));
-    expect(result.current.picking).toEqual([]);
+    act(() => result.current.chooseMonitor([0]));
+    expect(result.current.picking).toEqual([0]);
     act(() => result.current.pickMonitor(2));
     expect(result.current.picking).toBeNull();
-    expect(leafMonitors(result.current.tree)).toEqual([2]);
+    expect(leafMonitors(result.current.tree)).toEqual([2, 2]);
   });
 });
 

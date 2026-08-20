@@ -6,11 +6,11 @@ import type { ReactNode } from 'react';
 import type { Monitor, ZmEvent, StreamProtocol } from '@/types';
 import type { StreamHookResult } from '@/hooks/useWebRtcStream';
 import type { PtzState } from '@/features/ptz/usePtz';
+import type { WatchAlarmState } from './useWatchPage';
 
 /* -------------------------------------------------------------------------- */
 /*  Mocks — router Link is a plain <a>; PtzControls is replaced with a stub.  */
-/*  controlMonitorAlarm is mocked at the module level so we can assert it is  */
-/*  called with the right body without spinning up a real fetch.              */
+/*  Alarm control arrives as a prop (useWatchPage owns the mutation).         */
 /* -------------------------------------------------------------------------- */
 
 vi.mock('@tanstack/react-router', () => ({
@@ -28,15 +28,6 @@ vi.mock('@/features/ptz/PtzControls', () => ({
     </div>
   ),
 }));
-
-const controlMonitorAlarmMock = vi.fn().mockResolvedValue({ id: 1 });
-vi.mock('@/api/monitors', async () => {
-  const actual = await vi.importActual<typeof import('@/api/monitors')>('@/api/monitors');
-  return {
-    ...actual,
-    controlMonitorAlarm: (...args: unknown[]) => controlMonitorAlarmMock(...args),
-  };
-});
 
 const { MonitorWatchClassic } = await import('./MonitorWatchClassic');
 
@@ -118,6 +109,14 @@ function makeEvent(over: Partial<ZmEvent> = {}): ZmEvent {
 
 const NO_PTZ: PtzState = { status: 'no-ptz', message: 'No PTZ' };
 
+function makeAlarm(over: Partial<WatchAlarmState> = {}): WatchAlarmState {
+  return {
+    available: true, forced: false, isPending: false, error: null,
+    force: vi.fn(), cancel: vi.fn(),
+    ...over,
+  };
+}
+
 function renderClassic(props: Partial<Parameters<typeof MonitorWatchClassic>[0]> = {}) {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -129,6 +128,7 @@ function renderClassic(props: Partial<Parameters<typeof MonitorWatchClassic>[0]>
     onProtocolChange: vi.fn(),
     ptzState: NO_PTZ,
     events: [],
+    alarm: makeAlarm(),
     isMuted: true,
     onToggleMute: vi.fn(),
     onToggleFullscreen: vi.fn(),
@@ -226,38 +226,71 @@ describe('MonitorWatchClassic — PTZ panel', () => {
 });
 
 describe('MonitorWatchClassic — Force Alarm', () => {
-  it('confirms then calls controlMonitorAlarm with action=on when Force Alarm is clicked', async () => {
-    controlMonitorAlarmMock.mockClear();
+  it('confirms then calls alarm.force() when Force Alarm is clicked', async () => {
+    const alarm = makeAlarm();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const user = userEvent.setup();
 
-    renderClassic({ monitor: makeMonitor({ id: 9 }) });
+    renderClassic({ monitor: makeMonitor({ id: 9 }), alarm });
     await user.click(screen.getByRole('button', { name: /force alarm/i }));
 
     expect(confirmSpy).toHaveBeenCalled();
-    expect(controlMonitorAlarmMock).toHaveBeenCalledWith(9, {
-      action: 'on',
-      cause: 'API',
-      score: 100,
-    });
+    expect(alarm.force).toHaveBeenCalledTimes(1);
     confirmSpy.mockRestore();
   });
 
-  it('does NOT call the API when the user cancels the confirm dialog', async () => {
-    controlMonitorAlarmMock.mockClear();
+  it('does NOT force when the user cancels the confirm dialog', async () => {
+    const alarm = makeAlarm();
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const user = userEvent.setup();
 
-    renderClassic();
+    renderClassic({ alarm });
     await user.click(screen.getByRole('button', { name: /force alarm/i }));
 
-    expect(controlMonitorAlarmMock).not.toHaveBeenCalled();
+    expect(alarm.force).not.toHaveBeenCalled();
     confirmSpy.mockRestore();
   });
 
-  it('disables the Force Alarm button when the monitor is not capturing', () => {
-    renderClassic({ monitor: makeMonitor({ capturing: 'None' }) });
+  it('Cancel Alarm calls alarm.cancel() without a confirm', async () => {
+    const alarm = makeAlarm({ forced: true });
+    const user = userEvent.setup();
+    renderClassic({ alarm });
+    await user.click(screen.getByRole('button', { name: /cancel alarm/i }));
+    expect(alarm.cancel).toHaveBeenCalledTimes(1);
+  });
+
+  it('disables the alarm buttons when the monitor is not capturing, and shows the last error', () => {
+    renderClassic({ monitor: makeMonitor({ capturing: 'None' }), alarm: makeAlarm({ error: 'shm unavailable' }) });
     expect(screen.getByRole('button', { name: /force alarm/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /cancel alarm/i })).toBeDisabled();
+    expect(screen.getByText('shm unavailable')).toBeInTheDocument();
+  });
+});
+
+describe('MonitorWatchClassic — orientation + runtime', () => {
+  it('sizes the stage to the post-rotation aspect and rotates the video for ROTATE_90', () => {
+    const { container } = renderClassic({
+      monitor: makeMonitor({ width: 3840, height: 2160, orientation: 'ROTATE_90' }),
+      stream: makeStream({ state: 'connected' }),
+    });
+    expect(screen.getByTestId('watch-stage').style.aspectRatio).toBe('2160 / 3840');
+    const video = container.querySelector('video')!;
+    expect(video.style.transform).toContain('rotate(90deg)');
+    expect(video.style.position).toBe('absolute');
+  });
+
+  it('keeps the native aspect and no transform for Rotate0', () => {
+    const { container } = renderClassic({ stream: makeStream({ state: 'connected' }) });
+    expect(screen.getByTestId('watch-stage').style.aspectRatio).toBe('1920 / 1080');
+    expect(container.querySelector('video')!.style.transform).toBe('');
+  });
+
+  it('shows state + capture/analysis fps from the runtime poll', () => {
+    renderClassic({
+      runtime: { monitorId: 1, status: 'Connected', captureFps: 10.89, analysisFps: 0, bandwidth: 0, updatedOn: '' },
+    });
+    expect(screen.getByTestId('watch-runtime')).toHaveTextContent('Connected');
+    expect(screen.getByTestId('watch-runtime')).toHaveTextContent('10.9 fps');
   });
 });
 

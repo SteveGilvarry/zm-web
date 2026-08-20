@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { Monitor } from '@/types';
+import { useMontageStore } from '@/stores/montage';
 import { autoColumns, MONTAGE_PRESETS } from './classicPresets';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -14,12 +15,27 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
-// MonitorPreview pulls in streaming hooks, useInViewport, etc. Replace with a
-// sentinel so the unit test stays scoped to the grid container + toolbar.
-vi.mock('@/components/monitors/MonitorPreview', () => ({
-  MonitorPreview: ({ monitorId }: { monitorId: number }) => (
-    <div data-testid={`mp-${monitorId}`} />
-  ),
+// StreamCell pulls in the streaming hooks; replace with a sentinel that
+// records its props so the test stays scoped to the grid + toolbar.
+const streamCellProps: Array<Record<string, unknown>> = [];
+vi.mock('@/components/common/StreamCell', () => ({
+  StreamCell: (props: { monitorId: number }) => {
+    streamCellProps.push(props);
+    return <div data-testid={`stream-${props.monitorId}`} />;
+  },
+}));
+
+// Runtime status comes from a polled query; stub the hook with fixed rows.
+vi.mock('@/features/monitors/useMonitorStatuses', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/monitors/useMonitorStatuses')>()),
+  useMonitorStatuses: () => ({
+    byId: {
+      1: { monitorId: 1, status: 'Connected', captureFps: 10.89, analysisFps: 0, bandwidth: 1000, updatedOn: '' },
+    },
+    list: [],
+    isLoading: false,
+    isError: false,
+  }),
 }));
 
 const { MontageClassicGrid } = await import('./MontageClassicGrid');
@@ -79,6 +95,30 @@ describe('MontageClassicGrid — preset list', () => {
       'Auto', '1 Wide', '2 Wide', '3 Wide', '4 Wide', '5 Wide', '6 Wide',
       '8 Wide', '12 Wide', '16 Wide', '20 Wide', '24 Wide', '32 Wide', '48 Wide',
     ]);
+  });
+});
+
+describe('MontageClassicGrid — live cells', () => {
+  it('renders a gated, auto-starting StreamCell per monitor on the stored protocol', () => {
+    streamCellProps.length = 0;
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} />);
+    expect(screen.getByTestId('stream-1')).toBeInTheDocument();
+    expect(screen.getByTestId('stream-2')).toBeInTheDocument();
+    expect(streamCellProps[0]).toMatchObject({ protocol: 'webrtc', autoStart: true, gated: true, compact: true });
+  });
+
+  it('captions each cell with runtime state + capture fps when known, id otherwise', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} />);
+    expect(screen.getByTestId('montage-classic-status-1')).toHaveTextContent('Connected · 10.9 fps');
+    expect(screen.getByTestId('montage-classic-status-2')).toHaveTextContent('#2');
+  });
+
+  it('switching the protocol select updates the shared montage store', async () => {
+    const user = userEvent.setup();
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} />);
+    await user.selectOptions(screen.getByRole('combobox', { name: /stream protocol/i }), 'hls');
+    expect(useMontageStore.getState().protocol).toBe('hls');
+    useMontageStore.setState({ protocol: 'webrtc' });
   });
 });
 

@@ -10,6 +10,14 @@
  *
  * A WebRTC MediaStream can be attached to any number of <video> elements, so
  * each consumer attaches the shared stream to its own element.
+ *
+ * Reconnect policy: every transport loss — socket close, ICE `failed`, ICE
+ * `disconnected` that does not heal within a grace period, a missed keepalive
+ * pong, a failed `/start` — goes through `scheduleReconnect`, which backs off
+ * exponentially (1 s → 16 s) for up to five attempts and then settles in
+ * `failed`. The attempt counter is reset only after the peer connection has
+ * stayed `connected` for a while, never on socket open, so a backend that
+ * accepts the socket and then drops it cannot loop at 1 s forever.
  */
 import { getWebRtcWebsocketUrl, startLiveStream } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
@@ -24,13 +32,21 @@ const STUN_SERVERS: RTCIceServer[] = [
   { urls: 'stun:stun1.l.google.com:19302' },
 ];
 
-const KEEPALIVE_INTERVAL_MS = 30_000;
-const MAX_RECONNECT_ATTEMPTS = 5;
-const BASE_RECONNECT_DELAY_MS = 1_000;
-const MAX_RECONNECT_DELAY_MS = 16_000;
-/** How long a session lingers after its last consumer unmounts, so navigating
- *  between two views of the same monitor doesn't drop the connection. */
-const GRACE_PERIOD_MS = 8_000;
+export const WEBRTC_TIMING = {
+  KEEPALIVE_INTERVAL_MS: 30_000,
+  /** A ping with no pong inside this window means the socket is half-open. */
+  PONG_TIMEOUT_MS: 10_000,
+  MAX_RECONNECT_ATTEMPTS: 5,
+  BASE_RECONNECT_DELAY_MS: 1_000,
+  MAX_RECONNECT_DELAY_MS: 16_000,
+  /** How long a session lingers after its last consumer unmounts, so navigating
+   *  between two views of the same monitor doesn't drop the connection. */
+  GRACE_PERIOD_MS: 8_000,
+  /** ICE `disconnected` often heals on its own (Wi-Fi roam); wait this long. */
+  DISCONNECT_GRACE_MS: 5_000,
+  /** Connected this long → the link is stable → forget past failures. */
+  STABLE_CONNECTED_MS: 30_000,
+} as const;
 
 export interface WebRtcSnapshot {
   state: StreamConnectionState;
@@ -53,7 +69,10 @@ interface Session {
   pc: RTCPeerConnection | null;
   sessionId: string | null;
   keepaliveTimer: ReturnType<typeof setInterval> | null;
+  pongTimer: ReturnType<typeof setTimeout> | null;
   reconnectTimer: ReturnType<typeof setTimeout> | null;
+  disconnectTimer: ReturnType<typeof setTimeout> | null;
+  stableTimer: ReturnType<typeof setTimeout> | null;
   reconnectAttempt: number;
   graceTimer: ReturnType<typeof setTimeout> | null;
   /** Safari rejects addIceCandidate() before setRemoteDescription() resolves. */
@@ -101,21 +120,30 @@ function patchSnapshot(monitorId: number, patch: Partial<WebRtcSnapshot>) {
 
 // --- connection lifecycle ---------------------------------------------------
 
+function clearTimer<T extends 'keepaliveTimer' | 'pongTimer' | 'reconnectTimer' | 'disconnectTimer' | 'stableTimer'>(
+  session: Session,
+  key: T,
+) {
+  const handle = session[key];
+  if (handle == null) return;
+  if (key === 'keepaliveTimer') clearInterval(handle as ReturnType<typeof setInterval>);
+  else clearTimeout(handle as ReturnType<typeof setTimeout>);
+  session[key] = null;
+}
+
 function clearTimers(session: Session) {
-  if (session.keepaliveTimer) {
-    clearInterval(session.keepaliveTimer);
-    session.keepaliveTimer = null;
-  }
-  if (session.reconnectTimer) {
-    clearTimeout(session.reconnectTimer);
-    session.reconnectTimer = null;
-  }
+  clearTimer(session, 'keepaliveTimer');
+  clearTimer(session, 'pongTimer');
+  clearTimer(session, 'reconnectTimer');
+  clearTimer(session, 'disconnectTimer');
+  clearTimer(session, 'stableTimer');
 }
 
 /** Close the transport for a session but keep the Session record. */
 function closeTransport(session: Session) {
   clearTimers(session);
   if (session.pc) {
+    session.pc.onconnectionstatechange = null;
     session.pc.close();
     session.pc = null;
   }
@@ -134,33 +162,46 @@ function closeTransport(session: Session) {
 
 /**
  * Schedule a reconnect with exponential backoff, or give up after the cap.
- * Shared by the WS-close path and the `/start` failure path so both retry
- * transient drops consistently.
+ * Every transport-loss path funnels through here so they all retry the same
+ * way. Idempotent while a retry is already pending.
  */
 function scheduleReconnect(session: Session, reason: string) {
   const { monitorId } = session;
-  clearTimers(session);
   if (session.closing) return;
+  if (session.reconnectTimer) return;
+  clearTimers(session);
 
-  if (session.reconnectAttempt < MAX_RECONNECT_ATTEMPTS) {
+  if (session.reconnectAttempt < WEBRTC_TIMING.MAX_RECONNECT_ATTEMPTS) {
     const delay = Math.min(
-      BASE_RECONNECT_DELAY_MS * 2 ** session.reconnectAttempt,
-      MAX_RECONNECT_DELAY_MS,
+      WEBRTC_TIMING.BASE_RECONNECT_DELAY_MS * 2 ** session.reconnectAttempt,
+      WEBRTC_TIMING.MAX_RECONNECT_DELAY_MS,
     );
     session.reconnectAttempt++;
     patchSnapshot(monitorId, {
       state: 'connecting',
-      error: `${reason}, retrying (${session.reconnectAttempt}/${MAX_RECONNECT_ATTEMPTS})...`,
+      error: `${reason}, retrying (${session.reconnectAttempt}/${WEBRTC_TIMING.MAX_RECONNECT_ATTEMPTS})...`,
     });
     session.reconnectTimer = setTimeout(() => {
+      session.reconnectTimer = null;
       void connect(session);
     }, delay);
   } else {
+    closeTransport(session);
     patchSnapshot(monitorId, {
       state: 'failed',
       error: `${reason} after max retries`,
+      mediaStream: null,
     });
   }
+}
+
+/** Drop a socket we consider dead and go straight to the retry path. */
+function dropTransport(session: Session, reason: string) {
+  if (session.ws) {
+    session.ws.onclose = null;
+    session.ws.close();
+  }
+  scheduleReconnect(session, reason);
 }
 
 async function connect(session: Session) {
@@ -174,9 +215,10 @@ async function connect(session: Session) {
   let signalingPath: string | undefined;
   try {
     const resp = await startLiveStream(monitorId, { enable_webrtc: true });
-    signalingPath = resp.webrtc_signaling;
+    signalingPath = resp.webrtc_signaling ?? undefined;
   } catch (err) {
-    // A 401 here means the JWT is missing/insufficient (needs Stream:View).
+    // A 401 that survived the client's refresh-and-retry means the session is
+    // gone; anything else is a transient backend problem. Both back off.
     const message =
       err instanceof Error ? err.message : 'Failed to start WebRTC stream';
     scheduleReconnect(session, message);
@@ -192,12 +234,18 @@ async function connect(session: Session) {
 
   ws.onopen = () => {
     patchSnapshot(monitorId, { state: 'signaling' });
-    session.reconnectAttempt = 0;
+    // Deliberately no reconnectAttempt reset here — see the stable timer in
+    // onconnectionstatechange.
     session.keepaliveTimer = setInterval(() => {
-      if (ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'ping' }));
+      if (ws.readyState !== WebSocket.OPEN) return;
+      ws.send(JSON.stringify({ type: 'ping' }));
+      if (!session.pongTimer) {
+        session.pongTimer = setTimeout(() => {
+          session.pongTimer = null;
+          dropTransport(session, 'Keepalive timeout');
+        }, WEBRTC_TIMING.PONG_TIMEOUT_MS);
       }
-    }, KEEPALIVE_INTERVAL_MS);
+    }, WEBRTC_TIMING.KEEPALIVE_INTERVAL_MS);
   };
 
   ws.onmessage = async (event) => {
@@ -241,11 +289,32 @@ async function connect(session: Session) {
         };
 
         pc.onconnectionstatechange = () => {
-          if (pc.connectionState === 'failed') {
-            patchSnapshot(monitorId, {
-              state: 'failed',
-              error: 'WebRTC connection failed',
-            });
+          if (session.pc !== pc || session.closing) return;
+          switch (pc.connectionState) {
+            case 'connected':
+              clearTimer(session, 'disconnectTimer');
+              if (!session.stableTimer) {
+                session.stableTimer = setTimeout(() => {
+                  session.stableTimer = null;
+                  session.reconnectAttempt = 0;
+                }, WEBRTC_TIMING.STABLE_CONNECTED_MS);
+              }
+              break;
+            case 'disconnected':
+              // Usually transient; only treat it as a loss if it lingers.
+              clearTimer(session, 'stableTimer');
+              if (!session.disconnectTimer) {
+                session.disconnectTimer = setTimeout(() => {
+                  session.disconnectTimer = null;
+                  dropTransport(session, 'Connection interrupted');
+                }, WEBRTC_TIMING.DISCONNECT_GRACE_MS);
+              }
+              break;
+            case 'failed':
+              dropTransport(session, 'WebRTC connection failed');
+              break;
+            default:
+              break;
           }
         };
 
@@ -324,7 +393,7 @@ async function connect(session: Session) {
         break;
 
       case 'pong':
-        // Keepalive response, nothing to do
+        clearTimer(session, 'pongTimer');
         break;
     }
   };
@@ -377,7 +446,10 @@ function acquire(monitorId: number) {
     pc: null,
     sessionId: null,
     keepaliveTimer: null,
+    pongTimer: null,
     reconnectTimer: null,
+    disconnectTimer: null,
+    stableTimer: null,
     reconnectAttempt: 0,
     graceTimer: null,
     remoteReady: false,
@@ -394,7 +466,7 @@ function release(monitorId: number) {
   if (!session) return;
   session.refCount = Math.max(0, session.refCount - 1);
   if (session.refCount === 0 && !session.graceTimer) {
-    session.graceTimer = setTimeout(() => teardown(monitorId), GRACE_PERIOD_MS);
+    session.graceTimer = setTimeout(() => teardown(monitorId), WEBRTC_TIMING.GRACE_PERIOD_MS);
   }
 }
 
@@ -410,6 +482,11 @@ function shutdownAll() {
   }
 }
 
+/** Whether a live session record exists for the monitor (any state but idle). */
+function hasSession(monitorId: number): boolean {
+  return sessions.has(monitorId);
+}
+
 // Drop all connections on logout so they don't leak across user sessions.
 useAuthStore.subscribe((state, prevState) => {
   if (prevState.isAuthenticated && !state.isAuthenticated) {
@@ -423,4 +500,5 @@ export const webrtcManager = {
   stopHard,
   subscribe,
   getSnapshot,
+  hasSession,
 };

@@ -67,3 +67,27 @@ describe('MonitorThumbnail — activity ribbon', () => {
     expect(screen.getByText(/quiet · 24h/i)).toBeInTheDocument();
   });
 });
+
+describe('MonitorThumbnail — runtime status', () => {
+  const runtime = { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, bandwidth: 0, updatedOn: '' };
+
+  it('colours the lens from the capture-process state, not the config', () => {
+    renderWithProviders(<MonitorThumbnail monitor={m} runtime={runtime} />);
+    const lens = screen.getByLabelText('NotRunning');
+    expect(lens.className).toContain('bg-crimson');
+  });
+
+  it('shows the capture fps when the status poll has answered', () => {
+    renderWithProviders(
+      <MonitorThumbnail monitor={m} runtime={{ ...runtime, status: 'Connected', captureFps: 10.89 }} />,
+    );
+    expect(screen.getByTestId('thumb-fps')).toHaveTextContent('10.9 fps');
+    expect(screen.getByLabelText('Connected').className).toContain('bg-emerald');
+  });
+
+  it('stays grey with no fps before the poll answers', () => {
+    renderWithProviders(<MonitorThumbnail monitor={m} />);
+    expect(screen.getByLabelText('Capturing').className).toContain('bg-text-muted');
+    expect(screen.queryByTestId('thumb-fps')).toBeNull();
+  });
+});

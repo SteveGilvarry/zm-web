@@ -25,13 +25,17 @@ vi.mock('@/streaming/webrtcManager', () => {
     listenersByMonitor.get(monitorId)?.forEach((l) => l());
   }
 
+  const live = new Set<number>();
   const acquire = vi.fn((monitorId: number) => {
+    live.add(monitorId);
     setSnap(monitorId, { state: 'connecting' });
   });
   const release = vi.fn();
   const stopHard = vi.fn((monitorId: number) => {
+    live.delete(monitorId);
     setSnap(monitorId, IDLE);
   });
+  const hasSession = vi.fn((monitorId: number) => live.has(monitorId));
   const subscribe = vi.fn((monitorId: number, listener: () => void) => {
     let set = listenersByMonitor.get(monitorId);
     if (!set) {
@@ -48,9 +52,9 @@ vi.mock('@/streaming/webrtcManager', () => {
   );
 
   return {
-    webrtcManager: { acquire, release, stopHard, subscribe, getSnapshot },
+    webrtcManager: { acquire, release, stopHard, subscribe, getSnapshot, hasSession },
     // expose helpers for tests
-    __mock: { setSnap, snapshotByMonitor, listenersByMonitor },
+    __mock: { setSnap, snapshotByMonitor, listenersByMonitor, live },
   };
 });
 
@@ -64,6 +68,7 @@ const mockHelpers = (managerModule as any).__mock as {
   setSnap: (monitorId: number, patch: Partial<WebRtcSnapshot>) => void;
   snapshotByMonitor: Map<number, WebRtcSnapshot>;
   listenersByMonitor: Map<number, Set<() => void>>;
+  live: Set<number>;
 };
 
 const acquireMock = webrtcManager.acquire as ReturnType<typeof vi.fn>;
@@ -74,6 +79,7 @@ const subscribeMock = webrtcManager.subscribe as ReturnType<typeof vi.fn>;
 beforeEach(() => {
   mockHelpers.snapshotByMonitor.clear();
   mockHelpers.listenersByMonitor.clear();
+  mockHelpers.live.clear();
   acquireMock.mockClear();
   releaseMock.mockClear();
   stopHardMock.mockClear();
@@ -112,6 +118,28 @@ describe('useWebRtcStream — start / stop', () => {
     act(() => result.current.start());
     act(() => result.current.start());
     expect(acquireMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('start() re-acquires when the session was torn down underneath a held reference', () => {
+    const { result } = renderHook(() => useWebRtcStream(42));
+    act(() => result.current.start());
+    // Another consumer's hard stop (or logout) removes the session.
+    act(() => { mockHelpers.live.delete(42); });
+    act(() => result.current.start());
+    expect(acquireMock).toHaveBeenCalledTimes(2);
+  });
+
+  it('pause() releases the reference instead of tearing the session down', () => {
+    const { result } = renderHook(() => useWebRtcStream(42));
+    act(() => result.current.start());
+    act(() => result.current.pause());
+    expect(releaseMock).toHaveBeenCalledWith(42);
+    expect(stopHardMock).not.toHaveBeenCalled();
+    // A second pause is a no-op; start afterwards acquires again.
+    act(() => result.current.pause());
+    expect(releaseMock).toHaveBeenCalledTimes(1);
+    act(() => result.current.start());
+    expect(acquireMock).toHaveBeenCalledTimes(2);
   });
 
   it('stop() calls webrtcManager.stopHard with the monitorId', () => {

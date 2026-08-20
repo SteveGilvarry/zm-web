@@ -4,6 +4,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
+import type { UserClaims } from '@/types';
 
 // Stub the SystemRunningToggle out to a sentinel — it has its own tests and
 // renders extra mutations / queries we don't care about here.

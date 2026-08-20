@@ -3,7 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
-import { useMontageStore } from '@/stores/montage';
+import { useMontageStore, type MontageStatusPosition } from '@/stores/montage';
+import { useUiStore } from '@/stores/ui';
+import { autoColumns } from './classicPresets';
 import {
   bannerLayout,
   gridLayout,
@@ -68,6 +70,12 @@ export interface MontagePageState {
   tree: LayoutNode;
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   protocol: StreamProtocol;
+  /** Where each cell's name + runtime caption sits (persisted). */
+  statusPosition: MontageStatusPosition;
+  setStatusPosition: (position: MontageStatusPosition) => void;
+  /** Simultaneous live tiles allowed on this browser (persisted, `useUiStore`). */
+  maxLiveTiles: number;
+  setMaxLiveTiles: (n: number) => void;
   monitors: Monitor[];
   enabledMonitors: Monitor[];
   monitorById: Map<number, Monitor>;
@@ -96,7 +104,9 @@ export function useMontagePage(): MontagePageState {
   const { isAuthenticated } = useAuthStore();
   const gridRef = useRef<HTMLDivElement>(null);
 
-  const { tree, protocol, setTree, setProtocol } = useMontageStore();
+  const { tree, protocol, setTree, setProtocol, statusPosition, setStatusPosition } = useMontageStore();
+  const maxLiveTiles = useUiStore((s) => s.maxLiveTiles);
+  const setMaxLiveTiles = useUiStore((s) => s.setMaxLiveTiles);
 
   // Generation counter — bumped to force every StreamCell to unmount and
   // remount, used by the Restart button and protocol switching to acquire
@@ -105,7 +115,7 @@ export function useMontagePage(): MontagePageState {
 
   const { data: monitorsData } = useQuery({
     queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 50 }),
+    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
     enabled: isAuthenticated,
     refetchInterval: 30_000,
   });
@@ -129,15 +139,23 @@ export function useMontagePage(): MontagePageState {
   );
 
   // First-time hydration: if the persisted tree has no monitors assigned,
-  // seed it with as many available monitors as the tree has cells.
+  // seed it. A fresh install (the store's single vacant cell) gets the
+  // legacy "Auto" layout — a grid sized to the fleet by montage.php's
+  // heuristic — so the first visit shows every camera, not one. A tree the
+  // operator has already shaped keeps its shape and just gets filled.
   useEffect(() => {
     const currentLeaves = leafMonitors(tree);
     const anyAssigned = currentLeaves.some((id) => id != null);
     if (anyAssigned) return;
     if (enabledMonitors.length === 0) return;
 
-    // Replace each null leaf in order with the next available monitor.
     const ids = enabledMonitors.map((m) => m.id);
+    if (currentLeaves.length === 1) {
+      setTree(autoLayout(ids));
+      return;
+    }
+
+    // Replace each null leaf in order with the next available monitor.
     let idx = 0;
     const filled = mapLeaves(tree, () => {
       const next = ids[idx];
@@ -203,6 +221,10 @@ export function useMontagePage(): MontagePageState {
     tree,
     setTree,
     protocol,
+    statusPosition,
+    setStatusPosition,
+    maxLiveTiles,
+    setMaxLiveTiles,
     monitors,
     enabledMonitors,
     monitorById,
@@ -276,6 +298,14 @@ export function useMontageWallPage(): MontageWallPageState {
 /* ------------------------------------------------------------------------ */
 /*  Tree helpers                                                            */
 /* ------------------------------------------------------------------------ */
+
+/** Legacy "Auto" preset: `autoColumns` wide, as many rows as the fleet needs. */
+export function autoLayout(monitorIds: number[]): LayoutNode {
+  if (monitorIds.length === 0) return leaf(null);
+  const cols = autoColumns(monitorIds.length);
+  const rows = Math.ceil(monitorIds.length / cols);
+  return gridLayout(cols, rows, monitorIds);
+}
 
 /** Walk the tree and replace each leaf with the result of `f`. */
 function mapLeaves(node: LayoutNode, f: (l: LayoutNode & { type: 'leaf' }) => LayoutNode): LayoutNode {

@@ -4,6 +4,13 @@ import type { StreamProtocol } from '@/types';
 import type { LayoutNode } from '@/features/montage/mosaic';
 import { leaf } from '@/features/montage/mosaic';
 
+/**
+ * Where a cell's name + runtime-status caption sits. Mirrors legacy
+ * `zmMonitorStatusPositionSelected` (`insideImgBottom` / `outsideImgBottom` /
+ * `hidden`), minus the hover variant.
+ */
+export type MontageStatusPosition = 'inside' | 'outside' | 'hidden';
+
 interface MontageState {
   /**
    * Layout tree describing how the viewport is split between monitors.
@@ -13,28 +20,33 @@ interface MontageState {
    */
   tree: LayoutNode;
   protocol: StreamProtocol;
+  statusPosition: MontageStatusPosition;
 
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   setProtocol: (protocol: StreamProtocol) => void;
+  setStatusPosition: (position: MontageStatusPosition) => void;
 }
 
 export const useMontageStore = create<MontageState>()(
   persist(
     (set, get) => ({
-      // Start with an empty single tile; the route auto-populates it
-      // with the first available monitor on mount.
+      // Start with an empty single tile; the page replaces it with an Auto
+      // layout sized to the fleet on first load.
       tree: leaf(null),
       protocol: 'webrtc',
+      statusPosition: 'inside',
 
       setTree: (next) =>
         set({ tree: typeof next === 'function' ? next(get().tree) : next }),
       setProtocol: (protocol) => set({ protocol }),
+      setStatusPosition: (statusPosition) => set({ statusPosition }),
     }),
     {
       name: 'zm-montage',
       partialize: (state) => ({
         tree: state.tree,
         protocol: state.protocol,
+        statusPosition: state.statusPosition,
       }),
     },
   ),

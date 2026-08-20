@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, beforeEach } from 'vitest';
+import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { createRef } from 'react';
@@ -27,6 +27,7 @@ function makeStream(overrides: Partial<{
     hasAudio: overrides.hasAudio ?? false,
     start: vi.fn(),
     stop: vi.fn(),
+    pause: vi.fn(),
   };
 }
 
@@ -166,5 +167,97 @@ describe('StreamCell — interaction', () => {
     expect(onClick).toHaveBeenCalled();
     await user.dblClick(wrapper);
     expect(onDoubleClick).toHaveBeenCalled();
+  });
+});
+
+/* -------------------------------------------------------------------------- */
+/*  Wall gating — viewport × tab visibility × live-tile budget                */
+/* -------------------------------------------------------------------------- */
+
+import { act } from '@testing-library/react';
+import { liveTileBudget } from '@/streaming/liveTileBudget';
+import { useUiStore } from '@/stores/ui';
+
+const inViewMock = vi.fn(() => true);
+const tabVisibleMock = vi.fn(() => true);
+vi.mock('@/hooks/useInViewport', () => ({ useInViewport: () => inViewMock() }));
+vi.mock('@/hooks/useDocumentVisible', () => ({ useDocumentVisible: () => tabVisibleMock() }));
+
+describe('StreamCell — gated tiles', () => {
+  beforeEach(() => {
+    vi.useFakeTimers();
+    liveTileBudget.reset();
+    useUiStore.setState({ maxLiveTiles: 12 });
+    inViewMock.mockReturnValue(true);
+    tabVisibleMock.mockReturnValue(true);
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('an ungated autoStart tile starts after the stagger delay', () => {
+    const stream = makeStream();
+    mockHook.mockReturnValue(stream);
+    render(<StreamCell protocol="webrtc" monitorId={1} autoStart />);
+    act(() => { vi.advanceTimersByTime(700); });
+    expect(stream.start).toHaveBeenCalledTimes(1);
+  });
+
+  it('a gated tile out of the viewport never starts and pauses instead', () => {
+    inViewMock.mockReturnValue(false);
+    const stream = makeStream();
+    mockHook.mockReturnValue(stream);
+    render(<StreamCell protocol="webrtc" monitorId={1} autoStart gated />);
+    act(() => { vi.advanceTimersByTime(700); });
+    expect(stream.start).not.toHaveBeenCalled();
+    expect(stream.pause).toHaveBeenCalled();
+  });
+
+  it('a gated tile in view starts, and a hidden tab pauses it', () => {
+    const stream = makeStream();
+    mockHook.mockReturnValue(stream);
+    const { rerender } = render(<StreamCell protocol="webrtc" monitorId={1} autoStart gated />);
+    act(() => { vi.advanceTimersByTime(700); });
+    expect(stream.start).toHaveBeenCalledTimes(1);
+
+    tabVisibleMock.mockReturnValue(false);
+    rerender(<StreamCell protocol="webrtc" monitorId={1} autoStart gated />);
+    expect(stream.pause).toHaveBeenCalled();
+  });
+
+  it('tiles past the live-tile cap wait with a placeholder and start once a slot frees', () => {
+    useUiStore.setState({ maxLiveTiles: 1 });
+    const a = makeStream();
+    const b = makeStream();
+    mockHook.mockImplementation((id: number) => (id === 1 ? a : b));
+    const { unmount: unmountA } = render(<StreamCell protocol="webrtc" monitorId={1} autoStart gated />);
+    render(<StreamCell protocol="webrtc" monitorId={2} autoStart gated />);
+    act(() => { vi.advanceTimersByTime(700); });
+    expect(a.start).toHaveBeenCalledTimes(1);
+    expect(b.start).not.toHaveBeenCalled();
+    expect(screen.getByTestId('stream-over-budget')).toBeInTheDocument();
+
+    unmountA();
+    act(() => { vi.advanceTimersByTime(700); });
+    expect(b.start).toHaveBeenCalledTimes(1);
+    expect(screen.queryByTestId('stream-over-budget')).toBeNull();
+  });
+
+  it('falls back to HLS when WebRTC ends in failed', () => {
+    const rtc = makeStream({ state: 'failed', error: 'ICE failed after max retries' });
+    const hls = makeStream({ state: 'connected' });
+    let calls = 0;
+    mockHook.mockImplementation(() => (calls++ === 0 ? rtc : hls));
+    render(<StreamCell protocol="webrtc" monitorId={1} autoStart />);
+    expect(screen.getByText(/HLS · fallback/)).toBeInTheDocument();
+  });
+
+  it('renders the status caption beside the name when asked to', () => {
+    mockHook.mockReturnValue(makeStream({ state: 'connected' }));
+    render(
+      <StreamCell protocol="hls" monitorId={1} monitorName="Garage" statusText="Connected · 10.9 fps" compact showName />,
+    );
+    expect(screen.getByText('Garage')).toBeInTheDocument();
+    expect(screen.getByTestId('stream-status')).toHaveTextContent('Connected · 10.9 fps');
   });
 });

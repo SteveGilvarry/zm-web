@@ -22,6 +22,7 @@ const { fakeData } = vi.hoisted(() => {
       systemStats: undefined,
       summariesByMonitor: [],
       hourlyByMonitor: {},
+      runtimeById: {},
       loading: { monitors: false, events: false },
     },
   };

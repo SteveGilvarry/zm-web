@@ -299,6 +299,7 @@ function JustifiedMonitorGrid({
               liveProtocol={liveProtocol}
               summary={lookupSummary(data.summariesByMonitor, monitor.id)}
               hourly={data.hourlyByMonitor[monitor.id]}
+              runtime={data.runtimeById[monitor.id]}
               width={width}
             />
           ))}

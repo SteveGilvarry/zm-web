@@ -262,3 +262,79 @@ describe('useHlsStream — hasAudio detection', () => {
     expect(result.current.hasAudio).toBe(false);
   });
 });
+
+describe('useHlsStream — never stops the shared backend session', () => {
+  it('stop() and unmount do not DELETE /live/{id}/stop', async () => {
+    let stopHits = 0;
+    server.use(
+      http.delete('/api/v3/live/:id/stop', () => {
+        stopHits += 1;
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    const before = instances.length;
+    const { result, unmount } = renderHook(() => useHlsStream(1));
+    attachVideo(result.current.videoRef);
+    act(() => { result.current.start(); });
+    await waitFor(() => expect(instances.length).toBeGreaterThan(before));
+    act(() => { result.current.stop(); });
+    unmount();
+    await new Promise((r) => setTimeout(r, 30));
+    expect(stopHits).toBe(0);
+  });
+});
+
+describe('useHlsStream — start() guard', () => {
+  it('a second start() while connected does not build a second Hls', async () => {
+    const before = instances.length;
+    const { result } = renderHook(() => useHlsStream(1));
+    attachVideo(result.current.videoRef);
+    act(() => { result.current.start(); });
+    await waitFor(() => expect(instances.length).toBe(before + 1));
+    act(() => { instances[instances.length - 1].fire('hlsManifestParsed', { levels: [] }); });
+    act(() => { result.current.start(); });
+    await new Promise((r) => setTimeout(r, 30));
+    expect(instances.length).toBe(before + 1);
+  });
+
+  it('start() keeps one identity across state changes', async () => {
+    const before = instances.length;
+    const { result } = renderHook(() => useHlsStream(1));
+    attachVideo(result.current.videoRef);
+    const first = result.current.start;
+    act(() => { result.current.start(); });
+    await waitFor(() => expect(instances.length).toBeGreaterThan(before));
+    expect(result.current.start).toBe(first);
+  });
+});
+
+describe('useHlsStream — fatal network errors back off and give up', () => {
+  it('retries with startLoad() up to the cap, then lands in failed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(1));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      const inst = instances[instances.length - 1];
+      act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+
+      for (let attempt = 1; attempt <= 5; attempt++) {
+        act(() => { inst.fire('hlsError', { fatal: true, type: 'networkError' }); });
+        expect(result.current.error).toContain(`(${attempt}/5)`);
+        expect(result.current.state).toBe('connected');
+        const delay = Math.min(1000 * 2 ** (attempt - 1), 16_000);
+        expect(inst.startLoad).toHaveBeenCalledTimes(attempt - 1);
+        await act(async () => { await vi.advanceTimersByTimeAsync(delay); });
+        expect(inst.startLoad).toHaveBeenCalledTimes(attempt);
+      }
+      act(() => { inst.fire('hlsError', { fatal: true, type: 'networkError' }); });
+      expect(result.current.state).toBe('failed');
+      expect(result.current.error).toMatch(/gave up/);
+      expect(inst.destroy).toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, fireEvent } from '@testing-library/react';
+import { act, render, screen, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { PtzCapabilities } from '@/api/ptz';
 
@@ -163,5 +163,31 @@ describe('PtzControls — Focus Auto', () => {
     render(<PtzControls monitorId={42} capabilities={fullCaps()} />);
     await user.click(screen.getByRole('button', { name: /^auto$/i }));
     expect(ptzMock.focus).toHaveBeenCalledWith(42, 'auto');
+  });
+});
+
+describe('PtzControls — command failures are shown, not swallowed', () => {
+  it('renders the rejected command inline and clears it after a few seconds', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      ptzMock.home.mockRejectedValueOnce(new Error('Camera unreachable'));
+      render(<PtzControls monitorId={1} capabilities={fullCaps()} />);
+      fireEvent.click(screen.getByRole('button', { name: /^home$/i }));
+      const alert = await screen.findByRole('alert');
+      expect(alert).toHaveTextContent('Home: Camera unreachable');
+      await act(async () => { await vi.advanceTimersByTimeAsync(6_100); });
+      expect(screen.queryByRole('alert')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('a failed move during press-and-hold is reported too', async () => {
+    ptzMock.move.mockRejectedValueOnce(new Error('timeout'));
+    render(<PtzControls monitorId={1} capabilities={fullCaps()} />);
+    const up = screen.getByRole('button', { name: /move up$/i });
+    (up as HTMLElement & { setPointerCapture: () => void }).setPointerCapture = () => {};
+    fireEvent.pointerDown(up, { pointerId: 1 });
+    expect(await screen.findByRole('alert')).toHaveTextContent('Move: timeout');
   });
 });

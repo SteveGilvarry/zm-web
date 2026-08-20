@@ -16,6 +16,7 @@ const { webrtcStream, hlsStream } = vi.hoisted(() => {
     error: null,
     start: vi.fn(),
     stop: vi.fn(),
+    pause: vi.fn(),
     hasAudio: false,
   });
   return { webrtcStream: mk(), hlsStream: mk() };
@@ -66,9 +67,23 @@ const monitor = {
   width: 1920, height: 1080, orientation: 'ROTATE_0', type: 'Ffmpeg', enabled: 1,
 };
 
+const alarmCalls: unknown[] = [];
+
 function stubMonitor(overrides: Partial<typeof monitor> = {}) {
+  alarmCalls.length = 0;
   server.use(
     http.get('/api/v3/monitors/7', () => HttpResponse.json({ ...monitor, ...overrides })),
+    http.get('/api/v3/monitor-status', () =>
+      HttpResponse.json({
+        items: [{ monitor_id: 7, status: 'Connected', capture_fps: '12.50', analysis_fps: '1.00', capture_bandwidth: 2048, updated_on: 'x' }],
+        total: 1, per_page: 1000, current_page: 1, last_page: 1,
+      }),
+    ),
+    http.patch('/api/v3/monitors/7/alarm', async ({ request }) => {
+      const body = await request.json();
+      alarmCalls.push(body);
+      return HttpResponse.json({ ...monitor, ...overrides });
+    }),
     http.get('/api/v3/events', () =>
       HttpResponse.json({
         items: [{ id: 101, name: 'Event-101', monitor_id: 7, start_date_time: '2026-08-21T01:00:00' }],
@@ -123,6 +138,55 @@ describe('useWatchPage', () => {
 
     act(() => result.current.startStream());
     expect(hlsStream.start).toHaveBeenCalled();
+  });
+
+  it('exposes runtime status from the shared /monitor-status poll', async () => {
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.runtime?.status).toBe('Connected'));
+    expect(result.current.runtime?.captureFps).toBe(12.5);
+  });
+
+  it('probes the alarm endpoint on load, then forces and cancels through it', async () => {
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.alarm.available).toBe(true));
+    expect(alarmCalls).toEqual([{ action: 'status' }]);
+    expect(result.current.alarm.forced).toBe(false);
+
+    act(() => result.current.alarm.force());
+    await waitFor(() => expect(result.current.alarm.forced).toBe(true));
+    expect(alarmCalls[1]).toEqual({ action: 'on', cause: 'API', score: 100 });
+
+    act(() => result.current.alarm.cancel());
+    await waitFor(() => expect(result.current.alarm.forced).toBe(false));
+    expect(alarmCalls[2]).toEqual({ action: 'cancel' });
+    expect(result.current.alarm.error).toBeNull();
+  });
+
+  it('surfaces an alarm failure instead of pretending it worked', async () => {
+    stubMonitor();
+    server.use(
+      http.patch('/api/v3/monitors/7/alarm', async ({ request }) => {
+        const body = (await request.json()) as { action: string };
+        if (body.action === 'status') return HttpResponse.json(monitor);
+        return HttpResponse.json({ error_message: 'shared memory unavailable' }, { status: 503 });
+      }),
+    );
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.alarm.available).toBe(true));
+    act(() => result.current.alarm.force());
+    await waitFor(() => expect(result.current.alarm.error).toBe('shared memory unavailable'));
+    expect(result.current.alarm.forced).toBe(false);
+  });
+
+  it('does not probe the alarm endpoint for a monitor that is not capturing', async () => {
+    stubMonitor({ capturing: 'None' });
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.monitor).toBeDefined());
+    await new Promise((r) => setTimeout(r, 50));
+    expect(alarmCalls).toEqual([]);
+    expect(result.current.alarm.available).toBe(false);
   });
 
   it('opens and closes the config editor', async () => {

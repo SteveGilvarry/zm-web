@@ -1,9 +1,10 @@
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import type { CSSProperties } from 'react';
 import {
   ArrowLeft,
+  Bell,
+  BellOff,
   Play,
   Pause,
   Video,
@@ -29,23 +30,24 @@ import {
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import type { CapturingMode, AnalysingMode, RecordingMode } from '@/types';
-import { getOrientationStyle, isOrientationRotated } from '@/types';
 import type { PagePropsMap } from '@/skins/types';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { zoneViewDimensions } from '@/features/zones/useZonesPage';
 import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
 import { useWatchPage } from '@/features/monitors/useWatchPage';
+import { formatFps } from '@/features/monitors/useMonitorStatuses';
+import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
 import { WatchLoading, WatchNotFound } from '../layouts/WatchStates';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Watch — Mission Control: live stream with adaptive layout, PTZ, zones, controls. */
 export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const page = useWatchPage(monitorId);
   const {
-    monitor, monitorLoading, events, liveStats, protocol, activeStream,
-    isStreaming, isConnecting, isActive, ptzState, isMuted, isFullscreen, isWide,
+    monitor, monitorLoading, events, liveStats, runtime, protocol, activeStream,
+    isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, isFullscreen, isWide,
     editorOpen, openEditor, closeEditor, updateModes, isUpdating,
     startStream, stopStream, changeProtocol, toggleFullscreen, toggleMute, retry,
   } = page;
@@ -75,46 +77,22 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   const isEnabled = monitor.capturing !== 'None';
 
   // Effective dimensions after orientation, used to drive the layout.
-  const rotated = isOrientationRotated(monitor.orientation);
-  const effW = rotated ? monitor.height : monitor.width;
-  const effH = rotated ? monitor.width : monitor.height;
+  const { width: effW, height: effH } = displayDimensions(monitor);
   const aspect = effW > 0 && effH > 0 ? effW / effH : 16 / 9;
   // Portrait/tall cameras get a side-by-side layout that fills the viewport
   // vertically; everything else stacks. Side requires desktop width.
   const layout: 'side' | 'stacked' = aspect <= 0.9 && isWide ? 'side' : 'stacked';
   const aspectStyle = { aspectRatio: `${effW} / ${effH}` };
 
-  // Rotated cameras need different fit logic depending on the container shape.
-  // - In a portrait container (side layout, or stacked + narrow viewport),
-  //   size the element to the container's swapped dimensions and rotate, so
-  //   the rotated content fills the container with no letterboxing.
-  // - In fullscreen the container becomes screen-shaped (typically 16:9),
-  //   where the classic rotate + scale(9/16) fit applies cleanly.
-  const norm = (monitor.orientation ?? '').replace(/[_\s]/g, '').toLowerCase();
-  const rotationDeg = norm === 'rotate270' ? 270 : 90;
-  const useSwappedRotation = rotated && !isFullscreen;
-
+  // Rotated cameras: swapped-dimension rotation inline (the container has
+  // the camera's displayed aspect), plain rotate + scale in fullscreen where
+  // the container is screen-shaped. See features/monitors/orientation.ts.
   const videoClassName = clsx(
-    useSwappedRotation
-      ? 'object-contain bg-black'
-      : 'w-full h-full object-contain bg-black',
+    stageVideoClass(monitor, isFullscreen),
     !(isActive || isStreaming) && 'hidden',
   );
-  const videoElementStyle: CSSProperties | undefined = useSwappedRotation
-    ? {
-        position: 'absolute',
-        top: '50%',
-        left: '50%',
-        width: `${(effH / effW) * 100}%`,
-        height: `${(effW / effH) * 100}%`,
-        // Tailwind preflight applies `max-width: 100%` to <video>; override
-        // so the swapped-dimension sizing isn't clamped to the container.
-        maxWidth: 'none',
-        maxHeight: 'none',
-        transform: `translate(-50%, -50%) rotate(${rotationDeg}deg)`,
-        transformOrigin: 'center',
-      }
-    : getOrientationStyle(monitor.orientation);
+  const videoElementStyle = stageVideoStyle(monitor, isFullscreen);
+  const protocolLabel = protocol === 'webrtc' ? 'WebRTC' : fellBackToHls ? t('HLS · fallback') : 'HLS';
 
   // Render the video frame as a styled div rather than wrapping it in <Panel>
   // — Panel's inner content wrapper doesn't propagate height, which breaks the
@@ -171,9 +149,25 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                     <span className="relative inline-flex rounded-full h-2 w-2 bg-crimson" />
                   </span>
                   <span className="text-xs font-mono font-bold text-white">
-                    {t('LIVE')} {isStreaming && <>&middot; {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}</>}
+                    {t('LIVE')} {isStreaming && <>&middot; {protocolLabel}</>}
                   </span>
                 </div>
+
+                {/* Runtime: capture-process state + fps (legacy State / Capturing FPS readout) */}
+                {runtime && (
+                  <span className="text-xs font-mono text-text-muted tabular-nums whitespace-nowrap" data-testid="watch-runtime">
+                    {runtime.status}
+                    {' · '}
+                    {layout === 'side'
+                      // Portrait stage is narrow: fps only.
+                      ? formatFps(runtime.captureFps, i18n.language)
+                      : <>
+                          {t('Capture: {{fps}}', { fps: formatFps(runtime.captureFps, i18n.language) })}
+                          {' · '}
+                          {t('Analysis: {{fps}}', { fps: formatFps(runtime.analysisFps, i18n.language) })}
+                        </>}
+                  </span>
+                )}
 
                 {/* Stats */}
                 {liveStats && (
@@ -623,14 +617,56 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
               <ChevronRight size={14} className="text-text-muted rtl:-scale-x-100" />
               <span className="text-text-primary">{monitor.name}</span>
             </div>
-            <button
-              onClick={openEditor}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 transition-colors text-xs font-medium"
-            >
-              <Pencil size={12} />
-              {t('Edit configuration')}
-            </button>
+            <div className="flex items-center gap-2">
+              {/* Force Alarm / Cancel — legacy watch buttons. Shown once the
+                  alarm endpoint has answered for this (capturing) monitor. */}
+              {alarm.available && (
+                <>
+                  <button
+                    onClick={() => {
+                      if (window.confirm(t('Force alarm on "{{name}}"? This creates an event right now.', { name: monitor.name }))) {
+                        alarm.force();
+                      }
+                    }}
+                    disabled={alarm.isPending}
+                    className={clsx(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded border transition-colors text-xs font-medium disabled:opacity-50',
+                      alarm.forced
+                        ? 'border-crimson bg-crimson/30 text-crimson animate-pulse'
+                        : 'border-crimson/40 bg-crimson/10 text-crimson hover:bg-crimson/20',
+                    )}
+                    title={t('Force alarm — creates an event immediately')}
+                  >
+                    <Bell size={12} />
+                    {alarm.forced ? t('Alarm forced') : t('Force Alarm')}
+                  </button>
+                  <button
+                    onClick={alarm.cancel}
+                    disabled={alarm.isPending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-border bg-surface/50 text-text-secondary hover:text-text-primary hover:border-text-muted/50 transition-colors text-xs font-medium disabled:opacity-50"
+                    title={t('Cancel forced alarm')}
+                  >
+                    <BellOff size={12} />
+                    {t('Cancel Alarm')}
+                  </button>
+                </>
+              )}
+              <button
+                onClick={openEditor}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-cyan/40 bg-cyan/10 text-cyan hover:bg-cyan/20 transition-colors text-xs font-medium"
+              >
+                <Pencil size={12} />
+                {t('Edit configuration')}
+              </button>
+            </div>
           </div>
+
+          {alarm.error && (
+            <div role="alert" className="mb-4 flex items-center gap-2 px-3 py-2 rounded-lg border border-crimson/40 bg-crimson/10 text-crimson text-xs">
+              <AlertTriangle size={12} />
+              {alarm.error}
+            </div>
+          )}
 
           {layout === 'side' ? (
             // Portrait/tall camera: video fills viewport height; panels alongside.

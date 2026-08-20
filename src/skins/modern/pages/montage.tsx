@@ -6,6 +6,8 @@ import {
   Radio,
   RotateCw,
   LayoutGrid,
+  Tag,
+  Gauge,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
@@ -13,19 +15,37 @@ import { MosaicView } from '@/features/montage/MosaicView';
 import { SavedLayoutsMenu } from '@/features/montage/SavedLayoutsMenu';
 import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 import { useMontagePage, useMontagePresets, type MontagePreset } from '@/features/montage/useMontagePage';
+import {
+  formatFps,
+  runtimeTone,
+  useMonitorStatuses,
+  type MonitorRuntime,
+  type RuntimeTone,
+} from '@/features/monitors/useMonitorStatuses';
+import { MAX_LIVE_TILES_OPTIONS } from '@/stores/ui';
+import type { MontageStatusPosition } from '@/stores/montage';
 import type { Monitor } from '@/types';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
+const TONE_TEXT: Record<RuntimeTone, string> = {
+  ok: 'text-emerald',
+  warn: 'text-amber',
+  down: 'text-crimson',
+  unknown: 'text-text-dim',
+};
+
 /** Montage — Mission Control: mosaic editor + saved layouts. */
 export default function MontagePage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const page = useMontagePage();
   const presets = useMontagePresets();
   useDocumentTitle(t('Montage'));
   const {
     tree, setTree, protocol, monitors, enabledMonitors, monitorById, filteredIds,
     setFilteredMonitors, streamGeneration, cellsOnScreen, gridRef, picking,
+    statusPosition, setStatusPosition, maxLiveTiles, setMaxLiveTiles,
   } = page;
+  const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated && statusPosition !== 'hidden');
 
   // Grid presets keep their 1×1 / 2×2 labels; only the named ones translate.
   const presetLabel = (p: MontagePreset): string => {
@@ -35,6 +55,17 @@ export default function MontagePage() {
       default: return p.label;
     }
   };
+
+  const positionLabel = (p: MontageStatusPosition): string => {
+    switch (p) {
+      case 'inside': return t('Inside bottom');
+      case 'outside': return t('Outside bottom');
+      case 'hidden': return t('Hidden');
+    }
+  };
+
+  const captionFor = (runtime: MonitorRuntime | undefined): string | undefined =>
+    runtime ? `${runtime.status} · ${formatFps(runtime.captureFps, i18n.language)}` : undefined;
 
   if (!page.isAuthenticated) return null;
 
@@ -50,8 +81,8 @@ export default function MontagePage() {
         </div>
 
         {/* Toolbar */}
-        <div className="flex items-center justify-between flex-shrink-0">
-          <div className="flex items-center gap-3">
+        <div className="flex items-center justify-between flex-shrink-0 gap-3 flex-wrap">
+          <div className="flex items-center gap-3 flex-wrap">
             {/* Preset layout picker */}
             <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
               <LayoutGrid size={14} className="ms-2 text-text-muted" />
@@ -68,10 +99,14 @@ export default function MontagePage() {
             </div>
 
             {/* Saved-layout CRUD — pick a named arrangement, save the
-                current one, or rename / delete the loaded one. */}
+                current one, or update / rename / delete the loaded one. */}
             <SavedLayoutsMenu
               currentTree={tree}
-              onLoad={(next) => setTree(next)}
+              statusPosition={statusPosition}
+              onLoad={(layout) => {
+                setTree(layout.tree);
+                if (layout.statusPosition) setStatusPosition(layout.statusPosition);
+              }}
             />
 
             {/* Protocol toggle */}
@@ -101,6 +136,43 @@ export default function MontagePage() {
                 HLS
               </button>
             </div>
+
+            {/* Caption position (legacy "Monitor status position"). */}
+            <label className="flex items-center gap-1.5 bg-surface rounded-lg p-1 ps-2 border border-border-subtle text-[11px] font-mono text-text-muted">
+              <Tag size={12} />
+              <span className="sr-only">{t('Monitor status position')}</span>
+              <select
+                aria-label={t('Monitor status position')}
+                value={statusPosition}
+                onChange={(e) => setStatusPosition(e.target.value as MontageStatusPosition)}
+                className="bg-transparent px-1 py-1 text-[11px] font-mono text-text-secondary hover:text-cyan focus:outline-none focus:text-cyan transition-colors"
+              >
+                {(['inside', 'outside', 'hidden'] as const).map((p) => (
+                  <option key={p} value={p}>{positionLabel(p)}</option>
+                ))}
+              </select>
+            </label>
+
+            {/* Live-tile cap. */}
+            <label
+              className="flex items-center gap-1.5 bg-surface rounded-lg p-1 ps-2 border border-border-subtle text-[11px] font-mono text-text-muted"
+              title={t('How many tiles may stream at once in this browser; the rest wait for a free slot')}
+            >
+              <Gauge size={12} />
+              <span className="sr-only">{t('Live tile limit')}</span>
+              <select
+                aria-label={t('Live tile limit')}
+                value={maxLiveTiles}
+                onChange={(e) => setMaxLiveTiles(Number(e.target.value))}
+                className="bg-transparent px-1 py-1 text-[11px] font-mono text-text-secondary hover:text-cyan focus:outline-none focus:text-cyan transition-colors"
+              >
+                {[...MAX_LIVE_TILES_OPTIONS, ...(MAX_LIVE_TILES_OPTIONS.includes(maxLiveTiles as 12) ? [] : [maxLiveTiles])]
+                  .sort((a, b) => a - b)
+                  .map((n) => (
+                    <option key={n} value={n}>{t('{{count}} live', { count: n })}</option>
+                  ))}
+              </select>
+            </label>
 
             <span className="text-[10px] font-mono text-text-muted">
               {t('{{count}} cell', { count: cellsOnScreen })}
@@ -153,19 +225,30 @@ export default function MontagePage() {
                   </div>
                 );
               }
-              return (
+              const runtime = runtimeById[m.id];
+              const cell = (
                 <StreamCell
                   key={`${m.id}-${protocol}-${streamGeneration}`}
                   protocol={protocol}
                   monitorId={m.id}
                   monitorName={m.name}
+                  statusText={statusPosition === 'inside' ? captionFor(runtime) : undefined}
+                  showName={statusPosition === 'inside'}
                   orientation={m.orientation}
                   autoStart
+                  gated
                   compact
                   // rotationFit defaults to 'auto' — it measures the
                   // cell's actual shape and picks fill when the cell
                   // ends up portrait, fit otherwise.
                 />
+              );
+              if (statusPosition !== 'outside') return cell;
+              return (
+                <div className="absolute inset-0 flex flex-col">
+                  <div className="relative flex-1 min-h-0">{cell}</div>
+                  <OutsideCaption monitor={m} runtime={runtime} caption={captionFor(runtime)} />
+                </div>
               );
             }}
             onSplit={page.split}
@@ -184,6 +267,35 @@ export default function MontagePage() {
         )}
       </main>
     </AppShell>
+  );
+}
+
+/** Legacy "outside bottom" caption bar under a cell: name, state, fps. */
+function OutsideCaption({
+  monitor,
+  runtime,
+  caption,
+}: {
+  monitor: Monitor;
+  runtime: MonitorRuntime | undefined;
+  caption: string | undefined;
+}) {
+  const tone = runtimeTone(runtime?.status);
+  return (
+    <div className="flex-shrink-0 flex items-center gap-2 px-2 py-1 bg-surface/90 border-t border-border-subtle min-w-0">
+      <span className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', {
+        'bg-emerald': tone === 'ok',
+        'bg-amber': tone === 'warn',
+        'bg-crimson': tone === 'down',
+        'bg-text-dim': tone === 'unknown',
+      })} />
+      <span className="text-[11px] font-medium text-text-primary truncate">{monitor.name}</span>
+      {caption && (
+        <span className={clsx('ms-auto text-[10px] font-mono tabular-nums whitespace-nowrap', TONE_TEXT[tone])}>
+          {caption}
+        </span>
+      )}
+    </div>
   );
 }
 

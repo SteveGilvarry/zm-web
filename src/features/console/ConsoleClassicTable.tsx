@@ -8,7 +8,26 @@ import { type ConsoleData, lookupSummary } from './useConsoleData';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { formatBytes } from '@/lib/format';
 import { updateMonitor } from '@/api/monitors';
+import {
+  formatBandwidth,
+  formatFps,
+  runtimeTone,
+  summarizeRuntime,
+  type MonitorRuntime,
+  type RuntimeTone,
+} from '@/features/monitors/useMonitorStatuses';
 import type { Monitor } from '@/types';
+
+/** Stable empty map so a data object without runtime rows keeps memo deps steady. */
+const NO_RUNTIME: Record<number, MonitorRuntime> = {};
+
+/** Legacy console lens colours: green capturing, orange running, red down. */
+const LENS: Record<RuntimeTone, string> = {
+  ok: 'bg-emerald-500',
+  warn: 'bg-amber-500',
+  down: 'bg-red-500',
+  unknown: 'bg-zinc-400',
+};
 
 type SortKey =
   | 'id' | 'name' | 'function' | 'source' | 'sequence'
@@ -25,8 +44,9 @@ interface ConsoleClassicTableProps {
  * thumbnail grid) and this table never disagree about a number.
  */
 export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { monitors, summariesByMonitor } = data;
+  const runtimeById: Record<number, MonitorRuntime> = data.runtimeById ?? NO_RUNTIME;
   const [sortKey, setSortKey] = useState<SortKey>('sequence');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
   const [draggingId, setDraggingId] = useState<number | null>(null);
@@ -77,6 +97,14 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
     reorderMutation.mutate(next);
   };
 
+  // Legacy status breakdown ("Capturing 75% · Not Running 25%") + the
+  // footer's aggregate bandwidth and fps, from the shared status poll.
+  const runtimeTotals = useMemo(
+    () => summarizeRuntime(runtimeById, rows.map((r) => r.monitor.id)),
+    [runtimeById, rows],
+  );
+  const hasRuntime = rows.some((r) => runtimeById[r.monitor.id] != null);
+
   const totals = useMemo(() => {
     const acc = {
       hour: 0, hour_disk: 0,
@@ -115,8 +143,29 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
     );
   }
 
+  const pct = (n: number) => (rows.length ? Math.round((n / rows.length) * 100) : 0);
+
   return (
     <div className="bg-white rounded border border-zinc-300 overflow-hidden">
+      {hasRuntime && (
+        <div
+          className="flex flex-wrap items-center gap-2 px-3 py-2 border-b border-zinc-200 bg-zinc-50 text-[11px]"
+          data-testid="console-status-pills"
+        >
+          {runtimeTotals.byTone.ok > 0 && (
+            <Pill tone="ok" label={t('Capturing')} count={runtimeTotals.byTone.ok} pct={pct(runtimeTotals.byTone.ok)} />
+          )}
+          {runtimeTotals.byTone.warn > 0 && (
+            <Pill tone="warn" label={t('Running')} count={runtimeTotals.byTone.warn} pct={pct(runtimeTotals.byTone.warn)} />
+          )}
+          {runtimeTotals.byTone.down > 0 && (
+            <Pill tone="down" label={t('Not Running')} count={runtimeTotals.byTone.down} pct={pct(runtimeTotals.byTone.down)} />
+          )}
+          {runtimeTotals.byTone.unknown > 0 && (
+            <Pill tone="unknown" label={t('Unknown')} count={runtimeTotals.byTone.unknown} pct={pct(runtimeTotals.byTone.unknown)} />
+          )}
+        </div>
+      )}
       <table className="w-full text-sm text-zinc-800">
         <thead className="bg-zinc-100 border-b border-zinc-300 text-xs">
           <tr>
@@ -149,6 +198,7 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
               key={monitor.id}
               monitor={monitor}
               summary={summary}
+              runtime={runtimeById[monitor.id]}
               dragEnabled={dragEnabled}
               isDragging={draggingId === monitor.id}
               onDragStart={() => setDraggingId(monitor.id)}
@@ -161,6 +211,16 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
           <tr>
             <td className="px-3 py-2 font-semibold text-zinc-700" colSpan={6}>
               {t('Total ({{count}} monitor)', { count: rows.length })}
+              {hasRuntime && (
+                <div className="text-[10px] font-normal font-mono text-zinc-500 tabular-nums" data-testid="console-runtime-totals">
+                  {formatBandwidth(runtimeTotals.bandwidth, i18n.language)}
+                  {' · '}
+                  {t('{{capture}} / {{analysis}}', {
+                    capture: formatFps(runtimeTotals.captureFps, i18n.language),
+                    analysis: formatFps(runtimeTotals.analysisFps, i18n.language),
+                  })}
+                </div>
+              )}
             </td>
             <FootCount count={totals.hour}     disk={totals.hour_disk} />
             <FootCount count={totals.day}      disk={totals.day_disk} />
@@ -172,6 +232,21 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
         </tfoot>
       </table>
     </div>
+  );
+}
+
+function Pill({ tone, label, count, pct }: { tone: RuntimeTone; label: string; count: number; pct: number }) {
+  return (
+    <span className={clsx(
+      'inline-flex items-center gap-1.5 px-2 py-0.5 rounded border font-medium tabular-nums',
+      tone === 'ok' && 'bg-emerald-50 border-emerald-300 text-emerald-700',
+      tone === 'warn' && 'bg-amber-50 border-amber-300 text-amber-700',
+      tone === 'down' && 'bg-red-50 border-red-300 text-red-700',
+      tone === 'unknown' && 'bg-zinc-100 border-zinc-300 text-zinc-600',
+    )}>
+      <span className={clsx('w-1.5 h-1.5 rounded-full', LENS[tone])} />
+      {label} {count} ({pct}%)
+    </span>
   );
 }
 
@@ -218,18 +293,20 @@ function Th({ label, sortKey, active, dir, onClick, numeric }: ThProps) {
 }
 
 function Row({
-  monitor, summary, dragEnabled, isDragging, onDragStart, onDragEnd, onDrop,
+  monitor, summary, runtime, dragEnabled, isDragging, onDragStart, onDragEnd, onDrop,
 }: {
   monitor: Monitor;
   summary: ReturnType<typeof lookupSummary>;
+  runtime: MonitorRuntime | undefined;
   dragEnabled: boolean;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
   onDrop: () => void;
 }) {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const isActive = monitor.capturing !== 'None';
+  const tone: RuntimeTone = isActive ? runtimeTone(runtime?.status) : 'unknown';
 
   return (
     <tr
@@ -284,16 +361,26 @@ function Row({
           className="inline-flex items-center gap-2 text-cyan-700 hover:underline"
         >
           <span
-            className={clsx(
-              'w-2 h-2 rounded-full',
-              isActive ? 'bg-emerald-500' : 'bg-zinc-400',
-            )}
+            className={clsx('w-2 h-2 rounded-full', LENS[tone])}
+            title={runtime?.status}
+            aria-label={isActive ? (runtime?.status ?? t('Capturing')) : t('Idle')}
           />
           {monitor.name}
         </Link>
       </td>
       <td className="px-3 py-2 text-zinc-600">
         {describeFunction(monitor)}
+        {isActive && runtime && (
+          <div className="text-[10px] font-mono text-zinc-500 tabular-nums" data-testid={`console-runtime-${monitor.id}`}>
+            {runtime.status}
+            {' · '}
+            {formatFps(runtime.captureFps, i18n.language)}
+            {' / '}
+            {formatFps(runtime.analysisFps, i18n.language)}
+            {' · '}
+            {formatBandwidth(runtime.bandwidth, i18n.language)}
+          </div>
+        )}
       </td>
       <td className="px-3 py-2 font-mono text-xs text-zinc-600">
         {monitor.host ?? '—'}

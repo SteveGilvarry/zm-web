@@ -29,7 +29,10 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
         onProtocolChange={page.changeProtocol}
         ptzState={page.ptzState}
         events={page.events}
+        alarm={page.alarm}
+        runtime={page.runtime}
         isMuted={page.isMuted}
+        isFullscreen={page.isFullscreen}
         onToggleMute={page.toggleMute}
         onToggleFullscreen={page.toggleFullscreen}
         onStartStream={page.startStream}

@@ -8,6 +8,7 @@ import {
 import { listEventSummaries, type EventSummary } from '@/api/eventSummaries';
 import { getDaemons, getSystemStatus } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
+import { useMonitorStatuses, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import { bucketEventsByHour } from './bucketEvents';
 import type { Monitor, ZmEvent, DaemonStatus } from '@/types';
 import type { SystemStats } from '@/api/system';
@@ -35,6 +36,13 @@ export interface ConsoleData {
    * change detection treats Maps as opaque references.
    */
   hourlyByMonitor: Record<number, number[]>;
+  /**
+   * Capture-process state per monitor from `/monitor-status` (5 s poll):
+   * `Connected` / `NotRunning` / …, capture + analysis fps, bandwidth. This
+   * is what the legacy console lens colour and Function cell show — the
+   * config row (`capturing: 'Always'`) only says what was asked for.
+   */
+  runtimeById: Record<number, MonitorRuntime>;
   loading: {
     monitors: boolean;
     events: boolean;
@@ -112,6 +120,8 @@ export function useConsoleData(): ConsoleData {
     refetchInterval: 60_000,
   });
 
+  const { byId: runtimeById } = useMonitorStatuses();
+
   // Bucket the last-24h events into a per-monitor × per-hour histogram.
   // Pure logic lives in bucketEventsByHour for testability.
   const last24hEvents = last24hQ.data?.items;
@@ -130,6 +140,7 @@ export function useConsoleData(): ConsoleData {
     systemStats: systemQ.data?.stats,
     summariesByMonitor: summariesQ.data?.items ?? [],
     hourlyByMonitor,
+    runtimeById,
     loading: {
       monitors: monitorsQ.isLoading,
       events: eventsQ.isLoading,

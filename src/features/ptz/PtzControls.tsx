@@ -1,11 +1,11 @@
-import { useState, type ButtonHTMLAttributes, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ButtonHTMLAttributes, type PointerEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
   ChevronLeft, ChevronRight,
-  Home, Plus, Minus, Focus as FocusIcon, Save, Trash2,
+  Home, Plus, Minus, Focus as FocusIcon, Save, Trash2, AlertTriangle,
 } from 'lucide-react';
 import { ptz, type PtzCapabilities, type PtzDirection } from '@/api/ptz';
 
@@ -14,7 +14,8 @@ interface PtzControlsProps {
   capabilities: PtzCapabilities;
 }
 
-const swallow = () => {};
+/** How long a failed command stays on screen before clearing itself. */
+const ERROR_TTL_MS = 6_000;
 
 /**
  * PTZ control surface — instrument-console aesthetic: tactile depressing
@@ -27,6 +28,10 @@ const swallow = () => {};
  * preset bank if `caps.presets.has_presets` is false). The detail page
  * decides whether to mount this at all based on whether capabilities resolved.
  *
+ * Every command failure (camera unreachable, control script error, 403) is
+ * shown inline under the pad for a few seconds — silently dropping a PTZ
+ * command looks exactly like a dead camera.
+ *
  * The d-pad and the zoom/focus rockers are physical controls — "left" means
  * the camera pans left — so they sit in `dir="ltr"` and never mirror.
  */
@@ -35,6 +40,23 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
   const [speed, setSpeed] = useState(50);
   const [presetSlot, setPresetSlot] = useState(1);
   const [presetName, setPresetName] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  useEffect(() => () => { if (errorTimer.current) clearTimeout(errorTimer.current); }, []);
+
+  /** Run a PTZ command; surface the failure inline. */
+  const run = (label: string, command: Promise<unknown>) => {
+    command.catch((err: unknown) => {
+      const detail = err instanceof Error && err.message ? err.message : t('command failed');
+      setError(t('{{command}}: {{detail}}', { command: label, detail }));
+      if (errorTimer.current) clearTimeout(errorTimer.current);
+      errorTimer.current = setTimeout(() => {
+        errorTimer.current = null;
+        setError(null);
+      }, ERROR_TTL_MS);
+    });
+  };
 
   const pt = caps.pan_tilt;
   const presetSlots = Math.min(caps.presets.num_presets ?? 0, 16);
@@ -44,36 +66,36 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
   const holdMove = (dir: PtzDirection) => ({
     onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId);
-      ptz.move(monitorId, dir,
+      run(t('Move'), ptz.move(monitorId, dir,
         pt.can_move_con
           ? { pan_speed: speed, tilt_speed: speed }
           : { pan_speed: speed, tilt_speed: speed, duration_ms: 300 },
-      ).catch(swallow);
+      ));
     },
-    onPointerUp: () => { if (pt.can_move_con) ptz.stopMove(monitorId).catch(swallow); },
-    onPointerCancel: () => { if (pt.can_move_con) ptz.stopMove(monitorId).catch(swallow); },
+    onPointerUp: () => { if (pt.can_move_con) run(t('Stop'), ptz.stopMove(monitorId)); },
+    onPointerCancel: () => { if (pt.can_move_con) run(t('Stop'), ptz.stopMove(monitorId)); },
   });
 
   const holdZoom = (dir: 'in' | 'out') => ({
     onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId);
-      ptz.zoom(monitorId, dir,
+      run(t('Zoom'), ptz.zoom(monitorId, dir,
         caps.zoom.can_con ? { speed } : { speed, duration_ms: 300 },
-      ).catch(swallow);
+      ));
     },
-    onPointerUp: () => { if (caps.zoom.can_con) ptz.stopZoom(monitorId).catch(swallow); },
-    onPointerCancel: () => { if (caps.zoom.can_con) ptz.stopZoom(monitorId).catch(swallow); },
+    onPointerUp: () => { if (caps.zoom.can_con) run(t('Stop'), ptz.stopZoom(monitorId)); },
+    onPointerCancel: () => { if (caps.zoom.can_con) run(t('Stop'), ptz.stopZoom(monitorId)); },
   });
 
   const holdFocus = (dir: 'near' | 'far') => ({
     onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
       e.currentTarget.setPointerCapture(e.pointerId);
-      ptz.focus(monitorId, dir,
+      run(t('Focus'), ptz.focus(monitorId, dir,
         caps.focus.can_con ? { speed } : { speed, duration_ms: 300 },
-      ).catch(swallow);
+      ));
     },
-    onPointerUp: () => { if (caps.focus.can_con) ptz.stopFocus(monitorId).catch(swallow); },
-    onPointerCancel: () => { if (caps.focus.can_con) ptz.stopFocus(monitorId).catch(swallow); },
+    onPointerUp: () => { if (caps.focus.can_con) run(t('Stop'), ptz.stopFocus(monitorId)); },
+    onPointerCancel: () => { if (caps.focus.can_con) run(t('Stop'), ptz.stopFocus(monitorId)); },
   });
 
   return (
@@ -95,7 +117,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               <ArrowLeft size={20} strokeWidth={2.4} />
             </DpadBtn>
             <DpadBtn aria-label={t('Home')}            center
-              onClick={() => ptz.home(monitorId).catch(swallow)}
+              onClick={() => run(t('Home'), ptz.home(monitorId))}
               title={t('Return to home position')}
             >
               <Home size={18} strokeWidth={2.4} />
@@ -113,6 +135,17 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               <ArrowDownRight size={18} strokeWidth={2.4} />
             </DpadBtn>
           </div>
+        </div>
+      )}
+
+      {/* Last command failure */}
+      {error && (
+        <div
+          role="alert"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-crimson/40 bg-crimson/10 text-crimson text-xs"
+        >
+          <AlertTriangle size={12} className="flex-shrink-0" />
+          <span className="truncate">{error}</span>
         </div>
       )}
 
@@ -169,7 +202,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
             <RockerBtn
               variant="state"
               disabled={!caps.focus.can_auto}
-              onClick={() => ptz.focus(monitorId, 'auto').catch(swallow)}
+              onClick={() => run(t('Auto focus'), ptz.focus(monitorId, 'auto'))}
             >
               <FocusIcon size={14} strokeWidth={2.5} />
               <span>{t('Auto')}</span>
@@ -197,7 +230,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               <button
                 key={n}
                 type="button"
-                onClick={() => ptz.gotoPreset(monitorId, n).catch(swallow)}
+                onClick={() => run(t('Preset {{n}}', { n }), ptz.gotoPreset(monitorId, n))}
                 className="w-9 h-9 rounded-md border-2 border-border bg-surface text-cyan font-mono tabular-nums text-xs select-none transition-all hover:border-cyan/50 hover:bg-cyan/10 hover:shadow-[0_0_8px_rgba(0,212,255,0.15)] active:scale-95"
                 title={t('Go to preset {{n}}', { n })}
               >
@@ -228,7 +261,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               <button
                 type="button"
                 onClick={() => {
-                  ptz.setPreset(monitorId, presetSlot, presetName || undefined).catch(swallow);
+                  run(t('Save preset'), ptz.setPreset(monitorId, presetSlot, presetName || undefined));
                   setPresetName('');
                 }}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium uppercase tracking-wider rounded-md border-2 border-cyan/40 bg-cyan/15 text-cyan hover:bg-cyan/25 hover:border-cyan/60 active:scale-95 transition-all"
@@ -239,7 +272,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               </button>
               <button
                 type="button"
-                onClick={() => ptz.clearPreset(monitorId, presetSlot).catch(swallow)}
+                onClick={() => run(t('Clear preset'), ptz.clearPreset(monitorId, presetSlot))}
                 className="flex items-center px-2.5 py-1.5 text-xs rounded-md border-2 border-border text-text-muted hover:border-crimson/60 hover:text-crimson hover:bg-crimson/5 active:scale-95 transition-all"
                 title={t('Clear preset in selected slot')}
               >

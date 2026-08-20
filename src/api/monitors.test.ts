@@ -147,6 +147,38 @@ describe('startLiveStream / stopLiveStream', () => {
     expect(out.status).toBe('started');
   });
 
+  it('startLiveStream maps 409 (already running) to a successful already_running response', async () => {
+    server.use(
+      http.post('/api/v3/live/5/start', () =>
+        HttpResponse.json({ error_message: 'Live stream already exists for monitor 5' }, { status: 409 }),
+      ),
+    );
+    const out = await startLiveStream(5, { enable_webrtc: true });
+    expect(out).toEqual({ monitor_id: 5, status: 'already_running' });
+  });
+
+  it('startLiveStream refreshes the token on 401 and retries like every other call', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.post('/api/v3/live/5/start', ({ request }) => {
+        const auth = request.headers.get('authorization') ?? '';
+        seen.push(auth);
+        if (auth !== 'Bearer fresh') {
+          return HttpResponse.json({ error_message: 'expired' }, { status: 401 });
+        }
+        return HttpResponse.json({ monitor_id: 5, status: 'started' });
+      }),
+      http.post('/api/v3/auth/refresh', () =>
+        HttpResponse.json({ access_token: 'fresh', refresh_token: 'fresh-r', expire_in: 3600, token_type: 'Bearer' }),
+      ),
+    );
+    const out = await startLiveStream(5, { enable_webrtc: true });
+    expect(out.status).toBe('started');
+    expect(seen).toEqual(['Bearer test', 'Bearer fresh']);
+    // Put the store back the way the suite expects it.
+    useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', isAuthenticated: true });
+  });
+
   it('stopLiveStream tolerates 404 (already stopped) without throwing', async () => {
     server.use(
       http.delete('/api/v3/live/5/stop', () =>

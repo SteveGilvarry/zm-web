@@ -1,6 +1,4 @@
-import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { useMutation } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
@@ -9,6 +7,7 @@ import {
   Pencil,
   AlertTriangle,
   Bell,
+  BellOff,
   Maximize2,
   Volume2,
   VolumeX,
@@ -16,11 +15,13 @@ import {
   Square,
 } from 'lucide-react';
 import type { Monitor, ZmEvent } from '@/types';
-import { controlMonitorAlarm } from '@/api/monitors';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import type { PtzState } from '@/features/ptz/usePtz';
 import type { StreamHookResult } from '@/hooks/useWebRtcStream';
 import type { StreamProtocol } from '@/types';
+import type { WatchAlarmState } from './useWatchPage';
+import { formatFps, type MonitorRuntime } from './useMonitorStatuses';
+import { displayDimensions, stageVideoClass, stageVideoStyle } from './orientation';
 
 interface MonitorWatchClassicProps {
   monitor: Monitor;
@@ -29,7 +30,11 @@ interface MonitorWatchClassicProps {
   onProtocolChange: (p: StreamProtocol) => void;
   ptzState: PtzState;
   events: ZmEvent[];
+  alarm: WatchAlarmState;
+  /** Capture state + fps from `/monitor-status`; undefined until the poll answers. */
+  runtime?: MonitorRuntime;
   isMuted: boolean;
+  isFullscreen?: boolean;
   onToggleMute: () => void;
   onToggleFullscreen: () => void;
   onStartStream: () => void;
@@ -45,9 +50,9 @@ interface MonitorWatchClassicProps {
  * sidebar on the right with monitor metadata, PTZ panel, recent events,
  * and the legacy action buttons (Edit, Refresh, Force Alarm, Back).
  *
- * Data-fetching and stream-control hooks live in the parent route so this
+ * Data-fetching and stream-control hooks live in `useWatchPage` so this
  * component stays a thin, testable presentational layer — it receives the
- * `monitor`, `stream`, `ptzState` and `events` and only renders.
+ * `monitor`, `stream`, `ptzState`, `alarm` and `events` and only renders.
  */
 export function MonitorWatchClassic({
   monitor,
@@ -56,7 +61,10 @@ export function MonitorWatchClassic({
   onProtocolChange,
   ptzState,
   events,
+  alarm,
+  runtime,
   isMuted,
+  isFullscreen = false,
   onToggleMute,
   onToggleFullscreen,
   onStartStream,
@@ -65,31 +73,16 @@ export function MonitorWatchClassic({
   onEditMonitor,
   onRefresh,
 }: MonitorWatchClassicProps) {
-  const { t } = useTranslation();
-  const [alarmError, setAlarmError] = useState<string | null>(null);
+  const { t, i18n } = useTranslation();
 
   // Destructure non-ref fields so the React compiler's "no refs during
   // render" rule doesn't flag every `stream.state` read — those scalar
   // fields are safe in the render path; only `videoRef` is the actual ref.
   const { videoRef, state: streamState, error: streamError, hasAudio } = stream;
 
-  const forceAlarmMutation = useMutation({
-    mutationFn: () => controlMonitorAlarm(monitor.id, { action: 'on', cause: 'API', score: 100 }),
-    onMutate: () => setAlarmError(null),
-    onError: (err: unknown) =>
-      setAlarmError(err instanceof Error ? err.message : t('Failed to force alarm')),
-  });
-
-  const cancelAlarmMutation = useMutation({
-    mutationFn: () => controlMonitorAlarm(monitor.id, { action: 'cancel' }),
-    onMutate: () => setAlarmError(null),
-    onError: (err: unknown) =>
-      setAlarmError(err instanceof Error ? err.message : t('Failed to cancel alarm')),
-  });
-
   const handleForceAlarm = () => {
     if (window.confirm(t('Force alarm on "{{name}}"? This creates an event right now.', { name: monitor.name }))) {
-      forceAlarmMutation.mutate();
+      alarm.force();
     }
   };
 
@@ -97,6 +90,10 @@ export function MonitorWatchClassic({
   const isConnecting = streamState === 'connecting' || streamState === 'signaling';
   const isStreaming = streamState === 'connected';
   const isActive = streamState !== 'idle';
+
+  // Rotated cameras display portrait: the stage takes the post-rotation
+  // aspect and the <video> is turned onto it (same maths as the modern page).
+  const dims = displayDimensions(monitor);
 
   return (
     <main className="p-4 lg:p-6">
@@ -133,29 +130,28 @@ export function MonitorWatchClassic({
           </ClassicButton>
           <ClassicButton
             onClick={handleForceAlarm}
-            disabled={!isEnabled || forceAlarmMutation.isPending}
+            disabled={!isEnabled || alarm.isPending}
             tone="danger"
             title={t('Force alarm — creates an event immediately')}
           >
             <Bell size={12} />
-            {forceAlarmMutation.isPending ? t('Forcing…') : t('Force Alarm')}
+            {alarm.isPending && !alarm.forced ? t('Forcing…') : t('Force Alarm')}
           </ClassicButton>
-          {forceAlarmMutation.isSuccess && (
-            <ClassicButton
-              onClick={() => cancelAlarmMutation.mutate()}
-              disabled={cancelAlarmMutation.isPending}
-              title={t('Cancel forced alarm')}
-            >
-              {t('Cancel Alarm')}
-            </ClassicButton>
-          )}
+          <ClassicButton
+            onClick={alarm.cancel}
+            disabled={!isEnabled || alarm.isPending}
+            title={t('Cancel forced alarm')}
+          >
+            <BellOff size={12} />
+            {t('Cancel Alarm')}
+          </ClassicButton>
         </div>
       </div>
 
-      {alarmError && (
+      {alarm.error && (
         <div className="mb-3 px-3 py-2 rounded border border-red-300 bg-red-50 text-red-700 text-xs flex items-center gap-2">
           <AlertTriangle size={12} />
-          {alarmError}
+          {alarm.error}
         </div>
       )}
 
@@ -164,34 +160,47 @@ export function MonitorWatchClassic({
         {/* LEFT — large stream area */}
         <div className="flex-1 min-w-0">
           <div className="bg-white border border-zinc-300 rounded overflow-hidden">
-            <div className="px-3 py-2 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between">
+            <div className="px-3 py-2 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between gap-3">
               <span className="text-xs font-semibold uppercase tracking-wider text-zinc-700">
                 {t('Live view')}
               </span>
-              <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-500">
-                {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}
-                {isStreaming && (
-                  <span className="inline-flex items-center gap-1">
-                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    {t('LIVE')}
+              <div className="flex items-center gap-3 text-[11px] font-mono text-zinc-500">
+                {runtime && (
+                  <span data-testid="watch-runtime" className="tabular-nums">
+                    {t('State: {{state}}', { state: runtime.status })}
+                    {' · '}
+                    {t('Capture: {{fps}}', { fps: formatFps(runtime.captureFps, i18n.language) })}
+                    {' · '}
+                    {t('Analysis: {{fps}}', { fps: formatFps(runtime.analysisFps, i18n.language) })}
                   </span>
                 )}
+                <span className="inline-flex items-center gap-1.5">
+                  {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}
+                  {isStreaming && (
+                    <span className="inline-flex items-center gap-1">
+                      <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
+                      {t('LIVE')}
+                    </span>
+                  )}
+                </span>
               </div>
             </div>
 
             <div
               dir="ltr"
-              className="relative bg-black w-full"
+              data-testid="watch-stage"
+              className="relative bg-black w-full mx-auto"
               style={{
-                aspectRatio: `${monitor.width || 16} / ${monitor.height || 9}`,
+                aspectRatio: `${dims.width} / ${dims.height}`,
+                // A portrait camera would otherwise grow as tall as its
+                // width allows; cap it to the viewport instead.
+                maxHeight: dims.rotated ? 'calc(100vh - 12rem)' : undefined,
               }}
             >
               <video
                 ref={videoRef}
-                className={clsx(
-                  'w-full h-full object-contain bg-black',
-                  !isActive && 'hidden',
-                )}
+                className={clsx(stageVideoClass(monitor, isFullscreen), !isActive && 'hidden')}
+                style={stageVideoStyle(monitor, isFullscreen)}
                 autoPlay
                 muted={isMuted}
                 playsInline

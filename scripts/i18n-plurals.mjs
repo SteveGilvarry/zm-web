@@ -27,14 +27,14 @@ const PLURALS = {
   frame: 'frames', tag: 'tags', preset: 'presets', layout: 'layouts',
   report: 'reports', daemon: 'daemons', result: 'results', match: 'matches',
   file: 'files', second: 'seconds', minute: 'minutes', hour: 'hours', day: 'days',
-  item: 'items', entry: 'entries', page: 'pages', camera: 'cameras',
+  item: 'items', entry: 'entries', page: 'pages', camera: 'cameras', retry: 'retries',
 };
 const SINGULARS = Object.fromEntries(Object.entries(PLURALS).map(([s, p]) => [p, s]));
 
 /** Words after {{count}} that are not the noun: adjectives to look past… */
 const ADJECTIVES = new Set(['unsaved', 'pending', 'matching', 'new', 'other', 'open', 'archived', 'active', 'enabled', 'disabled']);
 /** …and tails where the count has no noun to inflect (same text both forms). */
-const NO_NOUN = new Set(['more', 'active', 'min', 'selected', 'stopped', 'total', 'ago', 'h', 'm', 's', 'fps', 'remaining', 'listed', 'shown', 'matching', 'pending']);
+const NO_NOUN = new Set(['more', 'active', 'min', 'selected', 'stopped', 'total', 'ago', 'h', 'm', 's', 'fps', 'remaining', 'listed', 'shown', 'matching', 'pending', 'live']);
 
 // "{{count}} monitor", "{{count}} unsaved change", "Total ({{count}} monitor)", "…and {{count}} more not shown"
 const AFTER = /\{\{count\}\}\s+([a-z][a-z-]*)(?:\s+([a-z][a-z-]*))?/;

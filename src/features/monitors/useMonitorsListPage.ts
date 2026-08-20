@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { getMonitors, getLiveSessions } from '@/api/monitors';
 import { cloneMonitor, deleteMonitor } from '@/api/monitors-crud';
 import { useAuthStore } from '@/stores/auth';
+import { useMonitorStatuses, type MonitorRuntime } from './useMonitorStatuses';
 import type { Monitor } from '@/types';
 
 export type MonitorsViewMode = 'grid' | 'list';
@@ -28,6 +29,8 @@ export interface MonitorsListPageState {
   setPage: Dispatch<SetStateAction<number>>;
   liveSessions: number[];
   liveSessionIds: Set<number>;
+  /** Capture-process state per monitor (`/monitor-status`, 5 s poll). */
+  runtimeById: Record<number, MonitorRuntime>;
   viewMode: MonitorsViewMode;
   setViewMode: (mode: MonitorsViewMode) => void;
   searchQuery: string;
@@ -83,6 +86,8 @@ export function useMonitorsListPage(): MonitorsListPageState {
     refetchInterval: 10000,
   });
 
+  const { byId: runtimeById } = useMonitorStatuses();
+
   const monitors = useMemo(() => monitorsData?.items || [], [monitorsData?.items]);
   const totalPages = monitorsData?.last_page || 1;
 
@@ -125,6 +130,7 @@ export function useMonitorsListPage(): MonitorsListPageState {
     setPage,
     liveSessions,
     liveSessionIds: new Set(liveSessions),
+    runtimeById,
     viewMode,
     setViewMode,
     searchQuery,

@@ -8,10 +8,11 @@ import { MonitorsListLayout } from '@/skins/modern/layouts/MonitorsListLayout';
 export default function ClassicMonitorsListPage() {
   return (
     <MonitorsListLayout
-      renderMonitors={({ filteredMonitors, liveSessionIds, clone, requestDelete, busy }) => (
+      renderMonitors={({ filteredMonitors, liveSessionIds, runtimeById, clone, requestDelete, busy }) => (
         <ClassicMonitorsTable
           monitors={filteredMonitors}
           liveSessionIds={liveSessionIds}
+          runtimeById={runtimeById}
           onClone={clone}
           onDelete={requestDelete}
           busy={busy}
