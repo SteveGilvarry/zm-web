@@ -1,4 +1,5 @@
 import { apiGet, apiDelete, apiPatch } from './client';
+import { API_BASE } from '@/api/base';
 import type { ZmEvent, PaginatedResponse } from '@/types';
 
 export interface EventUpdatePayload {
@@ -109,21 +110,21 @@ export async function getEventInfo(id: number): Promise<EventVideoInfo> {
 
 // Event playback URLs - token param for media elements that can't send headers
 export function getEventVideoUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/video`;
+  const base = `${API_BASE}/events/${eventId}/video`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export function getEventThumbnailUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/thumbnail`;
+  const base = `${API_BASE}/events/${eventId}/thumbnail`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export function getEventStreamUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/stream/video.mp4`;
+  const base = `${API_BASE}/events/${eventId}/stream/video.mp4`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export function getEventPlaylistUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/stream/playlist.m3u8`;
+  const base = `${API_BASE}/events/${eventId}/stream/playlist.m3u8`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }

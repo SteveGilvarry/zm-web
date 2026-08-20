@@ -1,7 +1,7 @@
 import { useAuthStore } from '@/stores/auth';
 import type { ApiError } from '@/types';
 
-const API_BASE = '/api/v3';
+import { API_BASE } from '@/api/base';
 
 export class ApiClientError extends Error {
   status: number;
@@ -22,7 +22,8 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
     try {
       const errorData: ApiError = await response.json();
-      errorMessage = errorData.message || errorData.error || errorMessage;
+      // zm_api's envelope is {kind, error_message, code, details}; older shapes used message/error.
+      errorMessage = errorData.error_message || errorData.message || errorData.error || errorMessage;
       details = errorData.details;
     } catch {
       // Response wasn't JSON

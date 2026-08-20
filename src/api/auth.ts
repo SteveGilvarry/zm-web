@@ -2,7 +2,7 @@ import type { LoginRequest, TokenResponse } from '@/types';
 import { useAuthStore } from '@/stores/auth';
 import i18next from '@/i18n';
 
-const API_BASE = '/api/v3';
+import { API_BASE } from '@/api/base';
 
 export async function login(credentials: LoginRequest): Promise<TokenResponse> {
   const response = await fetch(`${API_BASE}/auth/login`, {

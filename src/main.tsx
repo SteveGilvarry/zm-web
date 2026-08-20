@@ -21,6 +21,8 @@ const queryClient = new QueryClient({
 // Create a router instance
 const router = createRouter({
   routeTree,
+  // Mirrors Vite's `base` (VITE_BASE) so routes resolve under a sub-path.
+  basepath: import.meta.env.BASE_URL,
   context: {},
   defaultPreload: 'intent',
 });

@@ -177,6 +177,43 @@ defaulting to `http://localhost:8080` when unset.
 
 ---
 
+## 📦 Production deployment
+
+`npm run build` writes a static site to `dist/`. Serving it needs an SPA fallback
+(deep links such as `/events/123` must return `index.html`), a reverse proxy from
+`/api/` to `zm_api` that forwards WebSocket upgrades (WebRTC signaling lives on
+`/api/v3/live/{id}/webrtc/ws` and the socket stays open while you watch), and TLS,
+because browsers refuse WebRTC on plain `http://` away from `localhost`.
+Full detail, including the CSP, is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+**Container** (nginx, multi-stage build, renders its config from env on start):
+
+```bash
+docker build -t zm-dashboard .
+docker run -d -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-dashboard
+# or: ZM_API_URL=http://zm-api-host:8080 docker compose up -d   (add --profile tls for https on :8443)
+```
+
+| Variable | When | Default | What it does |
+|---|---|---|---|
+| `ZM_API_URL` | run | required | Upstream `zm_api` the container proxies `/api/` to. |
+| `ZM_API_BASE` | run | `/api/v3` | Prefix the browser calls; written to `/config.js`. Set to an absolute URL only if the API is on another origin (CORS on `zm_api` required). |
+| `VITE_BASE` | build | `/` | Sub-path to serve from, e.g. `/zm/`. |
+
+**Bare nginx or Caddy.** Copy `dist/` to the server and use
+[`docker/nginx.conf.template`](docker/nginx.conf.template) (with `proxy.conf` and
+`headers.conf`) or [`docker/Caddyfile`](docker/Caddyfile). Caddy handles certificates
+itself; for nginx bring your own or put the container behind a TLS terminator you
+already run.
+
+**WebRTC across NAT.** The client offers Google's public STUN servers
+(`src/streaming/webrtcManager.ts`). On a LAN they are never used. For remote
+operators behind NAT run your own TURN (coturn) and edit that list; HLS remains
+available as the fallback. **Air-gapped:** fonts are bundled (`public/fonts/`), the
+app makes no other off-origin request, and unreachable STUN hosts only delay ICE.
+
+---
+
 ## 📁 Project Layout
 
 ```

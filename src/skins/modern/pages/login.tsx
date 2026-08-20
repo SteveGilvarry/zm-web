@@ -3,6 +3,7 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useLoginPage } from '@/features/auth/useLoginPage';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
+import { version as appVersion } from '../../../../package.json';
 
 /** Login — Mission Control. Renders no AppShell. */
 export default function LoginPage() {
@@ -147,7 +148,7 @@ export default function LoginPage() {
 
         {/* Version */}
         <div className="mt-4 text-center">
-          <span className="text-xs font-mono text-text-dim">v1.0.0</span>
+          <span className="text-xs font-mono text-text-dim">v{appVersion}</span>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { Wifi, WifiOff, Cpu, MemoryStick, HardDrive, Gauge } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
+import { API_BASE } from '@/api/base';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getSystemStatus, getVersion } from '@/api/system';
@@ -27,7 +28,7 @@ export function Header({ title }: HeaderProps) {
   useEffect(() => {
     const checkConnection = async () => {
       try {
-        const response = await fetch('/api/v3/server/health_check', { method: 'GET' });
+        const response = await fetch(`${API_BASE}/server/health_check`, { method: 'GET' });
         setIsConnected(response.ok);
       } catch {
         setIsConnected(false);
