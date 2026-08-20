@@ -73,8 +73,11 @@ function seed(x10 = '0') {
 describe('Classic Options page', () => {
   it('renders the legacy tab rail without bandwidth tabs and with the sub-pages', async () => {
     seed();
+    // The page opens on Display (skin chooser) like legacy; pick a category
+    // so the config table is what gets asserted.
+    mockSearch.category = 'system';
     renderWithProviders(<ClassicOptionsPage />);
-    await waitFor(() => expect(screen.getByText('ZM_WEB_TITLE')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('Authenticate user logins')).toBeInTheDocument());
     const rail = screen.getByRole('navigation', { name: 'Options' });
     const labels = within(rail).getAllByRole('listitem').map((li) => li.textContent);
     expect(labels).toEqual(['Display', 'System', 'Servers', 'Storage', 'Web', 'Control', 'MQTT', 'Users', 'Groups', 'Run State']);
@@ -96,6 +99,7 @@ describe('Classic Options page', () => {
   it('category tabs switch in place and write ?category=', async () => {
     seed();
     const user = userEvent.setup();
+    mockSearch.category = 'web';
     renderWithProviders(<ClassicOptionsPage />);
     await waitFor(() => expect(screen.getByText('ZM_WEB_TITLE')).toBeInTheDocument());
     const rail = screen.getByRole('navigation', { name: 'Options' });

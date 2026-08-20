@@ -40,8 +40,13 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
   const runAction = async (label: string, run: (id: number) => Promise<unknown>) => {
     const failed = await start(label, ids, run);
     invalidate();
-    // Keep the failed ids selected so the operator can retry just those.
-    if (failed.length === 0) onClear();
+    // Full success: clear the selection and the progress so the bar goes
+    // away (legacy clears the selection after an action). Failures keep the
+    // bar with the report and the failed ids selected for a retry.
+    if (failed.length === 0) {
+      dismiss();
+      onClear();
+    }
   };
 
   const busy = progress.running;

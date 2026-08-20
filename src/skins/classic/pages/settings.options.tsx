@@ -24,10 +24,11 @@ export default function ClassicSettingsOptionsPage() {
 
   if (!s.isAuthenticated) return null;
 
-  const activeKey = s.selectedCategory === null
-    ? null
-    : s.tabs.find((tab) => tab.kind === 'category' && tab.category === s.selectedCategory)?.key
-      ?? (s.selectedCategory === DISPLAY_TAB ? DISPLAY_TAB : null);
+  // Legacy Options opens on the Display tab; with no ?category= we do too.
+  const selected = s.selectedCategory ?? DISPLAY_TAB;
+  const activeKey =
+    s.tabs.find((tab) => tab.kind === 'category' && tab.category === selected)?.key
+      ?? (selected === DISPLAY_TAB ? DISPLAY_TAB : null);
 
   return (
     <AppShell title={t('Options')}>
@@ -55,7 +56,7 @@ export default function ClassicSettingsOptionsPage() {
             />
 
             <div className="flex-1 min-w-0 space-y-3">
-              {s.selectedCategory === DISPLAY_TAB ? (
+              {selected === DISPLAY_TAB ? (
                 <SkinSwitcher />
               ) : (
                 <>
