@@ -17,6 +17,9 @@ import {
 import type { Monitor } from '@/types';
 import { buildGroupTree, getDescendantGroups } from './tree';
 
+/** zm_api issue tracking `parent_id` being ignored on PUT /groups/{id}. */
+export const GROUP_REPARENT_ISSUE_URL = 'https://github.com/SteveGilvarry/zm-api/issues/28';
+
 export interface GroupsPageState {
   isAuthenticated: boolean;
   groups: Group[];
@@ -40,6 +43,13 @@ export interface GroupsPageState {
   closeDialog: () => void;
   handleSubmit: (v: { name: string; parentId: number | null }) => void;
   dialogPending: boolean;
+  /**
+   * Set after a save whose parent change the backend silently dropped
+   * (builds before zm-api#28 echo the old `parent_id`). Non-blocking: the
+   * rename still went through.
+   */
+  parentWarning: string | null;
+  dismissParentWarning: () => void;
 
   /** Confirms (listing descendants) and deletes. */
   handleDelete: (g: Group) => void;
@@ -105,6 +115,7 @@ export function useGroupsPage(): GroupsPageState {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editing, setEditing] = useState<Group | null>(null);
   const [dialogError, setDialogError] = useState<string | null>(null);
+  const [parentWarning, setParentWarning] = useState<string | null>(null);
 
   const openCreate = () => {
     setEditing(null);
@@ -136,7 +147,12 @@ export function useGroupsPage(): GroupsPageState {
   const updateMutation = useMutation({
     mutationFn: ({ id, name, parentId }: { id: number; name: string; parentId: number | null }) =>
       updateGroup(id, name, parentId),
-    onSuccess: () => {
+    onSuccess: (saved, { parentId }) => {
+      if ((saved.parent_id ?? null) !== parentId) {
+        setParentWarning(
+          t('This zm_api build ignores parent changes on update — "{{name}}" was renamed but kept its old parent. Needs zm-api#28.', { name: saved.name }),
+        );
+      }
       invalidate();
       closeDialog();
     },
@@ -162,6 +178,7 @@ export function useGroupsPage(): GroupsPageState {
 
   const handleSubmit = ({ name, parentId }: { name: string; parentId: number | null }) => {
     setDialogError(null);
+    setParentWarning(null);
     if (editing) {
       updateMutation.mutate({ id: editing.id, name, parentId });
     } else {
@@ -209,6 +226,8 @@ export function useGroupsPage(): GroupsPageState {
     closeDialog,
     handleSubmit,
     dialogPending: createMutation.isPending || updateMutation.isPending,
+    parentWarning,
+    dismissParentWarning: () => setParentWarning(null),
 
     handleDelete,
     attach: (monitorId) => {

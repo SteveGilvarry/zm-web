@@ -176,3 +176,42 @@ describe('GroupsPage — create flow', () => {
     await waitFor(() => expect(body).toEqual({ name: 'Garage', parent_id: 1 }));
   });
 });
+
+describe('GroupsPage — edit flow (zm-api#28)', () => {
+  async function editFrontYardParent(responseParent: number | null) {
+    stubBaseEndpoints();
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.put('/api/v3/groups/:id', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 3, name: body.name, parent_id: responseParent });
+      }),
+    );
+    const user = userEvent.setup();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Front Yard')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /edit group front yard/i }));
+    const dialog = await screen.findByRole('dialog', { name: /edit group/i });
+    expect(within(dialog).queryByText(/not yet supported/)).not.toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText(/parent/i), '2');
+    await user.click(within(dialog).getByRole('button', { name: /^save$/i }));
+    await waitFor(() => expect(body).toEqual({ name: 'Front Yard', parent_id: 2 }));
+    return dialog;
+  }
+
+  it('sends parent_id and stays quiet when the backend honours it', async () => {
+    await editFrontYardParent(2);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    expect(screen.queryByRole('status')).not.toBeInTheDocument();
+  });
+
+  it('warns, without blocking, when the backend echoes the old parent', async () => {
+    await editFrontYardParent(1);
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
+    const warning = await screen.findByRole('status');
+    expect(warning).toHaveTextContent(/ignores parent changes on update/);
+    expect(within(warning).getByRole('link', { name: /zm-api#28/ })).toHaveAttribute(
+      'href', 'https://github.com/SteveGilvarry/zm-api/issues/28',
+    );
+  });
+});

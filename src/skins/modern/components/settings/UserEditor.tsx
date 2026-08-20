@@ -7,7 +7,7 @@ import { Info, Loader2, Shield } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
 import { PermissionMatrix } from '@/features/users/PermissionMatrix';
 import { buildTopLevelRows } from '@/features/users/permissions';
-import { useAccountForm } from '@/features/users/useAccountForm';
+import { USER_FIELDS_ISSUE_URL, useAccountForm } from '@/features/users/useAccountForm';
 import { useGroupPermissions } from '@/features/users/useGroupPermissions';
 import { useMonitorPermissions } from '@/features/users/useMonitorPermissions';
 import type { User } from '@/types';
@@ -88,11 +88,31 @@ interface AccountFormProps {
 
 function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
   const { t } = useTranslation();
-  const { formData, setField, toggleEnabled, error, isSaving, submitDisabled, submit } =
+  const { formData, setField, toggleEnabled, error, isSaving, submitDisabled, submit, isLocked } =
     useAccountForm(editing, onSaved);
+  const lockedCls = 'opacity-60 cursor-not-allowed';
+  const lockedTitle = t('Not editable on this zm_api build — see zm-api#23');
 
   return (
     <div className="space-y-4">
+      {editing && (
+        <div
+          role="note"
+          className="flex items-start gap-2 text-xs text-text-muted bg-panel border border-border-subtle rounded p-3"
+        >
+          <Info size={14} className="mt-0.5 shrink-0 text-amber" />
+          <p className="leading-relaxed">
+            <Trans>
+              This zm_api build only saves <strong>Email</strong> and <strong>Enabled</strong> on an
+              existing user. Password, name, phone and permission levels are disabled until{' '}
+              <a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-cyan underline">
+                zm-api#23
+              </a>{' '}
+              lands; per-group and per-monitor grids still save.
+            </Trans>
+          </p>
+        </div>
+      )}
       <div>
         <label className="block text-sm font-medium text-text-secondary mb-1.5">{t('Username')}</label>
         <input
@@ -112,15 +132,21 @@ function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1.5">
-            {editing ? t('Password (blank = keep)') : t('Password')}
+            {t('Password')}
           </label>
           <input
             type="password"
             value={formData.password}
             onChange={(e) => setField('password', e.target.value)}
             autoComplete="new-password"
-            className="w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors"
-            placeholder={editing ? t('Leave blank to keep current') : t('Password')}
+            disabled={isLocked('password')}
+            title={isLocked('password') ? lockedTitle : undefined}
+            aria-describedby={isLocked('password') ? 'user-fields-locked' : undefined}
+            className={clsx(
+              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
+              isLocked('password') && lockedCls,
+            )}
+            placeholder={editing ? t('Not editable yet') : t('Password')}
           />
         </div>
         <div>
@@ -132,7 +158,12 @@ function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
             value={formData.confirmPassword}
             onChange={(e) => setField('confirmPassword', e.target.value)}
             autoComplete="new-password"
-            className="w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors"
+            disabled={isLocked('password')}
+            title={isLocked('password') ? lockedTitle : undefined}
+            className={clsx(
+              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
+              isLocked('password') && lockedCls,
+            )}
             placeholder={t('Confirm password')}
           />
         </div>
@@ -145,7 +176,12 @@ function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
             type="text"
             value={formData.name}
             onChange={(e) => setField('name', e.target.value)}
-            className="w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors"
+            disabled={isLocked('name')}
+            title={isLocked('name') ? lockedTitle : undefined}
+            className={clsx(
+              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
+              isLocked('name') && lockedCls,
+            )}
             placeholder={t('Full name')}
           />
         </div>
@@ -168,7 +204,12 @@ function AccountForm({ editing, onSaved, onCancel }: AccountFormProps) {
             type="tel"
             value={formData.phone || ''}
             onChange={(e) => setField('phone', e.target.value)}
-            className="w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors"
+            disabled={isLocked('phone')}
+            title={isLocked('phone') ? lockedTitle : undefined}
+            className={clsx(
+              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
+              isLocked('phone') && lockedCls,
+            )}
             placeholder={t('Phone')}
           />
         </div>
@@ -243,7 +284,8 @@ function GlobalPermissionsView({ user }: { user: User }) {
           <Trans>
             Top-level permissions are <strong>read-only</strong> here — the backend
             (<code>CreateUserRequest</code> / <code>UpdateUserRequest</code>) does not yet accept
-            these fields. Use the <em>Groups</em> and <em>Monitors</em> tabs for per-resource
+            these fields (<a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-cyan underline">zm-api#23</a>).
+            Use the <em>Groups</em> and <em>Monitors</em> tabs for per-resource
             overrides, which persist via the dedicated permission endpoints.
           </Trans>
         </p>

@@ -48,7 +48,7 @@ export default function SettingsStatePage() {
                   action="start"
                   icon={<Play size={12} />}
                   label={t('Start')}
-                  onClick={rs.startDaemon}
+                  onClick={() => rs.setDaemonTarget('start')}
                   disabled={busy}
                   tone="emerald"
                 />
@@ -273,18 +273,26 @@ export default function SettingsStatePage() {
         isLoading={rs.deletePending}
       />
 
-      {/* Daemon action confirm — stop / restart get a prompt, start does not */}
+      {/* Daemon action confirm — start, stop and restart all prompt first */}
       <ConfirmDialog
-        isOpen={daemonTarget === 'stop' || daemonTarget === 'restart'}
+        isOpen={daemonTarget !== null}
         onClose={() => rs.setDaemonTarget(null)}
         onConfirm={rs.confirmDaemon}
-        title={daemonTarget === 'stop' ? t('Stop ZoneMinder') : t('Restart ZoneMinder')}
+        title={
+          daemonTarget === 'stop' ? t('Stop ZoneMinder')
+            : daemonTarget === 'restart' ? t('Restart ZoneMinder')
+              : t('Start ZoneMinder')
+        }
         message={
           daemonTarget === 'stop'
             ? t('Stop ZoneMinder? Recording will halt across every monitor.')
-            : t('Restart ZoneMinder? Capture streams will reconnect after a short outage.')
+            : daemonTarget === 'restart'
+              ? t('Restart ZoneMinder? Capture streams will reconnect after a short outage.')
+              : t('Start ZoneMinder? Capture and analysis daemons will launch for every enabled monitor.')
         }
-        confirmText={daemonTarget === 'stop' ? t('Stop') : t('Restart')}
+        confirmText={
+          daemonTarget === 'stop' ? t('Stop') : daemonTarget === 'restart' ? t('Restart') : t('Start')
+        }
         variant={daemonTarget === 'stop' ? 'danger' : 'warning'}
         isLoading={rs.daemonPending}
       />

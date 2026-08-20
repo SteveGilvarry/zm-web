@@ -156,7 +156,7 @@ describe('Run State page — apply', () => {
 });
 
 describe('Run State page — daemon controls', () => {
-  it('Start fires /states/change/start with no confirm', async () => {
+  it('Start confirms first then POSTs /states/change/start', async () => {
     setupHappyPath();
     let hits = 0;
     server.use(
@@ -170,6 +170,10 @@ describe('Run State page — daemon controls', () => {
     await waitFor(() => expect(screen.getByText('default')).toBeInTheDocument());
 
     await user.click(screen.getByRole('button', { name: /^start$/i }));
+    await waitFor(() => expect(screen.getByText(/Start ZoneMinder\?/i)).toBeInTheDocument());
+    expect(hits).toBe(0);
+    const allStart = screen.getAllByRole('button', { name: /^start$/i });
+    await user.click(allStart[allStart.length - 1]);
     await waitFor(() => expect(hits).toBe(1));
   });
 

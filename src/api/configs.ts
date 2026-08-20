@@ -1,6 +1,11 @@
 import { apiGet, apiPut } from './client';
 import type { ZmConfig, PaginatedResponse } from '@/types';
 
+export interface ConfigCategoryCount {
+  category: string;
+  count: number;
+}
+
 export async function getConfigs(params?: {
   page?: number;
   page_size?: number;
@@ -19,4 +24,9 @@ export async function updateConfig(
 /** One config row by name, e.g. `ZM_WEB_EVENTS_PER_PAGE`. */
 export async function getConfig(name: string): Promise<ZmConfig> {
   return apiGet<ZmConfig>(`/configs/${encodeURIComponent(name)}`);
+}
+
+/** Category names with row counts — enough to build the Options rail without loading every row. */
+export async function getConfigCategories(): Promise<ConfigCategoryCount[]> {
+  return apiGet<ConfigCategoryCount[]>('/configs/categories');
 }

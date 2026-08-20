@@ -9,13 +9,15 @@ import {
   ChevronLeft,
   ChevronRight,
   Loader2,
+  Info,
+  ShieldAlert,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { Modal } from '@/components/common/Modal';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
+import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Settings → Storage — Mission Control. */
@@ -131,14 +133,25 @@ export default function SettingsStoragePage() {
                             >
                               <Pencil size={14} />
                             </button>
-                            <button
-                              onClick={() => st.setDeleteTarget(storage)}
-                              className="p-1.5 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
-                              title={t('Delete')}
-                              aria-label={t('Delete {{name}}', { name: storage.name })}
-                            >
-                              <Trash2 size={14} />
-                            </button>
+                            {st.isProtected(storage) ? (
+                              <button
+                                disabled
+                                className="p-1.5 rounded text-text-dim cursor-not-allowed"
+                                title={t('The Default storage area cannot be deleted')}
+                                aria-label={t('Delete {{name}}', { name: storage.name })}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            ) : (
+                              <button
+                                onClick={() => st.setDeleteTarget(storage)}
+                                className="p-1.5 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+                                title={t('Delete')}
+                                aria-label={t('Delete {{name}}', { name: storage.name })}
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            )}
                           </div>
                         </td>
                       </tr>
@@ -249,6 +262,76 @@ export default function SettingsStoragePage() {
             </select>
           </div>
 
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label htmlFor="storage-scheme" className="block text-sm font-medium text-text-secondary mb-1.5">{t('Scheme')}</label>
+              <select
+                id="storage-scheme"
+                value={formData.scheme}
+                onChange={(e) => st.setField('scheme', e.target.value)}
+                className={clsx(
+                  'w-full px-3 py-2 appearance-none',
+                  'bg-panel border border-border-subtle rounded-lg',
+                  'text-text-primary text-sm',
+                  'focus:outline-none focus:border-cyan/50',
+                  'transition-colors cursor-pointer'
+                )}
+              >
+                {editingStorage && <option value="">{t('(keep current)')}</option>}
+                {STORAGE_SCHEMES.map((scheme) => (
+                  <option key={scheme} value={scheme}>{scheme}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label htmlFor="storage-server" className="block text-sm font-medium text-text-secondary mb-1.5">{t('Server')}</label>
+              <select
+                id="storage-server"
+                value={formData.server_id ?? ''}
+                onChange={(e) => st.setField('server_id', e.target.value === '' ? null : Number(e.target.value))}
+                className={clsx(
+                  'w-full px-3 py-2 appearance-none',
+                  'bg-panel border border-border-subtle rounded-lg',
+                  'text-text-primary text-sm',
+                  'focus:outline-none focus:border-cyan/50',
+                  'transition-colors cursor-pointer'
+                )}
+              >
+                <option value="">{t('Any / local')}</option>
+                {st.servers.map((srv) => (
+                  <option key={srv.id} value={srv.id}>{srv.name}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label htmlFor="storage-url" className="block text-sm font-medium text-text-secondary mb-1.5">{t('URL')}</label>
+            <input
+              id="storage-url"
+              type="text"
+              value={formData.url}
+              onChange={(e) => st.setField('url', e.target.value)}
+              className={clsx(
+                'w-full px-3 py-2',
+                'bg-panel border border-border-subtle rounded-lg',
+                'text-text-primary text-sm font-mono',
+                'focus:outline-none focus:border-cyan/50',
+                'transition-colors'
+              )}
+              placeholder={t('s3://bucket/prefix (optional)')}
+            />
+          </div>
+
+          <p className="flex items-start gap-2 text-[11px] text-text-muted leading-relaxed">
+            <Info size={12} className="mt-0.5 shrink-0 text-cyan" />
+            <span>
+              {editingStorage
+                ? t('Scheme, Server and URL are saved, but this zm_api build does not return them, so the current values cannot be shown here. Leave Scheme on "keep current" unless you mean to change it.')
+                : t('Scheme, Server and URL are saved, but this zm_api build does not return them, so the list will not display them.')}
+            </span>
+          </p>
+
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-text-secondary">{t('Enabled')}</label>
             <button
@@ -306,17 +389,44 @@ export default function SettingsStoragePage() {
         </div>
       </Modal>
 
-      {/* Delete Confirm */}
-      <ConfirmDialog
-        isOpen={!!deleteTarget}
-        onClose={() => st.setDeleteTarget(null)}
-        onConfirm={st.confirmDelete}
-        title={t('Delete Storage')}
-        message={t('Are you sure you want to delete storage "{{name}}"? This cannot be undone.', { name: deleteTarget?.name })}
-        confirmText={t('Delete')}
-        variant="danger"
-        isLoading={st.isDeleting}
-      />
+      {/* Delete — blocked while events still live there */}
+      {deleteTarget && st.deleteBlocked ? (
+        <Modal isOpen onClose={st.clearDeleteTarget} title={t('Delete Storage')}>
+          <div className="flex items-start gap-3">
+            <ShieldAlert size={18} className="mt-0.5 shrink-0 text-amber" />
+            <p className="text-sm text-text-secondary">
+              {t('"{{name}}" still holds {{count}} event. Move or delete those events before removing the storage area.', {
+                name: deleteTarget.name, count: st.deleteUsage.count ?? 0,
+              })}
+            </p>
+          </div>
+          <div className="flex justify-end pt-6">
+            <button
+              onClick={st.clearDeleteTarget}
+              className="px-4 py-2 rounded-lg text-sm font-medium bg-panel border border-border-subtle text-text-secondary hover:text-text-primary transition-colors"
+            >
+              {t('OK')}
+            </button>
+          </div>
+        </Modal>
+      ) : (
+        <ConfirmDialog
+          isOpen={!!deleteTarget}
+          onClose={st.clearDeleteTarget}
+          onConfirm={st.confirmDelete}
+          title={t('Delete Storage')}
+          message={
+            st.deleteUsage.loading
+              ? t('Counting events on "{{name}}"…', { name: deleteTarget?.name })
+              : st.deleteUsage.error
+                ? t('Could not count events on "{{name}}" ({{message}}). Delete anyway? This cannot be undone.', { name: deleteTarget?.name, message: st.deleteUsage.error })
+                : t('No events reference "{{name}}". Delete it? This cannot be undone.', { name: deleteTarget?.name })
+          }
+          confirmText={t('Delete')}
+          variant="danger"
+          isLoading={st.isDeleting || st.deleteUsage.loading}
+        />
+      )}
     </AppShell>
   );
 }

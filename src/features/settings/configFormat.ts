@@ -47,3 +47,54 @@ export function humanizeIdent(s: string): string {
       : tok.charAt(0).toUpperCase() + tok.slice(1))
     .join(' ');
 }
+
+/**
+ * Translate the Perl-stringified `qr//` a Config row carries as `pattern`
+ * (`(?^i:^([yn]))`, `(?^:^(\d+)$)`) into a RegExp. Returns null whenever the
+ * translation is not trivial — unknown flags, Perl-only escapes, or a body
+ * JS rejects — so callers skip validation rather than reject good input.
+ */
+export function perlPatternToRegExp(pattern?: string | null): RegExp | null {
+  if (!pattern) return null;
+  const m = /^\(\?\^([a-z]*):([\s\S]*)\)$/.exec(pattern);
+  const flags = m ? m[1] : '';
+  const body = m ? m[2] : pattern;
+  if (/[^ims]/.test(flags)) return null;
+  // \A \Z \z \G \K \p{..} \X \R and conditionals have no direct JS equivalent.
+  if (/\\[AZzGKpPXR]|\(\?\(|\[\[:/.test(body)) return null;
+  try {
+    return new RegExp(body, flags);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Client-side echo of `zmconfig.pl`'s pattern check. Booleans are skipped:
+ * ZoneMinder stores them as 0/1 while their pattern still reads `^[yn]`.
+ * Empty values are left to the backend, which knows which rows may be blank.
+ */
+export function configPatternError(config: ZmConfig, value: string): string | null {
+  if (config.type === 'boolean' || value === '') return null;
+  const re = perlPatternToRegExp(config.pattern);
+  if (!re || re.test(value)) return null;
+  return i18next.t('Value does not match the required pattern {{pattern}}', {
+    pattern: re.source,
+  });
+}
+
+/**
+ * What "reset to default" should write. Boolean defaults are spelled
+ * `yes`/`no` in `default_value` while the stored value is `1`/`0`.
+ */
+export function configDefaultValue(config: ZmConfig): string | null {
+  const d = config.default_value;
+  if (d == null) return null;
+  if (config.type === 'boolean') return /^(y|1|true|on)/i.test(d) ? '1' : '0';
+  return d;
+}
+
+export function isAtDefault(config: ZmConfig): boolean {
+  const d = configDefaultValue(config);
+  return d === null || d === config.value;
+}

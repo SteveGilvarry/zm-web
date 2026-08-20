@@ -146,12 +146,6 @@ function GroupEditForm({
             </select>
           </div>
 
-          {editing ? (
-            <p className="text-[10px] text-text-muted italic">
-              {t('Tip: changing parent on an existing group is not yet supported by the backend. Set parent at creation time, or recreate the group.')}
-            </p>
-          ) : null}
-
           {error ? (
             <div
               role="alert"

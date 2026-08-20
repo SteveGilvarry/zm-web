@@ -94,6 +94,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   configs: {
     getConfigs: { args: [] },
     getConfig: { args: ['ZM_WEB_TITLE'] },
+    getConfigCategories: { args: [] },
     updateConfig: { args: ['ZM_WEB_TITLE', 'x'] },
   },
   controls: {
@@ -116,6 +117,12 @@ const CALLS: Record<string, Record<string, Call>> = {
     getEventThumbnailUrl: { url: [1] },
     getEventStreamUrl: { url: [1] },
     getEventPlaylistUrl: { url: [1] },
+    isEventSortField: 'pure',
+    legacySortFieldToApi: 'pure',
+  },
+  eventData: {
+    listEventData: { args: [{ event_id: 1 }] },
+    getEventData: { args: [1] },
   },
   eventSummaries: {
     listEventSummaries: { args: [] },
@@ -157,6 +164,7 @@ const CALLS: Record<string, Record<string, Call>> = {
     getLog: { args: [1] },
     levelLabel: 'pure',
     levelColor: 'pure',
+    levelRowTint: 'pure',
   },
   'monitors-crud': {
     toCreatePayload: 'pure',
@@ -181,6 +189,10 @@ const CALLS: Record<string, Record<string, Call>> = {
     getMonitorSnapshotUrl: { url: [1] },
     getHlsPlaylistUrl: { url: [1] },
     getWebRtcWebsocketUrl: { url: [1] },
+  },
+  monitorStatus: {
+    getMonitorStatuses: { args: [] },
+    getMonitorStatus: { args: [1] },
   },
   monitorsPermissions: {
     listMonitorsPermissions: { args: [] },
@@ -254,6 +266,7 @@ const CALLS: Record<string, Record<string, Call>> = {
     systemShutdown: { args: [] },
     systemRestart: { args: [] },
     getServerStats: { args: [] },
+    statNumber: 'pure',
     getHealthCheck: { args: [] },
     systemLogRotate: { args: [] },
   },

@@ -14,16 +14,9 @@ const CLASSIC_BORROWS: readonly PageKey[] = [
   'montagereview',
   'events.detail',
   'filters',
-  'groups',
   'logs',
   'reports.list',
   'reports.detail',
-  'settings.options',
-  'settings.users',
-  'settings.servers',
-  'settings.storage',
-  'settings.state',
-  'settings.ptzControls',
 ];
 
 describe('skin registry', () => {

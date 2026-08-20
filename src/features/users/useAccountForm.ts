@@ -4,6 +4,16 @@ import { useMutation } from '@tanstack/react-query';
 import { createUser, updateUser } from '@/api/users';
 import type { User } from '@/types';
 
+/** zm_api issue tracking the missing `UpdateUserRequest` fields. */
+export const USER_FIELDS_ISSUE_URL = 'https://github.com/SteveGilvarry/zm-api/issues/23';
+
+/**
+ * Fields `UpdateUserRequest` drops today (it takes `email` + `enabled` only).
+ * The editor disables them on edit rather than pretend a save stuck.
+ */
+export const LOCKED_ON_EDIT = ['password', 'name', 'phone'] as const;
+export type LockedOnEdit = (typeof LOCKED_ON_EDIT)[number];
+
 export interface AccountFormData {
   username: string;
   password: string;
@@ -16,8 +26,9 @@ export interface AccountFormData {
 
 /**
  * Form state + create/update mutation for the user editor's Account tab.
- * `editing === null` means "create"; otherwise username is fixed and a
- * blank password keeps the current one.
+ * `editing === null` means "create"; otherwise username is fixed and only
+ * the fields the backend persists (`email`, `enabled`) are sent — see
+ * `LOCKED_ON_EDIT`.
  */
 export function useAccountForm(editing: User | null, onSaved: () => void) {
   const { t } = useTranslation();
@@ -60,14 +71,12 @@ export function useAccountForm(editing: User | null, onSaved: () => void) {
       return;
     }
     if (editing) {
-      const data: Parameters<typeof updateUser>[1] = {
-        name: formData.name,
-        email: formData.email,
-        enabled: formData.enabled,
-        phone: formData.phone,
-      };
-      if (formData.password) data.password = formData.password;
-      updateMutation.mutate({ id: editing.id, data });
+      // Password/name/phone/permissions are dropped by this backend (F-18,
+      // zm-api#23); sending them would only make a silent no-op look saved.
+      updateMutation.mutate({
+        id: editing.id,
+        data: { email: formData.email, enabled: formData.enabled },
+      });
     } else {
       createMutation.mutate({
         username: formData.username,
@@ -82,5 +91,7 @@ export function useAccountForm(editing: User | null, onSaved: () => void) {
 
   const submitDisabled = isSaving || !formData.username || (!editing && !formData.password);
 
-  return { formData, setField, toggleEnabled, error, isSaving, submitDisabled, submit };
+  const isLocked = (field: LockedOnEdit) => editing !== null && LOCKED_ON_EDIT.includes(field);
+
+  return { formData, setField, toggleEnabled, error, isSaving, submitDisabled, submit, isLocked };
 }

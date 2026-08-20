@@ -204,6 +204,12 @@ export default function SettingsOptionsPage() {
                       </div>
                     </div>
 
+                    {s.configSaveError && (
+                      <p role="alert" className="px-4 py-2 text-xs text-crimson border-b border-border-subtle">
+                        {t('Save failed: {{message}}', { message: s.configSaveError })}
+                      </p>
+                    )}
+
                     {/* Config table */}
                     {s.configsLoading ? (
                       <div className="p-8 text-center text-text-muted text-sm">
@@ -236,10 +242,12 @@ export default function SettingsOptionsPage() {
                                 isEditing={s.editingConfig === config.name}
                                 editValue={s.editValue}
                                 onEditValueChange={s.setEditValue}
+                                editError={s.editingConfig === config.name ? s.editError : null}
                                 onStartEdit={() => s.startEdit(config.name, config.value)}
                                 onSave={() => s.saveEdit(config.name)}
                                 onCancel={s.cancelEdit}
-                                isSaving={s.isConfigSaving && s.editingConfig === config.name}
+                                onReset={() => s.resetToDefault(config)}
+                                isSaving={s.savingConfig === config.name}
                               />
                             ))}
                           </tbody>

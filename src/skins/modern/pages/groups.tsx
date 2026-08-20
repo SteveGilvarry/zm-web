@@ -8,6 +8,7 @@ import {
   Check,
   X,
   Pencil,
+  AlertTriangle,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -15,7 +16,7 @@ import { Panel } from '@/components/common/Panel';
 import type { Group, GroupMonitor } from '@/api/groups';
 import type { Monitor } from '@/types';
 import { GroupEditDialog } from '@/features/groups/GroupEditDialog';
-import { useGroupsPage } from '@/features/groups/useGroupsPage';
+import { GROUP_REPARENT_ISSUE_URL, useGroupsPage } from '@/features/groups/useGroupsPage';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Groups — Mission Control. Tree on the left, membership editor on the right. */
@@ -30,6 +31,27 @@ export default function GroupsPage() {
   return (
     <AppShell title={t('Groups')}>
       <main className="flex-1 p-6 overflow-auto">
+        {s.parentWarning && (
+          <div
+            role="status"
+            className="mb-4 flex items-start gap-2 rounded-lg border border-amber/40 bg-amber/10 px-3 py-2 text-xs text-amber"
+          >
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <span className="flex-1">
+              {s.parentWarning}{' '}
+              <a href={GROUP_REPARENT_ISSUE_URL} target="_blank" rel="noreferrer" className="underline">
+                zm-api#28
+              </a>
+            </span>
+            <button
+              onClick={s.dismissParentWarning}
+              aria-label={t('Dismiss')}
+              className="p-0.5 rounded hover:bg-amber/20"
+            >
+              <X size={12} />
+            </button>
+          </div>
+        )}
         <div className="grid grid-cols-12 gap-6">
           {/* Left — group tree + create */}
           <div className="col-span-4 space-y-4">

@@ -34,14 +34,12 @@ export async function createGroup(name: string, parentId?: number | null): Promi
 }
 
 /**
- * Rename a group (and, best-effort, re-parent it).
+ * Rename and/or re-parent a group.
  *
- * NOTE on `parentId`: as of zm_api current OpenAPI spec `UpdateGroupRequest`
- * only declares `name`, and the live backend silently ignores `parent_id`
- * on PUT/PATCH. We still forward the field so that:
- *   1. when the backend gains support no client change is needed;
- *   2. the call site can be written symmetrically with `createGroup`.
- * Parent assignment today therefore only sticks at create time.
+ * `parent_id` on update is honoured from zm-api#28 onwards. Older builds
+ * (the 2026-08 dev box among them) accept the body but keep the old parent
+ * and echo it back, so callers that care compare the response's `parent_id`
+ * with what they sent — `useGroupsPage` does, and warns.
  */
 export async function updateGroup(
   id: number,

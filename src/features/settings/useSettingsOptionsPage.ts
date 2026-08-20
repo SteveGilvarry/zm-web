@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import {
   getSystemStatus,
   getDaemons,
@@ -14,6 +15,10 @@ import {
 } from '@/api/system';
 import { getConfigs, updateConfig } from '@/api/configs';
 import { useAuthStore } from '@/stores/auth';
+import { useZmConfig } from '@/features/config/useZmConfig';
+import { configDefaultValue, configPatternError } from './configFormat';
+import { DISPLAY_TAB, buildOptionsTabs, visibleCategories } from './optionsTabs';
+import type { ZmConfig } from '@/types';
 
 export type SystemAction = 'startup' | 'shutdown' | 'restart' | 'logrotate';
 export type DaemonAction = 'start' | 'stop' | 'restart';
@@ -37,11 +42,16 @@ export function formatBytes(bytes: number): string {
 /**
  * Data + state for Settings → Options: system overview, daemon control,
  * system actions (with confirm) and the inline ZoneMinder config editor.
- * All config filtering/paging is client-side (the API has no category param).
+ * Configs are fetched once and filtered client-side. The selected category
+ * lives in `?category=` so the classic rail (and bookmarks) can deep-link
+ * straight to a tab, as legacy `?view=options&tab=web` did.
  */
 export function useSettingsOptionsPage() {
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
+  const x10Enabled = useZmConfig('ZM_OPT_X10', false);
+  const search = useSearch({ strict: false }) as { category?: unknown };
+  const navigate = useNavigate();
 
   // System status
   const { data: systemStatus } = useQuery({
@@ -74,25 +84,38 @@ export function useSettingsOptionsPage() {
 
   const allConfigs = useMemo(() => allConfigsData?.items ?? [], [allConfigsData]);
 
-  // Build category list with counts
+  // Categories the rail shows, with counts; bandwidth/hidden/dynamic never,
+  // x10 only while ZM_OPT_X10 is on.
   const categoryList = useMemo(() => {
     const countMap = new Map<string, number>();
     for (const c of allConfigs) {
       countMap.set(c.category, (countMap.get(c.category) || 0) + 1);
     }
-    return Array.from(countMap.entries())
+    const all = Array.from(countMap.entries())
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([name, count]) => ({ name, count }));
-  }, [allConfigs]);
+    return visibleCategories(all, x10Enabled);
+  }, [allConfigs, x10Enabled]);
 
-  // Config state — all filtering is client-side
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+  /** Legacy-ordered tab rail (categories + sub-pages) for the classic skin. */
+  const tabs = useMemo(() => buildOptionsTabs(categoryList, x10Enabled), [categoryList, x10Enabled]);
+
+  // Selected category comes from the URL; anything not currently visible
+  // (a hidden category, a typo) reads as "All" without rewriting the URL.
+  const requestedCategory = typeof search.category === 'string' ? search.category : null;
+  const selectedCategory =
+    requestedCategory === DISPLAY_TAB || categoryList.some((c) => c.name === requestedCategory)
+      ? requestedCategory
+      : null;
   const [configPage, setConfigPage] = useState(1);
   const [configSearch, setConfigSearch] = useState('');
 
-  // Filter by category then search, then paginate client-side
+  // Filter by category then search, then paginate client-side. Only the
+  // visible categories are ever listed, so "All" never leaks a hidden row.
   const filteredConfigs = useMemo(() => {
-    let result = allConfigs;
+    if (selectedCategory === DISPLAY_TAB) return [];
+    const visible = new Set(categoryList.map((c) => c.name));
+    let result = allConfigs.filter((c) => visible.has(c.category));
     if (selectedCategory) {
       result = result.filter((c) => c.category === selectedCategory);
     }
@@ -101,7 +124,7 @@ export function useSettingsOptionsPage() {
       result = result.filter((c) => c.name.toLowerCase().includes(q));
     }
     return result;
-  }, [allConfigs, selectedCategory, configSearch]);
+  }, [allConfigs, categoryList, selectedCategory, configSearch]);
 
   const configTotalPages = Math.max(1, Math.ceil(filteredConfigs.length / CONFIG_PAGE_SIZE));
   const paginatedConfigs = filteredConfigs.slice(
@@ -110,7 +133,16 @@ export function useSettingsOptionsPage() {
   );
 
   const selectCategory = (cat: string | null) => {
-    setSelectedCategory(cat);
+    void navigate({
+      to: '/settings',
+      search: (prev: Record<string, unknown>) => {
+        const next = { ...prev };
+        if (cat) next.category = cat;
+        else delete next.category;
+        return next;
+      },
+      replace: true,
+    });
     setConfigPage(1);
     setConfigSearch('');
   };
@@ -173,10 +205,22 @@ export function useSettingsOptionsPage() {
     setEditingConfig(name);
     setEditValue(currentValue);
   };
+  const editingRow = editingConfig ? allConfigs.find((c) => c.name === editingConfig) ?? null : null;
+  /** Pattern mismatch for the value being typed; null while valid or unchecked. */
+  const editError = editingRow ? configPatternError(editingRow, editValue) : null;
   const saveEdit = (name: string) => {
+    if (editError) return;
     configMutation.mutate({ name, value: editValue });
   };
   const cancelEdit = () => setEditingConfig(null);
+
+  /** Write `default_value` back (legacy "reset" per row); no-op without one. */
+  const resetToDefault = (config: ZmConfig) => {
+    const value = configDefaultValue(config);
+    if (value === null) return;
+    setEditingConfig(null);
+    configMutation.mutate({ name: config.name, value });
+  };
 
   const stats = systemStatus?.stats;
   const daemons = daemonData?.daemons || [];
@@ -205,6 +249,7 @@ export function useSettingsOptionsPage() {
     allConfigs,
     configsLoading,
     categoryList,
+    tabs,
     selectedCategory,
     selectCategory,
     configSearch,
@@ -222,6 +267,10 @@ export function useSettingsOptionsPage() {
     startEdit,
     saveEdit,
     cancelEdit,
+    editError,
+    resetToDefault,
     isConfigSaving: configMutation.isPending,
+    configSaveError: configMutation.error?.message ?? null,
+    savingConfig: configMutation.isPending ? configMutation.variables?.name ?? null : null,
   };
 }

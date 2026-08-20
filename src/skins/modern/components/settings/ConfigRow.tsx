@@ -1,28 +1,34 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronRight, Lock, Loader2, Save } from 'lucide-react';
+import { ChevronDown, ChevronRight, Lock, Loader2, RotateCcw, Save } from 'lucide-react';
 import { TypedConfigInput } from '@/features/settings/TypedConfigInput';
-import { formatConfigValue } from '@/features/settings/configFormat';
+import { configDefaultValue, formatConfigValue, isAtDefault } from '@/features/settings/configFormat';
 import type { ZmConfig } from '@/types';
 
 export function ConfigRow({
   config,
   isEditing,
   editValue,
+  editError = null,
   onEditValueChange,
   onStartEdit,
   onSave,
   onCancel,
+  onReset,
   isSaving,
 }: {
   config: ZmConfig;
   isEditing: boolean;
   editValue: string;
+  /** Pattern-validation message for the value being edited; blocks Save. */
+  editError?: string | null;
   onEditValueChange: (v: string) => void;
   onStartEdit: () => void;
   onSave: () => void;
   onCancel: () => void;
+  /** Write `default_value` back. Omit to hide the reset control. */
+  onReset?: () => void;
   isSaving: boolean;
 }) {
   const { t } = useTranslation();
@@ -30,11 +36,13 @@ export function ConfigRow({
   const isReadonly = config.readonly === 1;
   // `private` rows (ZM_AUTH_HASH_SECRET, reCAPTCHA keys) and password-typed rows never render their value.
   const isSecret = config.private === 1 || config.type === 'password';
+  const canReset = !!onReset && !isReadonly && !isAtDefault(config);
+  const defaultValue = configDefaultValue(config);
 
   return (
     <>
       <tr className="group hover:bg-panel/50 transition-colors">
-        <td className="px-4 py-2.5">
+        <td className="px-4 py-2.5 align-top">
           <div className="flex items-center gap-2">
             {config.help && (
               <button
@@ -50,49 +58,70 @@ export function ConfigRow({
             <span className="font-mono text-text-primary text-xs">{config.name}</span>
             {isReadonly && <Lock size={11} className="text-text-muted flex-shrink-0" aria-label={t('Read-only')} />}
           </div>
+          {config.prompt && (
+            <p className="ps-5 mt-0.5 text-[11px] leading-snug text-text-muted">{config.prompt}</p>
+          )}
         </td>
-        <td className="px-4 py-2.5">
+        <td className="px-4 py-2.5 align-top">
           {isEditing ? (
-            <div className="flex items-center gap-2">
-              <TypedConfigInput
-                config={config}
-                value={editValue}
-                onChange={onEditValueChange}
-                onCommit={onSave}
-                onCancel={onCancel}
-                autoFocus
-              />
-              <button
-                onClick={onSave}
-                disabled={isSaving}
-                aria-label={t('Save')}
-                className="p-1 rounded text-cyan hover:bg-cyan/20 transition-colors"
-              >
-                {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-              </button>
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <TypedConfigInput
+                  config={config}
+                  value={editValue}
+                  onChange={onEditValueChange}
+                  onCommit={onSave}
+                  onCancel={onCancel}
+                  autoFocus
+                />
+                <button
+                  onClick={onSave}
+                  disabled={isSaving || !!editError}
+                  aria-label={t('Save')}
+                  className="p-1 rounded text-cyan hover:bg-cyan/20 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                </button>
+              </div>
+              {editError && (
+                <p role="alert" className="text-[11px] text-crimson">{editError}</p>
+              )}
             </div>
           ) : (
-            <span
-              onClick={isReadonly ? undefined : onStartEdit}
-              className={clsx(
-                'text-xs font-mono block truncate max-w-[400px]',
-                isReadonly
-                  ? 'text-text-muted'
-                  : 'text-text-secondary cursor-pointer hover:text-cyan transition-colors'
+            <div className="flex items-center gap-2">
+              <span
+                onClick={isReadonly ? undefined : onStartEdit}
+                className={clsx(
+                  'text-xs font-mono block truncate max-w-[400px]',
+                  isReadonly
+                    ? 'text-text-muted'
+                    : 'text-text-secondary cursor-pointer hover:text-cyan transition-colors'
+                )}
+                title={isSecret ? undefined : config.value}
+              >
+                {config.value
+                  ? (isSecret ? '••••••••' : formatConfigValue(config))
+                  : <span className="italic text-text-muted">{t('empty')}</span>}
+              </span>
+              {canReset && (
+                <button
+                  onClick={onReset}
+                  disabled={isSaving}
+                  aria-label={t('Reset {{name}} to default', { name: config.name })}
+                  title={t('Reset to default ({{value}})', { value: isSecret ? '••••' : defaultValue })}
+                  className="p-1 rounded text-text-muted opacity-0 group-hover:opacity-100 focus:opacity-100 hover:text-amber hover:bg-amber/10 transition-all"
+                >
+                  {isSaving ? <Loader2 size={12} className="animate-spin" /> : <RotateCcw size={12} />}
+                </button>
               )}
-              title={isSecret ? undefined : config.value}
-            >
-              {config.value
-                ? (isSecret ? '••••••••' : formatConfigValue(config))
-                : <span className="italic text-text-muted">{t('empty')}</span>}
-            </span>
+            </div>
           )}
         </td>
       </tr>
       {expanded && config.help && (
         <tr>
           <td colSpan={2} className="px-4 py-2 bg-panel/30">
-            <p className="text-xs text-text-muted ps-5">{config.help}</p>
+            <p className="text-xs text-text-muted ps-5 whitespace-pre-line">{config.help.trim()}</p>
           </td>
         </tr>
       )}

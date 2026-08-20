@@ -136,8 +136,8 @@ export function useRunStatePage() {
     monitors,
     monitorsLoading: monitorsQ.isLoading,
     busy,
-    // daemon supervisor
-    startDaemon: () => changeMutation.mutate('start'),
+    // daemon supervisor — every action goes through the confirm dialog,
+    // like legacy's state modal (X-7).
     daemonTarget,
     setDaemonTarget,
     confirmDaemon,

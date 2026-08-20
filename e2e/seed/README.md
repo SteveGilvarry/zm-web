@@ -15,7 +15,7 @@ tests. We drive that recipe instead of copying it:
 |---|---|
 | MariaDB 11.8 container | `zm_api/scripts/db-manager.sh mysql` (same image, flags and credentials as `zm_api/docker-compose.test.yml`) |
 | ZoneMinder schema + stock seed (Controls, MonitorPresets, Manufacturers/Models, triggers) | `zm_api/zm_create.sql.in` + `zm_api/db/*.sql`, inlined by `db-manager.sh`'s `process_schema` |
-| zm_api config | `zm_api/settings/test-db.toml` plus `APP__*` env overrides (no file edits in zm_api) |
+| zm_api config | `zm_api/settings/test-db.toml` plus env overrides (no file edits in zm_api). `api.sh` exports both spellings, `APP_DB__HOST` (zm-api ≥ 725fc75, the documented form) and `APP__DB__HOST` (older builds), so either checkout picks them up |
 | JWT keys | `zm_api/scripts/generate-jwt-keys.sh` (run automatically by `api.sh` if `static/key/` is empty) |
 
 The zm_api checkout is located via `ZM_API_DIR` (default `../zm_api`, a
@@ -79,13 +79,14 @@ own `mariadb` binary. No sudo.
 | `TEST_USERNAME` / `TEST_PASSWORD` | seeded admin | override the login the fixtures use |
 
 zm_api's `test-db` profile binds `127.0.0.1` only. `api.sh` overrides the DB
-connection with `APP__DB__HOST/PORT/USERNAME/PASSWORD/DATABASE_NAME` and the
-listen port with `APP__SERVER__PORT`. Mind the double underscore after `APP`:
-zm_api's docs write `APP_DB__HOST`, but its loader uses `__` as the prefix
-separator too, so the single-underscore form is ignored and you silently get
-the profile's `zm_test_user` credentials. zm_api's startup migrations stamp
-the externally created schema as baseline and add its own tables, nothing
-else.
+connection (`DB__HOST/PORT/USERNAME/PASSWORD/DATABASE_NAME`) and the listen
+port (`SERVER__PORT`) through the environment, and exports each variable
+under both prefixes: `APP_` (what zm_api's docs write, honoured from commit
+725fc75 / zm-api#38) and `APP__` (what older loaders actually read). Whichever
+zm_api checkout you point `ZM_API_DIR` at, the overrides take; with only one
+form set on the wrong build you silently get the profile's `zm_test_user`
+credentials. zm_api's startup migrations stamp the externally created schema
+as baseline and add its own tables, nothing else.
 
 ### Preflight
 
