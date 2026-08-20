@@ -32,6 +32,26 @@ export interface TokenResponse {
 /** @deprecated Use {@link TokenResponse}. Kept as an alias for back-compat. */
 export type LoginResponse = TokenResponse;
 
+/** Per-feature permission columns on ZoneMinder's `Users` table, as the
+ *  JWT `perms` claim spells them (lower-case keys). */
+export type PermFeature =
+  | 'stream'
+  | 'events'
+  | 'control'
+  | 'monitors'
+  | 'groups'
+  | 'devices'
+  | 'snapshots'
+  | 'system';
+
+/** Permission level, ordered `None < View < Edit < Create`. zm_api folds
+ *  ZoneMinder's `Monitors=Create` into `Edit` today; `Create` is accepted so a
+ *  backend that starts emitting it needs no frontend change. `Stream` has no
+ *  `Edit` level in ZoneMinder. */
+export type PermLevel = 'None' | 'View' | 'Edit' | 'Create';
+
+export type UserPerms = Record<PermFeature, PermLevel>;
+
 export interface UserClaims {
   iat: number;
   exp: number;
@@ -39,6 +59,11 @@ export interface UserClaims {
   /** Numeric ZoneMinder user id (`uid` claim). Backend populates this on
    *  successful auth; older tokens may lack it, hence optional. */
   uid?: number;
+  /** `access` | `refresh`. Newer zm_api builds only. */
+  typ?: 'access' | 'refresh';
+  /** RBAC snapshot taken at login. Absent on tokens from builds that predate
+   *  RBAC; see `src/features/auth/perms.ts` for how that is treated. */
+  perms?: Partial<UserPerms>;
 }
 
 // ============================================
@@ -415,6 +440,10 @@ export interface ZmConfig {
   help?: string | null;
   hint?: string | null;
   prompt?: string | null;
+  /** Perl `qr//` as a string, e.g. `(?^i:^([yn]))`. See `perlPatternToRegExp`. */
+  pattern?: string | null;
+  /** Perl snippet that normalises the value (`($1 =~ /^y/) ? 'yes' : 'no'`); display only. */
+  format?: string | null;
 }
 
 // ============================================

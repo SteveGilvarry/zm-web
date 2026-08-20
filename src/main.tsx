@@ -5,26 +5,41 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { routeTree } from './routeTree.gen';
+import { shouldRetryQuery } from '@/api/client';
+import { attachBackendStatus } from '@/components/common/backendStatus';
+import { ErrorBoundary } from '@/components/common/ErrorBoundary';
+import {
+  AppCrashFallback,
+  NotFoundFallback,
+  RouteErrorFallback,
+} from '@/components/common/RouteFallbacks';
 import './i18n';
 import './index.css';
 
-// Create a query client
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60, // 1 minute
-      retry: 1,
+      // Transient failures (network, 5xx) get two more tries; a 4xx is final.
+      retry: (failureCount, error) => shouldRetryQuery(failureCount, error),
+    },
+    mutations: {
+      retry: false,
     },
   },
 });
 
-// Create a router instance
+// Feeds the "backend unreachable" banner in both shells.
+attachBackendStatus(queryClient);
+
 const router = createRouter({
   routeTree,
   // Mirrors Vite's `base` (VITE_BASE) so routes resolve under a sub-path.
   basepath: import.meta.env.BASE_URL,
   context: {},
   defaultPreload: 'intent',
+  defaultErrorComponent: RouteErrorFallback,
+  defaultNotFoundComponent: NotFoundFallback,
 });
 
 // Register the router for type safety
@@ -36,9 +51,11 @@ declare module '@tanstack/react-router' {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <QueryClientProvider client={queryClient}>
-      <RouterProvider router={router} />
-      {import.meta.env.DEV && <ReactQueryDevtools position="bottom" />}
-    </QueryClientProvider>
+    <ErrorBoundary fallback={(error, reset) => <AppCrashFallback error={error} reset={reset} />}>
+      <QueryClientProvider client={queryClient}>
+        <RouterProvider router={router} />
+        {import.meta.env.DEV && <ReactQueryDevtools position="bottom" />}
+      </QueryClientProvider>
+    </ErrorBoundary>
   </StrictMode>
 );

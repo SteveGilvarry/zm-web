@@ -3,6 +3,8 @@ import { clsx } from 'clsx';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Header } from '@/components/layout/Header';
 import { useUiStore } from '@/stores/ui';
+import { BackendBanner } from '@/components/common/BackendBanner';
+import { ToastViewport } from '@/components/common/ToastViewport';
 
 interface ModernShellProps {
   title?: string;
@@ -25,8 +27,10 @@ export function ModernShell({ title, children }: ModernShellProps) {
         )}
       >
         <Header title={title} />
+        <BackendBanner />
         {children}
       </div>
+      <ToastViewport />
       {/* Background grid */}
       <div className="fixed inset-0 pointer-events-none -z-10">
         <div className="absolute inset-0 bg-grid opacity-20" />

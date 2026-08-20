@@ -1,13 +1,18 @@
 import { useEffect, useState, type FormEvent } from 'react';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { login } from '@/api/auth';
 import { useAuthStore } from '@/stores/auth';
+import { safeRedirectTarget } from './redirect';
 
-/** Login form state; redirects to `/` once the auth store is populated. */
+/**
+ * Login form state. Once the auth store is populated, goes to
+ * `?redirect=<path>` when that is a same-app path, else to the console.
+ */
 export function useLoginPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { redirect } = useSearch({ from: '/login' });
   const { setTokens, isAuthenticated } = useAuthStore();
 
   const [username, setUsername] = useState('');
@@ -16,12 +21,17 @@ export function useLoginPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  // Redirect if already authenticated
+  const goOn = () => {
+    const target = safeRedirectTarget(redirect);
+    if (target) void navigate({ href: target, replace: true });
+    else void navigate({ to: '/', replace: true });
+  };
+
+  // Already signed in (back button, second tab): skip the form.
   useEffect(() => {
-    if (isAuthenticated) {
-      navigate({ to: '/' });
-    }
-  }, [isAuthenticated, navigate]);
+    if (isAuthenticated) goOn();
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- goOn reads stable router/search values
+  }, [isAuthenticated]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -31,7 +41,7 @@ export function useLoginPage() {
     try {
       const response = await login({ username, password });
       setTokens(response.access_token, response.refresh_token);
-      navigate({ to: '/' });
+      goOn();
     } catch (err) {
       setError(err instanceof Error ? err.message : t('Login failed'));
     } finally {

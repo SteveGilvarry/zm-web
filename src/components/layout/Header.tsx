@@ -7,6 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { getSystemStatus, getVersion } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 
 interface HeaderProps {
   title?: string;
@@ -156,7 +157,11 @@ export function Header({ title }: HeaderProps) {
 
       {/* Right: connection + running toggle + clock */}
       <div className="flex items-center gap-3">
-        {isAuthenticated && <SystemRunningToggle />}
+        {isAuthenticated && (
+          <RequirePerm feature="system" level="Edit">
+            <SystemRunningToggle />
+          </RequirePerm>
+        )}
 
         <div
           className={clsx(

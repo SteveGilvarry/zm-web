@@ -9,6 +9,8 @@ import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { logout as apiLogout } from '@/api/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
+import { usePerms } from '@/features/auth/usePerms';
+import { canSeeNav } from '@/features/nav/navPerms';
 
 /**
  * Classic ZoneMinder top navigation. Same items, order and labels as the
@@ -38,7 +40,9 @@ export function ClassicTopNav() {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, clearAuth } = useAuthStore();
-  const items = useNavItems();
+  const { perms, can } = usePerms();
+  // Same canView() gating as the legacy navbar.
+  const items = useNavItems().filter((i) => canSeeNav(perms, i.to));
 
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
@@ -92,7 +96,7 @@ export function ClassicTopNav() {
           >
             <LogOut size={15} className="rtl:-scale-x-100" aria-hidden />
           </button>
-          <SystemRunningToggle tone="light" />
+          {can('system', 'Edit') && <SystemRunningToggle tone="light" />}
         </div>
       </div>
     </header>

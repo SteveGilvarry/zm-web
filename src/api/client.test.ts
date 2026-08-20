@@ -1,7 +1,10 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { apiGet, apiPost, apiDelete, ApiClientError } from './client';
+import {
+  apiGet, apiPost, apiDelete, ApiClientError, apiErrorMessage, classifyApiError,
+  isBackendUnreachable, shouldRetryQuery,
+} from './client';
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
@@ -159,5 +162,66 @@ describe('apiPost / apiDelete — payload + status handling', () => {
       http.delete('/api/v3/things/:id', () => HttpResponse.json({}, { status: 204 })),
     );
     await expect(apiDelete('/things/1')).resolves.toBeUndefined();
+  });
+});
+
+describe('ApiClientError — classification', () => {
+  it('exposes kind and the status predicates', () => {
+    expect(new ApiClientError('x', 403).kind).toBe('forbidden');
+    expect(new ApiClientError('x', 403).isForbidden).toBe(true);
+    expect(new ApiClientError('x', 401).kind).toBe('unauthorized');
+    expect(new ApiClientError('x', 404).isNotFound).toBe(true);
+    expect(new ApiClientError('x', 422).kind).toBe('client');
+    expect(new ApiClientError('x', 502).kind).toBe('server');
+    expect(new ApiClientError('x', 502).isUnreachable).toBe(true);
+    expect(new ApiClientError('x', 0).kind).toBe('network');
+  });
+
+  it('classifyApiError handles foreign errors', () => {
+    expect(classifyApiError(new TypeError('Failed to fetch'))).toBe('network');
+    expect(classifyApiError(new Error('boom'))).toBe('unknown');
+    expect(classifyApiError('nope')).toBe('unknown');
+    expect(isBackendUnreachable(new ApiClientError('x', 503))).toBe(true);
+    expect(isBackendUnreachable(new ApiClientError('x', 403))).toBe(false);
+  });
+
+  it('shouldRetryQuery never retries a 4xx and caps transient retries', () => {
+    expect(shouldRetryQuery(0, new ApiClientError('x', 403))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiClientError('x', 404))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiClientError('x', 422))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiClientError('x', 500))).toBe(true);
+    expect(shouldRetryQuery(1, new ApiClientError('x', 500))).toBe(true);
+    expect(shouldRetryQuery(2, new ApiClientError('x', 500))).toBe(false);
+    expect(shouldRetryQuery(0, new ApiClientError('x', 0))).toBe(true);
+  });
+
+  it('apiErrorMessage prefers the envelope message except for network/403', () => {
+    expect(apiErrorMessage(new ApiClientError('Name taken', 409))).toBe('Name taken');
+    expect(apiErrorMessage(new ApiClientError('raw', 0))).toBe('Cannot reach the server.');
+    expect(apiErrorMessage(new ApiClientError('raw', 403))).toBe('You do not have permission to do this.');
+    expect(apiErrorMessage(new Error('plain'))).toBe('plain');
+    expect(apiErrorMessage(undefined)).toBe('Something went wrong.');
+  });
+});
+
+describe('authedFetch — network failure', () => {
+  it('wraps a fetch TypeError as ApiClientError status 0', async () => {
+    server.use(http.get('/api/v3/down', () => HttpResponse.error()));
+    const err = await apiGet('/down').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiClientError);
+    expect((err as ApiClientError).status).toBe(0);
+    expect((err as ApiClientError).kind).toBe('network');
+  });
+
+  it('reports a 403 as forbidden with the envelope message', async () => {
+    server.use(
+      http.get('/api/v3/secret', () =>
+        HttpResponse.json({ kind: 'Forbidden', error_message: 'System:View required' }, { status: 403 }),
+      ),
+    );
+    const err = await apiGet('/secret').catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiClientError);
+    expect((err as ApiClientError).isForbidden).toBe(true);
+    expect((err as ApiClientError).message).toBe('System:View required');
   });
 });

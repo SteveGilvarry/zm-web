@@ -108,7 +108,11 @@ describe('Header — connection indicator', () => {
 });
 
 describe('Header — running toggle', () => {
-  it('mounts the SystemRunningToggle in the right cluster when authenticated', () => {
+  it('mounts the SystemRunningToggle in the right cluster when authenticated with System=Edit', () => {
+    // The toggle is gated on System≥Edit; seed claims that carry it.
+    useAuthStore.setState({
+      user: { user: 'admin', perms: { system: 'Edit' } } as unknown as UserClaims,
+    });
     renderWithProviders(<Header />);
     expect(screen.getByTestId('running-toggle')).toBeInTheDocument();
   });

@@ -25,6 +25,8 @@ import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { logout as apiLogout } from '@/api/auth';
+import { usePerms } from '@/features/auth/usePerms';
+import { canSeeNav } from '@/features/nav/navPerms';
 
 interface NavItem {
   label: string;
@@ -67,7 +69,11 @@ export function Sidebar() {
   const navigate = useNavigate();
   const currentPath = router.location.pathname;
   const { user, clearAuth } = useAuthStore();
-  const { main: navItems, settings: settingsItems } = useNavItems();
+  const { perms } = usePerms();
+  const items = useNavItems();
+  // Legacy canView() rules: hide what the user cannot open.
+  const navItems = items.main.filter((i) => canSeeNav(perms, i.path));
+  const settingsItems = items.settings.filter((i) => canSeeNav(perms, i.path));
 
   const handleLogout = async () => {
     // Tell the backend first (best effort — a dead backend must not trap
@@ -133,7 +139,7 @@ export function Sidebar() {
           ))}
         </div>
 
-        <div className="my-4 mx-2 border-t border-border-subtle" />
+        {settingsItems.length > 0 && <div className="my-4 mx-2 border-t border-border-subtle" />}
 
         <div className="space-y-1">
           {settingsItems.map((item) => (
