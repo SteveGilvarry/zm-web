@@ -27,13 +27,17 @@ if [ ! -f static/key/private_access_rsa_key.pem ]; then
 fi
 
 export APP_PROFILE=test-db
-export APP__DB__HOST=127.0.0.1
-export APP__DB__PORT="$E2E_DB_PORT"
-export APP__DB__USERNAME="$E2E_DB_USER"
-export APP__DB__PASSWORD="$E2E_DB_PASSWORD"
-export APP__DB__DATABASE_NAME="$E2E_DB_NAME"
-export APP__SERVER__ADDR=127.0.0.1
-export APP__SERVER__PORT="$E2E_API_PORT"
+# zm-api < 725fc75 reads APP__DB__HOST (double underscore); the fix for
+# zm-api#38 switched to the documented APP_DB__HOST. Export both.
+for form in APP__ APP_; do
+  export "${form}DB__HOST=127.0.0.1"
+  export "${form}DB__PORT=$E2E_DB_PORT"
+  export "${form}DB__USERNAME=$E2E_DB_USER"
+  export "${form}DB__PASSWORD=$E2E_DB_PASSWORD"
+  export "${form}DB__DATABASE_NAME=$E2E_DB_NAME"
+  export "${form}SERVER__ADDR=127.0.0.1"
+  export "${form}SERVER__PORT=$E2E_API_PORT"
+done
 
 info "zm_api -> $DATABASE_URL, listening on $E2E_API_URL"
 exec cargo run --bin zm_api "$@"

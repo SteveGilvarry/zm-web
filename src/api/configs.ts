@@ -15,3 +15,8 @@ export async function updateConfig(
 ): Promise<ZmConfig> {
   return apiPut<{ value: string }, ZmConfig>(`/configs/${encodeURIComponent(name)}`, { value });
 }
+
+/** One config row by name, e.g. `ZM_WEB_EVENTS_PER_PAGE`. */
+export async function getConfig(name: string): Promise<ZmConfig> {
+  return apiGet<ZmConfig>(`/configs/${encodeURIComponent(name)}`);
+}

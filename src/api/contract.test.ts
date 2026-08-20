@@ -93,6 +93,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   },
   configs: {
     getConfigs: { args: [] },
+    getConfig: { args: ['ZM_WEB_TITLE'] },
     updateConfig: { args: ['ZM_WEB_TITLE', 'x'] },
   },
   controls: {
