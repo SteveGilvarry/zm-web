@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { clsx } from 'clsx';
+import { Trans, useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Plus, Save, Trash2, X, Square } from 'lucide-react';
 import {
   listZonesForMonitor, createZone, updateZone, deleteZone,
@@ -16,24 +18,40 @@ interface ZoneEditorProps {
   height: number;
 }
 
-const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string; label: string }> = {
-  Active:     { stroke: '#00d4ff', fill: 'rgba(0,212,255,0.18)',  label: 'Active' },
-  Inclusive:  { stroke: '#00ff9d', fill: 'rgba(0,255,157,0.18)',  label: 'Inclusive' },
-  Exclusive:  { stroke: '#ffb000', fill: 'rgba(255,176,0,0.18)',  label: 'Exclusive' },
-  Preclusive: { stroke: '#a855f7', fill: 'rgba(168,85,247,0.18)', label: 'Preclusive' },
-  Inactive:   { stroke: '#566b85', fill: 'rgba(86,107,133,0.15)', label: 'Inactive' },
-  Privacy:    { stroke: '#ff3366', fill: 'rgba(255,51,102,0.22)', label: 'Privacy' },
+const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string }> = {
+  Active:     { stroke: '#00d4ff', fill: 'rgba(0,212,255,0.18)'  },
+  Inclusive:  { stroke: '#00ff9d', fill: 'rgba(0,255,157,0.18)'  },
+  Exclusive:  { stroke: '#ffb000', fill: 'rgba(255,176,0,0.18)'  },
+  Preclusive: { stroke: '#a855f7', fill: 'rgba(168,85,247,0.18)' },
+  Inactive:   { stroke: '#566b85', fill: 'rgba(86,107,133,0.15)' },
+  Privacy:    { stroke: '#ff3366', fill: 'rgba(255,51,102,0.22)' },
 };
 const ZONE_TYPE_ORDER: ZoneType[] = ['Active', 'Inclusive', 'Exclusive', 'Preclusive', 'Inactive', 'Privacy'];
 
-const ZONE_TYPE_HINTS: Record<string, string> = {
-  Active:     'Triggers alarms on motion inside this region.',
-  Inclusive:  'Motion only counts if it also overlaps an Active zone.',
-  Exclusive:  'Motion in this region is ignored.',
-  Preclusive: 'If motion fills this region, the whole frame is rejected (camera shake).',
-  Inactive:   'Disabled — no detection here. Useful for parking it.',
-  Privacy:    'Region is blacked out in recordings and live view.',
-};
+/** Display label for a zone type (wire value stays as-is). Unknown types echo back. */
+function zoneTypeLabel(type: string, t: TFunction): string {
+  switch (type) {
+    case 'Active':     return t('Active');
+    case 'Inclusive':  return t('Inclusive');
+    case 'Exclusive':  return t('Exclusive');
+    case 'Preclusive': return t('Preclusive');
+    case 'Inactive':   return t('Inactive');
+    case 'Privacy':    return t('Privacy');
+    default:           return type;
+  }
+}
+
+function zoneTypeHint(type: string, t: TFunction): string {
+  switch (type) {
+    case 'Active':     return t('Triggers alarms on motion inside this region.');
+    case 'Inclusive':  return t('Motion only counts if it also overlaps an Active zone.');
+    case 'Exclusive':  return t('Motion in this region is ignored.');
+    case 'Preclusive': return t('If motion fills this region, the whole frame is rejected (camera shake).');
+    case 'Inactive':   return t('Disabled — no detection here. Useful for parking it.');
+    case 'Privacy':    return t('Region is blacked out in recordings and live view.');
+    default:           return '';
+  }
+}
 
 /**
  * SVG-overlay polygon editor over a refreshing camera snapshot. Each vertex
@@ -46,6 +64,7 @@ const ZONE_TYPE_HINTS: Record<string, string> = {
  * right edits name + type while the canvas edits geometry.
  */
 export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   const zonesQ = useQuery({
@@ -92,7 +111,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
     const m = 0.2;
     setDraft({
       id: null,
-      name: 'New zone',
+      name: t('New zone'),
       type: 'Active',
       units: 'Pixels',
       points: [
@@ -103,19 +122,12 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
       ],
     });
   };
-  // Switch units, converting the polygon's coords so it covers the same
-  // physical region. Pixels are absolute (0..width × 0..height); Percent
-  // is 0..100 of each axis so the same polygon would fit a different
-  // resolution monitor.
-  const convertUnits = (target: 'Pixels' | 'Percent') => {
-    if (!draft || draft.units === target) return;
-    const converted = draft.points.map((p) => {
-      if (target === 'Percent') {
-        return { x: (p.x / width) * 100, y: (p.y / height) * 100 };
-      }
-      return { x: (p.x / 100) * width, y: (p.y / 100) * height };
-    });
-    setDraft({ ...draft, units: target, points: converted });
+  // Units only change how ZoneMinder interprets the threshold fields
+  // (min/max area etc.). Coords are always stored in pixels, so switching
+  // units must leave the polygon alone.
+  const setUnits = (units: 'Pixels' | 'Percent') => {
+    if (!draft || draft.units === units) return;
+    setDraft({ ...draft, units });
   };
   // Apply a preset's name/type/units to the current draft (preserves
   // whatever polygon the operator has drawn).
@@ -182,21 +194,21 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
         <div className="rounded-lg border border-border-subtle bg-surface/40 overflow-hidden">
           <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle">
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-              Zones
+              {t('Zones')}
             </span>
             <button
               onClick={startNewZone}
               className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded border border-cyan/40 text-cyan hover:bg-cyan/15 transition-colors"
             >
               <Plus size={10} />
-              New
+              {t('New')}
             </button>
           </div>
           {zonesQ.isLoading ? (
-            <div className="p-4 text-center text-xs text-text-muted">Loading…</div>
+            <div className="p-4 text-center text-xs text-text-muted">{t('Loading…')}</div>
           ) : zones.length === 0 ? (
             <div className="p-4 text-center text-xs text-text-muted italic">
-              No zones yet. Click <strong>New</strong> to draw one.
+              <Trans>No zones yet. Click <strong>New</strong> to draw one.</Trans>
             </div>
           ) : (
             <ul>
@@ -207,16 +219,16 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                     <button
                       onClick={() => loadZone(z)}
                       className={clsx(
-                        'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs border-l-2 transition-colors',
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-start text-xs border-s-2 transition-colors',
                         selectedId === z.id
                           ? 'bg-cyan/10'
                           : 'hover:bg-surface/80',
                       )}
-                      style={{ borderLeftColor: c.stroke }}
+                      style={{ borderInlineStartColor: c.stroke }}
                     >
                       <Square size={10} style={{ color: c.stroke }} fill={c.fill} />
                       <span className="text-text-primary truncate flex-1">{z.name}</span>
-                      <span className="text-[10px] font-mono uppercase text-text-muted">{z.type}</span>
+                      <span className="text-[10px] font-mono uppercase text-text-muted">{zoneTypeLabel(z.type, t)}</span>
                     </button>
                   </li>
                 );
@@ -230,54 +242,54 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
           <div className="rounded-lg border border-cyan/40 bg-panel/50 p-3 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan">
-                {draft.id == null ? 'New zone' : `Editing #${draft.id}`}
+                {draft.id == null ? t('New zone') : t('Editing #{{id}}', { id: draft.id })}
               </span>
               <button
                 onClick={() => { setSelectedId(null); setDraft(null); }}
-                aria-label="Cancel edit"
+                aria-label={t('Cancel edit')}
                 className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
               >
                 <X size={11} />
               </button>
             </div>
 
-            <Field label="Name">
+            <Field label={t('Name')}>
               <input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               />
             </Field>
-            <Field label="Type">
+            <Field label={t('Type')}>
               <select
                 value={draft.type}
                 onChange={(e) => setDraft({ ...draft, type: e.target.value })}
                 className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               >
-                {ZONE_TYPE_ORDER.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {ZONE_TYPE_ORDER.map((type) => (
+                  <option key={type} value={type}>{zoneTypeLabel(type, t)}</option>
                 ))}
               </select>
             </Field>
             <div className="text-[10px] text-text-muted italic px-1">
-              {ZONE_TYPE_HINTS[draft.type] ?? ''}
+              {zoneTypeHint(draft.type, t)}
             </div>
-            <Field label="Units">
+            <Field label={t('Units')}>
               <div className="flex items-center gap-1 text-[11px]">
                 <UnitToggleBtn
                   active={draft.units === 'Pixels'}
-                  onClick={() => convertUnits('Pixels')}
-                  label="Pixels"
+                  onClick={() => setUnits('Pixels')}
+                  label={t('Pixels')}
                 />
                 <UnitToggleBtn
                   active={draft.units === 'Percent'}
-                  onClick={() => convertUnits('Percent')}
-                  label="Percent"
+                  onClick={() => setUnits('Percent')}
+                  label={t('Percent')}
                 />
               </div>
             </Field>
             {presets.length > 0 && (
-              <Field label="Preset">
+              <Field label={t('Preset')}>
                 <select
                   defaultValue=""
                   onChange={(e) => {
@@ -286,7 +298,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                   }}
                   className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
                 >
-                  <option value="" disabled>Apply preset…</option>
+                  <option value="" disabled>{t('Apply preset…')}</option>
                   {presets.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
@@ -294,8 +306,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
               </Field>
             )}
             <div className="text-[10px] text-text-muted">
-              {draft.points.length} vertices · click an edge dot to insert ·
-              Alt-click a vertex to remove
+              {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-1">
@@ -303,13 +314,13 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                 <button
                   type="button"
                   onClick={() => {
-                    if (confirm(`Delete zone "${draft.name}"?`)) deleteMutation.mutate(draft.id!);
+                    if (confirm(t('Delete zone "{{name}}"?', { name: draft.name }))) deleteMutation.mutate(draft.id!);
                   }}
                   disabled={deleteMutation.isPending}
                   className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-crimson/40 text-crimson hover:bg-crimson/15 transition-colors disabled:opacity-50"
                 >
                   <Trash2 size={10} />
-                  Delete
+                  {t('Delete')}
                 </button>
               )}
               <button
@@ -319,7 +330,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                 className="flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded border border-cyan/50 bg-cyan/15 text-cyan hover:bg-cyan/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Save size={10} />
-                Save
+                {t('Save')}
               </button>
             </div>
           </div>
@@ -376,6 +387,7 @@ interface ZoneCanvasProps {
 function ZoneCanvas({
   monitorWidth, monitorHeight, snapshotUrl, otherZones, draft, onDraftPointsChange,
 }: ZoneCanvasProps) {
+  const { t } = useTranslation();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
@@ -422,13 +434,13 @@ function ZoneCanvas({
   );
 
   return (
-    <div className="relative w-full rounded-lg overflow-hidden border border-border-subtle bg-abyss">
+    <div dir="ltr" className="relative w-full rounded-lg overflow-hidden border border-border-subtle bg-abyss">
       {/* Snapshot — sized via aspect-ratio to the camera resolution */}
       <div className="relative" style={{ aspectRatio: `${monitorWidth} / ${monitorHeight}` }}>
         {snapshotUrl && (
           <img
             src={snapshotUrl}
-            alt="Monitor snapshot"
+            alt={t('Monitor snapshot')}
             className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           />
         )}

@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronUp, GripVertical, Monitor as MonitorIcon } from 'lucide-react';
 import { type ConsoleData, lookupSummary } from './useConsoleData';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
@@ -24,6 +25,7 @@ interface ConsoleClassicTableProps {
  * thumbnail grid) and this table never disagree about a number.
  */
 export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
+  const { t } = useTranslation();
   const { monitors, summariesByMonitor } = data;
   const [sortKey, setSortKey] = useState<SortKey>('sequence');
   const [sortDir, setSortDir] = useState<'asc' | 'desc'>('asc');
@@ -76,7 +78,7 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
   };
 
   const totals = useMemo(() => {
-    const t = {
+    const acc = {
       hour: 0, hour_disk: 0,
       day: 0, day_disk: 0,
       week: 0, week_disk: 0,
@@ -85,14 +87,14 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
       archived: 0, archived_disk: 0,
     };
     for (const { summary: s } of rows) {
-      t.hour     += s.hour_events;        t.hour_disk     += s.hour_event_disk_space;
-      t.day      += s.day_events;         t.day_disk      += s.day_event_disk_space;
-      t.week     += s.week_events;        t.week_disk     += s.week_event_disk_space;
-      t.month    += s.month_events;       t.month_disk    += s.month_event_disk_space;
-      t.total    += s.total_events;       t.total_disk    += s.total_event_disk_space;
-      t.archived += s.archived_events;    t.archived_disk += s.archived_event_disk_space;
+      acc.hour     += s.hour_events;        acc.hour_disk     += s.hour_event_disk_space;
+      acc.day      += s.day_events;         acc.day_disk      += s.day_event_disk_space;
+      acc.week     += s.week_events;        acc.week_disk     += s.week_event_disk_space;
+      acc.month    += s.month_events;       acc.month_disk    += s.month_event_disk_space;
+      acc.total    += s.total_events;       acc.total_disk    += s.total_event_disk_space;
+      acc.archived += s.archived_events;    acc.archived_disk += s.archived_event_disk_space;
     }
-    return t;
+    return acc;
   }, [rows]);
 
   const toggleSort = (key: SortKey) => {
@@ -108,7 +110,7 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
     return (
       <div className="bg-white rounded border border-zinc-300 p-12 text-center text-zinc-500">
         <MonitorIcon size={32} className="mx-auto mb-2 opacity-50" />
-        No monitors configured.
+        {t('No monitors configured.')}
       </div>
     );
   }
@@ -121,24 +123,24 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
             <th
               className="w-6 px-1 py-2 text-center cursor-pointer select-none hover:bg-zinc-200"
               onClick={() => toggleSort('sequence')}
-              title="Sort by sequence (drag rows to reorder)"
+              title={t('Sort by sequence (drag rows to reorder)')}
             >
               <GripVertical
                 size={12}
                 className={clsx('mx-auto', dragEnabled ? 'text-cyan-700' : 'text-zinc-400')}
               />
             </th>
-            <Th label="ID"        sortKey="id"       active={sortKey} dir={sortDir} onClick={toggleSort} />
-            <th className="px-2 py-2 text-left font-semibold">Thumbnail</th>
-            <Th label="Name"      sortKey="name"     active={sortKey} dir={sortDir} onClick={toggleSort} />
-            <Th label="Function"  sortKey="function" active={sortKey} dir={sortDir} onClick={toggleSort} />
-            <Th label="Source"    sortKey="source"   active={sortKey} dir={sortDir} onClick={toggleSort} />
-            <Th label="Hour"      sortKey="hour"     active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-            <Th label="Day"       sortKey="day"      active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-            <Th label="Week"      sortKey="week"     active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-            <Th label="Month"     sortKey="month"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-            <Th label="Total"     sortKey="total"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
-            <Th label="Archived"  sortKey="archived" active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label={t('ID')}        sortKey="id"       active={sortKey} dir={sortDir} onClick={toggleSort} />
+            <th className="px-2 py-2 text-start font-semibold">{t('Thumbnail')}</th>
+            <Th label={t('Name')}      sortKey="name"     active={sortKey} dir={sortDir} onClick={toggleSort} />
+            <Th label={t('Function')}  sortKey="function" active={sortKey} dir={sortDir} onClick={toggleSort} />
+            <Th label={t('Source')}    sortKey="source"   active={sortKey} dir={sortDir} onClick={toggleSort} />
+            <Th label={t('Hour')}      sortKey="hour"     active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label={t('Day')}       sortKey="day"      active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label={t('Week')}      sortKey="week"     active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label={t('Month')}     sortKey="month"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label={t('Total')}     sortKey="total"    active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
+            <Th label={t('Archived')}  sortKey="archived" active={sortKey} dir={sortDir} onClick={toggleSort} numeric />
           </tr>
         </thead>
         <tbody>
@@ -158,7 +160,7 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
         <tfoot className="bg-zinc-50 border-t border-zinc-300 text-xs">
           <tr>
             <td className="px-3 py-2 font-semibold text-zinc-700" colSpan={6}>
-              Total ({rows.length} monitors)
+              {t('Total ({{count}} monitor)', { count: rows.length })}
             </td>
             <FootCount count={totals.hour}     disk={totals.hour_disk} />
             <FootCount count={totals.day}      disk={totals.day_disk} />
@@ -175,7 +177,7 @@ export function ConsoleClassicTable({ data }: ConsoleClassicTableProps) {
 
 function FootCount({ count, disk }: { count: number; disk: number }) {
   return (
-    <td className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-zinc-800">
+    <td className="px-3 py-2 text-end font-mono tabular-nums font-semibold text-zinc-800">
       {count}
       <div className="text-[10px] font-normal text-zinc-500">
         {disk > 0 ? formatBytes(disk) : '—'}
@@ -200,7 +202,7 @@ function Th({ label, sortKey, active, dir, onClick, numeric }: ThProps) {
       className={clsx(
         'px-3 py-2 font-semibold cursor-pointer select-none',
         'hover:bg-zinc-200 transition-colors',
-        numeric ? 'text-right' : 'text-left',
+        numeric ? 'text-end' : 'text-start',
       )}
       onClick={() => onClick(sortKey)}
     >
@@ -226,6 +228,7 @@ function Row({
   onDragEnd: () => void;
   onDrop: () => void;
 }) {
+  const { t } = useTranslation();
   const isActive = monitor.capturing !== 'None';
 
   return (
@@ -258,7 +261,7 @@ function Row({
           'w-6 px-1 py-2 text-center',
           dragEnabled ? 'cursor-grab text-zinc-400 hover:text-zinc-700' : 'text-zinc-200',
         )}
-        title={dragEnabled ? 'Drag to reorder' : 'Sort by Sequence to enable reordering'}
+        title={dragEnabled ? t('Drag to reorder') : t('Sort by Sequence to enable reordering')}
       >
         <GripVertical size={12} className="mx-auto" />
       </td>
@@ -312,7 +315,7 @@ function Row({
 
 function CountCell({ count, disk }: { count: number; disk: number }) {
   return (
-    <td className="px-3 py-2 text-right font-mono tabular-nums">
+    <td className="px-3 py-2 text-end font-mono tabular-nums">
       <div className={count === 0 ? 'text-zinc-400' : ''}>{count}</div>
       {count > 0 && disk > 0 && (
         <div className="text-[10px] text-zinc-500">{formatBytes(disk)}</div>

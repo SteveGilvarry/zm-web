@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { ChevronDown, Filter, X } from 'lucide-react';
 import {
   listGroups,
@@ -11,6 +12,7 @@ import {
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import type { Monitor } from '@/types';
+import { filterMonitors } from './filterMonitors';
 
 /* -------------------------------------------------------------------------- */
 /*  Enum option sets                                                          */
@@ -29,67 +31,26 @@ const RECORDING_OPTS = ['None', 'OnMotion', 'Always'] as const;
 const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'NVSocket', 'cURL', 'WebSite'] as const;
 
 // "Status" in legacy ZM is a derived boolean: capturing != None ⇒ Active.
-const STATUS_OPTS: ReadonlyArray<{ value: 'active' | 'disabled'; label: string }> = [
-  { value: 'active',   label: 'Active' },
-  { value: 'disabled', label: 'Disabled' },
-] as const;
-
-/* -------------------------------------------------------------------------- */
-/*  Filter logic — exported for unit tests                                    */
-/* -------------------------------------------------------------------------- */
-
-export interface MonitorFilterSelections {
-  groupIds: number[];
-  capturing: string[];
-  analysing: string[];
-  recording: string[];
-  status: string[];
-  source: string[];
-  monitorIds: number[];
-}
+const STATUS_OPTS = ['active', 'disabled'] as const;
 
 /**
- * Apply every chip's selections to the monitor list. Selections within a
- * chip OR-combine (e.g. Capturing: Always OR OnAlarm); different chips
- * AND-combine (Group X AND Capturing Always). An empty chip means "no
- * filter from that chip" — every monitor passes that gate.
+ * Display labels for the enum wire values above. Mode values get translated;
+ * source-driver names (Ffmpeg, Libvlc, …) are product names and stay as-is.
  */
-export function filterMonitors(
-  monitors: Monitor[],
-  selections: MonitorFilterSelections,
-  /** Map of group id → monitor ids in that group. */
-  groupMembership: Map<number, Set<number>>,
-): Monitor[] {
-  const {
-    groupIds, capturing, analysing, recording, status, source, monitorIds,
-  } = selections;
-
-  // Pre-compute the set of monitor ids reachable through the selected groups.
-  // Empty groupIds ⇒ all monitors pass.
-  const groupGate: Set<number> | null =
-    groupIds.length === 0
-      ? null
-      : groupIds.reduce<Set<number>>((acc, gid) => {
-          const ids = groupMembership.get(gid);
-          if (ids) ids.forEach((id) => acc.add(id));
-          return acc;
-        }, new Set<number>());
-
-  return monitors.filter((m) => {
-    if (groupGate && !groupGate.has(m.id))                         return false;
-    if (capturing.length && !capturing.includes(m.capturing))      return false;
-    if (analysing.length && !analysing.includes(m.analysing))      return false;
-    if (recording.length && !recording.includes(m.recording))      return false;
-    if (source.length    && !source.includes(m.type))              return false;
-    if (monitorIds.length && !monitorIds.includes(m.id))           return false;
-
-    if (status.length) {
-      const isActive = m.capturing !== 'None';
-      const token = isActive ? 'active' : 'disabled';
-      if (!status.includes(token)) return false;
-    }
-    return true;
-  });
+function useEnumLabel(): (value: string) => string {
+  const { t } = useTranslation();
+  const labels: Record<string, string> = {
+    None: t('None'),
+    Ondemand: t('Ondemand'),
+    Always: t('Always'),
+    OnMotion: t('OnMotion'),
+    Local: t('Local'),
+    Remote: t('Remote'),
+    File: t('File'),
+    active: t('Active'),
+    disabled: t('Disabled'),
+  };
+  return (value) => labels[value] ?? value;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -115,6 +76,8 @@ export interface MonitorFilterBarProps {
  * three pages share state without an explicit prop drill.
  */
 export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilterBarProps) {
+  const { t } = useTranslation();
+  const enumLabel = useEnumLabel();
   const { isAuthenticated } = useAuthStore();
 
   const groupIds   = useMonitorFilterStore((s) => s.groupIds);
@@ -146,12 +109,12 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
   });
 
   const groups: Group[] = groupsQ.data?.items ?? [];
-  const groupMonitors: GroupMonitor[] = groupMonitorsQ.data?.items ?? [];
+  const groupMonitors: GroupMonitor[] | undefined = groupMonitorsQ.data?.items;
 
   // gid → Set<monitorId>
   const groupMembership = useMemo(() => {
     const map = new Map<number, Set<number>>();
-    for (const gm of groupMonitors) {
+    for (const gm of groupMonitors ?? []) {
       if (!map.has(gm.group_id)) map.set(gm.group_id, new Set<number>());
       map.get(gm.group_id)!.add(gm.monitor_id);
     }
@@ -166,12 +129,11 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
     [monitors, groupIds, capturing, analysing, recording, status, source, monitorIds, groupMembership],
   );
 
-  // onChange is stored in a ref so we can fire it from an effect without
-  // looping when the parent re-creates the callback each render.
-  const onChangeRef = useRef(onChange);
-  onChangeRef.current = onChange;
+  // Effect Event so the notification fires on every new `filtered` list but
+  // never loops when the parent re-creates `onChange` each render.
+  const emitChange = useEffectEvent((list: Monitor[]) => onChange(list));
   useEffect(() => {
-    onChangeRef.current(filtered);
+    emitChange(filtered);
   }, [filtered]);
 
   const totalSelected =
@@ -184,62 +146,62 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
         'flex flex-wrap items-center gap-2',
         className,
       )}
-      aria-label="Monitor filter bar"
+      aria-label={t('Monitor filter bar')}
       role="group"
     >
       <Filter size={14} className="text-text-muted" aria-hidden />
 
       <Chip
-        label="Groups"
-        emptyLabel="All groups"
+        label={t('Groups')}
+        emptyLabel={t('All groups')}
         options={groups.map((g) => ({ value: String(g.id), label: g.name }))}
         selected={groupIds.map(String)}
         onChange={(vals) => setGroupIds(vals.map(Number))}
       />
 
       <Chip
-        label="Capturing"
-        emptyLabel="Any"
-        options={CAPTURING_OPTS.map((v) => ({ value: v, label: v }))}
+        label={t('Capturing')}
+        emptyLabel={t('Any')}
+        options={CAPTURING_OPTS.map((v) => ({ value: v, label: enumLabel(v) }))}
         selected={capturing}
         onChange={setCapturing}
       />
 
       <Chip
-        label="Analysing"
-        emptyLabel="Any"
-        options={ANALYSING_OPTS.map((v) => ({ value: v, label: v }))}
+        label={t('Analysing')}
+        emptyLabel={t('Any')}
+        options={ANALYSING_OPTS.map((v) => ({ value: v, label: enumLabel(v) }))}
         selected={analysing}
         onChange={setAnalysing}
       />
 
       <Chip
-        label="Recording"
-        emptyLabel="Any"
-        options={RECORDING_OPTS.map((v) => ({ value: v, label: v }))}
+        label={t('Recording')}
+        emptyLabel={t('Any')}
+        options={RECORDING_OPTS.map((v) => ({ value: v, label: enumLabel(v) }))}
         selected={recording}
         onChange={setRecording}
       />
 
       <Chip
-        label="Status"
-        emptyLabel="Any"
-        options={STATUS_OPTS.map((o) => ({ value: o.value, label: o.label }))}
+        label={t('Status')}
+        emptyLabel={t('Any')}
+        options={STATUS_OPTS.map((v) => ({ value: v, label: enumLabel(v) }))}
         selected={status}
         onChange={setStatus}
       />
 
       <Chip
-        label="Source"
-        emptyLabel="Any"
-        options={SOURCE_OPTS.map((v) => ({ value: v, label: v }))}
+        label={t('Source')}
+        emptyLabel={t('Any')}
+        options={SOURCE_OPTS.map((v) => ({ value: v, label: enumLabel(v) }))}
         selected={source}
         onChange={setSource}
       />
 
       <Chip
-        label="Monitor"
-        emptyLabel="Any"
+        label={t('Monitor')}
+        emptyLabel={t('Any')}
         options={monitors.map((m) => ({ value: String(m.id), label: m.name }))}
         selected={monitorIds.map(String)}
         onChange={(vals) => setMonitorIds(vals.map(Number))}
@@ -250,10 +212,10 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
           type="button"
           onClick={reset}
           className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border-subtle text-text-muted hover:border-crimson/40 hover:text-crimson transition-colors"
-          aria-label="Reset all filters"
+          aria-label={t('Reset all filters')}
         >
           <X size={11} />
-          Reset
+          {t('Reset')}
         </button>
       )}
     </div>
@@ -279,6 +241,7 @@ interface ChipProps {
 }
 
 function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
+  const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -314,7 +277,7 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
   };
 
   const count = selected.length;
-  const summary = count === 0 ? emptyLabel : `${count} selected`;
+  const summary = count === 0 ? emptyLabel : t('{{count}} selected', { count });
 
   return (
     <div ref={containerRef} className="relative">
@@ -323,7 +286,9 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={`${label} filter${count > 0 ? `, ${count} selected` : ''}`}
+        aria-label={count > 0
+          ? t('{{label}} filter, {{count}} selected', { label, count })
+          : t('{{label}} filter', { label })}
         className={clsx(
           'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border transition-colors',
           count > 0
@@ -335,7 +300,7 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
         {count > 0 && (
           <span
             className="px-1 min-w-[1rem] text-center text-[10px] font-mono rounded bg-cyan/20 text-cyan tabular-nums"
-            aria-label={`${count} active`}
+            aria-label={t('{{count}} active', { count })}
           >
             {count}
           </span>
@@ -349,13 +314,13 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
       {open && (
         <div
           role="listbox"
-          aria-label={`${label} options`}
+          aria-label={t('{{label}} options', { label })}
           aria-multiselectable="true"
-          className="absolute left-0 top-full mt-1 z-40 w-56 max-h-80 overflow-y-auto rounded-lg border border-border-subtle bg-panel/95 backdrop-blur-md shadow-[0_18px_44px_rgba(0,0,0,0.45)] p-1"
+          className="absolute start-0 top-full mt-1 z-40 w-56 max-h-80 overflow-y-auto rounded-lg border border-border-subtle bg-panel/95 backdrop-blur-md shadow-[0_18px_44px_rgba(0,0,0,0.45)] p-1"
         >
           {options.length === 0 ? (
             <div className="px-3 py-2 text-[11px] italic text-text-muted">
-              No options
+              {t('No options')}
             </div>
           ) : (
             <ul className="space-y-0.5">
@@ -389,9 +354,9 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="w-full text-left px-2 py-1 text-[11px] text-text-muted hover:text-crimson transition-colors"
+                className="w-full text-start px-2 py-1 text-[11px] text-text-muted hover:text-crimson transition-colors"
               >
-                Clear {label.toLowerCase()}
+                {t('Clear {{label}}', { label: label.toLocaleLowerCase() })}
               </button>
             </div>
           )}

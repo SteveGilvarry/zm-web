@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { PermissionMatrix } from './PermissionMatrix';
 import {
-  PermissionMatrix,
   buildTopLevelRows,
   computeEffectivePermission,
   PERMISSION_NAMES,
   MONITOR_LEVEL_OPTIONS,
   INHERIT_LEVEL_OPTIONS,
-} from './PermissionMatrix';
+} from './permissions';
 
 const mkUser = (over: Partial<Record<string, string>> = {}) => ({
   stream: 'View',

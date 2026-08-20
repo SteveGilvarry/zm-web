@@ -25,7 +25,6 @@ import { Route as AuditIndexRouteImport } from './routes/audit/index'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
 import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
 import { Route as SettingsStateRouteImport } from './routes/settings/state'
-import { Route as SettingsSessionsRouteImport } from './routes/settings/sessions'
 import { Route as SettingsServersRouteImport } from './routes/settings/servers'
 import { Route as SettingsPtzControlsRouteImport } from './routes/settings/ptz-controls'
 import { Route as ReportsReportIdRouteImport } from './routes/reports/$reportId'
@@ -113,11 +112,6 @@ const SettingsStateRoute = SettingsStateRouteImport.update({
   path: '/settings/state',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsSessionsRoute = SettingsSessionsRouteImport.update({
-  id: '/settings/sessions',
-  path: '/settings/sessions',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const SettingsServersRoute = SettingsServersRouteImport.update({
   id: '/settings/servers',
   path: '/settings/servers',
@@ -157,7 +151,6 @@ export interface FileRoutesByFullPath {
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/settings/ptz-controls': typeof SettingsPtzControlsRoute
   '/settings/servers': typeof SettingsServersRoute
-  '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/state': typeof SettingsStateRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
@@ -182,7 +175,6 @@ export interface FileRoutesByTo {
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/settings/ptz-controls': typeof SettingsPtzControlsRoute
   '/settings/servers': typeof SettingsServersRoute
-  '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/state': typeof SettingsStateRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
@@ -208,7 +200,6 @@ export interface FileRoutesById {
   '/reports/$reportId': typeof ReportsReportIdRoute
   '/settings/ptz-controls': typeof SettingsPtzControlsRoute
   '/settings/servers': typeof SettingsServersRoute
-  '/settings/sessions': typeof SettingsSessionsRoute
   '/settings/state': typeof SettingsStateRoute
   '/settings/storage': typeof SettingsStorageRoute
   '/settings/users': typeof SettingsUsersRoute
@@ -235,7 +226,6 @@ export interface FileRouteTypes {
     | '/reports/$reportId'
     | '/settings/ptz-controls'
     | '/settings/servers'
-    | '/settings/sessions'
     | '/settings/state'
     | '/settings/storage'
     | '/settings/users'
@@ -260,7 +250,6 @@ export interface FileRouteTypes {
     | '/reports/$reportId'
     | '/settings/ptz-controls'
     | '/settings/servers'
-    | '/settings/sessions'
     | '/settings/state'
     | '/settings/storage'
     | '/settings/users'
@@ -285,7 +274,6 @@ export interface FileRouteTypes {
     | '/reports/$reportId'
     | '/settings/ptz-controls'
     | '/settings/servers'
-    | '/settings/sessions'
     | '/settings/state'
     | '/settings/storage'
     | '/settings/users'
@@ -311,7 +299,6 @@ export interface RootRouteChildren {
   ReportsReportIdRoute: typeof ReportsReportIdRoute
   SettingsPtzControlsRoute: typeof SettingsPtzControlsRoute
   SettingsServersRoute: typeof SettingsServersRoute
-  SettingsSessionsRoute: typeof SettingsSessionsRoute
   SettingsStateRoute: typeof SettingsStateRoute
   SettingsStorageRoute: typeof SettingsStorageRoute
   SettingsUsersRoute: typeof SettingsUsersRoute
@@ -443,13 +430,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SettingsStateRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/sessions': {
-      id: '/settings/sessions'
-      path: '/settings/sessions'
-      fullPath: '/settings/sessions'
-      preLoaderRoute: typeof SettingsSessionsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/settings/servers': {
       id: '/settings/servers'
       path: '/settings/servers'
@@ -503,7 +483,6 @@ const rootRouteChildren: RootRouteChildren = {
   ReportsReportIdRoute: ReportsReportIdRoute,
   SettingsPtzControlsRoute: SettingsPtzControlsRoute,
   SettingsServersRoute: SettingsServersRoute,
-  SettingsSessionsRoute: SettingsSessionsRoute,
   SettingsStateRoute: SettingsStateRoute,
   SettingsStorageRoute: SettingsStorageRoute,
   SettingsUsersRoute: SettingsUsersRoute,

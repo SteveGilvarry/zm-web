@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import Hls from 'hls.js';
+import { useTranslation } from 'react-i18next';
 import { startLiveStream, stopLiveStream, getHlsPlaylistUrl } from '@/api/monitors';
 import { getAuthToken } from '@/api/client';
 import type { StreamConnectionState } from '@/types';
@@ -14,6 +15,7 @@ export interface StreamHookResult {
 }
 
 export function useHlsStream(monitorId: number): StreamHookResult {
+  const { t } = useTranslation();
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const hlsRef = useRef<Hls | null>(null);
   const loadDelayRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -58,7 +60,7 @@ export function useHlsStream(monitorId: number): StreamHookResult {
       .then(() => {
         if (!videoRef.current) {
           setState('failed');
-          setError('Video element not available');
+          setError(t('Video element not available'));
           return;
         }
 
@@ -95,27 +97,27 @@ export function useHlsStream(monitorId: number): StreamHookResult {
             if (data.fatal) {
               switch (data.type) {
                 case Hls.ErrorTypes.NETWORK_ERROR:
-                  setError('Network error - retrying...');
+                  setError(t('Network error - retrying...'));
                   hls.startLoad();
                   break;
                 case Hls.ErrorTypes.MEDIA_ERROR:
                   mediaRecoveryAttempts.current++;
                   if (mediaRecoveryAttempts.current === 1) {
-                    setError('Media error - recovering...');
+                    setError(t('Media error - recovering...'));
                     hls.recoverMediaError();
                   } else if (mediaRecoveryAttempts.current === 2) {
-                    setError('Media error - switching codec...');
+                    setError(t('Media error - switching codec...'));
                     hls.swapAudioCodec();
                     hls.recoverMediaError();
                   } else {
                     setState('failed');
-                    setError('Media playback failed');
+                    setError(t('Media playback failed'));
                     destroyHls();
                   }
                   break;
                 default:
                   setState('failed');
-                  setError('Fatal stream error');
+                  setError(t('Fatal stream error'));
                   destroyHls();
                   break;
               }
@@ -151,19 +153,19 @@ export function useHlsStream(monitorId: number): StreamHookResult {
             }, { once: true });
             videoRef.current!.addEventListener('error', () => {
               setState('failed');
-              setError('Stream playback error');
+              setError(t('Stream playback error'));
             }, { once: true });
           }, 2000);
         } else {
           setState('failed');
-          setError('HLS not supported in this browser');
+          setError(t('HLS not supported in this browser'));
         }
       })
       .catch((err) => {
         setState('failed');
-        setError(err instanceof Error ? err.message : 'Failed to start HLS stream');
+        setError(err instanceof Error ? err.message : t('Failed to start HLS stream'));
       });
-  }, [monitorId, state, destroyHls]);
+  }, [monitorId, state, destroyHls, t]);
 
   // Cleanup on unmount
   useEffect(() => {

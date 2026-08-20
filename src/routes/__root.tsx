@@ -2,7 +2,8 @@ import { createRootRoute, Outlet, useNavigate, useLocation } from '@tanstack/rea
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth';
-import { useUiStore, type Skin } from '@/stores/ui';
+import { useUiStore } from '@/stores/ui';
+import { isSkinId } from '@/skins/registry';
 
 export const Route = createRootRoute({
   component: RootComponent,
@@ -25,8 +26,8 @@ function RootComponent() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const requested = params.get('skin');
-    if (requested === 'modern' || requested === 'classic') {
-      setSkin(requested as Skin);
+    if (isSkinId(requested)) {
+      setSkin(requested);
       params.delete('skin');
       const search = params.toString();
       const newUrl =

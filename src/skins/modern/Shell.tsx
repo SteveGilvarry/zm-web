@@ -21,7 +21,7 @@ export function ModernShell({ title, children }: ModernShellProps) {
       <div
         className={clsx(
           'min-h-screen flex flex-col transition-all duration-300 ease-out',
-          sidebarCollapsed ? 'ml-16' : 'ml-56',
+          sidebarCollapsed ? 'ms-16' : 'ms-56',
         )}
       >
         <Header title={title} />

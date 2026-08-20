@@ -1,4 +1,5 @@
 import { useState, type ButtonHTMLAttributes, type PointerEvent, type ReactNode } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
@@ -25,8 +26,12 @@ const swallow = () => {};
  * for this monitor (e.g. no zoom cluster if `caps.zoom.can` is false; no
  * preset bank if `caps.presets.has_presets` is false). The detail page
  * decides whether to mount this at all based on whether capabilities resolved.
+ *
+ * The d-pad and the zoom/focus rockers are physical controls — "left" means
+ * the camera pans left — so they sit in `dir="ltr"` and never mirror.
  */
 export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps) {
+  const { t } = useTranslation();
   const [speed, setSpeed] = useState(50);
   const [presetSlot, setPresetSlot] = useState(1);
   const [presetName, setPresetName] = useState('');
@@ -75,36 +80,36 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
     <div className="space-y-5">
       {/* D-pad cluster — the focal element of the panel. */}
       {pt.can_move && (
-        <div className="flex justify-center">
+        <div className="flex justify-center" dir="ltr">
           <div className="grid grid-cols-3 gap-1.5" style={{ width: 196 }}>
-            <DpadBtn aria-label="Move up-left"    disabled={!pt.can_move_diag} {...holdMove('up-left')}>
+            <DpadBtn aria-label={t('Move up-left')}    disabled={!pt.can_move_diag} {...holdMove('up-left')}>
               <ArrowUpLeft size={18} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Move up"         disabled={!pt.can_tilt}      {...holdMove('up')}>
+            <DpadBtn aria-label={t('Move up')}         disabled={!pt.can_tilt}      {...holdMove('up')}>
               <ArrowUp size={20} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Move up-right"   disabled={!pt.can_move_diag} {...holdMove('up-right')}>
+            <DpadBtn aria-label={t('Move up-right')}   disabled={!pt.can_move_diag} {...holdMove('up-right')}>
               <ArrowUpRight size={18} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Move left"       disabled={!pt.can_pan}       {...holdMove('left')}>
+            <DpadBtn aria-label={t('Move left')}       disabled={!pt.can_pan}       {...holdMove('left')}>
               <ArrowLeft size={20} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Home"            center
+            <DpadBtn aria-label={t('Home')}            center
               onClick={() => ptz.home(monitorId).catch(swallow)}
-              title="Return to home position"
+              title={t('Return to home position')}
             >
               <Home size={18} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Move right"      disabled={!pt.can_pan}       {...holdMove('right')}>
+            <DpadBtn aria-label={t('Move right')}      disabled={!pt.can_pan}       {...holdMove('right')}>
               <ArrowRight size={20} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Move down-left"  disabled={!pt.can_move_diag} {...holdMove('down-left')}>
+            <DpadBtn aria-label={t('Move down-left')}  disabled={!pt.can_move_diag} {...holdMove('down-left')}>
               <ArrowDownLeft size={18} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Move down"       disabled={!pt.can_tilt}      {...holdMove('down')}>
+            <DpadBtn aria-label={t('Move down')}       disabled={!pt.can_tilt}      {...holdMove('down')}>
               <ArrowDown size={20} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label="Move down-right" disabled={!pt.can_move_diag} {...holdMove('down-right')}>
+            <DpadBtn aria-label={t('Move down-right')} disabled={!pt.can_move_diag} {...holdMove('down-right')}>
               <ArrowDownRight size={18} strokeWidth={2.4} />
             </DpadBtn>
           </div>
@@ -113,10 +118,10 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
 
       {/* Speed */}
       <Section
-        label="Speed"
+        label={t('Speed')}
         action={
           <span className="text-sm font-mono tabular-nums text-cyan">
-            {speed}<span className="text-text-muted text-[10px] ml-0.5">%</span>
+            {speed}<span className="text-text-muted text-[10px] ms-0.5">%</span>
           </span>
         }
       >
@@ -125,7 +130,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
             type="range" min={1} max={100} value={speed}
             onChange={(e) => setSpeed(parseInt(e.target.value, 10))}
             className="w-full accent-cyan"
-            aria-label="Movement speed"
+            aria-label={t('Movement speed')}
           />
           <div className="flex justify-between text-[9px] font-mono text-text-dim select-none px-0.5">
             <Tick value={1}  highlight={speed <= 12} />
@@ -139,15 +144,15 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
 
       {/* Zoom */}
       {caps.zoom.can && (
-        <Section label="Zoom">
-          <div className="grid grid-cols-2 gap-2">
+        <Section label={t('Zoom')}>
+          <div className="grid grid-cols-2 gap-2" dir="ltr">
             <RockerBtn {...holdZoom('out')}>
               <Minus size={14} strokeWidth={2.5} />
-              <span>Wider</span>
+              <span>{t('Wider')}</span>
             </RockerBtn>
             <RockerBtn {...holdZoom('in')}>
               <Plus size={14} strokeWidth={2.5} />
-              <span>Closer</span>
+              <span>{t('Closer')}</span>
             </RockerBtn>
           </div>
         </Section>
@@ -155,11 +160,11 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
 
       {/* Focus */}
       {caps.focus.can && (
-        <Section label="Focus">
-          <div className="grid grid-cols-3 gap-2">
+        <Section label={t('Focus')}>
+          <div className="grid grid-cols-3 gap-2" dir="ltr">
             <RockerBtn {...holdFocus('near')}>
               <ChevronLeft size={14} strokeWidth={2.5} />
-              <span>Near</span>
+              <span>{t('Near')}</span>
             </RockerBtn>
             <RockerBtn
               variant="state"
@@ -167,10 +172,10 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               onClick={() => ptz.focus(monitorId, 'auto').catch(swallow)}
             >
               <FocusIcon size={14} strokeWidth={2.5} />
-              <span>Auto</span>
+              <span>{t('Auto')}</span>
             </RockerBtn>
             <RockerBtn {...holdFocus('far')}>
-              <span>Far</span>
+              <span>{t('Far')}</span>
               <ChevronRight size={14} strokeWidth={2.5} />
             </RockerBtn>
           </div>
@@ -180,10 +185,10 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
       {/* Presets */}
       {caps.presets.has_presets && presetSlots > 0 && (
         <Section
-          label="Presets"
+          label={t('Presets')}
           action={
             <span className="text-[10px] font-mono text-text-muted tabular-nums">
-              {presetSlots} slot{presetSlots > 1 ? 's' : ''}
+              {t('{{count}} slot', { count: presetSlots })}
             </span>
           }
         >
@@ -194,7 +199,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 type="button"
                 onClick={() => ptz.gotoPreset(monitorId, n).catch(swallow)}
                 className="w-9 h-9 rounded-md border-2 border-border bg-surface text-cyan font-mono tabular-nums text-xs select-none transition-all hover:border-cyan/50 hover:bg-cyan/10 hover:shadow-[0_0_8px_rgba(0,212,255,0.15)] active:scale-95"
-                title={`Go to preset ${n}`}
+                title={t('Go to preset {{n}}', { n })}
               >
                 {n}
               </button>
@@ -207,7 +212,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 value={presetSlot}
                 onChange={(e) => setPresetSlot(parseInt(e.target.value, 10))}
                 className="px-2 py-1.5 text-xs font-mono tabular-nums rounded-md border-2 border-border bg-surface text-text-primary"
-                aria-label="Preset slot"
+                aria-label={t('Preset slot')}
               >
                 {Array.from({ length: presetSlots }, (_, i) => i + 1).map((n) => (
                   <option key={n} value={n}>#{n}</option>
@@ -215,7 +220,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               </select>
               <input
                 type="text"
-                placeholder="Name (optional)"
+                placeholder={t('Name (optional)')}
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
                 className="flex-1 min-w-0 px-2 py-1.5 text-xs rounded-md border-2 border-border bg-surface text-text-primary placeholder:text-text-dim focus:outline-none focus:border-cyan/50"
@@ -227,16 +232,16 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                   setPresetName('');
                 }}
                 className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium uppercase tracking-wider rounded-md border-2 border-cyan/40 bg-cyan/15 text-cyan hover:bg-cyan/25 hover:border-cyan/60 active:scale-95 transition-all"
-                title="Save current position to selected slot"
+                title={t('Save current position to selected slot')}
               >
                 <Save size={12} strokeWidth={2.5} />
-                Save
+                {t('Save')}
               </button>
               <button
                 type="button"
                 onClick={() => ptz.clearPreset(monitorId, presetSlot).catch(swallow)}
                 className="flex items-center px-2.5 py-1.5 text-xs rounded-md border-2 border-border text-text-muted hover:border-crimson/60 hover:text-crimson hover:bg-crimson/5 active:scale-95 transition-all"
-                title="Clear preset in selected slot"
+                title={t('Clear preset in selected slot')}
               >
                 <Trash2 size={12} strokeWidth={2.5} />
               </button>

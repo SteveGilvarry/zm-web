@@ -7,6 +7,7 @@ import {
   type ReactNode,
 } from 'react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { SplitSquareHorizontal, SplitSquareVertical, X, Camera, GripVertical } from 'lucide-react';
 import {
   type LayoutNode,
@@ -57,7 +58,7 @@ export function MosaicView({
 }: MosaicViewProps) {
   const onMove = makeMoveHandler(tree, onChange);
   return (
-    <div className="flex flex-col w-full h-full flex-1 min-h-0">
+    <div dir="ltr" className="flex flex-col w-full h-full flex-1 min-h-0">
       <MosaicNode
         tree={tree}
         node={tree}
@@ -279,6 +280,7 @@ function Cell({
   onChooseMonitor,
   onMove,
 }: CellProps) {
+  const { t } = useTranslation();
   // Hover-driven drop zone while another cell is being dragged onto us.
   const [dropZone, setDropZone] = useState<DropZone | null>(null);
   const cellRef = useRef<HTMLDivElement>(null);
@@ -358,7 +360,7 @@ function Cell({
           )}
         >
           <Camera size={24} />
-          <span className="text-xs font-medium">Choose monitor</span>
+          <span className="text-xs font-medium">{t('Choose monitor')}</span>
         </button>
       )}
 
@@ -368,8 +370,8 @@ function Cell({
         <div
           draggable
           onDragStart={handleDragStart}
-          aria-label="Drag tile"
-          title="Drag to reorder"
+          aria-label={t('Drag tile')}
+          title={t('Drag to reorder')}
           className={clsx(
             'absolute top-1 left-1 flex items-center justify-center',
             'w-5 h-5 rounded backdrop-blur-sm border border-cyan/30 bg-black/50',
@@ -382,24 +384,24 @@ function Cell({
       )}
 
       {/* Hover controls — split / close in the top-right of every cell. */}
-      <div className="absolute top-1 right-1 flex items-center gap-1 opacity-0 group-hover/cell:opacity-100 transition-opacity z-10">
+      <div className="absolute top-1 end-1 flex items-center gap-1 opacity-0 group-hover/cell:opacity-100 transition-opacity z-10">
         <IconBtn
-          aria-label="Split horizontally"
-          title="Split horizontally"
+          aria-label={t('Split horizontally')}
+          title={t('Split horizontally')}
           onClick={() => onSplit(path, 'row')}
         >
           <SplitSquareHorizontal size={12} />
         </IconBtn>
         <IconBtn
-          aria-label="Split vertically"
-          title="Split vertically"
+          aria-label={t('Split vertically')}
+          title={t('Split vertically')}
           onClick={() => onSplit(path, 'column')}
         >
           <SplitSquareVertical size={12} />
         </IconBtn>
         <IconBtn
-          aria-label="Remove tile"
-          title="Remove tile"
+          aria-label={t('Remove tile')}
+          title={t('Remove tile')}
           tone="crimson"
           onClick={() => onClose(path)}
         >
@@ -418,10 +420,10 @@ function DropZoneOverlay({ zone }: { zone: DropZone }) {
   // drop into, or a centred square for swap.
   const bandClass = clsx(
     'absolute bg-cyan/25 border-2 border-cyan transition-all pointer-events-none',
-    zone === 'left'   && 'top-0 left-0 bottom-0 w-1/2',
-    zone === 'right'  && 'top-0 right-0 bottom-0 w-1/2',
-    zone === 'top'    && 'top-0 left-0 right-0 h-1/2',
-    zone === 'bottom' && 'bottom-0 left-0 right-0 h-1/2',
+    zone === 'left'   && 'top-0 start-0 bottom-0 w-1/2',
+    zone === 'right'  && 'top-0 end-0 bottom-0 w-1/2',
+    zone === 'top'    && 'top-0 start-0 end-0 h-1/2',
+    zone === 'bottom' && 'bottom-0 start-0 end-0 h-1/2',
     zone === 'center' && 'inset-[15%] rounded',
   );
   return (

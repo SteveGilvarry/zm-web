@@ -2,7 +2,8 @@ import { describe, expect, it, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ZmConfig } from '@/types';
-import { TypedConfigInput, formatConfigValue, enumOptionsFromHint, humanizeIdent } from './TypedConfigInput';
+import { TypedConfigInput } from './TypedConfigInput';
+import { formatConfigValue, enumOptionsFromHint, humanizeIdent } from './configFormat';
 
 function cfg(over: Partial<ZmConfig>): ZmConfig {
   return {

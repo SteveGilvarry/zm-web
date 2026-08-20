@@ -1,5 +1,6 @@
 import { useRef, useMemo, type PointerEvent as ReactPointerEvent } from 'react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { useReviewEvents } from './useReviewEvents';
 import type { Monitor, ZmEvent } from '@/types';
 
@@ -24,6 +25,7 @@ export function MontageReviewTimeline({
   currentTime,
   onSeek,
 }: MontageReviewTimelineProps) {
+  const { t } = useTranslation();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const durationMs = rangeEnd.getTime() - rangeStart.getTime();
 
@@ -63,10 +65,10 @@ export function MontageReviewTimeline({
   }, [rangeStart, durationMs]);
 
   return (
-    <div className="bg-surface rounded-xl border border-border-subtle overflow-hidden">
+    <div dir="ltr" className="bg-surface rounded-xl border border-border-subtle overflow-hidden">
       <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle">
         <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-          Timeline
+          {t('Timeline')}
         </span>
         <span className="text-xs font-mono tabular-nums text-cyan">
           {currentTime.toLocaleTimeString([], { hour12: false })}
@@ -128,12 +130,12 @@ function Track({ monitor, rangeStart, rangeEnd }: TrackProps) {
 
   return (
     <div className="relative h-8 flex items-center border-b border-border-subtle/30 last:border-b-0">
-      <div className="absolute left-0 top-0 bottom-0 w-32 px-3 flex items-center bg-surface/80 backdrop-blur-sm border-r border-border-subtle z-10">
+      <div className="absolute start-0 top-0 bottom-0 w-32 px-3 flex items-center bg-surface/80 backdrop-blur-sm border-e border-border-subtle z-10">
         <span className="text-[11px] text-text-secondary truncate font-medium">
           {monitor.name}
         </span>
       </div>
-      <div className="absolute left-32 right-0 top-0 bottom-0">
+      <div className="absolute start-32 end-0 top-0 bottom-0">
         {events.map((event) => (
           <EventBar
             key={event.id}

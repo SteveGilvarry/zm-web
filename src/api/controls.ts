@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPatch, apiDelete } from './client';
+import i18next from '@/i18n';
 import type { PaginatedResponse } from '@/types';
 
 /**
@@ -111,12 +112,13 @@ export async function deleteControl(id: number): Promise<void> {
 
 /** Compact capability summary for the list view. */
 export function summarizeCapabilities(c: Control): string {
+  const t = i18next.t.bind(i18next);
   const tags: string[] = [];
-  if (c.can_pan && c.can_tilt) tags.push('Pan/Tilt');
-  else if (c.can_pan) tags.push('Pan');
-  else if (c.can_tilt) tags.push('Tilt');
-  if (c.can_zoom) tags.push('Zoom');
-  if (c.can_focus) tags.push('Focus');
-  if (c.has_presets) tags.push(`Presets (${c.num_presets})`);
-  return tags.length ? tags.join(' · ') : 'View only';
+  if (c.can_pan && c.can_tilt) tags.push(t('Pan/Tilt'));
+  else if (c.can_pan) tags.push(t('Pan'));
+  else if (c.can_tilt) tags.push(t('Tilt'));
+  if (c.can_zoom) tags.push(t('Zoom'));
+  if (c.can_focus) tags.push(t('Focus'));
+  if (c.has_presets) tags.push(t('Presets ({{count}})', { count: c.num_presets }));
+  return tags.length ? tags.join(' · ') : t('View only');
 }

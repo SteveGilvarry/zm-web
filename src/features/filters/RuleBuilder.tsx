@@ -1,29 +1,17 @@
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Plus, X } from 'lucide-react';
 import type {
   FilterQuery, FilterRule, FilterField, FilterOperator, FilterConjunction,
 } from '@/api/filters';
-import { FILTER_OPERATOR_LABELS } from '@/api/filters';
 import type { Monitor } from '@/types';
+import { useFilterFields, useFilterOperatorLabels, type FilterFieldKind } from './labels';
 
 interface RuleBuilderProps {
   query: FilterQuery;
   monitors: Monitor[];
   onChange: (q: FilterQuery) => void;
 }
-
-const FIELDS: Array<{ value: FilterField; label: string; kind: 'string' | 'number' | 'monitor' | 'bool' | 'date' }> = [
-  { value: 'monitor_id',      label: 'Monitor',         kind: 'monitor' },
-  { value: 'cause',           label: 'Cause',           kind: 'string' },
-  { value: 'archived',        label: 'Archived',        kind: 'bool' },
-  { value: 'name',            label: 'Name',            kind: 'string' },
-  { value: 'notes',           label: 'Notes',           kind: 'string' },
-  { value: 'max_score',       label: 'Max score',       kind: 'number' },
-  { value: 'avg_score',       label: 'Avg score',       kind: 'number' },
-  { value: 'tot_score',       label: 'Total score',     kind: 'number' },
-  { value: 'alarm_frames',    label: 'Alarm frames',    kind: 'number' },
-  { value: 'start_date_time', label: 'Start date/time', kind: 'date' },
-];
 
 /**
  * Per-field-kind operator menu. Mirrors legacy `Filter::opTypes()` but pruned
@@ -57,6 +45,9 @@ const BRACKET_CHOICES = [0, 1, 2, 3];
  * inserts no parens — the row reads as a flat conjunction with its neighbours.
  */
 export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
+  const { t } = useTranslation();
+  const FIELDS = useFilterFields();
+  const operatorLabels = useFilterOperatorLabels();
   const updateRule = (idx: number, patch: Partial<FilterRule>) => {
     const next = [...query.rules];
     next[idx] = { ...next[idx], ...patch };
@@ -83,7 +74,7 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
     <div className="space-y-2">
       {query.rules.length === 0 && (
         <p className="text-xs text-text-muted italic">
-          No rules yet — every event will match. Add a rule below to narrow it down.
+          {t('No rules yet — every event will match. Add a rule below to narrow it down.')}
         </p>
       )}
 
@@ -95,8 +86,8 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
           <div key={i} className="flex items-center gap-1.5 flex-wrap">
             {/* Conjunction (hidden on first row — no preceding rule to join) */}
             {i === 0 ? (
-              <span className="text-[10px] font-mono uppercase text-text-muted w-12 text-right">
-                where
+              <span className="text-[10px] font-mono uppercase text-text-muted w-12 text-end">
+                {t('where')}
               </span>
             ) : (
               <select
@@ -104,14 +95,14 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
                 onChange={(e) => updateRule(i, { conjunction: e.target.value as FilterConjunction })}
                 className="w-12 px-1 py-1 text-[10px] font-mono uppercase bg-surface border border-border-subtle rounded text-cyan focus:outline-none focus:border-cyan/50"
               >
-                <option value="and">AND</option>
-                <option value="or">OR</option>
+                <option value="and">{t('AND')}</option>
+                <option value="or">{t('OR')}</option>
               </select>
             )}
 
             {/* Open bracket — number of `(` inserted before this rule */}
             <select
-              aria-label="Open brackets"
+              aria-label={t('Open brackets')}
               value={rule.bracket_open ?? 0}
               onChange={(e) => updateRule(i, { bracket_open: Number(e.target.value) })}
               className="w-10 px-1 py-1 text-[10px] font-mono bg-surface border border-border-subtle rounded text-text-secondary focus:outline-none focus:border-cyan/50"
@@ -148,7 +139,7 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
               className="px-2 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
             >
               {opChoices.map((op) => (
-                <option key={op} value={op} title={FILTER_OPERATOR_LABELS[op]}>{op}</option>
+                <option key={op} value={op} title={operatorLabels[op]}>{op}</option>
               ))}
             </select>
 
@@ -162,7 +153,7 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
 
             {/* Close bracket — number of `)` after this rule */}
             <select
-              aria-label="Close brackets"
+              aria-label={t('Close brackets')}
               value={rule.bracket_close ?? 0}
               onChange={(e) => updateRule(i, { bracket_close: Number(e.target.value) })}
               className="w-10 px-1 py-1 text-[10px] font-mono bg-surface border border-border-subtle rounded text-text-secondary focus:outline-none focus:border-cyan/50"
@@ -175,7 +166,7 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
             <button
               type="button"
               onClick={() => removeRule(i)}
-              aria-label="Remove rule"
+              aria-label={t('Remove rule')}
               className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
             >
               <X size={12} />
@@ -194,7 +185,7 @@ export function RuleBuilder({ query, monitors, onChange }: RuleBuilderProps) {
         )}
       >
         <Plus size={11} />
-        Add rule
+        {t('Add rule')}
       </button>
     </div>
   );
@@ -204,10 +195,11 @@ function ValueInput({
   rule, kind, monitors, onChange,
 }: {
   rule: FilterRule;
-  kind: 'string' | 'number' | 'monitor' | 'bool' | 'date';
+  kind: FilterFieldKind;
   monitors: Monitor[];
   onChange: (v: string) => void;
 }) {
+  const { t } = useTranslation();
   const cls = 'flex-1 min-w-[8rem] px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
 
   // IS / IS NOT have a restricted value set in legacy (`Filter::is_isnot_opTypes()`).
@@ -215,9 +207,9 @@ function ValueInput({
   if (rule.operator === 'IS' || rule.operator === 'IS NOT') {
     return (
       <select value={rule.value} onChange={(e) => onChange(e.target.value)} className={cls}>
-        <option value="NULL">NULL (unspecified)</option>
-        <option value="0">Zero</option>
-        <option value="1">Default / set</option>
+        <option value="NULL">{t('NULL (unspecified)')}</option>
+        <option value="0">{t('Zero')}</option>
+        <option value="1">{t('Default / set')}</option>
       </select>
     );
   }
@@ -229,7 +221,7 @@ function ValueInput({
         type="text"
         value={rule.value}
         onChange={(e) => onChange(e.target.value)}
-        placeholder="comma,separated,list"
+        placeholder={t('comma,separated,list')}
         className={cls}
       />
     );
@@ -238,7 +230,7 @@ function ValueInput({
   if (kind === 'monitor') {
     return (
       <select value={rule.value} onChange={(e) => onChange(e.target.value)} className={cls}>
-        <option value="">— select —</option>
+        <option value="">{t('— select —')}</option>
         {monitors.map((m) => (
           <option key={m.id} value={String(m.id)}>{m.name}</option>
         ))}
@@ -248,9 +240,9 @@ function ValueInput({
   if (kind === 'bool') {
     return (
       <select value={rule.value} onChange={(e) => onChange(e.target.value)} className={cls}>
-        <option value="">— select —</option>
-        <option value="1">Yes</option>
-        <option value="0">No</option>
+        <option value="">{t('— select —')}</option>
+        <option value="1">{t('Yes')}</option>
+        <option value="0">{t('No')}</option>
       </select>
     );
   }
@@ -280,7 +272,7 @@ function ValueInput({
       type="text"
       value={rule.value}
       onChange={(e) => onChange(e.target.value)}
-      placeholder="value"
+      placeholder={t('value')}
       className={cls}
     />
   );

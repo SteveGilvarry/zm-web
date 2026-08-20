@@ -1,0 +1,326 @@
+import type { ReactNode } from 'react';
+import { clsx } from 'clsx';
+import { Trans, useTranslation } from 'react-i18next';
+import {
+  Activity,
+  Layers,
+  Play,
+  Power,
+  RefreshCw,
+  Save,
+  Trash2,
+  CheckCircle2,
+  Loader2,
+} from 'lucide-react';
+
+import { AppShell } from '@/skins/AppShell';
+import { Panel } from '@/components/common/Panel';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { parseDefinition, type DaemonAction } from '@/api/states';
+import { isProtectedState, useRunStatePage } from '@/features/state/useRunStatePage';
+import { useDocumentTitle } from '../layouts/useDocumentTitle';
+
+/** Settings → Run State — Mission Control. */
+export default function SettingsStatePage() {
+  const { t } = useTranslation();
+  const rs = useRunStatePage();
+  useDocumentTitle(t('Run State'));
+  const { states, monitors, busy, applyTarget, deleteTarget, daemonTarget } = rs;
+
+  if (!rs.isAuthenticated) return null;
+
+  return (
+    <AppShell title={t('Run State')}>
+      <main className="flex-1 p-6 overflow-auto">
+        <div className="grid grid-cols-12 gap-6">
+          {/* Daemon supervisor controls */}
+          <div className="col-span-12">
+            <Panel title={t('Daemon supervisor')} icon={<Power size={16} />}>
+              <p className="text-xs text-text-muted mb-3">
+                <Trans>
+                  Toggles the ZoneMinder process tree via <code className="font-mono">zmpkg.pl</code>. Stop will
+                  halt recording across every monitor; Restart re-launches the supervisor without changing per-monitor
+                  configuration.
+                </Trans>
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <DaemonButton
+                  action="start"
+                  icon={<Play size={12} />}
+                  label={t('Start')}
+                  onClick={rs.startDaemon}
+                  disabled={busy}
+                  tone="emerald"
+                />
+                <DaemonButton
+                  action="stop"
+                  icon={<Power size={12} />}
+                  label={t('Stop')}
+                  onClick={() => rs.setDaemonTarget('stop')}
+                  disabled={busy}
+                  tone="crimson"
+                />
+                <DaemonButton
+                  action="restart"
+                  icon={<RefreshCw size={12} />}
+                  label={t('Restart')}
+                  onClick={() => rs.setDaemonTarget('restart')}
+                  disabled={busy}
+                  tone="amber"
+                />
+                {rs.daemonPending && (
+                  <span className="flex items-center gap-1 text-xs text-text-muted">
+                    <Loader2 size={11} className="animate-spin" />
+                    {t('Sending…')}
+                  </span>
+                )}
+                {rs.daemonSuccess && (
+                  <span className="flex items-center gap-1 text-xs text-emerald-400">
+                    <CheckCircle2 size={12} />
+                    {rs.daemonMessage ?? t('OK')}
+                  </span>
+                )}
+                {rs.daemonError && (
+                  <span className="text-xs text-crimson" role="alert">
+                    {rs.daemonError.message ?? t('Failed')}
+                  </span>
+                )}
+              </div>
+            </Panel>
+          </div>
+
+          {/* Saved states list */}
+          <div className="col-span-12 lg:col-span-8">
+            <Panel
+              title={t('Saved states')}
+              icon={<Layers size={16} />}
+              noPadding
+            >
+              {rs.statesLoading ? (
+                <div className="p-6 text-center text-text-muted text-sm">{t('Loading states…')}</div>
+              ) : rs.statesError ? (
+                <div className="p-6 text-center text-crimson text-sm" role="alert">
+                  {t('Failed to load states: {{message}}', { message: rs.statesError.message })}
+                </div>
+              ) : states.length === 0 ? (
+                <div className="p-6 text-center text-text-muted text-sm">
+                  {t('No saved states yet. Snapshot the current monitor configuration on the right.')}
+                </div>
+              ) : (
+                <table className="w-full text-xs">
+                  <thead className="bg-surface/70 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-muted">
+                    <tr>
+                      <th className="px-3 py-2 text-start">{t('Name')}</th>
+                      <th className="px-3 py-2 text-start">{t('Active')}</th>
+                      <th className="px-3 py-2 text-start">{t('Definition')}</th>
+                      <th className="px-3 py-2 text-end">{t('Actions')}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {states.map((s) => {
+                      const isProtected = isProtectedState(s.name);
+                      const parsed = parseDefinition(s.definition);
+                      const preview =
+                        parsed.length === 0
+                          ? '—'
+                          : t('{{count}} monitor', { count: parsed.length });
+                      return (
+                        <tr
+                          key={s.id}
+                          className="border-b border-border-subtle/40 hover:bg-surface/40"
+                        >
+                          <td className="px-3 py-2 font-medium text-text-primary">{s.name}</td>
+                          <td className="px-3 py-2">
+                            {s.is_active === 1 ? (
+                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-mono uppercase">
+                                <Activity size={10} />
+                                {t('Active')}
+                              </span>
+                            ) : (
+                              <span className="text-text-muted text-[10px] font-mono uppercase">—</span>
+                            )}
+                          </td>
+                          <td
+                            className="px-3 py-2 text-text-muted font-mono truncate max-w-[18rem]"
+                            title={s.definition}
+                          >
+                            {preview}
+                          </td>
+                          <td className="px-3 py-2 text-end">
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => rs.setApplyTarget(s)}
+                                disabled={busy || s.is_active === 1}
+                                aria-label={t('Apply state {{name}}', { name: s.name })}
+                                className={clsx(
+                                  'inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono uppercase tracking-wider border transition-colors',
+                                  s.is_active === 1
+                                    ? 'border-border-subtle text-text-muted cursor-not-allowed opacity-60'
+                                    : 'border-cyan/40 text-cyan hover:bg-cyan/15',
+                                )}
+                              >
+                                <Play size={10} />
+                                {t('Apply')}
+                              </button>
+                              <button
+                                onClick={() => rs.setDeleteTarget(s)}
+                                disabled={busy || isProtected}
+                                aria-label={t('Delete state {{name}}', { name: s.name })}
+                                title={isProtected ? t('"default" cannot be deleted') : t('Delete state')}
+                                className={clsx(
+                                  'p-1 rounded transition-colors',
+                                  isProtected
+                                    ? 'text-text-dim cursor-not-allowed'
+                                    : 'text-text-muted hover:text-crimson hover:bg-crimson/10',
+                                )}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              )}
+            </Panel>
+          </div>
+
+          {/* Save current */}
+          <div className="col-span-12 lg:col-span-4">
+            <Panel title={t('Save current as…')} icon={<Save size={16} />}>
+              <p className="text-xs text-text-muted mb-3">
+                <Trans>
+                  Snapshots every monitor's <span className="font-mono">Capturing</span>/
+                  <span className="font-mono">Analysing</span>/<span className="font-mono">Recording</span> mode
+                  into a new named state.
+                </Trans>
+              </p>
+              <form onSubmit={rs.handleSaveCurrent} className="space-y-2">
+                <input
+                  value={rs.newStateName}
+                  onChange={(e) => rs.setNewStateName(e.target.value)}
+                  placeholder={t('e.g. Away, Holiday')}
+                  aria-label={t('New state name')}
+                  className="w-full px-2 py-1.5 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                />
+                <button
+                  type="submit"
+                  disabled={
+                    !rs.newStateName.trim() ||
+                    rs.savePending ||
+                    rs.monitorsLoading ||
+                    monitors.length === 0
+                  }
+                  className={clsx(
+                    'w-full flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium rounded border-2',
+                    'border-cyan/60 bg-cyan/15 text-cyan',
+                    'hover:bg-cyan/25 transition-colors',
+                    'disabled:opacity-50 disabled:cursor-not-allowed',
+                  )}
+                >
+                  {rs.savePending ? (
+                    <Loader2 size={12} className="animate-spin" />
+                  ) : (
+                    <Save size={12} />
+                  )}
+                  {t('Save snapshot')}
+                </button>
+                {rs.saveError && (
+                  <p className="text-[11px] text-crimson" role="alert">
+                    {rs.saveError.message ?? t('Save failed')}
+                  </p>
+                )}
+                <p className="text-[10px] text-text-muted">
+                  {t('{{count}} monitor will be captured.', { count: monitors.length })}
+                </p>
+              </form>
+            </Panel>
+          </div>
+        </div>
+      </main>
+
+      {/* Apply confirm */}
+      <ConfirmDialog
+        isOpen={!!applyTarget}
+        onClose={() => rs.setApplyTarget(null)}
+        onConfirm={rs.confirmApply}
+        title={t('Apply run state')}
+        message={
+          applyTarget
+            ? t('Apply state "{{name}}"? Every monitor\'s Capturing / Analysing / Recording mode will be overwritten and affected daemons restarted.', { name: applyTarget.name })
+            : ''
+        }
+        confirmText={t('Apply')}
+        variant="warning"
+        isLoading={rs.applyPending}
+      />
+
+      {/* Delete confirm */}
+      <ConfirmDialog
+        isOpen={!!deleteTarget}
+        onClose={() => rs.setDeleteTarget(null)}
+        onConfirm={rs.confirmDelete}
+        title={t('Delete state')}
+        message={
+          deleteTarget
+            ? t('Delete saved state "{{name}}"? This removes the preset only — it does not change any monitor\'s current mode.', { name: deleteTarget.name })
+            : ''
+        }
+        confirmText={t('Delete')}
+        variant="danger"
+        isLoading={rs.deletePending}
+      />
+
+      {/* Daemon action confirm — stop / restart get a prompt, start does not */}
+      <ConfirmDialog
+        isOpen={daemonTarget === 'stop' || daemonTarget === 'restart'}
+        onClose={() => rs.setDaemonTarget(null)}
+        onConfirm={rs.confirmDaemon}
+        title={daemonTarget === 'stop' ? t('Stop ZoneMinder') : t('Restart ZoneMinder')}
+        message={
+          daemonTarget === 'stop'
+            ? t('Stop ZoneMinder? Recording will halt across every monitor.')
+            : t('Restart ZoneMinder? Capture streams will reconnect after a short outage.')
+        }
+        confirmText={daemonTarget === 'stop' ? t('Stop') : t('Restart')}
+        variant={daemonTarget === 'stop' ? 'danger' : 'warning'}
+        isLoading={rs.daemonPending}
+      />
+
+    </AppShell>
+  );
+}
+
+interface DaemonButtonProps {
+  action: DaemonAction;
+  icon: ReactNode;
+  label: string;
+  onClick: () => void;
+  disabled: boolean;
+  tone: 'emerald' | 'crimson' | 'amber';
+}
+
+function DaemonButton({ icon, label, onClick, disabled, tone }: DaemonButtonProps) {
+  const toneCls =
+    tone === 'emerald'
+      ? 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15'
+      : tone === 'crimson'
+        ? 'border-crimson/40 text-crimson hover:bg-crimson/15'
+        : 'border-amber/40 text-amber hover:bg-amber/15';
+  return (
+    <button
+      onClick={onClick}
+      disabled={disabled}
+      className={clsx(
+        'inline-flex items-center gap-1 px-3 py-1.5 rounded font-mono text-[11px] uppercase tracking-wider border-2 transition-colors',
+        toneCls,
+        disabled && 'opacity-50 cursor-not-allowed',
+      )}
+    >
+      {icon}
+      {label}
+    </button>
+  );
+}

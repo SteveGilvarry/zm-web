@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useTranslation } from 'react-i18next';
 import type { DailyBucket } from './bucketEventsByHour';
 import { formatDateLabel } from './bucketEventsByHour';
 
@@ -19,6 +20,7 @@ interface EventsPerHourChartProps {
  * / purple / pink, then cycles).
  */
 export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartProps) {
+  const { t } = useTranslation();
   const { width, height, padding } = LAYOUT;
 
   const yMax = useMemo(() => {
@@ -44,13 +46,13 @@ export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartPro
   const yTicks = makeYTicks(yMax);
 
   return (
-    <div className="w-full" data-testid="events-per-hour-chart">
+    <div className="w-full" data-testid="events-per-hour-chart" dir="ltr">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
         className="w-full h-auto text-text-muted"
         role="img"
-        aria-label={ariaLabel ?? 'Events per hour, grouped by date'}
+        aria-label={ariaLabel ?? t('Events per hour, grouped by date')}
       >
         {/* Grid + axes */}
         {yTicks.map((tick) => {
@@ -124,7 +126,11 @@ export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartPro
                     fill={colour}
                   >
                     <title>
-                      {formatDateLabel(b.date)} {h}:00 — {formatSeconds(v)}
+                      {t('{{date}} {{hour}}:00 — {{duration}}', {
+                        date: formatDateLabel(b.date),
+                        hour: h,
+                        duration: formatSeconds(v),
+                      })}
                     </title>
                   </circle>
                 ) : null,
@@ -157,7 +163,7 @@ export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartPro
       {/* Legend */}
       <ul
         className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] font-mono text-text-secondary"
-        aria-label="Chart legend"
+        aria-label={t('Chart legend')}
       >
         {buckets.map((b, idx) => (
           <li key={b.date} className="flex items-center gap-1.5">

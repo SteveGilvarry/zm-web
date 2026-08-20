@@ -1,10 +1,16 @@
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { getSystemStatus, getVersion } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 
-// Stub stat strip that mirrors the legacy ZM sub-header. Phase 9 builds the
-// fully wired version (bandwidth profile, Running toggle, etc.).
+/**
+ * Classic sub-header stat strip: Load / Cpu / Default storage / Memory /
+ * Swap / version, as the legacy navbar's second row. The bandwidth profile
+ * chip is deliberately absent (that feature is out of scope); DB connections
+ * need a backend field that does not exist yet.
+ */
 export function ClassicStatBar() {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const { data: status } = useQuery({
     queryKey: ['systemStatus'],
@@ -20,30 +26,29 @@ export function ClassicStatBar() {
   });
 
   const stats = status?.stats;
-  const memUsedPct =
-    stats && stats.total_mem > 0
-      ? Math.round(((stats.total_mem - stats.free_mem) / stats.total_mem) * 100)
-      : null;
+  const pct = (used: number, total: number) =>
+    total > 0 ? Math.round((used / total) * 100) : null;
+  const memUsedPct = stats ? pct(stats.total_mem - stats.free_mem, stats.total_mem) : null;
+  const swapUsedPct = stats ? pct(stats.total_swap - stats.free_swap, stats.total_swap) : null;
 
   return (
     <div className="bg-[#2b343d] text-cyan-200 text-xs px-4 py-1 flex items-center gap-5 flex-wrap border-b border-black/30">
-      <span className="flex items-center gap-1">
-        <span aria-hidden>📶</span>
-        <span>High</span>
-      </span>
       {stats?.cpu_load != null && (
-        <span>Load: {stats.cpu_load.toFixed(2)}</span>
+        <span>{t('Load')}: {stats.cpu_load.toFixed(2)}</span>
       )}
-      {stats?.cpu_usage_percent != null && stats.cpu_usage_percent > 0 && (
-        <span>Cpu: {stats.cpu_usage_percent.toFixed(1)}%</span>
+      {stats?.cpu_usage_percent != null && (
+        <span>{t('Cpu')}: {stats.cpu_usage_percent.toFixed(1)}%</span>
       )}
-      {stats?.disk_usage_percent != null && stats.disk_usage_percent > 0 && (
-        <span>Default: {stats.disk_usage_percent.toFixed(0)}%</span>
+      {stats?.disk_usage_percent != null && (
+        <span>{t('Default')}: {stats.disk_usage_percent.toFixed(0)}%</span>
       )}
       {memUsedPct != null && (
-        <span>Memory: {memUsedPct}%</span>
+        <span>{t('Memory')}: {memUsedPct}%</span>
       )}
-      <span className="ml-auto opacity-75">
+      {swapUsedPct != null && (
+        <span>{t('Swap')}: {swapUsedPct}%</span>
+      )}
+      <span className="ms-auto opacity-75">
         {version?.version ? `v${version.version}` : ''}
       </span>
     </div>

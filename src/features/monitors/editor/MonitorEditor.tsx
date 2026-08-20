@@ -1,13 +1,14 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import {
   X, Save, Undo2, Loader2, ChevronRight, AlertCircle, Eye, EyeOff,
 } from 'lucide-react';
 import { patchMonitor } from '@/api/monitors-crud';
 import { listControls } from '@/api/controls';
 import type { Monitor } from '@/types';
-import { TABS, type FieldDef, type TabDef } from './fields';
+import { TABS, useMonitorTabs, type FieldDef, type TabDef } from './fields';
 
 interface MonitorEditorProps {
   monitor: Monitor;
@@ -31,9 +32,21 @@ type FieldValue = string | number | null;
  *
  * Implemented as an in-page overlay rather than a separate route so the
  * back button returns the operator to the live detail view instantly.
+ *
+ * Keyed on `monitor.id`: draft + baseline reset only when the underlying
+ * monitor identity flips (rare — the route would have to navigate). Mid-edit
+ * refetches of the *same* monitor leave the in-progress draft untouched.
  */
-export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
+export function MonitorEditor(props: MonitorEditorProps) {
+  return <MonitorEditorBody key={props.monitor.id} {...props} />;
+}
+
+function MonitorEditorBody({ monitor, onClose }: MonitorEditorProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
+  // Translated tab/field labels for rendering; the module-level TABS (English
+  // snapshot) is only used by the pure key/diff helpers below.
+  const tabs = useMonitorTabs();
   const [activeTab, setActiveTab] = useState<string>(TABS[0].id);
   const [draft, setDraft] = useState<Record<string, FieldValue>>(() =>
     extractEditableFields(monitor),
@@ -45,15 +58,6 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
     extractEditableFields(monitor),
   );
   const [saveError, setSaveError] = useState<string | null>(null);
-
-  // Reset baseline + draft only when the underlying monitor identity flips
-  // (rare — the route would have to navigate). Mid-edit refetches of the
-  // *same* monitor leave the user's in-progress draft untouched.
-  useEffect(() => {
-    const fresh = extractEditableFields(monitor);
-    setBaseline(fresh);
-    setDraft(fresh);
-  }, [monitor.id]);
 
   // Diff = keys whose draft value differs from baseline.
   const diff = useMemo(() => {
@@ -68,13 +72,13 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
   // Per-tab diff counts so the rail badges stay live.
   const tabDiffCount = useMemo(() => {
     const counts: Record<string, number> = {};
-    for (const tab of TABS) {
+    for (const tab of tabs) {
       counts[tab.id] = tab.fields.filter(
         (f) => f.kind !== 'group' && f.key in diff,
       ).length;
     }
     return counts;
-  }, [diff]);
+  }, [diff, tabs]);
 
   const saveMutation = useMutation({
     mutationFn: () => patchMonitor(monitor.id, diff),
@@ -91,7 +95,7 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
 
   const handleClose = () => {
     if (Object.keys(diff).length > 0) {
-      if (!confirm(`Discard ${Object.keys(diff).length} unsaved change${Object.keys(diff).length === 1 ? '' : 's'}?`)) {
+      if (!confirm(t('Discard {{count}} unsaved change?', { count: Object.keys(diff).length }))) {
         return;
       }
     }
@@ -106,7 +110,7 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
   const updateField = (key: string, value: FieldValue) =>
     setDraft((d) => ({ ...d, [key]: value }));
 
-  const tab = TABS.find((t) => t.id === activeTab) ?? TABS[0];
+  const activeTabDef = tabs.find((td) => td.id === activeTab) ?? tabs[0];
   const diffCount = Object.keys(diff).length;
 
   return (
@@ -118,19 +122,19 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
             <span className="text-cyan font-mono text-[11px] font-semibold">M{monitor.id}</span>
           </div>
           <div>
-            <h2 className="text-sm font-semibold text-text-primary">Edit · {monitor.name}</h2>
+            <h2 className="text-sm font-semibold text-text-primary">{t('Edit · {{name}}', { name: monitor.name })}</h2>
             <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-              Configuration
+              {t('Configuration')}
             </div>
           </div>
         </div>
         <button
           onClick={handleClose}
-          aria-label="Close editor"
+          aria-label={t('Close editor')}
           className="flex items-center gap-1.5 px-3 py-1.5 rounded border border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors text-xs"
         >
           <X size={12} />
-          Close
+          {t('Close')}
         </button>
       </div>
 
@@ -138,26 +142,26 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
       <div className="flex-1 flex min-h-0">
         {/* Left rail — tabs */}
         <nav
-          aria-label="Edit sections"
-          className="w-56 flex-shrink-0 border-r border-border-subtle bg-surface/20 overflow-y-auto"
+          aria-label={t('Edit sections')}
+          className="w-56 flex-shrink-0 border-e border-border-subtle bg-surface/20 overflow-y-auto"
         >
           <ul className="py-2">
-            {TABS.map((t) => {
-              const isActive = t.id === activeTab;
-              const count = tabDiffCount[t.id] ?? 0;
+            {tabs.map((tab) => {
+              const isActive = tab.id === activeTab;
+              const count = tabDiffCount[tab.id] ?? 0;
               return (
-                <li key={t.id}>
+                <li key={tab.id}>
                   <button
-                    onClick={() => setActiveTab(t.id)}
+                    onClick={() => setActiveTab(tab.id)}
                     className={clsx(
-                      'group w-full flex items-center gap-2 px-4 py-2 text-left text-sm transition-all',
-                      'border-l-2',
+                      'group w-full flex items-center gap-2 px-4 py-2 text-start text-sm transition-all',
+                      'border-s-2',
                       isActive
                         ? 'border-cyan bg-cyan/10 text-cyan'
                         : 'border-transparent text-text-secondary hover:bg-surface/60 hover:text-text-primary',
                     )}
                   >
-                    <span className="flex-1">{t.label}</span>
+                    <span className="flex-1">{tab.label}</span>
                     {count > 0 && (
                       <span
                         className={clsx(
@@ -166,7 +170,7 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
                             ? 'bg-cyan/30 text-cyan'
                             : 'bg-cyan/20 text-cyan',
                         )}
-                        aria-label={`${count} pending changes in ${t.label}`}
+                        aria-label={t('{{count}} pending change in {{tab}}', { count, tab: tab.label })}
                       >
                         {count}
                       </span>
@@ -174,7 +178,7 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
                     <ChevronRight
                       size={12}
                       className={clsx(
-                        'transition-opacity',
+                        'transition-opacity rtl:-scale-x-100',
                         isActive ? 'opacity-100' : 'opacity-0 group-hover:opacity-50',
                       )}
                     />
@@ -188,7 +192,7 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
         {/* Form pane */}
         <div className="flex-1 overflow-y-auto">
           <FormPane
-            tab={tab}
+            tab={activeTabDef}
             draft={draft}
             baseline={baseline}
             onUpdate={updateField}
@@ -211,11 +215,11 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
                 aria-hidden
               />
               <span className="text-xs font-mono text-cyan tabular-nums">
-                {diffCount} unsaved change{diffCount === 1 ? '' : 's'}
+                {t('{{count}} unsaved change', { count: diffCount })}
               </span>
             </>
           ) : (
-            <span className="text-xs font-mono text-text-muted">No pending changes</span>
+            <span className="text-xs font-mono text-text-muted">{t('No pending changes')}</span>
           )}
         </div>
 
@@ -226,7 +230,7 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <Undo2 size={11} />
-            Reset
+            {t('Reset')}
           </button>
           <button
             onClick={() => saveMutation.mutate()}
@@ -242,7 +246,9 @@ export function MonitorEditor({ monitor, onClose }: MonitorEditorProps) {
             {saveMutation.isPending
               ? <Loader2 size={11} className="animate-spin" />
               : <Save size={11} />}
-            {saveMutation.isPending ? 'Saving…' : `Save${diffCount > 0 ? ` ${diffCount}` : ''}`}
+            {saveMutation.isPending
+              ? t('Saving…')
+              : diffCount > 0 ? t('Save {{n}}', { n: diffCount }) : t('Save')}
           </button>
         </div>
       </footer>
@@ -306,6 +312,7 @@ interface FieldRowProps {
 }
 
 function FieldRow({ field, value, isDirty, onChange }: FieldRowProps) {
+  const { t } = useTranslation();
   const span = field.span === 2 ? 'col-span-2' : 'col-span-2 md:col-span-1';
 
   return (
@@ -322,7 +329,7 @@ function FieldRow({ field, value, isDirty, onChange }: FieldRowProps) {
         {isDirty && (
           <span
             className="w-1 h-1 rounded-full bg-cyan animate-pulse"
-            aria-label="Changed"
+            aria-label={t('Changed')}
           />
         )}
       </label>
@@ -347,6 +354,7 @@ function FieldInput({
   value: FieldValue;
   onChange: (v: FieldValue) => void;
 }) {
+  const { t } = useTranslation();
   const baseInput =
     'w-full px-2.5 py-1.5 text-sm bg-surface border border-border-subtle rounded text-text-primary placeholder:text-text-dim focus:outline-none focus:border-cyan/50 focus:ring-1 focus:ring-cyan/20 transition-colors';
 
@@ -401,7 +409,7 @@ function FieldInput({
         >
           <span className="w-2 h-2 rounded-full bg-white" />
         </span>
-        {on ? 'Enabled' : 'Disabled'}
+        {on ? t('Enabled') : t('Disabled')}
       </button>
     );
   }
@@ -465,6 +473,7 @@ function PasswordInput({
   onChange: (v: FieldValue) => void;
   className: string;
 }) {
+  const { t } = useTranslation();
   const [visible, setVisible] = useState(false);
   return (
     <div className="relative">
@@ -473,13 +482,13 @@ function PasswordInput({
         value={value == null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value)}
         autoComplete="new-password"
-        className={clsx(className, 'font-mono pr-9')}
+        className={clsx(className, 'font-mono pe-9')}
       />
       <button
         type="button"
         onClick={() => setVisible((v) => !v)}
-        aria-label={visible ? 'Hide password' : 'Show password'}
-        className="absolute right-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
+        aria-label={visible ? t('Hide password') : t('Show password')}
+        className="absolute end-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
       >
         {visible ? <EyeOff size={14} /> : <Eye size={14} />}
       </button>
@@ -506,6 +515,7 @@ function ControlSelect({
   onChange: (v: FieldValue) => void;
   className: string;
 }) {
+  const { t } = useTranslation();
   const { data, isLoading, isError } = useQuery({
     queryKey: ['controls', { page_size: 200 }],
     queryFn: () => listControls({ page: 1, page_size: 200 }),
@@ -525,7 +535,7 @@ function ControlSelect({
         disabled={isLoading}
         className={clsx(className, 'cursor-pointer')}
       >
-        <option value="0">None</option>
+        <option value="0">{t('None')}</option>
         {controls.map((c) => (
           <option key={c.id} value={c.id}>
             {c.name}{c.protocol ? ` (${c.protocol})` : ''}
@@ -534,7 +544,7 @@ function ControlSelect({
       </select>
       {isError && (
         <p className="text-[10px] text-crimson mt-1">
-          Could not load control list — save will still work if you don’t change this field.
+          {t('Could not load control list — save will still work if you don’t change this field.')}
         </p>
       )}
     </div>

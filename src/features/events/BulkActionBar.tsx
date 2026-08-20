@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Archive, ArchiveRestore, Trash2, X } from 'lucide-react';
 import { updateEvent, deleteEvent } from '@/api/events';
 
@@ -16,6 +17,7 @@ interface BulkActionBarProps {
  * via the pending count on each button.
  */
 export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   const invalidate = () => {
@@ -65,7 +67,7 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
   return (
     <div
       role="region"
-      aria-label="Bulk event actions"
+      aria-label={t('Bulk event actions')}
       className={clsx(
         'fixed bottom-6 left-1/2 -translate-x-1/2 z-30',
         'flex items-center gap-1 px-3 py-2 rounded-xl',
@@ -75,30 +77,30 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
       )}
     >
       <span className="px-2 text-xs font-mono text-cyan tabular-nums">
-        {ids.length} selected
+        {t('{{count}} selected', { count: ids.length })}
       </span>
       <div className="w-px h-5 bg-border-subtle mx-1" />
 
       <BulkBtn
         icon={<Archive size={12} />}
-        label="Archive"
+        label={t('Archive')}
         onClick={() => archiveMutation.mutate(ids)}
         pending={archiveMutation.isPending}
         disabled={busy}
       />
       <BulkBtn
         icon={<ArchiveRestore size={12} />}
-        label="Unarchive"
+        label={t('Unarchive')}
         onClick={() => unarchiveMutation.mutate(ids)}
         pending={unarchiveMutation.isPending}
         disabled={busy}
       />
       <BulkBtn
         icon={<Trash2 size={12} />}
-        label="Delete"
+        label={t('Delete')}
         tone="crimson"
         onClick={() => {
-          if (confirm(`Delete ${ids.length} event${ids.length === 1 ? '' : 's'}? This can't be undone.`)) {
+          if (confirm(t("Delete {{count}} event? This can't be undone.", { count: ids.length }))) {
             deleteMutation.mutate(ids);
           }
         }}
@@ -110,7 +112,7 @@ export function BulkActionBar({ selectedIds, onClear }: BulkActionBarProps) {
       <button
         onClick={onClear}
         disabled={busy}
-        aria-label="Clear selection"
+        aria-label={t('Clear selection')}
         className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors disabled:opacity-50"
       >
         <X size={12} />

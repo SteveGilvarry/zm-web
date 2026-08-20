@@ -12,7 +12,7 @@ export function MainLayout({ title }: MainLayoutProps) {
       <Sidebar />
 
       {/* Main content area with left margin for sidebar */}
-      <div className="ml-56 min-h-screen flex flex-col">
+      <div className="ms-56 min-h-screen flex flex-col">
         <Header title={title} />
 
         <main className="flex-1 p-6 overflow-auto">

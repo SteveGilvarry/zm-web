@@ -97,6 +97,7 @@ export function MonitorPreview({
   return (
     <div
       ref={rootRef}
+      dir="ltr"
       className="absolute inset-0 bg-abyss"
       onMouseEnter={beginHover}
       onMouseLeave={endHover}

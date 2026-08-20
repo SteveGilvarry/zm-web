@@ -1,4 +1,5 @@
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Modal } from './Modal';
 
@@ -19,15 +20,17 @@ export function ConfirmDialog({
   onConfirm,
   title,
   message,
-  confirmText = 'Confirm',
+  confirmText,
   variant = 'danger',
   isLoading = false,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
       <p className="text-sm text-text-secondary mb-6">{message}</p>
       <div className="flex items-center justify-end gap-3">
         <button
+          type="button"
           onClick={onClose}
           disabled={isLoading}
           className={clsx(
@@ -38,9 +41,10 @@ export function ConfirmDialog({
             isLoading && 'opacity-50 cursor-not-allowed'
           )}
         >
-          Cancel
+          {t('Cancel')}
         </button>
         <button
+          type="button"
           onClick={onConfirm}
           disabled={isLoading}
           className={clsx(
@@ -53,7 +57,7 @@ export function ConfirmDialog({
           )}
         >
           {isLoading && <Loader2 size={14} className="animate-spin" />}
-          {confirmText}
+          {confirmText ?? t('Confirm')}
         </button>
       </div>
     </Modal>

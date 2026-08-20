@@ -270,7 +270,7 @@ describe('ZoneEditor — units toggle', () => {
     expect(percentBtn.className).toMatch(/border-cyan/);
   });
 
-  it('serialises Percent units in the create POST body', async () => {
+  it('serialises Percent units in the create POST body without rescaling the coords', async () => {
     const user = userEvent.setup();
     let body: Record<string, unknown> = {};
     server.use(
@@ -290,6 +290,33 @@ describe('ZoneEditor — units toggle', () => {
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => expect(body.units).toBe('Percent'));
+    // ZoneMinder stores Coords in pixels whatever the Units; the default
+    // rectangle (middle 60% of 1920x1080) must reach the API untouched.
+    expect(body.coords).toBe('384,216 1536,216 1536,864 384,864');
+  });
+
+  it('switching Pixels -> Percent -> Pixels leaves the polygon unchanged', async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.get('/api/v3/monitors/1/zones', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+      ),
+      http.post('/api/v3/monitors/1/zones', async ({ request }) => {
+        body = await request.json() as Record<string, unknown>;
+        return HttpResponse.json({ id: 99 });
+      }),
+    );
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    await user.click(screen.getByRole('button', { name: 'Percent' }));
+    await user.click(screen.getByRole('button', { name: 'Pixels' }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() => expect(body.units).toBe('Pixels'));
+    expect(body.coords).toBe('384,216 1536,216 1536,864 384,864');
   });
 });
 

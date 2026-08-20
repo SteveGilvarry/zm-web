@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useMutation } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft,
   RefreshCw,
@@ -64,6 +65,7 @@ export function MonitorWatchClassic({
   onEditMonitor,
   onRefresh,
 }: MonitorWatchClassicProps) {
+  const { t } = useTranslation();
   const [alarmError, setAlarmError] = useState<string | null>(null);
 
   // Destructure non-ref fields so the React compiler's "no refs during
@@ -75,18 +77,18 @@ export function MonitorWatchClassic({
     mutationFn: () => controlMonitorAlarm(monitor.id, { action: 'on', cause: 'API', score: 100 }),
     onMutate: () => setAlarmError(null),
     onError: (err: unknown) =>
-      setAlarmError(err instanceof Error ? err.message : 'Failed to force alarm'),
+      setAlarmError(err instanceof Error ? err.message : t('Failed to force alarm')),
   });
 
   const cancelAlarmMutation = useMutation({
     mutationFn: () => controlMonitorAlarm(monitor.id, { action: 'cancel' }),
     onMutate: () => setAlarmError(null),
     onError: (err: unknown) =>
-      setAlarmError(err instanceof Error ? err.message : 'Failed to cancel alarm'),
+      setAlarmError(err instanceof Error ? err.message : t('Failed to cancel alarm')),
   });
 
   const handleForceAlarm = () => {
-    if (window.confirm(`Force alarm on "${monitor.name}"? This creates an event right now.`)) {
+    if (window.confirm(t('Force alarm on "{{name}}"? This creates an event right now.', { name: monitor.name }))) {
       forceAlarmMutation.mutate();
     }
   };
@@ -105,46 +107,46 @@ export function MonitorWatchClassic({
             to="/monitors"
             className="inline-flex items-center gap-1 text-cyan-700 hover:underline"
           >
-            <ArrowLeft size={14} />
-            Monitors
+            <ArrowLeft size={14} className="rtl:-scale-x-100" />
+            {t('Monitors')}
           </Link>
           <span className="text-zinc-400">/</span>
           <span className="text-zinc-700 font-medium">{monitor.name}</span>
-          <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-zinc-200 text-zinc-600 border border-zinc-300">
-            id={monitor.id}
+          <span className="ms-1 px-1.5 py-0.5 rounded text-[10px] font-mono uppercase tracking-wider bg-zinc-200 text-zinc-600 border border-zinc-300">
+            {t('id={{id}}', { id: monitor.id })}
           </span>
         </div>
 
         {/* Action row (legacy ZM cluster) */}
         <div className="flex items-center gap-1.5 flex-wrap">
-          <ClassicButton onClick={() => window.history.back()} title="Back">
-            <ArrowLeft size={12} />
-            Back
+          <ClassicButton onClick={() => window.history.back()} title={t('Back')}>
+            <ArrowLeft size={12} className="rtl:-scale-x-100" />
+            {t('Back')}
           </ClassicButton>
-          <ClassicButton onClick={onRefresh} title="Refresh">
+          <ClassicButton onClick={onRefresh} title={t('Refresh')}>
             <RefreshCw size={12} />
-            Refresh
+            {t('Refresh')}
           </ClassicButton>
-          <ClassicButton onClick={onEditMonitor} title="Edit monitor configuration">
+          <ClassicButton onClick={onEditMonitor} title={t('Edit monitor configuration')}>
             <Pencil size={12} />
-            Edit
+            {t('Edit')}
           </ClassicButton>
           <ClassicButton
             onClick={handleForceAlarm}
             disabled={!isEnabled || forceAlarmMutation.isPending}
             tone="danger"
-            title="Force alarm — creates an event immediately"
+            title={t('Force alarm — creates an event immediately')}
           >
             <Bell size={12} />
-            {forceAlarmMutation.isPending ? 'Forcing…' : 'Force Alarm'}
+            {forceAlarmMutation.isPending ? t('Forcing…') : t('Force Alarm')}
           </ClassicButton>
           {forceAlarmMutation.isSuccess && (
             <ClassicButton
               onClick={() => cancelAlarmMutation.mutate()}
               disabled={cancelAlarmMutation.isPending}
-              title="Cancel forced alarm"
+              title={t('Cancel forced alarm')}
             >
-              Cancel Alarm
+              {t('Cancel Alarm')}
             </ClassicButton>
           )}
         </div>
@@ -164,20 +166,21 @@ export function MonitorWatchClassic({
           <div className="bg-white border border-zinc-300 rounded overflow-hidden">
             <div className="px-3 py-2 border-b border-zinc-200 bg-zinc-50 flex items-center justify-between">
               <span className="text-xs font-semibold uppercase tracking-wider text-zinc-700">
-                Live view
+                {t('Live view')}
               </span>
               <div className="flex items-center gap-1.5 text-[11px] font-mono text-zinc-500">
                 {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}
                 {isStreaming && (
                   <span className="inline-flex items-center gap-1">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                    LIVE
+                    {t('LIVE')}
                   </span>
                 )}
               </div>
             </div>
 
             <div
+              dir="ltr"
               className="relative bg-black w-full"
               style={{
                 aspectRatio: `${monitor.width || 16} / ${monitor.height || 9}`,
@@ -196,7 +199,7 @@ export function MonitorWatchClassic({
 
               {isConnecting && (
                 <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white text-sm">
-                  Connecting…
+                  {t('Connecting…')}
                 </div>
               )}
 
@@ -209,7 +212,7 @@ export function MonitorWatchClassic({
                     onClick={onRetry}
                     className="px-3 py-1.5 text-xs rounded bg-cyan-600 text-white hover:bg-cyan-700"
                   >
-                    Retry
+                    {t('Retry')}
                   </button>
                 </div>
               )}
@@ -218,26 +221,26 @@ export function MonitorWatchClassic({
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400">
                   {isEnabled ? (
                     <>
-                      <p className="mb-3 text-sm">Stream not active</p>
+                      <p className="mb-3 text-sm">{t('Stream not active')}</p>
                       <button
                         type="button"
                         onClick={onStartStream}
                         className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded bg-cyan-600 text-white text-xs font-medium hover:bg-cyan-700"
                       >
                         <Play size={12} />
-                        Start Stream
+                        {t('Start Stream')}
                       </button>
                     </>
                   ) : (
-                    <p className="text-sm">Monitor is disabled</p>
+                    <p className="text-sm">{t('Monitor is disabled')}</p>
                   )}
                 </div>
               )}
 
               {/* Overlay: monitor name + id, top-left */}
               {(isActive || isStreaming) && (
-                <div className="absolute top-2 left-2 px-2 py-0.5 rounded bg-black/60 text-white text-[11px] font-mono">
-                  {monitor.name} (id={monitor.id})
+                <div className="absolute top-2 start-2 px-2 py-0.5 rounded bg-black/60 text-white text-[11px] font-mono">
+                  {t('{{name}} (id={{id}})', { name: monitor.name, id: monitor.id })}
                 </div>
               )}
             </div>
@@ -247,31 +250,31 @@ export function MonitorWatchClassic({
               <ClassicButton
                 onClick={onStopStream}
                 disabled={!isActive}
-                title="Stop stream"
+                title={t('Stop stream')}
               >
                 <Square size={12} />
-                Stop
+                {t('Stop')}
               </ClassicButton>
               <ClassicButton
                 onClick={onStartStream}
                 disabled={isActive}
-                title="Play stream"
+                title={t('Play stream')}
               >
                 <Play size={12} />
-                Play
+                {t('Play')}
               </ClassicButton>
 
               <span className="text-zinc-300 mx-1">|</span>
 
               {hasAudio && (
-                <ClassicButton onClick={onToggleMute} title="Mute / unmute audio">
+                <ClassicButton onClick={onToggleMute} title={t('Mute / unmute audio')}>
                   {isMuted ? <VolumeX size={12} /> : <Volume2 size={12} />}
-                  {isMuted ? 'Muted' : 'Audio'}
+                  {isMuted ? t('Muted') : t('Audio')}
                 </ClassicButton>
               )}
-              <ClassicButton onClick={onToggleFullscreen} title="Fullscreen stage">
+              <ClassicButton onClick={onToggleFullscreen} title={t('Fullscreen stage')}>
                 <Maximize2 size={12} />
-                Fullscreen
+                {t('Fullscreen')}
               </ClassicButton>
 
               <span className="text-zinc-300 mx-1">|</span>
@@ -281,20 +284,20 @@ export function MonitorWatchClassic({
                 search={{ monitor_id: monitor.id }}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 hover:text-cyan-700 text-xs"
               >
-                All Events
+                {t('All Events')}
               </Link>
 
               <span className="text-zinc-300 mx-1">|</span>
 
               <label className="inline-flex items-center gap-1 text-xs text-zinc-600">
                 <span className="font-mono uppercase tracking-wider text-[10px] text-zinc-500">
-                  Protocol
+                  {t('Protocol')}
                 </span>
                 <select
                   value={protocol}
                   onChange={(e) => onProtocolChange(e.target.value as StreamProtocol)}
                   className="px-1.5 py-0.5 rounded border border-zinc-300 bg-white text-xs font-mono"
-                  aria-label="Stream protocol"
+                  aria-label={t('Stream protocol')}
                 >
                   <option value="webrtc">WebRTC</option>
                   <option value="hls">HLS</option>
@@ -307,74 +310,74 @@ export function MonitorWatchClassic({
         {/* RIGHT — dense control sidebar */}
         <div className="lg:w-[22rem] lg:flex-shrink-0 space-y-4">
           {/* Monitor metadata — form-table style */}
-          <ClassicCard title="Monitor">
+          <ClassicCard title={t('Monitor')}>
             <table className="w-full text-xs text-zinc-800">
               <tbody>
-                <MetaRow label="Name" value={monitor.name} />
-                <MetaRow label="Function" value={monitor.function || '—'} />
+                <MetaRow label={t('Name')} value={monitor.name} />
+                <MetaRow label={t('Function')} value={monitor.function || '—'} />
                 <MetaRow
-                  label="Capturing"
+                  label={t('Capturing')}
                   value={monitor.capturing || 'None'}
                   highlight={monitor.capturing === 'Always' ? 'good' : undefined}
                 />
                 <MetaRow
-                  label="Analysing"
+                  label={t('Analysing')}
                   value={monitor.analysing || 'None'}
                   highlight={monitor.analysing === 'Always' ? 'warn' : undefined}
                 />
                 <MetaRow
-                  label="Recording"
+                  label={t('Recording')}
                   value={monitor.recording || 'None'}
                   highlight={monitor.recording === 'Always' ? 'danger' : undefined}
                 />
                 <MetaRow
-                  label="Decoding"
-                  value={monitor.decoding_enabled === 1 ? 'Enabled' : 'Disabled'}
+                  label={t('Decoding')}
+                  value={monitor.decoding_enabled === 1 ? t('Enabled') : t('Disabled')}
                 />
-                <MetaRow label="Type" value={monitor.type || '—'} />
-                <MetaRow label="Source" value={monitor.host || '—'} mono />
-                {monitor.port && <MetaRow label="Port" value={monitor.port} mono />}
-                {monitor.path && <MetaRow label="Path" value={monitor.path} mono truncate />}
-                {monitor.user && <MetaRow label="User" value={monitor.user} mono />}
+                <MetaRow label={t('Type')} value={monitor.type || '—'} />
+                <MetaRow label={t('Source')} value={monitor.host || '—'} mono />
+                {monitor.port && <MetaRow label={t('Port')} value={monitor.port} mono />}
+                {monitor.path && <MetaRow label={t('Path')} value={monitor.path} mono truncate />}
+                {monitor.user && <MetaRow label={t('User')} value={monitor.user} mono />}
                 <MetaRow
-                  label="Resolution"
+                  label={t('Resolution')}
                   value={`${monitor.width}×${monitor.height}`}
                   mono
                 />
-                <MetaRow label="Colour" value={`${monitor.colours} bit`} mono />
-                <MetaRow label="Orientation" value={monitor.orientation || 'Rotate0'} />
+                <MetaRow label={t('Colour')} value={t('{{bits}} bit', { bits: monitor.colours })} mono />
+                <MetaRow label={t('Orientation')} value={monitor.orientation || 'Rotate0'} />
                 <MetaRow
-                  label="Max FPS"
-                  value={monitor.max_fps != null ? String(monitor.max_fps) : 'Unlimited'}
+                  label={t('Max FPS')}
+                  value={monitor.max_fps != null ? String(monitor.max_fps) : t('Unlimited')}
                   mono
                 />
-                <MetaRow label="Storage" value={String(monitor.storage_id)} mono />
-                <MetaRow label="Server" value={monitor.server_id != null ? String(monitor.server_id) : 'Local'} mono />
-                <MetaRow label="Zones" value={String(monitor.zone_count ?? 0)} mono />
+                <MetaRow label={t('Storage')} value={String(monitor.storage_id)} mono />
+                <MetaRow label={t('Server')} value={monitor.server_id != null ? String(monitor.server_id) : t('Local')} mono />
+                <MetaRow label={t('Zones')} value={String(monitor.zone_count ?? 0)} mono />
                 {monitor.event_prefix && (
-                  <MetaRow label="Event Prefix" value={monitor.event_prefix} mono />
+                  <MetaRow label={t('Event Prefix')} value={monitor.event_prefix} mono />
                 )}
-                <MetaRow label="Importance" value={monitor.importance || 'Normal'} />
+                <MetaRow label={t('Importance')} value={monitor.importance || 'Normal'} />
               </tbody>
             </table>
           </ClassicCard>
 
           {/* Quick links */}
-          <ClassicCard title="Actions">
+          <ClassicCard title={t('Actions')}>
             <div className="flex flex-wrap gap-1.5">
               <Link
                 to="/monitors/$monitorId/zones"
                 params={{ monitorId: String(monitor.id) }}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 hover:text-cyan-700 text-xs"
               >
-                Zones
+                {t('Zones')}
               </Link>
               <Link
                 to="/events"
                 search={{ monitor_id: monitor.id }}
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 hover:text-cyan-700 text-xs"
               >
-                Events
+                {t('Events')}
               </Link>
               <button
                 type="button"
@@ -382,7 +385,7 @@ export function MonitorWatchClassic({
                 className="inline-flex items-center gap-1 px-2 py-1 rounded border border-zinc-300 bg-white hover:bg-zinc-50 text-zinc-700 hover:text-cyan-700 text-xs"
               >
                 <Pencil size={11} />
-                Configure
+                {t('Configure')}
               </button>
             </div>
           </ClassicCard>
@@ -395,7 +398,7 @@ export function MonitorWatchClassic({
             <ClassicCard
               title={
                 <span className="flex items-center gap-2">
-                  Camera control
+                  {t('Camera control')}
                   {ptzState.capabilities.protocol && (
                     <span className="text-[10px] font-mono uppercase tracking-wider bg-zinc-200 text-zinc-600 px-1.5 py-0.5 rounded">
                       {ptzState.capabilities.protocol}
@@ -410,27 +413,27 @@ export function MonitorWatchClassic({
 
           {/* Recent events — dense table */}
           <ClassicCard
-            title="Recent events"
+            title={t('Recent events')}
             action={
               <Link
                 to="/events"
                 search={{ monitor_id: monitor.id }}
                 className="text-[11px] text-cyan-700 hover:underline"
               >
-                All events
+                {t('All events')}
               </Link>
             }
           >
             {events.length === 0 ? (
-              <p className="text-xs text-zinc-500 py-2 text-center">No recent events</p>
+              <p className="text-xs text-zinc-500 py-2 text-center">{t('No recent events')}</p>
             ) : (
               <table className="w-full text-xs text-zinc-800">
                 <thead className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-200">
                   <tr>
-                    <th className="text-left py-1 pr-2 font-semibold">ID</th>
-                    <th className="text-left py-1 pr-2 font-semibold">Name</th>
-                    <th className="text-left py-1 pr-2 font-semibold">Cause</th>
-                    <th className="text-right py-1 font-semibold">Start</th>
+                    <th className="text-start py-1 pe-2 font-semibold">{t('ID')}</th>
+                    <th className="text-start py-1 pe-2 font-semibold">{t('Name')}</th>
+                    <th className="text-start py-1 pe-2 font-semibold">{t('Cause')}</th>
+                    <th className="text-end py-1 font-semibold">{t('Start')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -439,7 +442,7 @@ export function MonitorWatchClassic({
                       key={e.id}
                       className="border-b border-zinc-100 last:border-b-0 hover:bg-zinc-50"
                     >
-                      <td className="py-1 pr-2 font-mono text-zinc-500">
+                      <td className="py-1 pe-2 font-mono text-zinc-500">
                         <Link
                           to="/events/$eventId"
                           params={{ eventId: String(e.id) }}
@@ -448,7 +451,7 @@ export function MonitorWatchClassic({
                           {e.id}
                         </Link>
                       </td>
-                      <td className="py-1 pr-2 truncate max-w-[8rem]">
+                      <td className="py-1 pe-2 truncate max-w-[8rem]">
                         <Link
                           to="/events/$eventId"
                           params={{ eventId: String(e.id) }}
@@ -457,10 +460,10 @@ export function MonitorWatchClassic({
                           {e.name}
                         </Link>
                       </td>
-                      <td className="py-1 pr-2 text-zinc-600 truncate max-w-[6rem]">
+                      <td className="py-1 pe-2 text-zinc-600 truncate max-w-[6rem]">
                         {e.cause || '—'}
                       </td>
-                      <td className="py-1 text-right font-mono text-zinc-500 tabular-nums">
+                      <td className="py-1 text-end font-mono text-zinc-500 tabular-nums">
                         {e.start_date_time
                           ? new Date(e.start_date_time).toLocaleTimeString()
                           : '—'}
@@ -508,7 +511,7 @@ interface MetaRowProps {
 function MetaRow({ label, value, mono, truncate, highlight }: MetaRowProps) {
   return (
     <tr className="border-b border-zinc-100 last:border-b-0">
-      <td className="py-1 pr-3 text-zinc-500 align-top w-1/3">{label}</td>
+      <td className="py-1 pe-3 text-zinc-500 align-top w-1/3">{label}</td>
       <td
         className={clsx(
           'py-1 align-top',

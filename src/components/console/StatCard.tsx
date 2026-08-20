@@ -67,7 +67,7 @@ export function StatCard({
       {variant !== 'default' && (
         <div
           className={clsx(
-            'absolute top-0 right-0 w-24 h-24 rounded-full blur-3xl opacity-20',
+            'absolute top-0 end-0 w-24 h-24 rounded-full blur-3xl opacity-20',
             variant === 'cyan' && 'bg-cyan',
             variant === 'amber' && 'bg-amber',
             variant === 'crimson' && 'bg-crimson',

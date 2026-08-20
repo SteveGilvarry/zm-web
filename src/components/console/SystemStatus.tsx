@@ -1,5 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import {
   CheckCircle,
   XCircle,
@@ -41,6 +43,7 @@ export function SystemStatus({
   stats,
   isLoading,
 }: SystemStatusProps) {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const { data: version } = useQuery({
     queryKey: ['version'],
@@ -84,7 +87,7 @@ export function SystemStatus({
           )}
         >
           {isRunning ? <CheckCircle size={10} /> : <XCircle size={10} />}
-          {isRunning ? 'Running' : 'Stopped'}
+          {isRunning ? t('Running') : t('Stopped')}
         </span>
         <span className="text-[10px] font-mono text-text-muted tabular-nums">
           {version?.version ? `v${version.version}` : '—'}
@@ -94,9 +97,9 @@ export function SystemStatus({
       {systemUptimeSec > 0 && (
         <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted">
           <Clock size={10} />
-          <span className="uppercase tracking-wider text-text-dim">Uptime</span>
+          <span className="uppercase tracking-wider text-text-dim">{t('Uptime')}</span>
           <span className="text-text-secondary tabular-nums">
-            {formatDuration(systemUptimeSec)}
+            {formatDuration(systemUptimeSec, t)}
           </span>
         </div>
       )}
@@ -105,7 +108,7 @@ export function SystemStatus({
       <section>
         <header className="flex items-baseline justify-between mb-2">
           <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-            Daemons
+            {t('Daemons')}
           </span>
           <span
             className={clsx(
@@ -114,13 +117,13 @@ export function SystemStatus({
             )}
           >
             {runningCount}/{daemons.length}
-            {stoppedCount > 0 && ` · ${stoppedCount} stopped`}
+            {stoppedCount > 0 && ` · ${t('{{count}} stopped', { count: stoppedCount })}`}
           </span>
         </header>
 
         {daemons.length === 0 ? (
           <div className="text-[11px] text-text-muted italic py-2 text-center">
-            No daemons reported.
+            {t('No daemons reported.')}
           </div>
         ) : (
           <ul className="divide-y divide-border-subtle/60">
@@ -136,13 +139,13 @@ export function SystemStatus({
         <section>
           <header className="flex items-baseline justify-between mb-2">
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-              Storage
+              {t('Storage')}
             </span>
             <Link
               to="/settings/storage"
               className="text-[10px] font-mono text-cyan/80 hover:text-cyan transition-colors"
             >
-              manage →
+              {t('manage →')}
             </Link>
           </header>
           <div className="flex items-center gap-2 text-[11px]">
@@ -150,9 +153,9 @@ export function SystemStatus({
             <span className="text-text-secondary font-mono tabular-nums">
               {formatBytes(stats.used_disk)} / {formatBytes(stats.total_disk)}
             </span>
-            <span className="ml-auto text-text-muted font-mono">
+            <span className="ms-auto text-text-muted font-mono">
               {stats.disk_usage_percent != null
-                ? `${stats.disk_usage_percent.toFixed(0)}% used`
+                ? t('{{percent}}% used', { percent: stats.disk_usage_percent.toFixed(0) })
                 : ''}
             </span>
           </div>
@@ -163,6 +166,7 @@ export function SystemStatus({
 }
 
 function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
+  const { t } = useTranslation();
   const StatusIcon =
     daemon.state === 'running'
       ? CheckCircle
@@ -184,14 +188,14 @@ function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
         {daemon.name}
       </span>
       {daemon.pid != null && (
-        <span className="font-mono text-text-dim tabular-nums" title="PID">
+        <span className="font-mono text-text-dim tabular-nums" title={t('PID')}>
           {daemon.pid}
         </span>
       )}
       {daemon.restart_count != null && daemon.restart_count > 0 && (
         <span
           className="inline-flex items-center gap-0.5 text-amber font-mono tabular-nums"
-          title={`Restarted ${daemon.restart_count}× since boot`}
+          title={t('Restarted {{count}}× since boot', { count: daemon.restart_count })}
         >
           <RotateCw size={9} />
           {daemon.restart_count}
@@ -213,13 +217,13 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / Math.pow(k, i)).toFixed(1)} ${sizes[i]}`;
 }
 
-function formatDuration(sec: number): string {
-  if (sec < 60) return `${sec}s`;
+/** Compact uptime. The unit letters are translated; the numbers are not. */
+function formatDuration(sec: number, t: TFunction): string {
+  if (sec < 60) return t('{{s}}s', { s: sec });
   const m = Math.floor(sec / 60);
-  if (m < 60) return `${m}m`;
+  if (m < 60) return t('{{m}}m', { m });
   const h = Math.floor(m / 60);
-  if (h < 24) return `${h}h ${m % 60}m`;
+  if (h < 24) return t('{{h}}h {{m}}m', { h, m: m % 60 });
   const d = Math.floor(h / 24);
-  return `${d}d ${h % 24}h`;
+  return t('{{d}}d {{h}}h', { d, h: h % 24 });
 }
-

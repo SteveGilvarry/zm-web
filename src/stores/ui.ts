@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
+import type { SkinId } from '@/skins/types';
+
 /** Visual skin / layout family for the entire app shell. */
-export type Skin = 'modern' | 'classic';
+export type Skin = SkinId;
 
 interface UiState {
   /** Sidebar collapsed state (modern skin). */

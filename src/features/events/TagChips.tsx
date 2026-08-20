@@ -1,6 +1,7 @@
 import { useState, useMemo, type KeyboardEvent } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Tag as TagIcon, Plus, X } from 'lucide-react';
 import { listTags, createTag, attachTag, detachTag, type Tag } from '@/api/tags';
 
@@ -18,6 +19,7 @@ interface TagChipsProps {
  * refreshes its `tags` array without a manual refetch.
  */
 export function TagChips({ eventId, currentTags }: TagChipsProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
@@ -26,7 +28,7 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
     queryKey: ['tags'],
     queryFn: () => listTags({ page: 1, page_size: 200 }),
   });
-  const allTags: Tag[] = allTagsData?.items ?? [];
+  const allTags: Tag[] = useMemo(() => allTagsData?.items ?? [], [allTagsData]);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['event', eventId] });
@@ -47,7 +49,7 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
   });
 
   const attachedIds = useMemo(
-    () => new Set(currentTags.map((t) => t.id)),
+    () => new Set(currentTags.map((tag) => tag.id)),
     [currentTags],
   );
 
@@ -56,14 +58,14 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
     const q = input.trim().toLowerCase();
     if (!q) return [];
     return allTags
-      .filter((t) => !attachedIds.has(t.id))
-      .filter((t) => t.name.toLowerCase().includes(q))
+      .filter((tag) => !attachedIds.has(tag.id))
+      .filter((tag) => tag.name.toLowerCase().includes(q))
       .slice(0, 6);
   }, [allTags, input, attachedIds]);
 
   const exactMatch = useMemo(() => {
     const q = input.trim().toLowerCase();
-    return q && allTags.find((t) => t.name.toLowerCase() === q);
+    return q && allTags.find((tag) => tag.name.toLowerCase() === q);
   }, [allTags, input]);
 
   const submit = () => {
@@ -93,23 +95,23 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
       {/* Attached chips */}
       <div className="flex flex-wrap gap-1.5">
         {currentTags.length === 0 ? (
-          <span className="text-xs text-text-muted italic">No tags</span>
+          <span className="text-xs text-text-muted italic">{t('No tags')}</span>
         ) : (
-          currentTags.map((t) => (
+          currentTags.map((tag) => (
             <span
-              key={t.id}
+              key={tag.id}
               className={clsx(
                 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md',
                 'bg-cyan/15 border border-cyan/40 text-cyan text-xs',
               )}
             >
               <TagIcon size={10} />
-              {t.name}
+              {tag.name}
               <button
-                onClick={() => detachMutation.mutate({ tagId: t.id })}
+                onClick={() => detachMutation.mutate({ tagId: tag.id })}
                 disabled={detachMutation.isPending}
-                aria-label={`Remove tag ${t.name}`}
-                className="ml-0.5 -mr-0.5 hover:text-text-primary transition-colors disabled:opacity-50"
+                aria-label={t('Remove tag {{name}}', { name: tag.name })}
+                className="ms-0.5 -me-0.5 hover:text-text-primary transition-colors disabled:opacity-50"
               >
                 <X size={10} />
               </button>
@@ -132,7 +134,7 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
             onKeyDown={onKey}
             onFocus={() => setFocused(true)}
             onBlur={() => setTimeout(() => setFocused(false), 150)}
-            placeholder="Add tag…"
+            placeholder={t('Add tag…')}
             className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted focus:outline-none"
           />
           {input.trim() && (
@@ -141,27 +143,27 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
               disabled={attachMutation.isPending || createMutation.isPending}
               className="px-2 py-0.5 text-[10px] font-medium rounded bg-cyan/20 text-cyan hover:bg-cyan/30 transition-colors disabled:opacity-50"
             >
-              {exactMatch ? 'Add' : 'Create'}
+              {exactMatch ? t('Add') : t('Create')}
             </button>
           )}
         </div>
 
         {focused && suggestions.length > 0 && (
-          <div className="absolute left-0 right-0 mt-1 rounded-md border border-border bg-panel shadow-lg z-10 overflow-hidden">
-            {suggestions.map((t) => (
+          <div className="absolute start-0 end-0 mt-1 rounded-md border border-border bg-panel shadow-lg z-10 overflow-hidden">
+            {suggestions.map((tag) => (
               <button
-                key={t.id}
+                key={tag.id}
                 onClick={() => {
-                  attachMutation.mutate({ tagId: t.id });
+                  attachMutation.mutate({ tagId: tag.id });
                   setInput('');
                 }}
-                className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-left text-xs text-text-secondary hover:bg-cyan/10 hover:text-cyan transition-colors"
+                className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-start text-xs text-text-secondary hover:bg-cyan/10 hover:text-cyan transition-colors"
               >
                 <TagIcon size={10} />
-                {t.name}
-                {t.event_count != null && (
-                  <span className="ml-auto text-[10px] text-text-muted">
-                    {t.event_count}
+                {tag.name}
+                {tag.event_count != null && (
+                  <span className="ms-auto text-[10px] text-text-muted">
+                    {tag.event_count}
                   </span>
                 )}
               </button>

@@ -1,73 +1,16 @@
 import { useMemo, useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { LayoutGrid as LayoutGridIcon } from 'lucide-react';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import type { Monitor } from '@/types';
-
-/* -------------------------------------------------------------------------- */
-/*  Preset definitions                                                        */
-/* -------------------------------------------------------------------------- */
-
-/**
- * Legacy ZM montage layout presets. Each `N Wide` preset means "N cells per
- * row"; the grid wraps to as many rows as the monitor count needs. `Auto`
- * picks a column count from the monitor count using the same heuristic as
- * `montage.php` (see legacy-requirements/montage.md, lines 87–95).
- *
- * Exported for unit tests and route consumption.
- */
-export interface MontagePreset {
-  id: string;
-  label: string;
-  /** Column count, or null for the Auto preset (computed from monitor count). */
-  columns: number | null;
-}
-
-export const MONTAGE_PRESETS: readonly MontagePreset[] = [
-  { id: 'auto',  label: 'Auto',     columns: null },
-  { id: '1w',    label: '1 Wide',   columns: 1 },
-  { id: '2w',    label: '2 Wide',   columns: 2 },
-  { id: '3w',    label: '3 Wide',   columns: 3 },
-  { id: '4w',    label: '4 Wide',   columns: 4 },
-  { id: '5w',    label: '5 Wide',   columns: 5 },
-  { id: '6w',    label: '6 Wide',   columns: 6 },
-  { id: '8w',    label: '8 Wide',   columns: 8 },
-  { id: '12w',   label: '12 Wide',  columns: 12 },
-  { id: '16w',   label: '16 Wide',  columns: 16 },
-  { id: '20w',   label: '20 Wide',  columns: 20 },
-  { id: '24w',   label: '24 Wide',  columns: 24 },
-  { id: '32w',   label: '32 Wide',  columns: 32 },
-  { id: '48w',   label: '48 Wide',  columns: 48 },
-] as const;
-
-const DEFAULT_PRESET_ID = 'auto';
-
-/**
- * Replicates the legacy `montage.php` default-layout heuristic:
- *
- *   ≤3 monitors → <n> Wide (1, 2, or 3 columns)
- *   ≤4          → 2 Wide
- *   ≤6          → 3 Wide
- *   divisible by 4 → 4 Wide
- *   divisible by 6 → 6 Wide
- *   else        → 4 Wide
- *
- * Exported for unit tests.
- */
-export function autoColumns(monitorCount: number): number {
-  if (monitorCount <= 0) return 1;
-  if (monitorCount <= 3) return monitorCount;
-  if (monitorCount <= 4) return 2;
-  if (monitorCount <= 6) return 3;
-  if (monitorCount % 4 === 0) return 4;
-  if (monitorCount % 6 === 0) return 6;
-  return 4;
-}
-
-/* -------------------------------------------------------------------------- */
-/*  Component                                                                 */
-/* -------------------------------------------------------------------------- */
+import {
+  MONTAGE_PRESETS,
+  DEFAULT_PRESET_ID,
+  autoColumns,
+  type MontagePreset,
+} from './classicPresets';
 
 export interface MontageClassicGridProps {
   /** Monitors to display — usually the post-filter list from MonitorFilterBar. */
@@ -84,6 +27,7 @@ export interface MontageClassicGridProps {
  * rest of the classic skin (`ConsoleClassicTable`).
  */
 export function MontageClassicGrid({ monitors }: MontageClassicGridProps) {
+  const { t } = useTranslation();
   const [presetId, setPresetId] = useState<string>(DEFAULT_PRESET_ID);
 
   const preset = useMemo(
@@ -92,6 +36,9 @@ export function MontageClassicGrid({ monitors }: MontageClassicGridProps) {
   );
 
   const columns = preset.columns ?? autoColumns(monitors.length);
+
+  const presetLabel = (p: MontagePreset) =>
+    p.columns == null ? t('Auto') : t('{{n}} Wide', { n: p.columns });
 
   return (
     <div className="space-y-3">
@@ -102,38 +49,39 @@ export function MontageClassicGrid({ monitors }: MontageClassicGridProps) {
           className="flex items-center gap-1.5 text-xs font-semibold text-zinc-700 uppercase tracking-wide"
         >
           <LayoutGridIcon size={14} className="text-zinc-500" />
-          Layout
+          {t('Layout')}
         </label>
         <select
           id="montage-classic-layout"
           value={presetId}
           onChange={(e) => setPresetId(e.target.value)}
-          aria-label="Montage layout preset"
+          aria-label={t('Montage layout preset')}
           className="bg-white border border-zinc-300 rounded px-2 py-1 text-sm text-zinc-800 focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500"
         >
           {MONTAGE_PRESETS.map((p) => (
             <option key={p.id} value={p.id}>
-              {p.label}
+              {presetLabel(p)}
             </option>
           ))}
         </select>
-        <span className="text-xs text-zinc-500 ml-auto tabular-nums">
-          {monitors.length} monitor{monitors.length === 1 ? '' : 's'}
+        <span className="text-xs text-zinc-500 ms-auto tabular-nums">
+          {t('{{count}} monitor', { count: monitors.length })}
           {' · '}
-          {columns} column{columns === 1 ? '' : 's'}
+          {t('{{count}} column', { count: columns })}
         </span>
       </div>
 
-      {/* Grid */}
+      {/* Grid — dir="ltr": the wall is physical media and never mirrors. */}
       {monitors.length === 0 ? (
         <div
           className="bg-white rounded border border-zinc-300 p-12 text-center text-zinc-500 text-sm"
           data-testid="montage-classic-empty"
         >
-          No monitors to display.
+          {t('No monitors to display.')}
         </div>
       ) : (
         <div
+          dir="ltr"
           data-testid="montage-classic-grid"
           data-columns={columns}
           className="grid gap-2"

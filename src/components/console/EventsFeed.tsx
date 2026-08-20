@@ -1,5 +1,7 @@
 import { clsx } from 'clsx';
 import { Link } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Video, Clock, AlertTriangle } from 'lucide-react';
 import { getEventThumbnailUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
@@ -10,7 +12,7 @@ interface EventsFeedProps {
   isLoading?: boolean;
 }
 
-function formatTimeAgo(dateString: string): string {
+function formatTimeAgo(dateString: string, t: TFunction): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -18,10 +20,10 @@ function formatTimeAgo(dateString: string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${diffDays}d ago`;
+  if (diffMins < 1) return t('just now');
+  if (diffMins < 60) return t('{{count}}m ago', { count: diffMins });
+  if (diffHours < 24) return t('{{count}}h ago', { count: diffHours });
+  return t('{{count}}d ago', { count: diffDays });
 }
 
 function formatDuration(seconds?: number): string {
@@ -32,6 +34,8 @@ function formatDuration(seconds?: number): string {
 }
 
 export function EventsFeed({ events, isLoading }: EventsFeedProps) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
       <div className="space-y-3">
@@ -55,7 +59,7 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
     return (
       <div className="flex flex-col items-center justify-center py-8 text-text-muted">
         <Video size={32} className="mb-2 opacity-50" />
-        <p className="text-sm">No recent events</p>
+        <p className="text-sm">{t('No recent events')}</p>
       </div>
     );
   }
@@ -96,7 +100,7 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
             />
             {/* Score indicator */}
             {event.max_score && event.max_score > 50 && (
-              <div className="absolute top-0.5 right-0.5">
+              <div className="absolute top-0.5 end-0.5">
                 <AlertTriangle size={10} className="text-amber" />
               </div>
             )}
@@ -122,7 +126,7 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
             <div className="flex items-center gap-3 mt-0.5">
               <span className="text-xs text-text-muted flex items-center gap-1">
                 <Clock size={10} />
-                {event.start_date_time ? formatTimeAgo(event.start_date_time) : 'Unknown'}
+                {event.start_date_time ? formatTimeAgo(event.start_date_time, t) : t('Unknown')}
               </span>
               <span className="text-xs text-text-muted">
                 {formatDuration(event.length)}
@@ -142,7 +146,7 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
 
           {/* Monitor indicator */}
           <div className="text-xs font-mono text-text-dim">
-            M{event.monitor_id}
+            {t('M{{id}}', { id: event.monitor_id })}
           </div>
         </Link>
       ))}

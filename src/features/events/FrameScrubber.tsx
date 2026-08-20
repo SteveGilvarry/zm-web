@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo, useRef, type PointerEvent as ReactPointerEvent } from 'react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import { getAllFramesForEvent, type Frame } from '@/api/frames';
 
@@ -29,6 +30,7 @@ export function FrameScrubber({
   currentTimeSec,
   onSeek,
 }: FrameScrubberProps) {
+  const { t } = useTranslation();
   const trackRef = useRef<HTMLDivElement | null>(null);
 
   const { data: frames = [], isLoading } = useQuery({
@@ -98,7 +100,7 @@ export function FrameScrubber({
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-          Frame Scrubber
+          {t('Frame Scrubber')}
         </span>
         <div className="flex items-center gap-2">
           {activeFrame && (
@@ -108,7 +110,7 @@ export function FrameScrubber({
             <button
               onClick={() => seekToFrameIndex(Math.max(0, activeIndex - 1))}
               disabled={activeIndex <= 0}
-              aria-label="Previous frame"
+              aria-label={t('Previous frame')}
               className="p-1 rounded border border-border-subtle bg-surface text-text-muted hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronLeft size={12} />
@@ -116,7 +118,7 @@ export function FrameScrubber({
             <button
               onClick={() => seekToFrameIndex(Math.min(sortedFrames.length - 1, activeIndex + 1))}
               disabled={activeIndex < 0 || activeIndex >= sortedFrames.length - 1}
-              aria-label="Next frame"
+              aria-label={t('Next frame')}
               className="p-1 rounded border border-border-subtle bg-surface text-text-muted hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronRight size={12} />
@@ -129,11 +131,12 @@ export function FrameScrubber({
         <div className="h-8 rounded bg-surface animate-pulse" />
       ) : sortedFrames.length === 0 ? (
         <div className="h-8 rounded border border-border-subtle bg-surface/50 flex items-center justify-center">
-          <span className="text-[10px] text-text-muted italic">No frame data</span>
+          <span className="text-[10px] text-text-muted italic">{t('No frame data')}</span>
         </div>
       ) : (
         <div
           ref={trackRef}
+          dir="ltr"
           onPointerDown={handlePointerDown}
           onPointerMove={handlePointerMove}
           className="relative h-8 rounded border border-border-subtle bg-abyss overflow-hidden cursor-crosshair select-none"
@@ -197,6 +200,7 @@ function FrameReadout({
   frame: Frame;
   totalFrames: number;
 }) {
+  const { t } = useTranslation();
   const isAlarm = frame.type === 'Alarm' || frame.type === 'Bulk';
   return (
     <span className={clsx(
@@ -206,7 +210,7 @@ function FrameReadout({
       {isAlarm && <Zap size={10} />}
       #{frame.frame_id} / {totalFrames}
       <span className="text-text-dim">·</span>
-      <span>score {frame.score}</span>
+      <span>{t('score {{score}}', { score: frame.score })}</span>
     </span>
   );
 }

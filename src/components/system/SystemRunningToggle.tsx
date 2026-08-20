@@ -1,5 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Power, Loader2 } from 'lucide-react';
 import { getSystemStatus, systemStartup, systemShutdown } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
@@ -21,6 +22,7 @@ export function SystemRunningToggle({
   variant = 'compact',
   tone = 'dark',
 }: SystemRunningToggleProps) {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
 
@@ -43,7 +45,7 @@ export function SystemRunningToggle({
   const handleClick = () => {
     if (busy) return;
     if (running) {
-      if (confirm('Stop ZoneMinder? Recording will halt across every monitor.')) {
+      if (confirm(t('Stop ZoneMinder? Recording will halt across every monitor.'))) {
         stopMutation.mutate();
       }
     } else {
@@ -51,7 +53,7 @@ export function SystemRunningToggle({
     }
   };
 
-  const label = running === null ? '…' : running ? 'RUNNING' : 'STOPPED';
+  const label = running === null ? '…' : running ? t('Running') : t('Stopped');
 
   if (variant === 'banner') {
     return (
@@ -65,7 +67,7 @@ export function SystemRunningToggle({
             : 'border-crimson/50 bg-crimson/10 text-crimson hover:bg-crimson/20',
           busy && 'opacity-70 cursor-wait',
         )}
-        aria-label={running ? 'Stop ZoneMinder' : 'Start ZoneMinder'}
+        aria-label={running ? t('Stop ZoneMinder') : t('Start ZoneMinder')}
       >
         {busy ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
         {label}
@@ -91,7 +93,7 @@ export function SystemRunningToggle({
         baseCls,
         busy && 'opacity-70 cursor-wait',
       )}
-      aria-label={running ? 'Stop ZoneMinder' : 'Start ZoneMinder'}
+      aria-label={running ? t('Stop ZoneMinder') : t('Start ZoneMinder')}
     >
       {busy
         ? <Loader2 size={11} className="animate-spin" />

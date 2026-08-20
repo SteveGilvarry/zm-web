@@ -1,5 +1,6 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Users, X, Save, Loader2 } from 'lucide-react';
 import { getValidParentOptions } from './tree';
 import type { Group } from '@/api/groups';
@@ -40,27 +41,29 @@ export interface GroupEditDialogProps {
  * Monitor membership is intentionally NOT here — the existing main
  * route keeps that on its right panel for the selected group, which
  * sidesteps the round-trip-per-toggle UX a chip control would force.
+ *
+ * The form is keyed on the editing target and unmounted while closed, so
+ * every open (and every switch between groups) starts from fresh state
+ * without an effect re-seeding it.
  */
-export function GroupEditDialog({
-  open,
+export function GroupEditDialog({ open, editing, ...rest }: GroupEditDialogProps) {
+  if (!open) return null;
+  return <GroupEditForm key={editing?.id ?? 'new'} editing={editing} {...rest} />;
+}
+
+type GroupEditFormProps = Omit<GroupEditDialogProps, 'open'>;
+
+function GroupEditForm({
   editing,
   groups,
   onClose,
   onSubmit,
   pending = false,
   error = null,
-}: GroupEditDialogProps) {
-  const [name, setName] = useState('');
-  const [parentId, setParentId] = useState<number | null>(null);
-
-  // Re-seed the form whenever the dialog opens or the editing target changes.
-  useEffect(() => {
-    if (!open) return;
-    setName(editing?.name ?? '');
-    setParentId(editing?.parent_id ?? null);
-  }, [open, editing]);
-
-  if (!open) return null;
+}: GroupEditFormProps) {
+  const { t } = useTranslation();
+  const [name, setName] = useState(editing?.name ?? '');
+  const [parentId, setParentId] = useState<number | null>(editing?.parent_id ?? null);
 
   const options = getValidParentOptions(groups, editing?.id ?? null);
 
@@ -71,13 +74,13 @@ export function GroupEditDialog({
     onSubmit({ name: trimmed, parentId });
   };
 
-  const title = editing ? `Group — ${editing.name}` : 'New group';
+  const title = editing ? t('Group — {{name}}', { name: editing.name }) : t('New group');
 
   return (
     <div
       role="dialog"
       aria-modal="true"
-      aria-label={editing ? 'Edit group' : 'Create group'}
+      aria-label={editing ? t('Edit group') : t('Create group')}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -93,7 +96,7 @@ export function GroupEditDialog({
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('Close')}
             className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
           >
             <X size={14} />
@@ -106,14 +109,14 @@ export function GroupEditDialog({
               htmlFor="group-name"
               className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-24 flex-shrink-0"
             >
-              Name
+              {t('Name')}
             </label>
             <input
               id="group-name"
               autoFocus
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="Front Yard"
+              placeholder={t('Front Yard')}
               maxLength={64}
               className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
             />
@@ -124,7 +127,7 @@ export function GroupEditDialog({
               htmlFor="group-parent"
               className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-24 flex-shrink-0"
             >
-              Parent
+              {t('Parent')}
             </label>
             <select
               id="group-parent"
@@ -132,10 +135,10 @@ export function GroupEditDialog({
               onChange={(e) => setParentId(e.target.value === '' ? null : Number(e.target.value))}
               className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
             >
-              <option value="">— None (top level) —</option>
+              <option value="">{t('— None (top level) —')}</option>
               {options.map(({ group, depth }) => (
                 <option key={group.id} value={group.id}>
-                  {'  '.repeat(depth)}
+                  {'  '.repeat(depth)}
                   {depth > 0 ? '↳ ' : ''}
                   {group.name}
                 </option>
@@ -145,8 +148,7 @@ export function GroupEditDialog({
 
           {editing ? (
             <p className="text-[10px] text-text-muted italic">
-              Tip: changing parent on an existing group is not yet supported by the
-              backend. Set parent at creation time, or recreate the group.
+              {t('Tip: changing parent on an existing group is not yet supported by the backend. Set parent at creation time, or recreate the group.')}
             </p>
           ) : null}
 
@@ -166,7 +168,7 @@ export function GroupEditDialog({
             onClick={onClose}
             className="px-3 py-1.5 text-xs font-medium rounded border border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors"
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="submit"
@@ -179,7 +181,7 @@ export function GroupEditDialog({
             )}
           >
             {pending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-            Save
+            {t('Save')}
           </button>
         </footer>
       </form>

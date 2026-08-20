@@ -2,6 +2,7 @@ import { Wifi, WifiOff, Cpu, MemoryStick, HardDrive, Gauge } from 'lucide-react'
 import { clsx } from 'clsx';
 import { useEffect, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { getSystemStatus, getVersion } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
@@ -11,6 +12,8 @@ interface HeaderProps {
 }
 
 export function Header({ title }: HeaderProps) {
+  const { t, i18n } = useTranslation();
+  const locale = i18n.resolvedLanguage ?? i18n.language ?? undefined;
   const { isAuthenticated } = useAuthStore();
   const [currentTime, setCurrentTime] = useState(new Date());
   const [isConnected, setIsConnected] = useState(true);
@@ -70,12 +73,12 @@ export function Header({ title }: HeaderProps) {
           {/* Compact glanceable strip — same layout as before */}
           <div className="flex items-center gap-4 text-[11px] font-mono tabular-nums text-text-muted px-3 py-1.5 rounded-md border border-transparent group-hover:border-cyan/20 group-hover:bg-surface/40 transition-colors cursor-default">
             {stats.cpu_load != null && (
-              <StatItem icon={<Gauge size={11} />} label="LOAD" value={stats.cpu_load.toFixed(2)} />
+              <StatItem icon={<Gauge size={11} />} label={t("LOAD")} value={stats.cpu_load.toFixed(2)} />
             )}
             {stats.cpu_usage_percent != null && (
               <StatItem
                 icon={<Cpu size={11} />}
-                label="CPU"
+                label={t("CPU")}
                 value={`${stats.cpu_usage_percent.toFixed(0)}%`}
                 tone={stats.cpu_usage_percent > 85 ? 'warn' : 'normal'}
               />
@@ -83,7 +86,7 @@ export function Header({ title }: HeaderProps) {
             {memPct != null && (
               <StatItem
                 icon={<MemoryStick size={11} />}
-                label="MEM"
+                label={t("MEM")}
                 value={`${memPct}%`}
                 tone={memPct > 85 ? 'warn' : 'normal'}
               />
@@ -91,7 +94,7 @@ export function Header({ title }: HeaderProps) {
             {stats.disk_usage_percent != null && stats.disk_usage_percent > 0 && (
               <StatItem
                 icon={<HardDrive size={11} />}
-                label="DISK"
+                label={t("DISK")}
                 value={`${stats.disk_usage_percent.toFixed(0)}%`}
                 tone={stats.disk_usage_percent > 90 ? 'warn' : 'normal'}
               />
@@ -109,41 +112,41 @@ export function Header({ title }: HeaderProps) {
               transition-all duration-150 pointer-events-none"
           >
             <h4 className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan mb-2">
-              System
+              {t('System')}
             </h4>
             <dl className="space-y-1.5 text-[11px] font-mono">
               {stats.cpu_load != null && (
-                <DetailRow label="Load" value={stats.cpu_load.toFixed(2)} />
+                <DetailRow label={t("Load")} value={stats.cpu_load.toFixed(2)} />
               )}
               {stats.cpu_usage_percent != null && (
                 <DetailRow
-                  label="CPU"
+                  label={t("CPU")}
                   value={`${stats.cpu_usage_percent.toFixed(1)}%`}
                   tone={stats.cpu_usage_percent > 85 ? 'warn' : undefined}
                 />
               )}
               {stats.total_mem > 0 && (
                 <DetailRow
-                  label="Memory"
+                  label={t("Memory")}
                   value={`${formatBytes(stats.total_mem - stats.free_mem)} / ${formatBytes(stats.total_mem)}`}
                   tone={memPct != null && memPct > 85 ? 'warn' : undefined}
                 />
               )}
               {stats.total_swap > 0 && (
                 <DetailRow
-                  label="Swap"
+                  label={t("Swap")}
                   value={`${formatBytes(stats.total_swap - stats.free_swap)} / ${formatBytes(stats.total_swap)}`}
                 />
               )}
               {stats.total_disk > 0 && (
                 <DetailRow
-                  label="Disk"
+                  label={t("Disk")}
                   value={`${formatBytes(stats.used_disk)} / ${formatBytes(stats.total_disk)}`}
                   tone={stats.disk_usage_percent > 90 ? 'warn' : undefined}
                 />
               )}
               {version?.version && (
-                <DetailRow label="Version" value={`v${version.version}`} />
+                <DetailRow label={t("Version")} value={`v${version.version}`} />
               )}
             </dl>
           </div>
@@ -163,19 +166,19 @@ export function Header({ title }: HeaderProps) {
           {isConnected ? (
             <>
               <Wifi className="text-emerald" size={14} />
-              <span className="text-xs font-medium text-emerald">Connected</span>
+              <span className="text-xs font-medium text-emerald">{t('Connected')}</span>
             </>
           ) : (
             <>
               <WifiOff className="text-crimson" size={14} />
-              <span className="text-xs font-medium text-crimson">Disconnected</span>
+              <span className="text-xs font-medium text-crimson">{t('Disconnected')}</span>
             </>
           )}
         </div>
 
-        <div className="flex flex-col items-end">
+        <div className="flex flex-col items-end text-end">
           <span className="text-sm font-mono text-text-primary tabular-nums">
-            {currentTime.toLocaleTimeString('en-US', {
+            {currentTime.toLocaleTimeString(locale, {
               hour12: false,
               hour: '2-digit',
               minute: '2-digit',
@@ -184,7 +187,7 @@ export function Header({ title }: HeaderProps) {
           </span>
           <span className="text-[10px] font-mono text-text-muted">
             {version?.version ? `v${version.version} · ` : ''}
-            {currentTime.toLocaleDateString('en-US', {
+            {currentTime.toLocaleDateString(locale, {
               weekday: 'short',
               month: 'short',
               day: 'numeric',

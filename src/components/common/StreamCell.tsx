@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import type { CSSProperties } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
 import { useWebRtcStream } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
@@ -161,26 +162,33 @@ function StreamVideo({
   onDoubleClick,
   rotationFit,
 }: StreamVideoProps) {
-  const isConnecting = stream.state === 'connecting' || stream.state === 'signaling';
-  const isConnected = stream.state === 'connected';
-  const isFailed = stream.state === 'failed';
-  const isIdle = stream.state === 'idle';
+  const { t } = useTranslation();
+  // Pull the ref out of the hook result up front. Reading `stream.videoRef`
+  // inline taints the whole `stream` object as a ref for the React Compiler,
+  // which then rejects every later `stream.state` / `stream.error` read.
+  const { videoRef, state, error, start, stop } = stream;
+  const isConnecting = state === 'connecting' || state === 'signaling';
+  const isConnected = state === 'connected';
+  const isFailed = state === 'failed';
+  const isIdle = state === 'idle';
 
+  // Effect Event: the autostart timer must only re-arm when `autoStart`
+  // flips, never when `start` changes identity (useHlsStream rebuilds it on
+  // every state change, which would restart a connected stream).
+  const startStream = useEffectEvent(() => start());
   useEffect(() => {
     if (!autoStart) return;
     // Small delay to stagger many simultaneous connections (console/montage).
     // start() is reference-counted and idempotent per hook instance, so it is
     // safe to call even when the shared stream is already running.
-    const timer = setTimeout(() => {
-      stream.start();
-    }, 100 + Math.random() * 500);
+    const timer = setTimeout(startStream, 100 + Math.random() * 500);
     return () => clearTimeout(timer);
-  }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoStart]);
 
   const handleRetry = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stream.stop();
-    setTimeout(() => stream.start(), 200);
+    stop();
+    setTimeout(() => start(), 200);
   };
 
   // Auto-resolve fit/fill from the container's actual aspect.
@@ -208,6 +216,7 @@ function StreamVideo({
   return (
     <div
       ref={containerRef}
+      dir="ltr"
       className="relative w-full h-full bg-abyss overflow-hidden"
       onClick={onClick}
       onDoubleClick={onDoubleClick}
@@ -223,7 +232,7 @@ function StreamVideo({
               Avoids the cropping we got from swap-dimensions in a
               non-matching container. */}
       <video
-        ref={stream.videoRef}
+        ref={videoRef}
         className={clsx(
           isOrientationRotated(orientation) && effectiveFit === 'fill'
             ? 'object-contain bg-black'
@@ -247,7 +256,7 @@ function StreamVideo({
       {/* Idle state */}
       {isIdle && !autoStart && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-text-dim text-xs font-mono">OFFLINE</div>
+          <div className="text-text-dim text-xs font-mono">{t('OFFLINE')}</div>
         </div>
       )}
 
@@ -261,7 +270,7 @@ function StreamVideo({
             />
             {!compact && (
               <p className="text-xs text-text-muted mt-2">
-                {stream.state === 'signaling' ? 'Negotiating...' : 'Connecting...'}
+                {state === 'signaling' ? t('Negotiating...') : t('Connecting...')}
               </p>
             )}
           </div>
@@ -275,7 +284,7 @@ function StreamVideo({
             <AlertTriangle size={compact ? 16 : 24} className="mx-auto text-amber mb-1" />
             {!compact && (
               <p className="text-xs text-text-muted mb-2 max-w-[200px] mx-auto">
-                {stream.error || 'Stream failed'}
+                {error || t('Stream failed')}
               </p>
             )}
             <button
@@ -287,7 +296,7 @@ function StreamVideo({
               )}
             >
               <RefreshCw size={12} />
-              Retry
+              {t('Retry')}
             </button>
           </div>
         </div>
@@ -297,8 +306,8 @@ function StreamVideo({
       {isConnected && (
         <div
           className={clsx(
-            'absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60',
-            compact && 'top-1 left-1',
+            'absolute top-1.5 start-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60',
+            compact && 'top-1 start-1',
           )}
         >
           <span className="relative flex h-1.5 w-1.5">
@@ -306,7 +315,7 @@ function StreamVideo({
             <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-crimson" />
           </span>
           <span className="text-[10px] font-mono font-bold text-white">
-            LIVE
+            {t('LIVE')}
           </span>
           {!compact && (
             <span className="text-[10px] font-mono text-text-muted">
@@ -327,25 +336,25 @@ function StreamVideo({
 
       {/* Controls overlay */}
       {showControls && isConnected && (
-        <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+        <div className="absolute top-1.5 end-1.5 flex items-center gap-1">
           <button
             onClick={(e) => {
               e.stopPropagation();
-              stream.stop();
+              stop();
             }}
             className="p-1 rounded bg-black/60 text-text-muted hover:text-crimson transition-colors"
           >
-            <span className="text-[10px] font-mono font-bold">STOP</span>
+            <span className="text-[10px] font-mono font-bold">{t('STOP')}</span>
           </button>
         </div>
       )}
 
       {/* Non-fatal error toast */}
-      {stream.error && !isFailed && (
+      {error && !isFailed && (
         <div className="absolute top-1.5 left-1/2 -translate-x-1/2">
           <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber/90 text-void text-[10px] font-medium">
             <AlertTriangle size={10} />
-            {stream.error}
+            {error}
           </div>
         </div>
       )}

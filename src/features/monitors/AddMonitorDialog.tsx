@@ -1,5 +1,6 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState, type FormEvent } from 'react';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { Plus, X, Loader2, Camera } from 'lucide-react';
 import { createMonitor, type MonitorCreateInput } from '@/api/monitors-crud';
@@ -9,20 +10,28 @@ interface AddMonitorDialogProps {
   onClose: () => void;
 }
 
-const TYPES: Array<{ value: NonNullable<MonitorCreateInput['type']>; label: string; desc: string }> = [
-  { value: 'Ffmpeg',  label: 'FFmpeg',  desc: 'Generic RTSP/RTMP/HTTP via libav.' },
-  { value: 'Libvlc',  label: 'libVLC',  desc: 'libVLC backend — handy for awkward streams.' },
-  { value: 'Remote',  label: 'Remote',  desc: 'Direct HTTP MJPEG / JPEG-pull cameras.' },
-  { value: 'File',    label: 'File',    desc: 'Loop a local video file (testing).' },
-];
+type TypeOption = { value: NonNullable<MonitorCreateInput['type']>; label: string; desc: string };
+type FunctionOption = { value: NonNullable<MonitorCreateInput['function']>; label: string };
 
-const FUNCTIONS: Array<{ value: NonNullable<MonitorCreateInput['function']>; label: string }> = [
-  { value: 'Monitor', label: 'Monitor (live view only)' },
-  { value: 'Modect',  label: 'Modect (motion detect + record)' },
-  { value: 'Record',  label: 'Record (continuous)' },
-  { value: 'Mocord',  label: 'Mocord (continuous + motion-tag)' },
-  { value: 'Nodect',  label: 'Nodect (no motion, no record)' },
-];
+/** Option labels are built inside a hook so `t()` sees literal keys. */
+function useMonitorOptions(): { types: TypeOption[]; functions: FunctionOption[] } {
+  const { t } = useTranslation();
+  return {
+    types: [
+      { value: 'Ffmpeg',  label: t('FFmpeg'),  desc: t('Generic RTSP/RTMP/HTTP via libav.') },
+      { value: 'Libvlc',  label: t('libVLC'),  desc: t('libVLC backend — handy for awkward streams.') },
+      { value: 'Remote',  label: t('Remote'),  desc: t('Direct HTTP MJPEG / JPEG-pull cameras.') },
+      { value: 'File',    label: t('File'),    desc: t('Loop a local video file (testing).') },
+    ],
+    functions: [
+      { value: 'Monitor', label: t('Monitor (live view only)') },
+      { value: 'Modect',  label: t('Modect (motion detect + record)') },
+      { value: 'Record',  label: t('Record (continuous)') },
+      { value: 'Mocord',  label: t('Mocord (continuous + motion-tag)') },
+      { value: 'Nodect',  label: t('Nodect (no motion, no record)') },
+    ],
+  };
+}
 
 /**
  * Add-monitor wizard. Exposes the essentials operators actually fill in
@@ -33,6 +42,8 @@ const FUNCTIONS: Array<{ value: NonNullable<MonitorCreateInput['function']>; lab
  * time.
  */
 export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
+  const { t } = useTranslation();
+  const { types, functions } = useMonitorOptions();
   const qc = useQueryClient();
   const [form, setForm] = useState<MonitorCreateInput>({
     name: '',
@@ -66,7 +77,7 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
     e.preventDefault();
     setError(null);
     if (!form.name.trim()) {
-      setError('Name is required.');
+      setError(t('Name is required.'));
       return;
     }
     create.mutate();
@@ -76,7 +87,7 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
     <div
       role="dialog"
       aria-modal="true"
-      aria-label="Add monitor"
+      aria-label={t('Add monitor')}
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
@@ -87,12 +98,12 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
         <header className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
           <div className="flex items-center gap-2">
             <Camera size={16} className="text-cyan" />
-            <h2 className="text-sm font-semibold text-text-primary">Add monitor</h2>
+            <h2 className="text-sm font-semibold text-text-primary">{t('Add monitor')}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
-            aria-label="Close"
+            aria-label={t('Close')}
             className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
           >
             <X size={14} />
@@ -101,39 +112,39 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
 
         <div className="p-5 space-y-4">
           {/* Identity */}
-          <Row label="Name">
+          <Row label={t('Name')}>
             <input
               autoFocus
               value={form.name}
               onChange={(e) => update('name', e.target.value)}
-              placeholder="Front Door"
+              placeholder={t('Front Door')}
               className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
             />
           </Row>
 
           {/* Backend kind */}
-          <Row label="Type">
+          <Row label={t('Type')}>
             <select
               value={form.type}
               onChange={(e) => update('type', e.target.value as MonitorCreateInput['type'])}
               className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
             >
-              {TYPES.map((t) => (
-                <option key={t.value} value={t.value}>
-                  {t.label} — {t.desc}
+              {types.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label} — {opt.desc}
                 </option>
               ))}
             </select>
           </Row>
 
           {/* Function */}
-          <Row label="Function">
+          <Row label={t('Function')}>
             <select
               value={form.function}
               onChange={(e) => update('function', e.target.value as MonitorCreateInput['function'])}
               className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
             >
-              {FUNCTIONS.map((f) => (
+              {functions.map((f) => (
                 <option key={f.value} value={f.value}>{f.label}</option>
               ))}
             </select>
@@ -142,23 +153,23 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
           {/* Source */}
           <div className="space-y-2 rounded-md bg-surface/40 p-3 border border-border-subtle">
             <h3 className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-              Source
+              {t('Source')}
             </h3>
-            <Row label="Host">
+            <Row label={t('Host')}>
               <input
                 value={form.host ?? ''}
                 onChange={(e) => update('host', e.target.value)}
-                placeholder="192.168.1.100 or rtsp://…"
+                placeholder={t('192.168.1.100 or rtsp://…')}
                 className="flex-1 px-2 py-1 text-sm font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               />
               <input
                 value={form.port ?? ''}
                 onChange={(e) => update('port', e.target.value)}
-                placeholder="port"
+                placeholder={t('port')}
                 className="w-20 px-2 py-1 text-sm font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               />
             </Row>
-            <Row label="Path">
+            <Row label={t('Path')}>
               <input
                 value={form.path ?? ''}
                 onChange={(e) => update('path', e.target.value)}
@@ -166,25 +177,25 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
                 className="flex-1 px-2 py-1 text-sm font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               />
             </Row>
-            <Row label="Auth">
+            <Row label={t('Auth')}>
               <input
                 value={form.user ?? ''}
                 onChange={(e) => update('user', e.target.value)}
-                placeholder="user"
+                placeholder={t('user')}
                 className="flex-1 px-2 py-1 text-sm font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               />
               <input
                 type="password"
                 value={form.pass ?? ''}
                 onChange={(e) => update('pass', e.target.value)}
-                placeholder="pass"
+                placeholder={t('pass')}
                 className="flex-1 px-2 py-1 text-sm font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
               />
             </Row>
           </div>
 
           {/* Image */}
-          <Row label="Resolution">
+          <Row label={t('Resolution')}>
             <input
               type="number"
               value={form.width ?? ''}
@@ -213,7 +224,7 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
             onClick={onClose}
             className="px-3 py-1.5 text-xs font-medium rounded border border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors"
           >
-            Cancel
+            {t('Cancel')}
           </button>
           <button
             type="submit"
@@ -226,7 +237,7 @@ export function AddMonitorDialog({ open, onClose }: AddMonitorDialogProps) {
             )}
           >
             {create.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
-            Create monitor
+            {t('Create monitor')}
           </button>
         </footer>
       </form>

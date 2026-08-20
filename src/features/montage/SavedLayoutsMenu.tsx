@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Save, Trash2, Pencil, Bookmark } from 'lucide-react';
 import {
@@ -57,6 +58,7 @@ export interface SavedLayoutsMenuProps {
 }
 
 export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps) {
+  const { t } = useTranslation();
   const { isAuthenticated, user } = useAuthStore();
   const qc = useQueryClient();
 
@@ -110,7 +112,7 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
   });
 
   const handleSave = () => {
-    const name = window.prompt('Save layout as:');
+    const name = window.prompt(t('Save layout as:'));
     if (!name || !name.trim()) return;
     createMutation.mutate(name.trim());
   };
@@ -126,7 +128,7 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
     if (!row) return;
     const tree = parseLayout(row.positions);
     if (!tree) {
-      window.alert('That saved layout is in an unsupported format and cannot be loaded.');
+      window.alert(t('That saved layout is in an unsupported format and cannot be loaded.'));
       return;
     }
     setActiveId(id);
@@ -137,7 +139,7 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
     if (activeId == null) return;
     const current = userLayouts.find((l) => l.id === activeId);
     if (!current) return;
-    const name = window.prompt('Rename layout to:', current.name);
+    const name = window.prompt(t('Rename layout to:'), current.name);
     if (!name || !name.trim() || name.trim() === current.name) return;
     updateMutation.mutate({ id: activeId, patch: { name: name.trim() } });
   };
@@ -146,7 +148,7 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
     if (activeId == null) return;
     const current = userLayouts.find((l) => l.id === activeId);
     if (!current) return;
-    if (!window.confirm(`Delete saved layout "${current.name}"?`)) return;
+    if (!window.confirm(t('Delete saved layout "{{name}}"?', { name: current.name }))) return;
     deleteMutation.mutate(activeId);
   };
 
@@ -154,15 +156,15 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
 
   return (
     <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
-      <Bookmark size={14} className="ml-2 text-text-muted" aria-hidden="true" />
+      <Bookmark size={14} className="ms-2 text-text-muted" aria-hidden="true" />
 
       <select
-        aria-label="Saved layouts"
+        aria-label={t('Saved layouts')}
         value={activeId ?? ''}
         onChange={handleSelect}
         className="bg-transparent px-2 py-1 text-[11px] font-mono text-text-secondary hover:text-cyan focus:outline-none focus:text-cyan transition-colors"
       >
-        <option value="">Saved layouts…</option>
+        <option value="">{t('Saved layouts…')}</option>
         {userLayouts.map((l) => (
           <option key={l.id} value={l.id}>
             {l.name}
@@ -175,10 +177,10 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
         onClick={handleSave}
         disabled={createMutation.isPending}
         className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono font-medium text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors disabled:opacity-50"
-        title="Save current arrangement as a new named layout"
+        title={t('Save current arrangement as a new named layout')}
       >
         <Save size={12} />
-        Save
+        {t('Save')}
       </button>
 
       <button
@@ -186,10 +188,12 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
         onClick={handleRename}
         disabled={activeId == null || updateMutation.isPending}
         className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono font-medium text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-muted"
-        title={activeLayout ? `Rename "${activeLayout.name}"` : 'Load a layout to rename it'}
+        title={activeLayout
+          ? t('Rename "{{name}}"', { name: activeLayout.name })
+          : t('Load a layout to rename it')}
       >
         <Pencil size={12} />
-        Rename
+        {t('Rename')}
       </button>
 
       <button
@@ -197,14 +201,13 @@ export function SavedLayoutsMenu({ currentTree, onLoad }: SavedLayoutsMenuProps)
         onClick={handleDelete}
         disabled={activeId == null || deleteMutation.isPending}
         className="flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono font-medium text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-muted"
-        title={activeLayout ? `Delete "${activeLayout.name}"` : 'Load a layout to delete it'}
+        title={activeLayout
+          ? t('Delete "{{name}}"', { name: activeLayout.name })
+          : t('Load a layout to delete it')}
       >
         <Trash2 size={12} />
-        Delete
+        {t('Delete')}
       </button>
     </div>
   );
 }
-
-// Exported for tests.
-export const __test = { serialise, parseLayout };

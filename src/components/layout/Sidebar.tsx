@@ -1,4 +1,5 @@
-import { Link, useRouterState } from '@tanstack/react-router';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
   Monitor,
@@ -15,7 +16,6 @@ import {
   Filter as FilterIcon,
   FileText,
   ShieldCheck,
-  Key,
   Power,
   LogOut,
   ChevronLeft,
@@ -24,6 +24,7 @@ import {
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
+import { logout as apiLogout } from '@/api/auth';
 
 interface NavItem {
   label: string;
@@ -32,45 +33,55 @@ interface NavItem {
   badge?: number;
 }
 
-const navItems: NavItem[] = [
-  { label: 'Console', icon: <LayoutDashboard size={20} />, path: '/' },
-  { label: 'Monitors', icon: <Monitor size={20} />, path: '/monitors' },
-  { label: 'Events', icon: <Video size={20} />, path: '/events' },
-  { label: 'Montage', icon: <LayoutGrid size={20} />, path: '/montage' },
-  { label: 'Review', icon: <Film size={20} />, path: '/montagereview' },
-  { label: 'Cycle', icon: <RefreshCcw size={20} />, path: '/cycle' },
-  { label: 'Groups', icon: <UsersRound size={20} />, path: '/groups' },
-  { label: 'Filters', icon: <FilterIcon size={20} />, path: '/filters' },
-  { label: 'Reports', icon: <FileText size={20} />, path: '/reports' },
-  { label: 'Audit', icon: <ShieldCheck size={20} />, path: '/audit' },
-  { label: 'Log', icon: <ScrollText size={20} />, path: '/logs' },
-];
-
-const settingsItems: NavItem[] = [
-  { label: 'Settings', icon: <Settings size={20} />, path: '/settings' },
-  { label: 'Storage', icon: <HardDrive size={20} />, path: '/settings/storage' },
-  { label: 'Users', icon: <Users size={20} />, path: '/settings/users' },
-  { label: 'Servers', icon: <Shield size={20} />, path: '/settings/servers' },
-  { label: 'API Tokens', icon: <Key size={20} />, path: '/settings/sessions' },
-  { label: 'Run State', icon: <Power size={20} />, path: '/settings/state' },
-];
+/** Nav labels are built inside a hook so `t()` sees literal keys. */
+function useNavItems(): { main: NavItem[]; settings: NavItem[] } {
+  const { t } = useTranslation();
+  return {
+    main: [
+      { label: t('Console'), icon: <LayoutDashboard size={20} />, path: '/' },
+      { label: t('Monitors'), icon: <Monitor size={20} />, path: '/monitors' },
+      { label: t('Events'), icon: <Video size={20} />, path: '/events' },
+      { label: t('Montage'), icon: <LayoutGrid size={20} />, path: '/montage' },
+      { label: t('Review'), icon: <Film size={20} />, path: '/montagereview' },
+      { label: t('Cycle'), icon: <RefreshCcw size={20} />, path: '/cycle' },
+      { label: t('Groups'), icon: <UsersRound size={20} />, path: '/groups' },
+      { label: t('Filters'), icon: <FilterIcon size={20} />, path: '/filters' },
+      { label: t('Reports'), icon: <FileText size={20} />, path: '/reports' },
+      { label: t('Audit'), icon: <ShieldCheck size={20} />, path: '/audit' },
+      { label: t('Log'), icon: <ScrollText size={20} />, path: '/logs' },
+    ],
+    settings: [
+      { label: t('Settings'), icon: <Settings size={20} />, path: '/settings' },
+      { label: t('Storage'), icon: <HardDrive size={20} />, path: '/settings/storage' },
+      { label: t('Users'), icon: <Users size={20} />, path: '/settings/users' },
+      { label: t('Servers'), icon: <Shield size={20} />, path: '/settings/servers' },
+      { label: t('Run State'), icon: <Power size={20} />, path: '/settings/state' },
+    ],
+  };
+}
 
 export function Sidebar() {
+  const { t } = useTranslation();
   const { sidebarCollapsed: collapsed, toggleSidebar } = useUiStore();
   const router = useRouterState();
+  const navigate = useNavigate();
   const currentPath = router.location.pathname;
   const { user, clearAuth } = useAuthStore();
+  const { main: navItems, settings: settingsItems } = useNavItems();
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    // Tell the backend first (best effort — a dead backend must not trap
+    // the operator in a logged-in UI), then drop local state and navigate.
+    await apiLogout().catch(() => undefined);
     clearAuth();
-    window.location.href = '/login';
+    void navigate({ to: '/login' });
   };
 
   return (
     <aside
       className={clsx(
-        'fixed left-0 top-0 z-40 h-screen flex flex-col',
-        'bg-surface border-r border-border-subtle',
+        'fixed start-0 top-0 z-40 h-screen flex flex-col',
+        'bg-surface border-e border-border-subtle',
         'transition-all duration-300 ease-out-expo',
         collapsed ? 'w-16' : 'w-56'
       )}
@@ -90,9 +101,12 @@ export function Sidebar() {
 
       {/* Collapse toggle */}
       <button
+        type="button"
         onClick={toggleSidebar}
+        aria-label={collapsed ? t('Expand sidebar') : t('Collapse sidebar')}
+        aria-expanded={!collapsed}
         className={clsx(
-          'absolute -right-3 top-20 z-50',
+          'absolute -end-3 top-20 z-50',
           'w-6 h-6 rounded-full',
           'bg-panel border border-border',
           'flex items-center justify-center',
@@ -101,11 +115,13 @@ export function Sidebar() {
           'hover:bg-elevated'
         )}
       >
-        {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        {collapsed
+          ? <ChevronRight size={14} className="rtl:-scale-x-100" />
+          : <ChevronLeft size={14} className="rtl:-scale-x-100" />}
       </button>
 
       {/* Main navigation */}
-      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
+      <nav aria-label={t('Main')} className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
         <div className="space-y-1">
           {navItems.map((item) => (
             <NavLink
@@ -151,16 +167,18 @@ export function Sidebar() {
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-text-primary truncate">
-                {user?.user || 'Unknown'}
+                {user?.user || t('Unknown')}
               </p>
             </div>
           )}
           <button
+            type="button"
             onClick={handleLogout}
             className="p-1.5 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
-            title="Logout"
+            title={t('Log out')}
+            aria-label={t('Log out')}
           >
-            <LogOut size={16} />
+            <LogOut size={16} className="rtl:-scale-x-100" />
           </button>
         </div>
       </div>
@@ -180,6 +198,7 @@ function NavLink({
   return (
     <Link
       to={item.path}
+      aria-current={isActive ? 'page' : undefined}
       className={clsx(
         'flex items-center gap-3 px-3 py-2.5 rounded-lg',
         'transition-all duration-fast',
@@ -191,7 +210,7 @@ function NavLink({
     >
       {/* Active indicator */}
       {isActive && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan rounded-r" />
+        <div className="absolute start-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan rounded-e" />
       )}
 
       <span
@@ -208,7 +227,7 @@ function NavLink({
       )}
 
       {!collapsed && item.badge !== undefined && item.badge > 0 && (
-        <span className="ml-auto px-2 py-0.5 text-xs font-mono bg-crimson/20 text-crimson rounded">
+        <span className="ms-auto px-2 py-0.5 text-xs font-mono bg-crimson/20 text-crimson rounded">
           {item.badge}
         </span>
       )}
@@ -216,8 +235,9 @@ function NavLink({
       {/* Tooltip for collapsed state */}
       {collapsed && (
         <div
+          role="tooltip"
           className={clsx(
-            'absolute left-full ml-2 px-2 py-1 rounded',
+            'absolute start-full ms-2 px-2 py-1 rounded',
             'bg-elevated text-text-primary text-sm font-medium',
             'opacity-0 invisible group-hover:opacity-100 group-hover:visible',
             'transition-all duration-fast',

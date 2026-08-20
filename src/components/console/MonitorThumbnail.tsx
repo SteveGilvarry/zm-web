@@ -1,4 +1,5 @@
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Video, VideoOff, AlertTriangle, Circle } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import type { Monitor, StreamProtocol } from '@/types';
@@ -24,15 +25,6 @@ interface MonitorThumbnailProps {
   width?: number;
 }
 
-export const MONITOR_TILE_COLUMN_WIDTH = 280;
-// rowSpanForMonitor kept for any callers; returns 0 to opt out of grid
-// row-span sizing. We let each tile take its natural content height
-// instead — the previous masonry math under-allocated and produced
-// hundreds of pixels of dead space below each tile.
-export function rowSpanForMonitor(_monitor: Monitor): number {
-  return 0;
-}
-
 export function MonitorThumbnail({
   monitor,
   isStreaming = false,
@@ -43,6 +35,7 @@ export function MonitorThumbnail({
   hourly,
   width,
 }: MonitorThumbnailProps) {
+  const { t } = useTranslation();
   const isEnabled = monitor.capturing !== 'None';
   const rotated = isOrientationRotated(monitor.orientation);
   const effW = rotated ? (monitor.height || 9)  : (monitor.width || 16);
@@ -82,13 +75,13 @@ export function MonitorThumbnail({
             {(hasMotion || hasAlarm) && (
               <div
                 className={clsx(
-                  'absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded z-10',
+                  'absolute top-2 end-2 flex items-center gap-1 px-2 py-1 rounded z-10',
                   hasAlarm ? 'bg-crimson/80' : 'bg-amber/80'
                 )}
               >
                 <AlertTriangle size={12} className="text-white" />
                 <span className="text-xs font-bold text-white">
-                  {hasAlarm ? 'ALARM' : 'MOTION'}
+                  {hasAlarm ? t('ALARM') : t('MOTION')}
                 </span>
               </div>
             )}
@@ -115,24 +108,24 @@ export function MonitorThumbnail({
             {(hasMotion || hasAlarm) && (
               <div
                 className={clsx(
-                  'absolute top-2 right-2 flex items-center gap-1 px-2 py-1 rounded',
+                  'absolute top-2 end-2 flex items-center gap-1 px-2 py-1 rounded',
                   hasAlarm ? 'bg-crimson/80' : 'bg-amber/80'
                 )}
               >
                 <AlertTriangle size={12} className="text-white" />
                 <span className="text-xs font-bold text-white">
-                  {hasAlarm ? 'ALARM' : 'MOTION'}
+                  {hasAlarm ? t('ALARM') : t('MOTION')}
                 </span>
               </div>
             )}
 
             {isStreaming && (
-              <div className="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60">
+              <div className="absolute top-2 start-2 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60">
                 <span className="relative flex h-2 w-2">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
                   <span className="relative inline-flex rounded-full h-2 w-2 bg-crimson" />
                 </span>
-                <span className="text-xs font-mono font-bold text-white">LIVE</span>
+                <span className="text-xs font-mono font-bold text-white">{t('LIVE')}</span>
               </div>
             )}
           </>
@@ -152,7 +145,7 @@ export function MonitorThumbnail({
               'flex-shrink-0 w-1.5 h-1.5 rounded-full',
               isEnabled ? 'bg-emerald' : 'bg-text-muted',
             )}
-            aria-label={isEnabled ? 'Capturing' : 'Idle'}
+            aria-label={isEnabled ? t('Capturing') : t('Idle')}
           />
           <span className="text-[12px] font-medium text-text-primary truncate flex-1">
             {monitor.name}
@@ -174,32 +167,33 @@ interface ActivityCountersProps {
 }
 
 function ActivityCounters({ summary }: ActivityCountersProps) {
+  const { t } = useTranslation();
   // Render even when summary is loading — empty slots reserve the space so
   // the card height doesn't pop in. Disk space appears as a tooltip on
   // hover so we don't blow the tile height.
   return (
     <div className="flex items-center justify-between text-[10px] font-mono tabular-nums">
       <Counter
-        label="1H"
+        label={t('1H')}
         value={summary?.hour_events}
         title={summary && summary.hour_event_disk_space > 0
-          ? `${formatBytes(summary.hour_event_disk_space)} in last hour` : undefined}
+          ? t('{{size}} in last hour', { size: formatBytes(summary.hour_event_disk_space) }) : undefined}
         tone="cyan"
       />
       <span className="text-text-dim/50">·</span>
       <Counter
-        label="24H"
+        label={t('24H')}
         value={summary?.day_events}
         title={summary && summary.day_event_disk_space > 0
-          ? `${formatBytes(summary.day_event_disk_space)} today` : undefined}
+          ? t('{{size}} today', { size: formatBytes(summary.day_event_disk_space) }) : undefined}
         tone="amber"
       />
       <span className="text-text-dim/50">·</span>
       <Counter
-        label="7D"
+        label={t('7D')}
         value={summary?.week_events}
         title={summary && summary.week_event_disk_space > 0
-          ? `${formatBytes(summary.week_event_disk_space)} this week` : undefined}
+          ? t('{{size}} this week', { size: formatBytes(summary.week_event_disk_space) }) : undefined}
         tone="muted"
       />
     </div>
@@ -232,10 +226,11 @@ interface SparklineProps {
  * 1H/24H/7D counters below — they carry the absolute numbers.
  */
 function Sparkline({ hourly }: SparklineProps) {
+  const { t } = useTranslation();
   // Distinct loading + empty states.
   if (hourly == null) {
     return (
-      <div className="h-4 rounded-sm bg-surface/60 animate-pulse" aria-label="Loading activity" />
+      <div className="h-4 rounded-sm bg-surface/60 animate-pulse" aria-label={t('Loading activity')} />
     );
   }
 
@@ -244,7 +239,7 @@ function Sparkline({ hourly }: SparklineProps) {
     return (
       <div className="h-4 flex items-center text-[9px] font-mono text-text-dim italic">
         <span className="flex-1 border-t border-text-dim/20" aria-hidden />
-        <span className="px-2">quiet · 24h</span>
+        <span className="px-2">{t('quiet · 24h')}</span>
         <span className="flex-1 border-t border-text-dim/20" aria-hidden />
       </div>
     );
@@ -253,11 +248,14 @@ function Sparkline({ hourly }: SparklineProps) {
   // Bars in pixel space — no viewBox stretching. Oldest on the left,
   // newest on the right; source array is newest-first so we iterate in
   // reverse to render.
+  // dir="ltr": a timeline is physical media — oldest stays on the left in
+  // RTL locales too.
   return (
     <div
+      dir="ltr"
       className="flex items-end gap-[1px] h-4"
       role="img"
-      aria-label={`24-hour event activity, peak ${peak} events per hour`}
+      aria-label={t('24-hour event activity, peak {{count}} events per hour', { count: peak })}
     >
       {[...hourly].reverse().map((v, idx) => {
         const hoursAgo = 23 - idx;
@@ -269,7 +267,7 @@ function Sparkline({ hourly }: SparklineProps) {
           <div key={hoursAgo} className="flex-1 h-full relative">
             {v > 0 && (
               <div
-                className="absolute bottom-0 left-0 right-0 rounded-t-[1px] bg-cyan"
+                className="absolute bottom-0 start-0 end-0 rounded-t-[1px] bg-cyan"
                 style={{
                   height: `${Math.max(heightPct, 6)}%`,
                   opacity,
@@ -277,8 +275,8 @@ function Sparkline({ hourly }: SparklineProps) {
               >
                 <title>
                   {hoursAgo === 0
-                    ? `last hour · ${v} event${v === 1 ? '' : 's'}`
-                    : `${hoursAgo}h ago · ${v} event${v === 1 ? '' : 's'}`}
+                    ? t('last hour · {{count}} event', { count: v })
+                    : t('{{hours}}h ago · {{count}} event', { hours: hoursAgo, count: v })}
                 </title>
               </div>
             )}
@@ -289,8 +287,8 @@ function Sparkline({ hourly }: SparklineProps) {
           read the direction correctly without a label. */}
       <span
         aria-hidden
-        title="now"
-        className="ml-0.5 w-1 h-1 rounded-full bg-cyan self-end shadow-[0_0_4px_var(--color-cyan)]"
+        title={t('now')}
+        className="ms-0.5 w-1 h-1 rounded-full bg-cyan self-end shadow-[0_0_4px_var(--color-cyan)]"
       />
     </div>
   );

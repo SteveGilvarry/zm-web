@@ -1,6 +1,7 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Eye, X, Loader2, Archive, Trash2 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 
@@ -23,6 +24,7 @@ interface MatchesPreviewProps {
  * the legacy ZM filter UI's 'List Matches' and 'Execute' controls.
  */
 export function MatchesPreview({ query, autoArchive, autoDelete }: MatchesPreviewProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
   const [open, setOpen] = useState(false);
 
@@ -71,7 +73,7 @@ export function MatchesPreview({ query, autoArchive, autoDelete }: MatchesPrevie
           )}
         >
           {open ? <X size={11} /> : <Eye size={11} />}
-          {open ? 'Hide matches' : 'List matches'}
+          {open ? t('Hide matches') : t('List matches')}
         </button>
 
         {hasAction && (
@@ -79,11 +81,13 @@ export function MatchesPreview({ query, autoArchive, autoDelete }: MatchesPrevie
             type="button"
             onClick={() => {
               if (matches.length === 0) {
-                alert('No matches to act on.');
+                alert(t('No matches to act on.'));
                 return;
               }
-              const action = autoDelete ? 'delete' : 'archive';
-              if (confirm(`Run "${action}" on ${matches.length} matching events? This can't be undone.`)) {
+              const prompt = autoDelete
+                ? t("Delete {{count}} matching events? This can't be undone.", { count: matches.length })
+                : t("Archive {{count}} matching events? This can't be undone.", { count: matches.length });
+              if (confirm(prompt)) {
                 executeMutation.mutate();
               }
             }}
@@ -99,15 +103,19 @@ export function MatchesPreview({ query, autoArchive, autoDelete }: MatchesPrevie
             {executeMutation.isPending
               ? <Loader2 size={11} className="animate-spin" />
               : autoDelete ? <Trash2 size={11} /> : <Archive size={11} />}
-            Execute now
+            {t('Execute now')}
           </button>
         )}
 
         {open && (
-          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted ml-1">
+          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted ms-1">
             {eventsQ.isFetching
-              ? 'loading…'
-              : `${matches.length} of ${eventsQ.data?.items.length ?? 0} (last 200) match`}
+              ? t('loading…')
+              : t('{{matched}} of {{total}} (last {{limit}}) match', {
+                  matched: matches.length,
+                  total: eventsQ.data?.items.length ?? 0,
+                  limit: 200,
+                })}
           </span>
         )}
       </div>
@@ -117,11 +125,11 @@ export function MatchesPreview({ query, autoArchive, autoDelete }: MatchesPrevie
           {eventsQ.isLoading ? (
             <div className="p-6 flex items-center justify-center gap-2 text-text-muted text-xs">
               <Loader2 size={12} className="animate-spin" />
-              Loading candidate events…
+              {t('Loading candidate events…')}
             </div>
           ) : matches.length === 0 ? (
             <div className="p-6 text-center text-text-muted text-xs italic">
-              No events match these conditions yet.
+              {t('No events match these conditions yet.')}
             </div>
           ) : (
             <ul className="divide-y divide-border-subtle/40 max-h-60 overflow-y-auto">
@@ -145,13 +153,13 @@ export function MatchesPreview({ query, autoArchive, autoDelete }: MatchesPrevie
                       : ''}
                   </span>
                   {e.archived === 1 && (
-                    <span className="text-[10px] text-amber">archived</span>
+                    <span className="text-[10px] text-amber">{t('archived')}</span>
                   )}
                 </li>
               ))}
               {matches.length > 50 && (
                 <li className="px-3 py-2 text-[10px] text-text-muted text-center italic">
-                  …and {matches.length - 50} more not shown
+                  {t('…and {{count}} more not shown', { count: matches.length - 50 })}
                 </li>
               )}
             </ul>

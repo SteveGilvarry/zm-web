@@ -1,10 +1,12 @@
 import { Link } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 import { Archive, Download, Tag as TagIcon } from 'lucide-react';
 import type { ZmEvent } from '@/types';
 import { useEventsColumnsStore, type EventsColumnKey } from '@/stores/eventsColumns';
 import { getEventVideoUrl } from '@/api/events';
 import { formatBytes } from '@/lib/format';
 import { eventDurationSeconds, formatDuration, sumEventDurations, sumEventDiskSpace } from './duration';
+import { useEventsColumnLabels } from './columnLabels';
 
 interface ClassicEventsTableProps {
   events: ZmEvent[];
@@ -29,12 +31,14 @@ interface ClassicEventsTableProps {
 export function ClassicEventsTable({
   events, monitorLookup, selectedIds, onToggleSelected, token,
 }: ClassicEventsTableProps) {
+  const { t } = useTranslation();
+  const labels = useEventsColumnLabels();
   const isVisible = useEventsColumnsStore((s) => s.isVisible);
 
   if (events.length === 0) {
     return (
       <div className="bg-white border border-zinc-300 rounded p-12 text-center text-zinc-500">
-        No events match the current filters.
+        {t('No events match the current filters.')}
       </div>
     );
   }
@@ -71,29 +75,29 @@ export function ClassicEventsTable({
       <table className="w-full text-sm text-zinc-800">
         <thead className="bg-zinc-100 border-b border-zinc-300 text-[11px] uppercase tracking-wider">
           <tr>
-            <th className="px-3 py-2 w-8 text-left">
+            <th className="px-3 py-2 w-8 text-start">
               <input
                 type="checkbox"
                 checked={allSelected}
                 onChange={toggleAll}
-                aria-label="Select all events"
+                aria-label={t('Select all events')}
                 className="cursor-pointer"
               />
             </th>
-            {isVisible('id') && <Th>ID</Th>}
-            {isVisible('monitor') && <Th>Monitor</Th>}
-            {isVisible('name') && <Th>Name</Th>}
-            {isVisible('cause') && <Th>Cause</Th>}
-            {isVisible('time') && <Th>Time</Th>}
-            {isVisible('duration') && <Th numeric>Duration</Th>}
-            {isVisible('frames') && <Th numeric>Frames</Th>}
-            {isVisible('alarm_frames') && <Th numeric>Alarm</Th>}
-            {isVisible('tot_score') && <Th numeric>Tot</Th>}
-            {isVisible('avg_score') && <Th numeric>Avg</Th>}
-            {isVisible('max_score') && <Th numeric>Max</Th>}
-            {isVisible('tags') && <Th>Tags</Th>}
-            {isVisible('disk_space') && <Th numeric>DiskSpace</Th>}
-            {isVisible('archived') && <Th>Archived</Th>}
+            {isVisible('id') && <Th>{labels.id}</Th>}
+            {isVisible('monitor') && <Th>{labels.monitor}</Th>}
+            {isVisible('name') && <Th>{labels.name}</Th>}
+            {isVisible('cause') && <Th>{labels.cause}</Th>}
+            {isVisible('time') && <Th>{labels.time}</Th>}
+            {isVisible('duration') && <Th numeric>{labels.duration}</Th>}
+            {isVisible('frames') && <Th numeric>{labels.frames}</Th>}
+            {isVisible('alarm_frames') && <Th numeric>{labels.alarm_frames}</Th>}
+            {isVisible('tot_score') && <Th numeric>{labels.tot_score}</Th>}
+            {isVisible('avg_score') && <Th numeric>{labels.avg_score}</Th>}
+            {isVisible('max_score') && <Th numeric>{labels.max_score}</Th>}
+            {isVisible('tags') && <Th>{labels.tags}</Th>}
+            {isVisible('disk_space') && <Th numeric>{labels.disk_space}</Th>}
+            {isVisible('archived') && <Th>{labels.archived}</Th>}
             <Th>{/* Download */}</Th>
           </tr>
         </thead>
@@ -120,14 +124,14 @@ export function ClassicEventsTable({
               {/* Leading label cell: covers the checkbox + every visible column
                   up to (but not including) the first totalled column. */}
               <td
-                className="px-3 py-2 font-semibold text-zinc-700 text-right"
+                className="px-3 py-2 font-semibold text-zinc-700 text-end"
                 colSpan={1 + (durationCol >= 0 ? durationCol : diskCol)}
               >
-                Totals ({events.length} rows)
+                {t('Totals ({{count}} rows)', { count: events.length })}
               </td>
               {durationCol >= 0 && (
                 <td
-                  className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-zinc-800"
+                  className="px-3 py-2 text-end font-mono tabular-nums font-semibold text-zinc-800"
                   data-testid="events-total-duration"
                 >
                   {formatDuration(totalDurationSec)}
@@ -140,7 +144,7 @@ export function ClassicEventsTable({
               )}
               {diskCol >= 0 && (
                 <td
-                  className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-zinc-800"
+                  className="px-3 py-2 text-end font-mono tabular-nums font-semibold text-zinc-800"
                   data-testid="events-total-disk-space"
                 >
                   {formatBytes(totalDiskSpace)}
@@ -175,7 +179,7 @@ function Th({
     <th
       className={
         'px-3 py-2 font-semibold ' +
-        (numeric ? 'text-right' : 'text-left')
+        (numeric ? 'text-end' : 'text-start')
       }
     >
       {children}
@@ -196,6 +200,7 @@ function Row({
   onToggleSelected: () => void;
   token?: string | null;
 }) {
+  const { t } = useTranslation();
   const isVisible = useEventsColumnsStore((s) => s.isVisible);
   const start = event.start_date_time ? new Date(event.start_date_time) : null;
   const durationSec = eventDurationSeconds(event.length);
@@ -212,7 +217,7 @@ function Row({
           type="checkbox"
           checked={isSelected}
           onChange={onToggleSelected}
-          aria-label={`Select event ${event.id}`}
+          aria-label={t('Select event {{id}}', { id: event.id })}
           className="cursor-pointer"
         />
       </td>
@@ -229,7 +234,7 @@ function Row({
       )}
       {isVisible('monitor') && (
         <td className="px-3 py-1.5 text-zinc-700 truncate max-w-[10rem]">
-          {monitorName ?? `Monitor ${event.monitor_id}`}
+          {monitorName ?? t('Monitor {{id}}', { id: event.monitor_id })}
         </td>
       )}
       {isVisible('name') && (
@@ -261,26 +266,26 @@ function Row({
         </td>
       )}
       {isVisible('duration') && (
-        <td className="px-3 py-1.5 text-right font-mono">
+        <td className="px-3 py-1.5 text-end font-mono">
           {durationSec > 0 ? formatDuration(durationSec) : '—'}
         </td>
       )}
       {isVisible('frames') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums">{event.frames ?? 0}</td>
+        <td className="px-3 py-1.5 text-end font-mono tabular-nums">{event.frames ?? 0}</td>
       )}
       {isVisible('alarm_frames') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-red-600">
+        <td className="px-3 py-1.5 text-end font-mono tabular-nums text-red-600">
           {event.alarm_frames ?? 0}
         </td>
       )}
       {isVisible('tot_score') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums">{event.tot_score ?? 0}</td>
+        <td className="px-3 py-1.5 text-end font-mono tabular-nums">{event.tot_score ?? 0}</td>
       )}
       {isVisible('avg_score') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums">{event.avg_score ?? 0}</td>
+        <td className="px-3 py-1.5 text-end font-mono tabular-nums">{event.avg_score ?? 0}</td>
       )}
       {isVisible('max_score') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-amber-600">
+        <td className="px-3 py-1.5 text-end font-mono tabular-nums text-amber-600">
           {event.max_score ?? 0}
         </td>
       )}
@@ -288,13 +293,13 @@ function Row({
         <td className="px-3 py-1.5">
           {event.tags && event.tags.length > 0 ? (
             <div className="flex flex-wrap gap-1">
-              {event.tags.map((t) => (
+              {event.tags.map((tag) => (
                 <span
-                  key={t.id}
+                  key={tag.id}
                   className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[10px] bg-cyan-50 border border-cyan-300 text-cyan-700"
                 >
                   <TagIcon size={9} />
-                  {t.name}
+                  {tag.name}
                 </span>
               ))}
             </div>
@@ -304,7 +309,7 @@ function Row({
         </td>
       )}
       {isVisible('disk_space') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-600">
+        <td className="px-3 py-1.5 text-end font-mono tabular-nums text-zinc-600">
           {event.disk_space ? formatBytes(event.disk_space) : '—'}
         </td>
       )}
@@ -312,21 +317,21 @@ function Row({
         <td className="px-3 py-1.5">
           {event.archived === 1 ? (
             <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-amber-50 border border-amber-300 text-amber-700">
-              Arch
+              {t('Arch')}
             </span>
           ) : (
             <span className="text-zinc-400">—</span>
           )}
         </td>
       )}
-      <td className="px-3 py-1.5 text-right">
+      <td className="px-3 py-1.5 text-end">
         <a
           href={getEventVideoUrl(event.id, token ?? undefined)}
           target="_blank"
           rel="noopener noreferrer"
           download={`event-${event.id}.mp4`}
-          aria-label={`Download video for event ${event.id}`}
-          title="Download video"
+          aria-label={t('Download video for event {{id}}', { id: event.id })}
+          title={t('Download video')}
           className="inline-flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-cyan-700 hover:bg-zinc-100 transition-colors"
           onClick={(e) => e.stopPropagation()}
         >

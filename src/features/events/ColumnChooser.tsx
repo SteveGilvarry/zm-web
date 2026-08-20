@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Columns3, Check } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import {
   EVENTS_COLUMNS,
   useEventsColumnsStore,
   type EventsColumnKey,
 } from '@/stores/eventsColumns';
+import { useEventsColumnLabels } from './columnLabels';
 
 interface ColumnChooserProps {
   /** Style hint — `classic` renders an outlined zinc button to match the
@@ -19,6 +21,8 @@ interface ColumnChooserProps {
  * lives in `useEventsColumnsStore` (localStorage) so choices survive reloads.
  */
 export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
+  const { t } = useTranslation();
+  const labels = useEventsColumnLabels();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hidden = useEventsColumnsStore((s) => s.hidden);
@@ -60,7 +64,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
         className={buttonCls}
       >
         <Columns3 size={14} />
-        Columns
+        {t('Columns')}
         <span className={clsx('font-mono text-xs', variant === 'classic' ? 'text-zinc-500' : 'text-text-muted')}>
           ({visibleCount})
         </span>
@@ -71,7 +75,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
             const visible = !isHidden(col.key);
             return (
               <label key={col.key} className={itemCls}>
-                <span>{col.label}</span>
+                <span>{labels[col.key]}</span>
                 <span
                   className={clsx(
                     'inline-flex items-center justify-center w-4 h-4 rounded border',
@@ -87,7 +91,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
                   className="sr-only"
                   checked={visible}
                   onChange={() => toggle(col.key)}
-                  aria-label={`Toggle column ${col.label}`}
+                  aria-label={t('Toggle column {{column}}', { column: labels[col.key] })}
                 />
               </label>
             );
@@ -106,7 +110,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
                 variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-cyan',
               )}
             >
-              Show all
+              {t('Show all')}
             </button>
             <button
               type="button"
@@ -116,7 +120,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
                 variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-cyan',
               )}
             >
-              Defaults
+              {t('Defaults')}
             </button>
           </div>
         </div>

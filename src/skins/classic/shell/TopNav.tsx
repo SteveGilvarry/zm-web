@@ -1,30 +1,53 @@
-import { Link, useLocation } from '@tanstack/react-router';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
+import {
+  LayoutDashboard, RefreshCcw, LayoutGrid, Film, Video, Settings, ScrollText,
+  UsersRound, Filter as FilterIcon, FileText, ShieldCheck, UserRound, LogOut,
+} from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { logout as apiLogout } from '@/api/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
 
-// Mirrors the legacy ZoneMinder top navigation. Items map to either existing
-// routes or future ones (some 404 until later phases land them).
-const NAV_ITEMS: Array<{ icon: string; label: string; to: string }> = [
-  { icon: 'dashboard', label: 'Console', to: '/' },
-  { icon: 'menu', label: 'Cycle', to: '/cycle' },
-  { icon: 'live_tv', label: 'Montage', to: '/montage' },
-  { icon: 'movie', label: 'Montage Review', to: '/montagereview' },
-  { icon: 'event', label: 'Events', to: '/events' },
-  { icon: 'settings', label: 'Options', to: '/settings' },
-  { icon: 'notification_important', label: 'Log', to: '/logs' },
-  { icon: 'group', label: 'Groups', to: '/groups' },
-  { icon: 'filter_alt', label: 'Filters', to: '/filters' },
-  { icon: 'report', label: 'Reports', to: '/reports' },
-  { icon: 'shield', label: 'Audit', to: '/audit' },
-];
+/**
+ * Classic ZoneMinder top navigation. Same items, order and labels as the
+ * legacy navbar (`getNavBarHTML`), monochrome icons in place of Material
+ * Icons.
+ */
+function useNavItems(): Array<{ icon: ReactNode; label: string; to: string }> {
+  const { t } = useTranslation();
+  const s = 15;
+  return [
+    { icon: <LayoutDashboard size={s} />, label: t('Console'), to: '/' },
+    { icon: <RefreshCcw size={s} />, label: t('Cycle'), to: '/cycle' },
+    { icon: <LayoutGrid size={s} />, label: t('Montage'), to: '/montage' },
+    { icon: <Film size={s} />, label: t('Montage Review'), to: '/montagereview' },
+    { icon: <Video size={s} />, label: t('Events'), to: '/events' },
+    { icon: <Settings size={s} />, label: t('Options'), to: '/settings' },
+    { icon: <ScrollText size={s} />, label: t('Log'), to: '/logs' },
+    { icon: <UsersRound size={s} />, label: t('Groups'), to: '/groups' },
+    { icon: <FilterIcon size={s} />, label: t('Filters'), to: '/filters' },
+    { icon: <FileText size={s} />, label: t('Reports'), to: '/reports' },
+    { icon: <ShieldCheck size={s} />, label: t('Audit Events Report'), to: '/audit' },
+  ];
+}
 
 export function ClassicTopNav() {
+  const { t } = useTranslation();
   const location = useLocation();
+  const navigate = useNavigate();
   const { user, clearAuth } = useAuthStore();
+  const items = useNavItems();
 
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+
+  const handleLogout = async () => {
+    await apiLogout().catch(() => undefined);
+    clearAuth();
+    void navigate({ to: '/login' });
+  };
 
   return (
     <header className="bg-[#3c4956] text-white border-b border-black/40 sticky top-0 z-30">
@@ -32,22 +55,21 @@ export function ClassicTopNav() {
         <div className="text-2xl font-semibold tracking-tight text-amber-400">
           ZoneMinder
         </div>
-        <nav className="flex-1">
+        <nav aria-label={t('Main')} className="flex-1">
           <ul className="flex items-center gap-1 flex-wrap">
-            {NAV_ITEMS.map((item) => (
+            {items.map((item) => (
               <li key={item.to}>
                 <Link
                   to={item.to}
+                  aria-current={isActive(item.to) ? 'page' : undefined}
                   className={clsx(
-                    'flex items-center gap-1 px-3 py-1.5 rounded text-sm transition-colors',
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors',
                     'hover:bg-white/10',
                     isActive(item.to) && 'bg-white/15 text-cyan-300',
                     !isActive(item.to) && 'text-cyan-200',
                   )}
                 >
-                  <span aria-hidden className="text-base leading-none">
-                    {symbol(item.icon)}
-                  </span>
+                  <span aria-hidden className="leading-none">{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
               </li>
@@ -56,38 +78,23 @@ export function ClassicTopNav() {
         </nav>
         <div className="flex items-center gap-3 text-sm">
           {user?.user && (
-            <button
-              type="button"
-              onClick={clearAuth}
-              className="flex items-center gap-1 hover:underline"
-              title="Logout"
-            >
-              <span aria-hidden>👤</span>
+            <span className="flex items-center gap-1.5 text-cyan-100">
+              <UserRound size={15} aria-hidden />
               <span>{user.user}</span>
-            </button>
+            </span>
           )}
+          <button
+            type="button"
+            onClick={handleLogout}
+            className="flex items-center gap-1 hover:underline text-cyan-200"
+            title={t('Log out')}
+            aria-label={t('Log out')}
+          >
+            <LogOut size={15} className="rtl:-scale-x-100" aria-hidden />
+          </button>
           <SystemRunningToggle tone="light" />
         </div>
       </div>
     </header>
   );
-}
-
-// Tiny unicode placeholder for Material Icons until Phase 8 wires in the
-// real icon font (legacy ZM uses Material Icons).
-function symbol(name: string): string {
-  switch (name) {
-    case 'dashboard': return '▦';
-    case 'menu': return '☰';
-    case 'live_tv': return '▶';
-    case 'movie': return '🎬';
-    case 'event': return '📅';
-    case 'settings': return '⚙';
-    case 'notification_important': return '🔔';
-    case 'group': return '👥';
-    case 'filter_alt': return '⛛';
-    case 'report': return '📊';
-    case 'shield': return '🛡';
-    default: return '•';
-  }
 }

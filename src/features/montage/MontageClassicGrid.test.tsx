@@ -3,6 +3,7 @@ import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { vi } from 'vitest';
 import type { Monitor } from '@/types';
+import { autoColumns, MONTAGE_PRESETS } from './classicPresets';
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({
@@ -21,7 +22,7 @@ vi.mock('@/components/monitors/MonitorPreview', () => ({
   ),
 }));
 
-const { MontageClassicGrid, autoColumns, MONTAGE_PRESETS } = await import('./MontageClassicGrid');
+const { MontageClassicGrid } = await import('./MontageClassicGrid');
 
 function makeMonitor(over: Partial<Monitor> = {}): Monitor {
   return {
