@@ -23,7 +23,7 @@ Estimated effort to a production 1.0 (both skins, full parity on everything the 
 
 ## 3. Scorecard
 
-Parity = functional parity with the legacy page (either skin). Fidelity = how close the classic skin looks to the legacy page. Tests = route-level unit / e2e.
+Parity = functional parity with the legacy page (either skin). Fidelity = how close the classic skin looks to the legacy page. Tests = route-level unit / e2e. _Scores are from the 2026-08-21 review; after waves 1–4 every classic page has its own legacy layout and the P0/P1 rows in Section 4 marked ✅ are closed — a fresh measurement is the next review's job._
 
 | Area | Parity | Classic fidelity | Route tests | Biggest problem |
 |---|---|---|---|---|
@@ -295,4 +295,6 @@ P0 pass (same evening): F-1, F-2, F-4, F-5, F-7, F-8 closed (see ✅ in Section 
 
 Wave 3 (same night, after zm-api#17/#19/#28/#38 were fixed on the backend branch): W2 permission model + route guards, W3 reliability primitives, W8 legacy URL shims, hotkeys; events/logs P1s; streaming robustness + runtime status + montage/review fixes; admin P1s and a classic Options layout (borrowed classic pages down to 8: login, monitors.zones, montagereview, events.detail, filters, logs, reports.list, reports.detail). Tests 1,259 / 131 files; lint 0/0. Adoption left for pages: `<QueryState>`, `toast.apiError` on mutations, `RequirePerm` around edit controls, the new search params produced by legacy URLs (`/montagereview?monitor_id&min_time&max_time`, `/cycle?monitor_id`, `/montage?group`, `/monitors/$id?edit=true`, `/filters?id=`).
 
-Work is committed on branch `feat/proper-skins-i18n` (14 commits) for review and merge to `main`.
+Wave 4 (2026-08-22, early): classic skin owns all 23 pages (borrowed list empty) on shared classic primitives — Console/Watch/Cycle/Montage/Review/Zones/Events/Event view/Frames/Filters/Logs/Reports/Options/admin/Groups/Login rebuilt to legacy layouts; monitor editor at legacy field depth for every source type with validation and 422 mapping; ONVIF discovery dialog + monitor presets; Audit rewritten to the legacy gap semantic; Frames view; PTZ control-profile editor; users list/matrix polish; modern mobile drawer; QueryState/toasts/RequirePerm adopted across pages; legacy URL params consumed; `/login?reason=expired`. Tests 1,455 / 158 files; lint 0/0; build 190 chunks. Still open from W9: Montage Review Fit/archived filter, modern cycle sidebar on Watch, classic montage gridstack resize (reorder only), Event export (needs zm-api#30), MissingFiles/ZeroSize (zm-api#36), frame thumbnails (zm-api#26), Clear Logs (zm-api#21).
+
+Work is committed on branch `feat/proper-skins-i18n` (16 commits) for review and merge to `main`.
