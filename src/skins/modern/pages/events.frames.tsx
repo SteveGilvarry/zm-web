@@ -8,6 +8,7 @@ import { Panel } from '@/components/common/Panel';
 import { QueryState } from '@/components/common/QueryState';
 import type { Frame } from '@/api/frames';
 import { useEventFramesPage } from '@/features/events/useEventFramesPage';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Legacy `?view=frames` — Mission Control. One row per captured frame. */
@@ -150,6 +151,7 @@ function PagerBtn({
 }
 
 function FrameRow({ frame: f, maxScore }: { frame: Frame; maxScore: number }) {
+  const { formatDateTime } = useDateTimeFormat();
   const { t } = useTranslation();
   const alarm = f.type === 'Alarm';
   const pct = maxScore > 0 ? Math.round((f.score / maxScore) * 100) : 0;
@@ -168,7 +170,7 @@ function FrameRow({ frame: f, maxScore }: { frame: Frame; maxScore: number }) {
         {f.type}
       </td>
       <td className="px-3 py-1.5 font-mono text-text-muted whitespace-nowrap">
-        {new Date(f.time_stamp).toLocaleString()}
+        {formatDateTime(f.time_stamp)}
       </td>
       <td className="px-3 py-1.5 font-mono text-text-muted tabular-nums">
         {Number(f.delta).toFixed(2)}

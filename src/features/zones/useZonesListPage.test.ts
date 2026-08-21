@@ -10,6 +10,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
+import { makeZone } from '@/test/fixtures';
 import { useZonesListPage } from './useZonesListPage';
 
 const paged = (items: unknown[]) =>
@@ -40,10 +41,11 @@ function wrapper() {
     createElement(QueryClientProvider, { client: qc }, children);
 }
 
-const zone = (id: number, name: string, over: Record<string, unknown> = {}) => ({
-  id, monitor_id: 4, name, type: 'Active', units: 'Pixels',
-  coords: '0,0 100,0 100,100 0,100', num_coords: 4, ...over,
-});
+const zone = (id: number, name: string, over: Record<string, unknown> = {}) =>
+  makeZone({
+    id, monitor_id: 4, name, type: 'Active', units: 'Pixels',
+    coords: '0,0 100,0 100,100 0,100', num_coords: 4, area: 10_000, ...over,
+  });
 
 function stubMonitor(over: Record<string, unknown> = {}) {
   server.use(

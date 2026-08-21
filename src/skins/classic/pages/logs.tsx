@@ -5,9 +5,11 @@ import { ArrowLeft, Download, RefreshCw, Trash2 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { LOG_LEVEL, levelLabel, type LogEntry } from '@/api/logs';
-import { LEVEL_CHIPS, formatLogTime, useLogsPage } from '@/features/logs/useLogsPage';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import { LEVEL_CHIPS, useLogTimeFormat, useLogsPage } from '@/features/logs/useLogsPage';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicFilterField, ClassicPager, ClassicTable, ClassicTh, ClassicThead, ClassicToolbar,
@@ -40,17 +42,20 @@ function levelBand(level: number): string {
 /**
  * Log viewer — classic skin. Status line, legacy filter bar (labels above the
  * controls), a fixed seven-column table banded by severity, bootstrap-table
- * footer. Same data as Mission Control via `useLogsPage`.
+ * footer, and the destructive Clear Logs button. Same data as Mission
+ * Control via `useLogsPage`.
  */
 export default function ClassicLogsPage() {
   const { t } = useTranslation();
   const s = useLogsPage();
   const chipLabel = useChipLabel();
   useDocumentTitle(t('Log'));
+  const formatLogTime = useLogTimeFormat();
+  const { formatDateTime } = useDateTimeFormat();
   const {
     logs, total, page, pageSize, totalPages, pageSizeOptions, setPageSize,
-    pageLocalFiltering, componentFilter, levelFilter, serverFilter,
-    startInput, endInput, messageQuery, searchDraft, setSearchDraft, setSearch,
+    componentFilter, minLevel, serverFilter,
+    startInput, endInput, messageQuery, sort, toggleSort, searchDraft, setSearchDraft, setSearch,
     allComponents, servers, showServerFilter, isLoading, isFetching,
   } = s;
 
@@ -76,12 +81,18 @@ export default function ClassicLogsPage() {
               total,
               first,
               last,
-              time: updatedAt.toLocaleString(),
+              time: formatDateTime(updatedAt),
             })}
           </p>
-          {pageLocalFiltering && (
-            <p className="text-center text-xs text-[#856404]">
-              {t('Level, search and date filters narrow the current page only; the total is server-wide.')}
+          {s.clearedMessage !== null && (
+            <p role="status" className="text-center text-xs text-[#0c5460] bg-[#d1ecf1] border border-[#bee5eb] px-2 py-1">
+              {s.clearedMessage || t('Logs cleared.')}{' '}
+              <button type="button" onClick={s.dismissCleared} className="underline">{t('Dismiss')}</button>
+            </p>
+          )}
+          {s.clearError && (
+            <p role="alert" className="text-center text-xs text-[#721c24] bg-[#f8d7da] border border-[#f5c6cb] px-2 py-1">
+              {s.clearError.message}
             </p>
           )}
 
@@ -122,7 +133,7 @@ export default function ClassicLogsPage() {
               <RefreshCw size={14} className={clsx(isFetching && 'animate-spin')} aria-hidden />
             </ClassicButton>
             <RequirePerm feature="system" level="Edit">
-              <ClassicButton tone="danger" disabled title={t('needs zm-api#21')}>
+              <ClassicButton tone="danger" onClick={s.askClear} disabled={s.clearing} title={t('Clear Logs')}>
                 <Trash2 size={14} aria-hidden />
                 {t('CLEAR LOGS')}
               </ClassicButton>
@@ -157,12 +168,13 @@ export default function ClassicLogsPage() {
               </ClassicFilterField>
             )}
 
+            {/* Legacy's Level dropdown always meant "this level or worse". */}
             <ClassicFilterField label={t('Level')} htmlFor="log-level">
               <select
                 id="log-level"
-                value={levelFilter ?? ''}
+                value={minLevel ?? ''}
                 onChange={(e) => setSearch({
-                  level: e.target.value === '' ? undefined : Number(e.target.value),
+                  min_level: e.target.value === '' ? undefined : (e.target.value as typeof minLevel),
                   page: undefined,
                 })}
                 className={classicSelect}
@@ -202,7 +214,7 @@ export default function ClassicLogsPage() {
             <ClassicTable testId="log-table">
               <ClassicThead>
                 <tr>
-                  <ClassicTh>{t('Date/Time')}</ClassicTh>
+                  <ClassicTh sortable active dir={sort} onSort={toggleSort}>{t('Date/Time')}</ClassicTh>
                   <ClassicTh>{t('Component')}</ClassicTh>
                   <ClassicTh>{t('PID')}</ClassicTh>
                   <ClassicTh>{t('Level')}</ClassicTh>
@@ -213,10 +225,22 @@ export default function ClassicLogsPage() {
               </ClassicThead>
               {/* Plain tbody: the striped ClassicTbody would paint over the level bands. */}
               <tbody>
-                {logs.map((log) => <LogRow key={log.id} log={log} />)}
+                {logs.map((log) => <LogRow key={log.id} log={log} formatLogTime={formatLogTime} />)}
               </tbody>
             </ClassicTable>
           </QueryState>
+
+          <ConfirmDialog
+            isOpen={s.confirmingClear}
+            title={t('Clear Logs')}
+            message={s.clearIsFiltered
+              ? t('Delete every log row matching the filters on screen? This cannot be undone.')
+              : t('Delete every row in the log table? This cannot be undone.')}
+            confirmText={t('Clear Logs')}
+            isLoading={s.clearing}
+            onConfirm={s.confirmClear}
+            onClose={s.cancelClear}
+          />
 
           <ClassicPager
             page={page}
@@ -236,7 +260,7 @@ export default function ClassicLogsPage() {
 
 const cell = 'px-2 py-1.5 border-b border-[#dee2e6] align-top';
 
-function LogRow({ log }: { log: LogEntry }) {
+function LogRow({ log, formatLogTime }: { log: LogEntry; formatLogTime: (timeKey: string) => string }) {
   return (
     <tr className={levelBand(log.level)} data-level={log.level} data-testid={`log-row-${log.id}`}>
       <td className={clsx(cell, 'whitespace-nowrap')}>{formatLogTime(log.time_key)}</td>

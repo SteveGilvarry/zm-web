@@ -7,7 +7,7 @@ import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { formatDateRange } from '@/features/reports/datetime';
+import { useDateRangeFormat } from '@/features/reports/datetime';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 import {
   useCreateReportForm,
@@ -19,6 +19,7 @@ export default function ReportsListPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Reports'));
   const s = useReportsListPage();
+  const formatDateRange = useDateRangeFormat();
   const { reports, filters, filterLookup, showCreate } = s;
 
   if (!s.isAuthenticated) return null;

@@ -6,6 +6,7 @@ import { getUsers, getUser, updateUser, deleteUser } from '@/api/users';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { usePerms } from '@/features/auth/usePerms';
+import { useMe } from '@/features/auth/useMe';
 import { useZmConfig } from '@/features/config/useZmConfig';
 import type { User } from '@/types';
 import { exportUsers as exportUsersFile } from './usersExport';
@@ -43,8 +44,14 @@ export function useUsersPage() {
   const selfEditEnabled = useZmConfig('ZM_USER_SELF_EDIT', false);
 
   const canEdit = can('system', 'Edit');
-  const isCurrentUser = (u: Pick<User, 'username' | 'id'>) =>
-    currentUser != null && (currentUser.uid != null ? currentUser.uid === u.id : currentUser.user === u.username);
+  // `/me` is authoritative about who you are; the token's `uid`/`user` claims
+  // stand in until it answers (and on tokens issued without a `uid`).
+  const { data: me } = useMe();
+  const isCurrentUser = (u: Pick<User, 'username' | 'id'>) => {
+    if (me) return me.id === u.id;
+    if (currentUser == null) return false;
+    return currentUser.uid != null ? currentUser.uid === u.id : currentUser.user === u.username;
+  };
   /** Admins edit anyone; with self-edit on, a user may edit their own row. */
   const canEditUser = (u: User) => canEdit || (selfEditEnabled && isCurrentUser(u));
 
@@ -91,6 +98,9 @@ export function useUsersPage() {
   const editorLoading = !!editorTarget && !editingUser && (usersQ.isLoading || singleQ.isLoading);
   /** Self-edit: only the fields the backend lets a non-admin change. */
   const editorMode: 'admin' | 'self' = canEdit ? 'admin' : 'self';
+  /** The editor is open on the signed-in operator's own row — the one case
+   *  where `PUT /me/password` applies, admin or not. */
+  const editingSelf = editingUser !== null && isCurrentUser(editingUser);
 
   const setEditorTarget = (target: UserEditorTarget) =>
     void navigate({
@@ -105,6 +115,16 @@ export function useUsersPage() {
     });
 
   const invalidateUsers = () => void queryClient.invalidateQueries({ queryKey: ['users'] });
+
+  /* ----- Change your own password ----------------------------------------- */
+
+  // Sequential, not stacked: the editor closes before the password dialog
+  // opens, so there is never a dialog inside a dialog.
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const openPasswordChange = () => {
+    setEditorTarget(null);
+    setPasswordOpen(true);
+  };
 
   /* ----- Selection + delete ------------------------------------------------ */
 
@@ -188,6 +208,10 @@ export function useUsersPage() {
     editorLoading,
     editingUser,
     editorMode,
+    editingSelf,
+    passwordOpen,
+    openPasswordChange,
+    closePasswordChange: () => setPasswordOpen(false),
     openCreate: () => setEditorTarget(0),
     openEdit: (user: User) => setEditorTarget(user.id),
     closeEditor: () => setEditorTarget(null),

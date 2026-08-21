@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import type { AuditPageState } from './useAuditPage';
 import type { AuditRow } from './auditRows';
 
@@ -11,10 +12,8 @@ import type { AuditRow } from './auditRows';
  */
 export function useAuditCells(s: AuditPageState) {
   const { t } = useTranslation();
-  const fmt = (iso: string) => {
-    const d = new Date(iso);
-    return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
-  };
+  const { formatDateTime } = useDateTimeFormat();
+  const fmt = (iso: string) => formatDateTime(iso) || iso;
   return (row: AuditRow, linkClass: string) => {
     const { monitor, stats } = row;
     const review = s.reviewSearch(monitor.id);

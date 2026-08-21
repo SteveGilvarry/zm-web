@@ -50,6 +50,7 @@ import {
   formatTime,
   getCauseColor,
 } from '@/features/events/useEventDetailPage';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { eventDurationSeconds } from '@/features/events/duration';
 
 /** Event detail — Mission Control. Player, scrubber, stats and sidebar. */
@@ -57,6 +58,8 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
   const { t } = useTranslation();
   const replayModeOptions = useReplayModeOptions();
   const scaleOptions = useScaleOptions();
+  // Event stamps render through ZoneMinder's own patterns / server zone.
+  const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
   const {
     event, monitor, eventLoading,
@@ -423,11 +426,11 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     />
                     <StatRow
                       label={t('Start')}
-                      value={startTime ? startTime.toLocaleString() : '—'}
+                      value={startTime ? formatDateTime(startTime) : '—'}
                     />
                     <StatRow
                       label={t('End')}
-                      value={endTime ? endTime.toLocaleString() : '—'}
+                      value={endTime ? formatDateTime(endTime) : '—'}
                     />
                     <StatRow
                       label={t('Resolution')}
@@ -533,7 +536,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                               ) : '—'}
                             </td>
                             <td className="px-3 py-1.5 font-mono text-text-secondary whitespace-nowrap">
-                              {row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}
+                              {row.timestamp ? formatDateTime(row.timestamp) : '—'}
                             </td>
                             <td className="px-3 py-1.5 font-mono text-text-primary whitespace-pre-wrap break-words">
                               {row.data ?? '—'}
@@ -585,7 +588,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-text-secondary">{t('Start')}</span>
                       <span className="text-sm font-mono text-text-primary">
-                        {startTime.toLocaleString()}
+                        {formatDateTime(startTime)}
                       </span>
                     </div>
                   )}
@@ -595,7 +598,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <div className="flex items-center justify-between">
                       <span className="text-sm text-text-secondary">{t('End')}</span>
                       <span className="text-sm font-mono text-text-primary">
-                        {endTime.toLocaleString()}
+                        {formatDateTime(endTime)}
                       </span>
                     </div>
                   )}

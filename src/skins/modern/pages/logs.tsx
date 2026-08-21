@@ -2,17 +2,19 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   Activity, ChevronLeft, ChevronRight, AlertOctagon, AlertTriangle,
-  Info, Bug, RefreshCw, Download, Columns3, Search, Skull,
+  ArrowDown, ArrowUp, Info, Bug, RefreshCw, Download, Columns3, Search, Skull, Trash2,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { QueryState } from '@/components/common/QueryState';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { RequirePerm } from '@/features/auth/RequirePerm';
 import { LOG_LEVEL, levelLabel, levelColor, levelRowTint, type LogEntry } from '@/api/logs';
 import { type LogColumnKey } from '@/features/logs/csv';
 import { ColumnPicker } from '@/features/logs/ColumnPicker';
 import { SummaryStrip } from '@/features/logs/SummaryStrip';
-import { LEVEL_CHIPS, formatLogTime, useLogsPage } from '@/features/logs/useLogsPage';
+import { LEVEL_CHIPS, useLogTimeFormat, useLogsPage } from '@/features/logs/useLogsPage';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Column headers, keyed by column id so `t()` sees literal keys. */
@@ -80,11 +82,12 @@ export default function LogsPage() {
   const columnLabels = useColumnLabels();
   const chipLabel = useChipLabel();
   useDocumentTitle(t('Log'));
+  const formatLogTime = useLogTimeFormat();
   const {
-    logs: filteredLogs, pageRowCount, total, summary, page, pageSize, totalPages,
-    pageSizeOptions, setPageSize, pageLocalFiltering,
-    componentFilter, levelFilter, serverFilter, startInput, endInput, messageQuery,
-    searchDraft, setSearchDraft, setSearch,
+    logs, total, summary, page, pageSize, totalPages,
+    pageSizeOptions, setPageSize,
+    componentFilter, minLevel, serverFilter, startInput, endInput, messageQuery,
+    sort, toggleSort, searchDraft, setSearchDraft, setSearch,
     allComponents, servers, showServerFilter, serverLookup,
     showColumns, visibleColumns, setVisibleColumns,
     isLoading, isFetching, isError, error,
@@ -99,15 +102,14 @@ export default function LogsPage() {
         <SummaryStrip
           summary={summary}
           total={total}
-          shownCount={filteredLogs.length}
+          shownCount={logs.length}
           page={page}
           pageSize={pageSize}
-          onPickErrors={() => setSearch({ level: levelFilter === LOG_LEVEL.ERROR ? undefined : LOG_LEVEL.ERROR, page: undefined })}
-          onPickWarnings={() => setSearch({ level: levelFilter === LOG_LEVEL.WARNING ? undefined : LOG_LEVEL.WARNING, page: undefined })}
-          onPickInfo={() => setSearch({ level: levelFilter === LOG_LEVEL.INFO ? undefined : LOG_LEVEL.INFO, page: undefined })}
-          onPickDebug={() => setSearch({ level: levelFilter === LOG_LEVEL.DEBUG ? undefined : LOG_LEVEL.DEBUG, page: undefined })}
-          activeLevel={levelFilter}
-          pageLocal={pageLocalFiltering}
+          onPickErrors={() => setSearch({ min_level: minLevel === 'error' ? undefined : 'error', page: undefined })}
+          onPickWarnings={() => setSearch({ min_level: minLevel === 'warning' ? undefined : 'warning', page: undefined })}
+          onPickInfo={() => setSearch({ min_level: minLevel === 'info' ? undefined : 'info', page: undefined })}
+          onPickDebug={() => setSearch({ min_level: minLevel === 'debug' ? undefined : 'debug', page: undefined })}
+          activeLevel={minLevel}
         />
 
         {/* Toolbar */}
@@ -116,19 +118,20 @@ export default function LogsPage() {
             <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted me-1">
               {t('Level')}
             </span>
+            {/* Each chip is a threshold: that severity or worse. */}
             <div
               role="group"
-              aria-label={t('Level')}
+              aria-label={t('Minimum level')}
               className="flex items-center gap-1 p-1 rounded-md bg-surface/50 border border-border-subtle"
             >
               {LEVEL_CHIPS.map((chip) => (
                 <button
                   key={chip.code}
-                  onClick={() => setSearch({ level: chip.value, page: undefined })}
-                  aria-pressed={levelFilter === chip.value}
+                  onClick={() => setSearch({ min_level: chip.value, page: undefined })}
+                  aria-pressed={minLevel === chip.value}
                   className={clsx(
                     'px-2 py-0.5 text-[11px] font-medium rounded transition-colors',
-                    levelFilter === chip.value
+                    minLevel === chip.value
                       ? 'bg-cyan/20 text-cyan'
                       : 'text-text-muted hover:text-text-primary',
                   )}
@@ -249,7 +252,7 @@ export default function LogsPage() {
 
             <button
               onClick={s.exportCsv}
-              disabled={filteredLogs.length === 0}
+              disabled={logs.length === 0}
               className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md bg-surface border border-border-subtle text-text-secondary hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-50 disabled:hover:border-border-subtle disabled:hover:text-text-secondary"
               aria-label={t('Download CSV')}
             >
@@ -265,22 +268,43 @@ export default function LogsPage() {
             >
               <RefreshCw size={14} className={isFetching ? 'animate-spin' : ''} />
             </button>
+
+            <RequirePerm feature="system" level="Edit">
+              <button
+                onClick={s.askClear}
+                disabled={s.clearing}
+                className="flex items-center gap-1 px-2 py-1 text-[11px] font-medium rounded-md bg-surface border border-crimson/40 text-crimson hover:bg-crimson/10 transition-colors disabled:opacity-50"
+              >
+                <Trash2 size={12} />
+                {t('Clear Logs')}
+              </button>
+            </RequirePerm>
           </div>
         </div>
 
-        {/* The backend can only bound `level` from below (>=), so an exact
-            level, a message search or a date range is finished client-side
-            on the rows of the current page. Say so rather than let "3 errors"
-            read as a site-wide count. */}
-        {pageLocalFiltering && (
-          <p
-            role="status"
-            data-testid="logs-page-local-note"
-            className="mb-2 text-[11px] text-amber font-mono"
-          >
-            {t('Level, search and date filters apply within the current page only ({{shown}} of {{rows}} rows match). Page through to see more.', { shown: filteredLogs.length, rows: pageRowCount })}
+        {s.clearedMessage !== null && (
+          <p role="status" className="mb-2 text-[11px] font-mono text-cyan">
+            {s.clearedMessage || t('Logs cleared.')}{' '}
+            <button type="button" onClick={s.dismissCleared} className="underline">{t('Dismiss')}</button>
           </p>
         )}
+        {s.clearError && (
+          <p role="alert" className="mb-2 text-[11px] font-mono text-crimson">
+            {s.clearError.message}
+          </p>
+        )}
+
+        <ConfirmDialog
+          isOpen={s.confirmingClear}
+          title={t('Clear Logs')}
+          message={s.clearIsFiltered
+            ? t('Delete every log row matching the filters on screen? This cannot be undone.')
+            : t('Delete every row in the log table? This cannot be undone.')}
+          confirmText={t('Clear Logs')}
+          isLoading={s.clearing}
+          onConfirm={s.confirmClear}
+          onClose={s.cancelClear}
+        />
 
         {/* Table */}
         <Panel icon={<Activity size={16} />} noPadding>
@@ -289,7 +313,7 @@ export default function LogsPage() {
             isError={isError}
             error={error}
             onRetry={s.refetch}
-            empty={filteredLogs.length === 0}
+            empty={logs.length === 0}
             emptyMessage={t('No log entries match the current filters.')}
           >
           <div className="overflow-x-auto">
@@ -297,19 +321,26 @@ export default function LogsPage() {
               <thead className="bg-surface/70 border-b border-border-subtle">
                 <tr className="text-text-muted">
                   {visibleColumns.map((c) => (
-                    <Th key={c} className={c === 'message' ? 'w-[55%]' : undefined}>
+                    <Th
+                      key={c}
+                      className={c === 'message' ? 'w-[55%]' : undefined}
+                      sort={c === 'timestamp' ? sort : undefined}
+                      onSort={c === 'timestamp' ? toggleSort : undefined}
+                      sortLabel={t('Sort by timestamp')}
+                    >
                       {columnLabels[c]}
                     </Th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {filteredLogs.map((l) => (
+                {logs.map((l) => (
                   <LogRow
                     key={l.id}
                     log={l}
                     columns={visibleColumns}
                     serverLookup={serverLookup}
+                    formatLogTime={formatLogTime}
                   />
                 ))}
               </tbody>
@@ -347,15 +378,35 @@ export default function LogsPage() {
   );
 }
 
-function Th({ children, className }: { children: React.ReactNode; className?: string }) {
+function Th({
+  children, className, sort, onSort, sortLabel,
+}: {
+  children: React.ReactNode;
+  className?: string;
+  /** Present only on the sortable column; drives `aria-sort`. */
+  sort?: 'asc' | 'desc';
+  onSort?: () => void;
+  sortLabel?: string;
+}) {
   return (
     <th
+      aria-sort={sort ? (sort === 'asc' ? 'ascending' : 'descending') : undefined}
       className={clsx(
         'px-3 py-2 text-start font-mono font-semibold uppercase tracking-wider text-[10px]',
         className,
       )}
     >
-      {children}
+      {onSort ? (
+        <button
+          type="button"
+          onClick={onSort}
+          aria-label={sortLabel}
+          className="inline-flex items-center gap-1 uppercase hover:text-cyan transition-colors"
+        >
+          {children}
+          {sort === 'asc' ? <ArrowUp size={10} /> : <ArrowDown size={10} />}
+        </button>
+      ) : children}
     </th>
   );
 }
@@ -386,11 +437,12 @@ function PagerBtn({
 }
 
 function LogRow({
-  log, columns, serverLookup,
+  log, columns, serverLookup, formatLogTime,
 }: {
   log: LogEntry;
   columns: LogColumnKey[];
   serverLookup: Record<number, string>;
+  formatLogTime: (timeKey: string) => string;
 }) {
   return (
     <tr
@@ -401,18 +453,19 @@ function LogRow({
       data-level={log.level}
     >
       {columns.map((c) => (
-        <LogCell key={c} column={c} log={log} serverLookup={serverLookup} />
+        <LogCell key={c} column={c} log={log} serverLookup={serverLookup} formatLogTime={formatLogTime} />
       ))}
     </tr>
   );
 }
 
 function LogCell({
-  column, log, serverLookup,
+  column, log, serverLookup, formatLogTime,
 }: {
   column: LogColumnKey;
   log: LogEntry;
   serverLookup: Record<number, string>;
+  formatLogTime: (timeKey: string) => string;
 }) {
   const { t } = useTranslation();
   const levelText = useLevelLabel();

@@ -9,14 +9,11 @@ import {
   useCreateReportForm,
   useReportsListPage,
 } from '@/features/reports/useReportsListPage';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import {
   ClassicButton, ClassicPageTitle, ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead, ClassicToolbar,
 } from '@/skins/classic/components/events/primitives';
 import { classicInput, classicLink, classicSelect } from '@/skins/classic/components/events/styles';
-
-function formatStamp(iso?: string | null): string {
-  return iso ? new Date(iso).toLocaleString() : '—';
-}
 
 /**
  * Reports list — classic skin. "+ New" toolbar, inline legacy form table,
@@ -27,6 +24,8 @@ export default function ClassicReportsListPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Reports'));
   const s = useReportsListPage();
+  const { formatDateTime } = useDateTimeFormat();
+  const formatStamp = (iso?: string | null) => (iso && formatDateTime(iso)) || '—';
   const { reports, filters, filterLookup, showCreate } = s;
 
   if (!s.isAuthenticated) return null;

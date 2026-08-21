@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { effectivePerms, hasPerm, levelSatisfies, NO_PERMS, permLevel } from './perms';
+import { effectivePerms, hasPerm, levelSatisfies, NO_PERMS, permLevel, permsFromUser } from './perms';
+import { makeUser } from '@/test/fixtures';
 
 describe('levelSatisfies', () => {
   it('orders None < View < Edit < Create', () => {
@@ -43,5 +44,22 @@ describe('effectivePerms', () => {
 
   it('NO_PERMS grants nothing', () => {
     expect(hasPerm(NO_PERMS, 'events', 'View')).toBe(false);
+  });
+});
+
+describe('permsFromUser', () => {
+  it('reads the 8 columns off a UserResponse row', () => {
+    const p = permsFromUser(
+      makeUser({ system: 'Edit', stream: 'View', events: 'Create', control: 'None' }),
+    );
+    expect(p.known).toBe(true);
+    expect(permLevel(p, 'system')).toBe('Edit');
+    expect(permLevel(p, 'events')).toBe('Create');
+    expect(hasPerm(p, 'control', 'View')).toBe(false);
+  });
+
+  it('treats an unrecognised level as None rather than trusting it', () => {
+    const p = permsFromUser(makeUser({ monitors: 'Superuser' as never }));
+    expect(permLevel(p, 'monitors')).toBe('None');
   });
 });

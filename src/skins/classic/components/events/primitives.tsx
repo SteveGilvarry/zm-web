@@ -84,10 +84,12 @@ export function ClassicFilterField({ label, htmlFor, children, className }: {
 
 /** Text input with the legacy clear (×) affordance. */
 export function ClassicClearableInput({
-  value, onChange, id, placeholder, type = 'text', ariaLabel, className,
+  value, onChange, id, placeholder, type = 'text', ariaLabel, className, list,
 }: {
   value: string; onChange: (v: string) => void; id?: string; placeholder?: string;
   type?: string; ariaLabel?: string; className?: string;
+  /** id of a `<datalist>` to suggest from. */
+  list?: string;
 }) {
   const { t } = useTranslation();
   return (
@@ -98,6 +100,7 @@ export function ClassicClearableInput({
         value={value}
         placeholder={placeholder}
         aria-label={ariaLabel}
+        list={list}
         onChange={(e) => onChange(e.target.value)}
         className={clsx(classicInput, 'w-full pe-7')}
       />
@@ -175,7 +178,7 @@ export function ClassicPager({
 }: {
   page: number; pageSize: number; total: number; totalPages: number;
   pageSizeOptions: readonly number[]; onPage: (n: number) => void; onPageSize: (n: number) => void;
-  /** Rows actually on this page (after page-local filters). */
+  /** Rows on this page. */
   shown?: number;
 }) {
   const { t } = useTranslation();

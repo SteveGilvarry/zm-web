@@ -38,6 +38,10 @@ export default defineConfig({
   retries: process.env.CI ? 2 : 0,
   reporter: process.env.CI ? [['github'], ['html', { open: 'never' }]] : 'list',
   workers: seeded ? Number(process.env.E2E_WORKERS ?? 2) : 1,
+  // 30 s is not enough for the failure-path specs: the query layer retries a
+  // 5xx twice with backoff before it gives up and paints the error state, and
+  // a timeout is a hard failure even for a test marked `test.fail()`.
+  timeout: 60_000,
   globalSetup: seeded ? './e2e/global-setup.ts' : undefined,
 
   use: {

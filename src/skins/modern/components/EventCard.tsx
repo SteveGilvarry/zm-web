@@ -14,6 +14,7 @@ import type { CSSProperties } from 'react';
 import { getEventThumbnailUrl, getEventVideoUrl } from '@/api/events';
 import type { ZmEvent } from '@/types';
 import { eventDurationSeconds } from '@/features/events/duration';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 
 // Rotation transform for events-list thumbnails (square layout footprint,
 // object-contain). No scale factor — the 1:1 footprint already handles
@@ -51,6 +52,8 @@ export function EventCard({
   showThumbnail?: boolean;
 }) {
   const { t } = useTranslation();
+  // ZoneMinder's configured patterns and server zone, not the raw locale.
+  const { formatDate, formatTime } = useDateTimeFormat();
   const startTime = event.start_date_time ? new Date(event.start_date_time) : null;
   const endTime = event.end_date_time ? new Date(event.end_date_time) : null;
   const duration = eventDurationSeconds(event.length) || null;
@@ -165,12 +168,12 @@ export function EventCard({
             <>
               <span className="flex items-center gap-1.5">
                 <Calendar size={12} />
-                {startTime.toLocaleDateString()}
+                {formatDate(startTime)}
               </span>
               <span className="flex items-center gap-1.5">
                 <Clock size={12} />
-                {startTime.toLocaleTimeString()}
-                {endTime && ` - ${endTime.toLocaleTimeString()}`}
+                {formatTime(startTime)}
+                {endTime && ` - ${formatTime(endTime)}`}
               </span>
             </>
           )}

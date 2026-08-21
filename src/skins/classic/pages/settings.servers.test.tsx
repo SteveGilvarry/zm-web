@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
+import { makeServer } from '@/test/fixtures/admin';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 
@@ -61,8 +62,13 @@ function paged<T>(items: T[], over: Record<string, number> = {}) {
 }
 
 const SERVERS = [
-  { id: 3, name: 'edge-01', hostname: '10.0.0.3', port: 8080, status: 'Running' },
-  { id: 4, name: 'edge-02', hostname: '10.0.0.4', port: null, status: 'NotRunning' },
+  makeServer({ id: 3, name: 'edge-01', hostname: '10.0.0.3', port: 8080, protocol: 'http' }),
+  makeServer({
+    id: 4, name: 'edge-02', hostname: '10.0.0.4', port: null, protocol: null,
+    status: 'NotRunning', path_to_index: null, path_to_zms: null, path_to_api: null,
+    zmstats: 0, zmaudit: 0, zmtrigger: 1, zmeventnotification: 1, state_id: 2,
+    latitude: '-37.81', longitude: '144.96',
+  }),
 ];
 
 const STATS = [
@@ -129,7 +135,11 @@ describe('ClassicSettingsServersPage', () => {
     await mount();
 
     const edge01 = (await screen.findByRole('button', { name: 'edge-01' })).closest('tr')!;
-    expect(within(edge01).getByText('10.0.0.3:8080')).toBeInTheDocument();
+    expect(within(edge01).getByText('3')).toBeInTheDocument();
+    expect(within(edge01).getByText('http://10.0.0.3:8080')).toBeInTheDocument();
+    expect(within(edge01).getByText('/zm/index.php')).toBeInTheDocument();
+    expect(within(edge01).getByText('/zm/cgi-bin/nph-zms')).toBeInTheDocument();
+    expect(within(edge01).getByText('/zm/api')).toBeInTheDocument();
     expect(within(edge01).getByText('Running')).toBeInTheDocument();
     // Two monitors point at server 3.
     expect(within(edge01).getByText('2')).toBeInTheDocument();
@@ -140,11 +150,51 @@ describe('ClassicSettingsServersPage', () => {
     expect(within(edge01).getByText('90%')).toHaveAttribute('data-tone', 'ok');
     expect(within(edge01).getByText('84.5%')).toBeInTheDocument();
 
+    // No protocol on the row → the Url degrades to the bare host.
     const edge02 = screen.getByRole('button', { name: 'edge-02' }).closest('tr')!;
     expect(within(edge02).getByText('10.0.0.4')).toBeInTheDocument();
     expect(within(edge02).getByText('Not running')).toBeInTheDocument();
-    // No stats for server 4 → em-dashes.
-    expect(within(edge02).getAllByText('—').length).toBeGreaterThan(0);
+    // Three unset paths plus four missing stat cells.
+    expect(within(edge02).getAllByText('—')).toHaveLength(7);
+
+    // The read-only caveat is stated once for the page, not per field.
+    expect(screen.getAllByText(
+      'Only name, hostname, port and status are writable; the API does not accept the rest yet.',
+    )).toHaveLength(1);
+  });
+
+  it('expands a row to the read-only daemon flags, run state and coordinates', async () => {
+    signIn();
+    seed();
+    const user = userEvent.setup();
+    await mount();
+
+    const toggle = await screen.findByRole('button', { name: 'Details for edge-02' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    const value = (label: string) =>
+      screen.getByText(label).closest('div')!.querySelector('dd')!.textContent;
+    expect(value('Run stats')).toBe('No');
+    expect(value('Run audit')).toBe('No');
+    expect(value('Run trigger')).toBe('Yes');
+    expect(value('Run event notification')).toBe('Yes');
+    expect(value('Protocol')).toBe('—');
+    expect(value('Run state')).toBe('2');
+    expect(value('Coordinates')).toBe('-37.81, 144.96');
+
+    await user.click(toggle);
+    expect(screen.queryByText('Run stats')).toBeNull();
+  });
+
+  it('offers the detail toggle without system Edit', async () => {
+    signIn(VIEWER);
+    seed();
+    const user = userEvent.setup();
+    await mount();
+    await user.click(await screen.findByRole('button', { name: 'Details for edge-01' }));
+    expect(screen.getByText('Run stats')).toBeInTheDocument();
   });
 
   it('shows the "this host" row when stats are recorded without a server id', async () => {

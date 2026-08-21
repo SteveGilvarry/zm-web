@@ -1,16 +1,19 @@
-import i18next from '@/i18n';
 import { apiPost, apiPatch, apiDelete } from './client';
-import { getMonitor, normalizeMonitor } from './monitors';
-import { getStorageList } from './storage';
+import { getMonitor } from './monitors';
 import type { Monitor } from '@/types';
 
 /**
  * Body of `POST /monitors`. Same fields as a `Monitor` read, minus the
- * server-assigned `id`, with `deleted` as the boolean the request schema
- * demands (reads echo it as 0/1). `contract.test.ts` checks the key set
- * against `CreateMonitorRequest` in the OpenAPI snapshot.
+ * server-assigned `id`, plus `pass` / `onvif_password` — those are
+ * write-only, so `MonitorResponse` omits them but the create request still
+ * takes them. `contract.test.ts` checks the key set against
+ * `CreateMonitorRequest` in the OpenAPI snapshot.
  */
-export type MonitorCreatePayload = Omit<Monitor, 'id' | 'deleted'> & { deleted: boolean };
+export type MonitorCreatePayload = Omit<Monitor, 'id' | 'deleted'> & {
+  deleted: boolean;
+  pass: string | null;
+  onvif_password: string;
+};
 
 /**
  * The backend's CreateMonitorRequest demands ~100 fields with no nullable
@@ -19,11 +22,13 @@ export type MonitorCreatePayload = Omit<Monitor, 'id' | 'deleted'> & { deleted: 
  * expose only the essentials in the UI and fill everything else from this
  * defaults blob.
  *
- * Values follow ZoneMinder's own new-monitor defaults except where the
- * backend rejects them (BT-20): image adjustments are 0 rather than -1
- * ("camera default"), `max_image_buffer_count` / `stream_replay_buffer`
- * must be ≥ 1 (ZM uses 0 for unlimited / off), and `storage_id` must name
- * a real row — 0 here means "resolve from GET /storage at create time".
+ * Values are ZoneMinder's own new-monitor defaults, so a row created here
+ * is indistinguishable from one the legacy UI made. An earlier build
+ * rejected several of them (zm-api#19) and we substituted safe-but-wrong
+ * numbers; the dev box of 2026-08-22 takes the real ones — probed field by
+ * field through `createMonitor`. The one it still refuses is
+ * `image_buffer_count: 0` ("lower than 1"), which does not matter because
+ * ZoneMinder's default there is 3 anyway; see {@link CREATE_FLOORS}.
  */
 export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   // Identity / basic
@@ -103,11 +108,11 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
 
   // Buffers / events
   image_buffer_count: 3,
-  max_image_buffer_count: 121, // ZM writes 0 (unlimited); backend wants ≥ 1 — value the dev-box monitors carry
+  max_image_buffer_count: 0, // 0 = unlimited, as ZoneMinder writes
   warmup_count: 0,
   pre_event_count: 0,
   post_event_count: 5,
-  stream_replay_buffer: 1, // ZM writes 0 (off); backend wants ≥ 1
+  stream_replay_buffer: 0, // 0 = live-replay scrubbing off, as ZoneMinder writes
   alarm_frame_count: 1,
   section_length: 600,
   section_length_warn: 0,
@@ -121,16 +126,17 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   exif: 0,
   deinterlacing: 0,
   signal_check_points: 0,
-  signal_check_colour: '#0000c0',
+  signal_check_colour: '#0000be',
 
   // Image
   width: 1920,
   height: 1080,
   colours: 4,
-  brightness: 0, // ZM writes -1 ("camera default"); backend wants ≥ 0
-  contrast: 0,
-  hue: 0,
-  colour: 0,
+  // -1 is ZoneMinder's "leave it to the camera"; 0–100 is an explicit level.
+  brightness: -1,
+  contrast: -1,
+  hue: -1,
+  colour: -1,
   orientation: 'Rotate0',
   label_format: null,
   label_x: 0,
@@ -139,7 +145,7 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   web_colour: 'red',
 
   // Relationships
-  storage_id: 0, // sentinel: resolved via resolveStorageId()
+  storage_id: 0, // ZoneMinder's "Default" storage area
   server_id: null,
   sequence: null,
   manufacturer_id: null,
@@ -177,31 +183,28 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
 };
 
 /**
- * Backend minimums that ZoneMinder's own stored values violate (BT-20).
- * Applied when turning an existing record into a create payload.
+ * The one backend minimum a ZoneMinder row can violate: `ImageBufferCount`
+ * may legally be 0 in the DB, but `POST /monitors` answers "lower than 1".
+ * Applied when turning an existing record into a create payload so cloning
+ * such a monitor does not 422.
  */
 const CREATE_FLOORS: ReadonlyArray<{ key: keyof MonitorCreatePayload; min: number }> = [
-  { key: 'brightness', min: 0 },
-  { key: 'contrast', min: 0 },
-  { key: 'hue', min: 0 },
-  { key: 'colour', min: 0 },
-  { key: 'max_image_buffer_count', min: 1 },
-  { key: 'stream_replay_buffer', min: 1 },
+  { key: 'image_buffer_count', min: 1 },
 ];
 
 /**
  * Turn a monitor as read from the API into a body `POST /monitors` accepts:
- * only request fields (drops `id` and anything the server added), request
- * enum casing, boolean `deleted`, non-null `output_container`, a fresh
- * `sequence`, and values under a backend minimum lifted to the default.
- * `storage_id` is passed through — callers resolve a 0 with
- * {@link resolveStorageId} because that needs a request.
+ * only request fields (drops `id` and anything the server added), a
+ * boolean `deleted`, non-null `output_container`, a fresh `sequence`, and
+ * values under a backend minimum lifted to the default. The camera and
+ * ONVIF passwords are write-only, so a read never carries them and a clone
+ * starts without credentials — the operator retypes them in the editor.
  */
 export function toCreatePayload(
   source: Monitor,
   overrides: Partial<MonitorCreatePayload> = {},
 ): MonitorCreatePayload {
-  const src = normalizeMonitor(source) as unknown as Record<string, unknown>;
+  const src = source as unknown as Record<string, unknown>;
   const out: Record<string, unknown> = { ...MONITOR_CREATE_DEFAULTS };
   for (const key of Object.keys(MONITOR_CREATE_DEFAULTS)) {
     if (src[key] !== undefined) out[key] = src[key];
@@ -216,17 +219,6 @@ export function toCreatePayload(
   return { ...(out as MonitorCreatePayload), ...overrides };
 }
 
-/** A valid `storage_id`: the given one if it names a row (≥ 1), else the first storage area. */
-export async function resolveStorageId(candidate: number | null | undefined): Promise<number> {
-  if (candidate != null && candidate >= 1) return candidate;
-  const page = await getStorageList({ page: 1, page_size: 1 });
-  const id = page.items[0]?.id;
-  if (!id) {
-    throw new Error(i18next.t('No storage area is defined. Add one under Settings → Storage first.'));
-  }
-  return id;
-}
-
 /**
  * What the Add dialog, the preset picker and ONVIF discovery can set on a
  * new monitor: `name` plus any request field. Everything else comes from
@@ -238,7 +230,7 @@ export type MonitorCreateInput =
     name: string;
     type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'Libvlc' | 'Curl' | 'WebSite' | 'Vnc';
     function?: 'None' | 'Monitor' | 'Modect' | 'Record' | 'Mocord' | 'Nodect';
-    /** Defaults to the first storage area. */
+    /** Defaults to 0 — ZoneMinder's "Default" storage area. */
     storage_id?: number;
   };
 
@@ -255,7 +247,6 @@ export async function createMonitor(input: MonitorCreateInput): Promise<Monitor>
   const payload: MonitorCreatePayload = {
     ...MONITOR_CREATE_DEFAULTS,
     ...defined(input),
-    storage_id: await resolveStorageId(input.storage_id),
     function: fn,
     // Function None is ZoneMinder's "disabled": nothing captures, so no daemon starts.
     capturing: fn === 'None' ? 'None' : 'Always',
@@ -263,7 +254,7 @@ export async function createMonitor(input: MonitorCreateInput): Promise<Monitor>
     recording: (fn === 'Record' || fn === 'Mocord') ? 'Always'
               : (fn === 'Modect') ? 'OnMotion' : 'None',
   };
-  return normalizeMonitor(await apiPost<MonitorCreatePayload, Monitor>('/monitors', payload));
+  return apiPost<MonitorCreatePayload, Monitor>('/monitors', payload);
 }
 
 /**
@@ -273,8 +264,7 @@ export async function createMonitor(input: MonitorCreateInput): Promise<Monitor>
 export async function cloneMonitor(sourceId: number, newName?: string): Promise<Monitor> {
   const src = await getMonitor(sourceId);
   const payload = toCreatePayload(src, { name: newName ?? `${src.name} (clone)` });
-  payload.storage_id = await resolveStorageId(payload.storage_id);
-  return normalizeMonitor(await apiPost<MonitorCreatePayload, Monitor>('/monitors', payload));
+  return apiPost<MonitorCreatePayload, Monitor>('/monitors', payload);
 }
 
 export async function deleteMonitor(id: number): Promise<void> {
@@ -285,5 +275,5 @@ export async function patchMonitor(
   id: number,
   changes: Partial<Record<string, unknown>>,
 ): Promise<Monitor> {
-  return normalizeMonitor(await apiPatch<typeof changes, Monitor>(`/monitors/${id}`, changes));
+  return apiPatch<typeof changes, Monitor>(`/monitors/${id}`, changes);
 }

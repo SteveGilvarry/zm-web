@@ -45,18 +45,33 @@ describe('modern Zones page', () => {
     expect(screen.getByRole('button', { name: /All/ })).toBeInTheDocument();
   });
 
-  it('counts every zone and sums their coverage', async () => {
+  it('counts every zone and sums the areas the backend reports', async () => {
     db.zones = [
-      makeZone({ id: 1, monitor_id: 1, coords: '0,0 959,0 959,539 0,539' }),
-      makeZone({ id: 2, monitor_id: 1, name: 'Path', type: 'Exclusive', coords: '0,0 959,0 959,539 0,539' }),
+      makeZone({ id: 1, monitor_id: 1, coords: '0,0 959,0 959,539 0,539', area: 518_400 }),
+      makeZone({
+        id: 2, monitor_id: 1, name: 'Path', type: 'Exclusive',
+        coords: '0,0 959,0 959,539 0,539', area: 518_400,
+      }),
     ];
     renderRoute('/monitors/1/zones');
 
     await findZonesPanel();
     expect(screen.getByText(/2 zones/)).toBeInTheDocument();
-    // Two quarter-frame polygons ≈ 50%.
+    // Two quarter-frame Zones.Area values against the 1920x1080 frame.
     expect(screen.getByText(/50% covered/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Path/ })).toBeInTheDocument();
+  });
+
+  it('measures coverage from the polygon, not the stale stored Zones.Area', async () => {
+    // The backend does not recompute Zones.Area when the coordinates change
+    // (zm-api#43), so on the dev box every zone reports a four-digit area for
+    // a full-frame polygon. Trusting it would print 0% over a whole camera.
+    db.zones = [makeZone({ id: 1, monitor_id: 1, coords: '0,0 1919,0 1919,1079 0,1079', area: 1_036_800 })];
+    renderRoute('/monitors/1/zones');
+
+    await findZonesPanel();
+    // 1920×1080 monitor, full-frame polygon.
+    expect(screen.getByText(/100% covered/)).toBeInTheDocument();
   });
 
   it('invites the operator to draw the first zone when there are none', async () => {
@@ -254,6 +269,56 @@ describe('modern Zones page', () => {
 
     expect(deleted).toBe(false);
     expect(screen.getByText('Editing #1')).toBeInTheDocument();
+  });
+
+  it('reveals the read-only motion settings for the selected zone', async () => {
+    db.zones = [makeZone({
+      id: 1, monitor_id: 1, name: 'All', units: 'Percent', area: 9926,
+      min_alarm_pixels: 0.05, max_alarm_pixels: 75.06, max_pixel_threshold: null,
+    })];
+    const user = userEvent.setup();
+    renderRoute('/monitors/1/zones');
+
+    await findZonesPanel();
+    expect(screen.queryByRole('heading', { name: 'Motion settings' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: /All/ }));
+    expect(await screen.findByRole('heading', { name: 'Motion settings' })).toBeInTheDocument();
+    expect(screen.getByText(
+      'Motion settings are read-only: the API accepts only the zone name and polygon.',
+    )).toBeInTheDocument();
+
+    const row = (label: string) => screen.getByText(label).parentElement as HTMLElement;
+    expect(within(row('Check Method')).getByText('Blobs')).toBeInTheDocument();
+    expect(within(row('Zone Area')).getByText('9,926')).toBeInTheDocument();
+    expect(within(row('Min/Max Alarmed Area')).getByText('0.05% / 75.06%')).toBeInTheDocument();
+    // Nulls read as an em dash, never as 0.
+    expect(within(row('Min/Max Pixel Threshold')).getByText('25 / —')).toBeInTheDocument();
+    // The packed AlarmRGB becomes a real swatch.
+    expect(screen.getByTestId('zone-alarm-swatch')).toHaveStyle({ backgroundColor: '#ff0000' });
+  });
+
+  it('hides the settings again when the draft is cancelled', async () => {
+    const user = userEvent.setup();
+    renderRoute('/monitors/1/zones');
+
+    await findZonesPanel();
+    await user.click(screen.getByRole('button', { name: /All/ }));
+    await screen.findByRole('heading', { name: 'Motion settings' });
+
+    await user.click(screen.getByRole('button', { name: 'Cancel edit' }));
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Motion settings' })).toBeNull());
+  });
+
+  it('shows no settings for a zone that does not exist yet', async () => {
+    const user = userEvent.setup();
+    renderRoute('/monitors/1/zones');
+
+    await findZonesPanel();
+    await user.click(screen.getByRole('button', { name: 'New' }));
+
+    expect(screen.getByDisplayValue('New zone')).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Motion settings' })).toBeNull();
   });
 
   it('closes the draft form without saving from the cancel affordance', async () => {

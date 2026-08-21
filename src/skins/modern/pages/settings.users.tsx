@@ -18,6 +18,7 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { Modal } from '@/components/common/Modal';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { useUsersPage } from '@/features/users/useUsersPage';
 import { PermPill } from '../components/settings/PermPill';
@@ -289,6 +290,8 @@ export default function SettingsUsersPage() {
         </RequirePerm>
       </main>
 
+      <ChangePasswordDialog isOpen={u.passwordOpen} onClose={u.closePasswordChange} />
+
       {/* Editor — keyed so the tab resets on open / user switch */}
       {u.editorOpen && (
         <UserEditor
@@ -296,6 +299,7 @@ export default function SettingsUsersPage() {
           editing={u.editingUser}
           mode={u.editorMode}
           onClose={u.closeEditor}
+          onChangePassword={u.editingSelf ? u.openPasswordChange : undefined}
         />
       )}
       {u.editorLoading && (

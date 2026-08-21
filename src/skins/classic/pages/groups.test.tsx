@@ -1,7 +1,7 @@
 /**
  * Groups page (classic skin) — legacy `?view=groups`: the indented group
  * table with monitor counts, the membership checkbox list, the New/Edit/
- * Delete verbs and the zm-api#28 re-parent warning.
+ * Delete verbs and the re-parent save path.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -217,15 +217,14 @@ describe('ClassicGroupsPage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('PUTs a rename and warns when the backend keeps the old parent', async () => {
+  it('PUTs a rename with the new parent and closes', async () => {
     const user = userEvent.setup();
     stub();
     const requests: Array<{ url: string; method: string; body: unknown }> = [];
     server.use(
       http.put('/api/v3/groups/:id', async ({ request, params }) => {
         requests.push({ url: `/groups/${params.id}`, method: request.method, body: await request.json() });
-        // Old build: echoes the *old* parent back (zm-api#28).
-        return HttpResponse.json({ id: 3, name: 'Garage Bay', parent_id: null });
+        return HttpResponse.json({ id: 3, name: 'Garage Bay', parent_id: 1 });
       }),
     );
     await mount();
@@ -245,14 +244,9 @@ describe('ClassicGroupsPage', () => {
     expect(requests[0].url).toBe('/groups/3');
     expect(requests[0].body).toEqual({ name: 'Garage Bay', parent_id: 1 });
 
-    const warning = await screen.findByRole('status');
-    expect(warning).toHaveTextContent(/renamed but kept its old parent/);
-    expect(within(warning).getByRole('link', { name: 'zm-api#28' })).toHaveAttribute(
-      'href', 'https://github.com/SteveGilvarry/zm-api/issues/28',
-    );
-
-    await user.click(within(warning).getByRole('button', { name: 'Dismiss' }));
-    await waitFor(() => expect(screen.queryByRole('status')).toBeNull());
+    // Re-parenting persists (zm-api#28) — nothing to warn about any more.
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.queryByRole('status')).toBeNull();
   });
 
   it('confirms (listing descendants) before DELETEing a group', async () => {

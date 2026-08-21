@@ -1,9 +1,10 @@
 import { describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
+import { makeServer, makeStorage } from '@/test/fixtures/admin';
 import { useAuthStore } from '@/stores/auth';
 
 vi.mock('@/skins/AppShell', () => ({
@@ -32,17 +33,21 @@ afterAll(() => {
   useAuthStore.getState().clearAuth();
 });
 
-function seedStorage(eventsOnArchive = 0) {
+const GIB = 1024 ** 3;
+const DEFAULT_ROW = makeStorage({ disk_space: 40 * GIB, server_id: 0, do_delete: 1 });
+const ARCHIVE_ROW = makeStorage({
+  id: 2, name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 0,
+  scheme: 'Deep', server_id: 4, url: 's3://bucket/zm', disk_space: 10 * GIB, do_delete: 0,
+});
+
+function seedStorage(eventsOnArchive = 0, storage: unknown[] = [DEFAULT_ROW, ARCHIVE_ROW]) {
   server.use(
     http.get('/api/v3/storage', () => HttpResponse.json({
-      items: [
-        { id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 },
-        { id: 2, name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 0 },
-      ],
-      total: 2, per_page: 25, current_page: 1, last_page: 1,
+      items: storage,
+      total: storage.length, per_page: 25, current_page: 1, last_page: 1,
     })),
     http.get('/api/v3/servers', () => HttpResponse.json({
-      items: [{ id: 4, name: 'zm-edge-01', hostname: 'edge', port: null, status: 'Running' }],
+      items: [makeServer({ id: 4, name: 'zm-edge-01', hostname: 'edge' })],
       total: 1, per_page: 200, current_page: 1, last_page: 1,
     })),
     http.post('/api/v3/filters/preview', () => HttpResponse.json({
@@ -58,6 +63,44 @@ describe('Storage page', () => {
     await waitFor(() => expect(screen.getByText('Default')).toBeInTheDocument());
     expect(screen.getByText('/mnt/archive')).toBeInTheDocument();
     expect(screen.getByText('s3fs')).toBeInTheDocument();
+  });
+
+  it('shows the legacy columns: id, scheme, server and disk space', async () => {
+    seedStorage();
+    renderWithProviders(<StoragePage />);
+    const archive = (await screen.findByText('Archive')).closest('tr')!;
+    const dflt = screen.getByText('Default').closest('tr')!;
+
+    expect(within(dflt).getByText('1')).toBeInTheDocument();
+    expect(within(dflt).getByText('Medium')).toBeInTheDocument();
+    // ServerId 0 is ZoneMinder's "every server can reach this path".
+    expect(within(dflt).getByText('Local')).toBeInTheDocument();
+    expect(within(dflt).getByText('40.0 GB')).toBeInTheDocument();
+
+    expect(within(archive).getByText('Deep')).toBeInTheDocument();
+    await waitFor(() => expect(within(archive).getByText('zm-edge-01')).toBeInTheDocument());
+    expect(within(archive).getByText('10.0 GB')).toBeInTheDocument();
+  });
+
+  it('scales the disk bar against the largest area and says so', async () => {
+    seedStorage();
+    renderWithProviders(<StoragePage />);
+    await waitFor(() => expect(screen.getByText('Archive')).toBeInTheDocument());
+
+    const bars = screen.getAllByRole('progressbar');
+    expect(bars.map((b) => b.getAttribute('aria-valuenow'))).toEqual(['100', '25']);
+    // Honest label: no percentage-of-disk is claimed.
+    expect(bars[1]).toHaveAccessibleName(
+      '10.0 GB of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.',
+    );
+  });
+
+  it('shows an em dash and no bar when zmaudit has no figure', async () => {
+    seedStorage(0, [makeStorage({ disk_space: null })]);
+    renderWithProviders(<StoragePage />);
+    await waitFor(() => expect(screen.getByText('Default')).toBeInTheDocument());
+    expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
+    expect(screen.getByText('\u2014')).toBeInTheDocument();
   });
 
   it('filters by name or path client-side', async () => {
@@ -107,7 +150,7 @@ describe('Storage page', () => {
       http.all('/api/v3/storage/2', async ({ request }) => {
         method = request.method;
         body = await request.json();
-        return HttpResponse.json({ id: 2, name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 1 });
+        return HttpResponse.json(makeStorage({ id: 2, name: 'Archive', path: '/mnt/archive', type: 's3fs' }));
       }),
     );
     const user = userEvent.setup();
@@ -160,7 +203,7 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     let body: unknown = null;
     server.use(http.post('/api/v3/storage', async ({ request }) => {
       body = await request.json();
-      return HttpResponse.json({ id: 3, name: 'Bulk', path: '/mnt/bulk', type: 'local', enabled: 1 });
+      return HttpResponse.json(makeStorage({ id: 3, name: 'Bulk', path: '/mnt/bulk' }));
     }));
     const user = userEvent.setup();
     renderWithProviders(<StoragePage />);
@@ -172,7 +215,6 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     await waitFor(() => expect(screen.getByRole('option', { name: 'zm-edge-01' })).toBeInTheDocument());
     await user.selectOptions(screen.getByLabelText('Server'), '4');
     await user.type(screen.getByLabelText('URL'), 's3://bucket/zm');
-    expect(screen.getByText(/does not return them/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /create storage/i }));
     await waitFor(() => expect(body).toEqual({
       name: 'Bulk', path: '/mnt/bulk', type: 'local', enabled: 1,
@@ -180,22 +222,45 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     }));
   });
 
-  it('omits scheme on edit unless the operator picks one', async () => {
+  it('opens the edit form on the stored row and PATCHes the whole of it back', async () => {
     seedStorage();
     let body: Record<string, unknown> | null = null;
     server.use(http.patch('/api/v3/storage/2', async ({ request }) => {
       body = (await request.json()) as Record<string, unknown>;
-      return HttpResponse.json({ id: 2, name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 0 });
+      return HttpResponse.json(makeStorage({ id: 2, name: 'Archive' }));
     }));
     const user = userEvent.setup();
     renderWithProviders(<StoragePage />);
     await waitFor(() => expect(screen.getByText('Archive')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /edit archive/i }));
-    expect(screen.getByLabelText('Scheme')).toHaveValue('');
+
+    // Populated from the row, not from the create defaults.
+    expect(screen.getByLabelText('Scheme')).toHaveValue('Deep');
+    await waitFor(() => expect(screen.getByLabelText('Server')).toHaveValue('4'));
+    expect(screen.getByLabelText('URL')).toHaveValue('s3://bucket/zm');
+
     await user.click(screen.getByRole('button', { name: /save changes/i }));
     await waitFor(() => expect(body).not.toBeNull());
-    expect(body).not.toHaveProperty('scheme');
-    expect(body).toMatchObject({ name: 'Archive', server_id: null, url: null });
+    expect(body).toEqual({
+      name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 0,
+      scheme: 'Deep', server_id: 4, url: 's3://bucket/zm',
+    });
+  });
+
+  it('shows DoDelete read-only, with why it cannot be changed', async () => {
+    seedStorage();
+    const user = userEvent.setup();
+    renderWithProviders(<StoragePage />);
+    await waitFor(() => expect(screen.getByText('Archive')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /edit archive/i }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Auto-delete')).toBeInTheDocument();
+    expect(within(dialog).getByText('No')).toBeInTheDocument();
+    expect(within(dialog).getByText('Set by ZoneMinder; the API cannot change it yet.')).toBeInTheDocument();
+    // Neither write schema carries do_delete, so there is nothing to click.
+    expect(within(dialog).queryByRole('switch', { name: /auto-delete/i })).not.toBeInTheDocument();
+    expect(within(dialog).queryByRole('checkbox', { name: /auto-delete/i })).not.toBeInTheDocument();
   });
 });
 

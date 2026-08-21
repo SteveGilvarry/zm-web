@@ -23,6 +23,7 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
+import { formatBytes } from '@/lib/format';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
 /** Settings → Storage — Mission Control. */
@@ -31,7 +32,7 @@ export default function SettingsStoragePage() {
   const st = useStoragePage();
   const { can } = usePerms();
   useSiteTitle(t('Storage'));
-  const { filteredItems, page, totalPages, formData, editingStorage, deleteTarget } = st;
+  const { rows, page, totalPages, formData, editingStorage, deleteTarget } = st;
   const canEdit = can('system', 'Edit');
 
   if (!st.isAuthenticated) return null;
@@ -89,30 +90,63 @@ export default function SettingsStoragePage() {
               isError={st.isError}
               error={st.error}
               onRetry={st.refetch}
-              empty={filteredItems.length === 0}
+              empty={rows.length === 0}
               emptyMessage={t('No storage locations found')}
             >
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-border-subtle text-start">
+                      <th className="px-4 py-3 font-medium text-text-muted">{t('Id')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Name')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Path')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Type')}</th>
+                      <th className="px-4 py-3 font-medium text-text-muted">{t('Scheme')}</th>
+                      <th className="px-4 py-3 font-medium text-text-muted">{t('Server')}</th>
+                      <th className="px-4 py-3 font-medium text-text-muted">{t('Disk space')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Enabled')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted">{t('Events')}</th>
                       <th className="px-4 py-3 font-medium text-text-muted text-end">{t('Actions')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
-                    {filteredItems.map((storage) => (
+                    {rows.map(({ storage, serverId, serverName, diskPercent }) => (
                       <tr key={storage.id} className="hover:bg-panel/50 transition-colors">
+                        <td className="px-4 py-3 font-mono text-xs text-text-muted">{storage.id}</td>
                         <td className="px-4 py-3 font-medium text-text-primary">{storage.name}</td>
                         <td className="px-4 py-3 font-mono text-xs text-text-secondary">{storage.path}</td>
                         <td className="px-4 py-3">
                           <span className="text-xs px-2 py-0.5 rounded bg-panel text-text-muted">
                             {storage.type}
                           </span>
+                        </td>
+                        <td className="px-4 py-3 text-xs text-text-secondary">{storage.scheme || '\u2014'}</td>
+                        <td className="px-4 py-3 text-xs text-text-secondary">
+                          {serverName ?? (serverId === null ? t('Local') : t('Server {{id}}', { id: serverId }))}
+                        </td>
+                        <td className="px-4 py-3">
+                          {storage.disk_space == null ? (
+                            <span className="text-text-muted" title={t('zmaudit has not cached a size for this storage area yet.')}>
+                              &mdash;
+                            </span>
+                          ) : (
+                            <div className="min-w-28 max-w-40">
+                              <span className="font-mono text-xs text-text-secondary">
+                                {formatBytes(storage.disk_space)}
+                              </span>
+                              <div
+                                role="progressbar"
+                                aria-valuenow={diskPercent ?? 0}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
+                                title={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
+                                className="mt-1 h-1.5 rounded-full bg-panel overflow-hidden"
+                              >
+                                <div className="h-full rounded-full bg-cyan" style={{ width: `${diskPercent ?? 0}%` }} />
+                              </div>
+                            </div>
+                          )}
                         </td>
                         <td className="px-4 py-3">
                           <button
@@ -139,7 +173,7 @@ export default function SettingsStoragePage() {
                           <Link
                             to="/events"
                             className="inline-flex items-center gap-1 text-xs text-cyan hover:underline"
-                            title={t('Filtering the events list by storage area is not supported by this zm_api build yet (zm-api#24); this opens the full list.')}
+                            title={t('The events list cannot be pre-filtered by storage area yet; this opens the full list.')}
                           >
                             <Film size={12} />
                             {t('Events')}
@@ -301,7 +335,6 @@ export default function SettingsStoragePage() {
                   'transition-colors cursor-pointer'
                 )}
               >
-                {editingStorage && <option value="">{t('(keep current)')}</option>}
                 {STORAGE_SCHEMES.map((scheme) => (
                   <option key={scheme} value={scheme}>{scheme}</option>
                 ))}
@@ -347,15 +380,6 @@ export default function SettingsStoragePage() {
             />
           </div>
 
-          <p className="flex items-start gap-2 text-[11px] text-text-muted leading-relaxed">
-            <Info size={12} className="mt-0.5 shrink-0 text-cyan" />
-            <span>
-              {editingStorage
-                ? t('Scheme, Server and URL are saved, but this zm_api build does not return them, so the current values cannot be shown here. Leave Scheme on "keep current" unless you mean to change it.')
-                : t('Scheme, Server and URL are saved, but this zm_api build does not return them, so the list will not display them.')}
-            </span>
-          </p>
-
           <div className="flex items-center justify-between">
             <label className="text-sm font-medium text-text-secondary">{t('Enabled')}</label>
             <button
@@ -376,6 +400,22 @@ export default function SettingsStoragePage() {
               />
             </button>
           </div>
+
+          {/* DoDelete is in StorageResponse but in neither write schema — read-only. */}
+          {editingStorage && (
+            <div className="flex items-start justify-between gap-4">
+              <span className="text-sm font-medium text-text-secondary">{t('Auto-delete')}</span>
+              <span className="text-end">
+                <span className="text-sm text-text-primary">
+                  {editingStorage.do_delete === 1 ? t('Yes') : t('No')}
+                </span>
+                <span className="flex items-start gap-1.5 text-[11px] text-text-muted leading-relaxed">
+                  <Info size={12} className="mt-0.5 shrink-0 text-cyan" />
+                  {t('Set by ZoneMinder; the API cannot change it yet.')}
+                </span>
+              </span>
+            </div>
+          )}
 
           {st.saveError && (
             <p role="alert" className="text-xs text-crimson">

@@ -9,6 +9,7 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
+import { formatBytes } from '@/lib/format';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
@@ -51,23 +52,28 @@ export default function ClassicSettingsStoragePage() {
                 isError={st.isError}
                 error={st.error}
                 onRetry={st.refetch}
-                empty={st.filteredItems.length === 0}
+                empty={st.rows.length === 0}
                 emptyMessage={t('No matching records found')}
               >
                 <ClassicTable>
                   <thead>
                     <tr>
+                      <th className={classicTh}>{t('Id')}</th>
                       <th className={classicTh}>{t('Name')}</th>
                       <th className={classicTh}>{t('Path')}</th>
                       <th className={classicTh}>{t('Type')}</th>
+                      <th className={classicTh}>{t('Scheme')}</th>
+                      <th className={classicTh}>{t('Server')}</th>
+                      <th className={classicTh}>{t('Disk Space')}</th>
                       <th className={classicTh}>{t('Enabled')}</th>
                       <th className={classicTh}>{t('Events')}</th>
                       <th className={clsx(classicTh, 'text-end')}>{t('Actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
-                    {st.filteredItems.map((storage) => (
+                    {st.rows.map(({ storage, serverId, serverName, diskPercent }) => (
                       <tr key={storage.id}>
+                        <td className={clsx(classicTd, 'font-mono text-xs')}>{storage.id}</td>
                         <td className={classicTd}>
                           {canEdit ? (
                             <button type="button" onClick={() => st.openEdit(storage)} className={classicLink}>
@@ -77,6 +83,32 @@ export default function ClassicSettingsStoragePage() {
                         </td>
                         <td className={clsx(classicTd, 'font-mono text-xs')}>{storage.path}</td>
                         <td className={clsx(classicTd, 'text-xs')}>{storage.type}</td>
+                        <td className={clsx(classicTd, 'text-xs')}>{storage.scheme || '\u2014'}</td>
+                        <td className={clsx(classicTd, 'text-xs')}>
+                          {serverName ?? (serverId === null ? t('Local') : t('Server {{id}}', { id: serverId }))}
+                        </td>
+                        <td className={clsx(classicTd, 'text-xs whitespace-nowrap')}>
+                          {storage.disk_space == null ? (
+                            <span title={t('zmaudit has not cached a size for this storage area yet.')}>&mdash;</span>
+                          ) : (
+                            <span
+                              className="inline-block min-w-24"
+                              title={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
+                            >
+                              <span className="font-mono">{formatBytes(storage.disk_space)}</span>
+                              <span
+                                role="progressbar"
+                                aria-valuenow={diskPercent ?? 0}
+                                aria-valuemin={0}
+                                aria-valuemax={100}
+                                aria-label={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
+                                className="block mt-0.5 h-1.5 rounded bg-zinc-200 overflow-hidden"
+                              >
+                                <span className="block h-full rounded bg-zinc-500" style={{ width: `${diskPercent ?? 0}%` }} />
+                              </span>
+                            </span>
+                          )}
+                        </td>
                         <td className={classicTd}>
                           {canEdit ? (
                             <input
@@ -91,7 +123,7 @@ export default function ClassicSettingsStoragePage() {
                           <Link
                             to="/events"
                             className={classicLink}
-                            title={t('Filtering the events list by storage area is not supported by this zm_api build yet (zm-api#24); this opens the full list.')}
+                            title={t('The events list cannot be pre-filtered by storage area yet; this opens the full list.')}
                           >
                             {t('Events')}
                           </Link>
@@ -140,7 +172,6 @@ export default function ClassicSettingsStoragePage() {
           </select>
           <label htmlFor="cst-scheme" className="text-text-secondary">{t('Scheme')}</label>
           <select id="cst-scheme" value={formData.scheme} onChange={(e) => st.setField('scheme', e.target.value)} className={input}>
-            {editingStorage && <option value="">{t('(keep current)')}</option>}
             {STORAGE_SCHEMES.map((scheme) => <option key={scheme} value={scheme}>{scheme}</option>)}
           </select>
           <label htmlFor="cst-server" className="text-text-secondary">{t('Server')}</label>
@@ -157,12 +188,19 @@ export default function ClassicSettingsStoragePage() {
           <input id="cst-url" value={formData.url} onChange={(e) => st.setField('url', e.target.value)} className={clsx(input, 'font-mono')} placeholder={t('s3://bucket/prefix (optional)')} />
           <label htmlFor="cst-enabled" className="text-text-secondary">{t('Enabled')}</label>
           <input id="cst-enabled" type="checkbox" checked={formData.enabled === 1} onChange={st.toggleFormEnabled} className="justify-self-start" />
+          {/* DoDelete is in StorageResponse but in neither write schema — read-only. */}
+          {editingStorage && (
+            <>
+              <span className="text-text-secondary">{t('Auto-delete')}</span>
+              <span>
+                {editingStorage.do_delete === 1 ? t('Yes') : t('No')}
+                <span className="block text-[11px] text-text-muted">
+                  {t('Set by ZoneMinder; the API cannot change it yet.')}
+                </span>
+              </span>
+            </>
+          )}
         </div>
-        <p className="mt-3 text-[11px] text-text-muted leading-relaxed">
-          {editingStorage
-            ? t('Scheme, Server and URL are saved, but this zm_api build does not return them, so the current values cannot be shown here. Leave Scheme on "keep current" unless you mean to change it.')
-            : t('Scheme, Server and URL are saved, but this zm_api build does not return them, so the list will not display them.')}
-        </p>
         {st.saveError && <p role="alert" className="mt-2 text-xs text-crimson">{t('Save failed: {{message}}', { message: st.saveError })}</p>}
         <div className="flex items-center justify-end gap-2 pt-4">
           <button type="button" onClick={st.closeModal} className="px-3 py-1.5 text-xs rounded border border-border-subtle text-text-muted hover:bg-surface">{t('Cancel')}</button>

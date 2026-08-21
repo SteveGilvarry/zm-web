@@ -6,7 +6,7 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { GroupEditDialog } from '@/features/groups/GroupEditDialog';
-import { GROUP_REPARENT_ISSUE_URL, useGroupsPage } from '@/features/groups/useGroupsPage';
+import { useGroupsPage } from '@/features/groups/useGroupsPage';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { ClassicButton, ClassicTable, classicTd, classicTh } from '../components/settings/primitives';
 
@@ -36,16 +36,6 @@ export default function ClassicGroupsPage() {
               <ClassicButton tone="primary" onClick={s.openCreate}>{t('New group')}</ClassicButton>
             </RequirePerm>
           </div>
-
-          {s.parentWarning && (
-            <div role="status" className="flex items-start gap-2 rounded border border-amber-400 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-              <span className="flex-1">
-                {s.parentWarning}{' '}
-                <a href={GROUP_REPARENT_ISSUE_URL} target="_blank" rel="noreferrer" className="underline">zm-api#28</a>
-              </span>
-              <button type="button" onClick={s.dismissParentWarning} aria-label={t('Dismiss')} className="font-semibold">×</button>
-            </div>
-          )}
 
           <div className="grid grid-cols-12 gap-4 items-start">
             <div className="col-span-12 lg:col-span-7">

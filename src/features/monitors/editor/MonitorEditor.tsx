@@ -24,7 +24,7 @@ import {
   LinkedMonitorsSelect, GroupsMembership,
 } from './RelationSelects';
 import { useGroupMembership } from './useGroupMembership';
-import { extractEditableFields, sameValue, sameIdSet, randomHexColour, HEX_COLOUR } from './editorState';
+import { extractEditableFields, sameValue, sameIdSet, isUnsetSecret, randomHexColour, HEX_COLOUR } from './editorState';
 
 interface MonitorEditorProps {
   monitor: Monitor;
@@ -89,10 +89,13 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
   const groupsValue = groupsDraft ?? membership.baseline;
   const groupsDirty = groupsDraft != null && !sameIdSet(groupsDraft, membership.baseline);
 
-  // Diff = keys whose draft value differs from baseline.
+  // Diff = keys whose draft value differs from baseline. Write-only fields
+  // (`pass`, `onvif_password`) are dropped while blank: the API never sends
+  // them back, so blank means "keep what is stored", not "clear it".
   const diff = useMemo(() => {
     const out: Record<string, FieldValue> = {};
     for (const [k, v] of Object.entries(draft)) {
+      if (isUnsetSecret(k, v)) continue;
       const orig = baseline[k];
       if (!sameValue(v, orig)) out[k] = v;
     }
@@ -478,7 +481,7 @@ function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate }: FormPan
               monitorId={monitorId}
               draft={draft}
               value={draft[f.key]}
-              isDirty={!sameValue(draft[f.key], baseline[f.key])}
+              isDirty={!isUnsetSecret(f.key, draft[f.key]) && !sameValue(draft[f.key], baseline[f.key])}
               error={errors[f.key]}
               onChange={(v) => onUpdate(f.key, v)}
               onUpdate={onUpdate}
@@ -714,7 +717,7 @@ function FieldInput({
   }
 
   if (field.kind === 'password') {
-    return <PasswordInput value={value} onChange={onChange} className={baseInput} />;
+    return <PasswordInput value={value} onChange={onChange} label={field.label} className={baseInput} />;
   }
 
   // text
@@ -739,14 +742,19 @@ function FieldInput({
  * Password input with a visibility toggle. Mirrors the legacy ONVIF/source
  * password fields which ship with an eye icon — operators expect to be able
  * to verify what they're typing against the camera UI.
+ *
+ * The API never echoes a stored password, so an empty box is ambiguous:
+ * the placeholder says the stored one is intact and typing replaces it.
  */
 function PasswordInput({
   value,
   onChange,
+  label,
   className,
 }: {
   value: FieldValue;
   onChange: (v: FieldValue) => void;
+  label: string;
   className: string;
 }) {
   const { t } = useTranslation();
@@ -757,6 +765,8 @@ function PasswordInput({
         type={visible ? 'text' : 'password'}
         value={value == null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value)}
+        placeholder={t('Unchanged — type to replace')}
+        aria-label={label}
         autoComplete="new-password"
         className={clsx(className, 'font-mono pe-9')}
       />

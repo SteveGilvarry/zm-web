@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
+import { makeServer, makeStorage } from '@/test/fixtures/admin';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 
@@ -52,9 +53,13 @@ const paged = <T,>(items: T[], over: Record<string, number> = {}) => ({
   items, total: items.length, per_page: 25, current_page: 1, last_page: 1, ...over,
 });
 
+const GIB = 1024 ** 3;
 const STORAGE = [
-  { id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 },
-  { id: 2, name: 'Cold archive', path: '/mnt/cold', type: 's3fs', enabled: 0 },
+  makeStorage({ disk_space: 40 * GIB, server_id: 0, do_delete: 1 }),
+  makeStorage({
+    id: 2, name: 'Cold archive', path: '/mnt/cold', type: 's3fs', enabled: 0,
+    scheme: 'Deep', server_id: 3, url: 's3://bucket/zm', disk_space: 10 * GIB, do_delete: 0,
+  }),
 ];
 
 let sent: Array<{ method: string; path: string; body: unknown }> = [];
@@ -70,7 +75,7 @@ function seed(over: unknown[] = []) {
     http.get('/api/v3/configs/:name', ({ params }) =>
       HttpResponse.json({ id: 0, name: params.name, value: '', type: 'string', category: 'web', readonly: 0 })),
     http.get('/api/v3/storage', () => HttpResponse.json(paged(STORAGE))),
-    http.get('/api/v3/servers', () => HttpResponse.json(paged([{ id: 3, name: 'edge-01', hostname: 'h', port: null, status: 'Running' }]))),
+    http.get('/api/v3/servers', () => HttpResponse.json(paged([makeServer({ id: 3, name: 'edge-01', hostname: 'h' })]))),
     http.post('/api/v3/filters/preview', () => HttpResponse.json(paged([], { total: usageTotal }))),
     http.post('/api/v3/storage', async ({ request }) => {
       const body = await request.json();
@@ -111,6 +116,41 @@ describe('ClassicSettingsStoragePage', () => {
     const cold = screen.getByRole('button', { name: 'Cold archive' }).closest('tr')!;
     expect(within(cold).getByRole('checkbox', { name: 'Enable Cold archive' })).not.toBeChecked();
     expect(within(cold).getByRole('button', { name: 'Delete Cold archive' })).toBeEnabled();
+  });
+
+  it('carries the legacy Id / Scheme / Server / Disk Space columns', async () => {
+    signIn();
+    seed();
+    await mount();
+
+    const row = (await screen.findByRole('button', { name: 'Default' })).closest('tr')!;
+    expect(within(row).getByText('1')).toBeInTheDocument();
+    expect(within(row).getByText('Medium')).toBeInTheDocument();
+    // ServerId 0 — the store is reachable from every server.
+    expect(within(row).getByText('Local')).toBeInTheDocument();
+    expect(within(row).getByText('40.0 GB')).toBeInTheDocument();
+
+    const cold = screen.getByRole('button', { name: 'Cold archive' }).closest('tr')!;
+    expect(within(cold).getByText('Deep')).toBeInTheDocument();
+    await waitFor(() => expect(within(cold).getByText('edge-01')).toBeInTheDocument());
+    expect(within(cold).getByText('10.0 GB')).toBeInTheDocument();
+
+    // The bar compares the listed stores; it is not a share of the disk.
+    const bars = screen.getAllByRole('progressbar');
+    expect(bars.map((b) => b.getAttribute('aria-valuenow'))).toEqual(['100', '25']);
+    expect(bars[1]).toHaveAccessibleName(
+      '10.0 GB of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.',
+    );
+  });
+
+  it('shows an em dash and no bar when zmaudit has no figure', async () => {
+    signIn();
+    seed([http.get('/api/v3/storage', () => HttpResponse.json(paged([makeStorage({ disk_space: null })])))]);
+    await mount();
+
+    await screen.findByRole('button', { name: 'Default' });
+    expect(screen.queryByRole('progressbar')).toBeNull();
+    expect(screen.getByText('\u2014')).toBeInTheDocument();
   });
 
   it('the search box narrows the list by name or path', async () => {
@@ -181,7 +221,7 @@ describe('ClassicSettingsStoragePage', () => {
     });
   });
 
-  it('editing keeps the current scheme unless one is picked', async () => {
+  it('editing opens on the stored row and PATCHes all of it back', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
@@ -191,8 +231,9 @@ describe('ClassicSettingsStoragePage', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('Name')).toHaveValue('Cold archive');
     expect(within(dialog).getByLabelText('Path')).toHaveValue('/mnt/cold');
-    // The backend cannot echo scheme, so the edit form opens on "keep current".
-    expect(within(dialog).getByLabelText('Scheme')).toHaveValue('');
+    expect(within(dialog).getByLabelText('Scheme')).toHaveValue('Deep');
+    await waitFor(() => expect(within(dialog).getByLabelText('Server')).toHaveValue('3'));
+    expect(within(dialog).getByLabelText('URL')).toHaveValue('s3://bucket/zm');
     // enabled 0 → unchecked; tick it and save.
     expect(within(dialog).getByLabelText('Enabled')).not.toBeChecked();
     await user.click(within(dialog).getByLabelText('Enabled'));
@@ -203,10 +244,23 @@ describe('ClassicSettingsStoragePage', () => {
     expect(sent[0].path).toBe('/storage/2');
     expect(sent[0].body).toEqual({
       name: 'Cold archive', path: '/mnt/cold', type: 's3fs', enabled: 1,
-      server_id: null, url: null,
+      scheme: 'Deep', server_id: 3, url: 's3://bucket/zm',
     });
-    // `scheme: undefined` is dropped by JSON.stringify — assert it never went out.
-    expect(Object.keys(sent[0].body as object)).not.toContain('scheme');
+  });
+
+  it('shows DoDelete as a read-only fact with its reason', async () => {
+    signIn();
+    seed();
+    const user = userEvent.setup();
+    await mount();
+
+    await user.click(await screen.findByRole('button', { name: 'Edit Cold archive' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Auto-delete')).toBeInTheDocument();
+    expect(within(dialog).getByText('No')).toBeInTheDocument();
+    expect(within(dialog).getByText('Set by ZoneMinder; the API cannot change it yet.')).toBeInTheDocument();
+    // Neither CreateStorageRequest nor UpdateStorageRequest carries do_delete.
+    expect(within(dialog).getAllByRole('checkbox')).toHaveLength(1);
   });
 
   it('Cancel closes the modal without a request', async () => {

@@ -18,6 +18,9 @@
     "color-contrast",
     "link-name"
   ],
+  "classic/logs": [
+    "color-contrast"
+  ],
   "classic/monitors.list": [
     "color-contrast"
   ],

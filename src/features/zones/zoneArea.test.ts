@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { polygonArea, zoneArea, zoneColour, zoneOutOfBounds, zonePixelPoints } from './zoneArea';
+import { polygonArea, zoneArea, zoneColour, zoneOutOfBounds, zonePixelPoints, zoneReportedArea } from './zoneArea';
 
 const frame = { width: 100, height: 50 };
 
@@ -12,7 +12,25 @@ describe('polygonArea', () => {
   });
 });
 
-describe('zoneArea — legacy "Area (px/%)"', () => {
+describe('zoneReportedArea — legacy "Area (px/%)" for a saved zone', () => {
+  it('prints ZoneMinder\'s stored Area and its share of the frame', () => {
+    expect(zoneReportedArea({ area: 5000 }, frame)).toEqual({ px: 5000, pct: 100 });
+    expect(zoneReportedArea({ area: 2500 }, frame)).toEqual({ px: 2500, pct: 50 });
+  });
+
+  it('never divides by a frame that has not loaded yet', () => {
+    expect(zoneReportedArea({ area: 5000 }, { width: 0, height: 0 })).toEqual({ px: 5000, pct: 0 });
+  });
+
+  it('trusts the backend even when the polygon disagrees', () => {
+    // Live data: two zones with identical coords report different areas,
+    // because Zones.Area is whatever ZoneMinder last wrote — that is exactly
+    // the number legacy prints, so we print it too instead of recounting.
+    expect(zoneReportedArea({ area: 9926 }, frame).px).toBe(9926);
+  });
+});
+
+describe('zoneArea — the draft polygon in ZoneEditor', () => {
   it('reports pixels and percent of the frame for pixel zones', () => {
     expect(zoneArea({ units: 'Pixels', coords: '0,0 100,0 100,50 0,50' }, frame)).toEqual({ px: 5000, pct: 100 });
     expect(zoneArea({ units: 'Pixels', coords: '0,0 50,0 50,50 0,50' }, frame)).toEqual({ px: 2500, pct: 50 });

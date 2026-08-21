@@ -36,11 +36,11 @@ describe('SummaryStrip', () => {
         shownCount={1}
         page={1}
         pageSize={50}
-        activeLevel={-2}
+        activeLevel="error"
         {...noopHandlers}
       />,
     );
-    // ZoneMinder: -2 is ERROR (-1 is WARNING, 0 INFO).
+    // The cards set the API's `min_level` — "this severity or worse".
     expect(screen.getByRole('button', { name: /errors: 1/i }))
       .toHaveAttribute('aria-pressed', 'true');
     expect(screen.getByRole('button', { name: /warnings: 0/i }))
@@ -90,7 +90,7 @@ describe('SummaryStrip', () => {
     expect(screen.getByText(/101.*150/)).toBeInTheDocument();
   });
 
-  it('offers a Debug card when given a handler and says when counts are page-local', () => {
+  it('offers a Debug card when given a handler', () => {
     render(
       <SummaryStrip
         summary={{ errors: 0, warnings: 0, info: 2, debug: 5 }}
@@ -98,14 +98,14 @@ describe('SummaryStrip', () => {
         shownCount={7}
         page={2}
         pageSize={50}
-        activeLevel={1}
+        activeLevel="debug"
         {...noopHandlers}
         onPickDebug={() => {}}
-        pageLocal
       />,
     );
     expect(screen.getByRole('button', { name: /debug: 5/i })).toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByText(/matching on this page: 7/i)).toBeInTheDocument();
+    // Every filter is server-side, so the readout is always the real range.
+    expect(screen.getByText(/displaying: 51–57/i)).toBeInTheDocument();
   });
 
   it('shows 0–0 when the table is empty', () => {

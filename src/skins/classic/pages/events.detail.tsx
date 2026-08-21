@@ -18,6 +18,7 @@ import { ZonesOverlay } from '@/features/events/ZonesOverlay';
 import { useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
 import { formatDurationHms } from '@/features/events/duration';
 import { formatTime, useEventDetailPage } from '@/features/events/useEventDetailPage';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { formatBytes } from '@/lib/format';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { ClassicButton, ClassicLinkButton } from '../components/events/primitives';
@@ -37,6 +38,8 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
   const { t } = useTranslation();
   const replayModeOptions = useReplayModeOptions();
   const scaleOptions = useScaleOptions();
+  // Event stamps render through ZoneMinder's own patterns / server zone.
+  const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
   // Pull the ref out so the remaining `s.*` reads are plain values.
   const { event, monitor, videoRef } = s;
@@ -171,8 +174,8 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                       </tr>
                       <tr><th scope="row">{t('Cause')}</th><td>{event.cause ?? '—'}</td></tr>
                       {event.notes && <tr><th scope="row">{t('Notes')}</th><td className="whitespace-pre-wrap">{event.notes}</td></tr>}
-                      <tr><th scope="row">{t('Start')}</th><td>{s.startTime ? s.startTime.toLocaleString() : '—'}</td></tr>
-                      <tr><th scope="row">{t('End')}</th><td>{s.endTime ? s.endTime.toLocaleString() : '—'}</td></tr>
+                      <tr><th scope="row">{t('Start')}</th><td>{s.startTime ? formatDateTime(s.startTime) : '—'}</td></tr>
+                      <tr><th scope="row">{t('End')}</th><td>{s.endTime ? formatDateTime(s.endTime) : '—'}</td></tr>
                       <tr><th scope="row">{t('Duration')}</th><td>{formatDurationHms(event.length)}</td></tr>
                       <tr><th scope="row">{t('Frames')}</th><td>{event.frames ?? 0}</td></tr>
                       <tr><th scope="row">{t('Alarm Frames')}</th><td>{event.alarm_frames ?? 0}</td></tr>
@@ -272,7 +275,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     {s.eventData.map((row) => (
                       <tr key={row.id} className="border-t border-[#dee2e6]">
                         <td className="px-2 py-1">{row.frame_id ?? '—'}</td>
-                        <td className="px-2 py-1 whitespace-nowrap">{row.timestamp ? new Date(row.timestamp).toLocaleString() : '—'}</td>
+                        <td className="px-2 py-1 whitespace-nowrap">{row.timestamp ? formatDateTime(row.timestamp) : '—'}</td>
                         <td className="px-2 py-1 whitespace-pre-wrap break-words">{row.data ?? '—'}</td>
                       </tr>
                     ))}

@@ -1,13 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { LogEntry } from '@/api/logs';
-import {
-  dateInputToMs,
-  matchesLevel,
-  matchesMessageQuery,
-  parseLogTime,
-  summarizeLogs,
-  withinTimeRange,
-} from './filter';
+import { dateInputToUnix, parseLogTime, summarizeLogs } from './filter';
 
 function makeLog(over: Partial<LogEntry> = {}): LogEntry {
   return {
@@ -42,62 +35,20 @@ describe('parseLogTime', () => {
   });
 });
 
-describe('matchesMessageQuery', () => {
-  it('matches any log when the query is empty / whitespace', () => {
-    expect(matchesMessageQuery(makeLog(), '')).toBe(true);
-    expect(matchesMessageQuery(makeLog(), '   ')).toBe(true);
-  });
-
-  it('does a case-insensitive substring match on the message field', () => {
-    const log = makeLog({ message: 'Capture daemon STARTED on monitor 3' });
-    expect(matchesMessageQuery(log, 'capture')).toBe(true);
-    expect(matchesMessageQuery(log, 'CAPTURE')).toBe(true);
-    expect(matchesMessageQuery(log, 'monitor 3')).toBe(true);
-    expect(matchesMessageQuery(log, 'monitor 7')).toBe(false);
-  });
-});
-
-describe('withinTimeRange', () => {
-  const log = makeLog({ time_key: '2026-06-01T10:00:00Z' });
-  const t = Date.UTC(2026, 5, 1, 10, 0, 0);
-
-  it('passes everything when both bounds are null', () => {
-    expect(withinTimeRange(log, null, null)).toBe(true);
-  });
-
-  it('filters out logs older than startMs', () => {
-    expect(withinTimeRange(log, t - 1000, null)).toBe(true);
-    expect(withinTimeRange(log, t + 1000, null)).toBe(false);
-  });
-
-  it('filters out logs newer than endMs', () => {
-    expect(withinTimeRange(log, null, t + 1000)).toBe(true);
-    expect(withinTimeRange(log, null, t - 1000)).toBe(false);
-  });
-
-  it('treats both bounds as inclusive', () => {
-    expect(withinTimeRange(log, t, t)).toBe(true);
-  });
-
-  it('drops logs with unparseable timestamps when a bound is set', () => {
-    const bogus = makeLog({ time_key: 'not-a-date' });
-    expect(withinTimeRange(bogus, t, null)).toBe(false);
-  });
-});
-
-describe('dateInputToMs', () => {
+// The message search, the date range and the severity threshold are all
+// query params now (zm-api#21), so the only thing left here is the
+// conversion the toolbar needs to build them.
+describe('dateInputToUnix', () => {
   it('returns null for empty input', () => {
-    expect(dateInputToMs('')).toBeNull();
+    expect(dateInputToUnix('')).toBeNull();
   });
 
   it('returns null for unparseable input', () => {
-    expect(dateInputToMs('not-a-date')).toBeNull();
+    expect(dateInputToUnix('not-a-date')).toBeNull();
   });
 
-  it('parses a datetime-local style string', () => {
-    const ms = dateInputToMs('2026-06-01T10:30');
-    expect(typeof ms).toBe('number');
-    expect(Number.isNaN(ms!)).toBe(false);
+  it('converts a datetime-local value to whole Unix seconds', () => {
+    expect(dateInputToUnix('2026-06-01T10:30:00Z')).toBe(Date.UTC(2026, 5, 1, 10, 30) / 1000);
   });
 });
 
@@ -117,23 +68,5 @@ describe('summarizeLogs', () => {
       makeLog({ level: 3, code: 'DBG' }),
     ];
     expect(summarizeLogs(logs)).toEqual({ errors: 3, warnings: 1, info: 1, debug: 2 });
-  });
-});
-
-describe('matchesLevel', () => {
-  it('matches everything when no level is picked', () => {
-    expect(matchesLevel(makeLog({ level: -2 }), undefined)).toBe(true);
-  });
-
-  it('matches the exact level for INFO and more severe', () => {
-    expect(matchesLevel(makeLog({ level: -1 }), -1)).toBe(true);
-    expect(matchesLevel(makeLog({ level: 0 }), -1)).toBe(false);
-    expect(matchesLevel(makeLog({ level: -2 }), -1)).toBe(false);
-  });
-
-  it('treats DEBUG as every debug depth', () => {
-    expect(matchesLevel(makeLog({ level: 1 }), 1)).toBe(true);
-    expect(matchesLevel(makeLog({ level: 5 }), 1)).toBe(true);
-    expect(matchesLevel(makeLog({ level: 0 }), 1)).toBe(false);
   });
 });

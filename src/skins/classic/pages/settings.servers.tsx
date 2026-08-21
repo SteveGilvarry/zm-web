@@ -7,8 +7,9 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import type { Server } from '@/api/servers';
-import { useServersPage } from '@/features/servers/useServersPage';
+import { useServersPage, type ServerRow } from '@/features/servers/useServersPage';
 import { SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
+import type { ServerDaemon } from '@/features/servers/serverFields';
 import { cpuLoadTone, freeTone, serverStatusTone, type LoadTone, type ServerLoadSummary } from '@/features/servers/serverStats';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
@@ -16,6 +17,9 @@ import { OptionsRail } from '../components/settings/OptionsRail';
 import { ClassicButton, ClassicTable, classicInput, classicLink, classicTd, classicTh } from '../components/settings/primitives';
 
 const input = classicInput;
+
+/** Id, Name, Url, three paths, Status, Monitors, four load cells, actions. */
+const COLUMN_COUNT = 13;
 
 /** Options → Servers — classic skin: legacy server table with load columns. */
 export default function ClassicSettingsServersPage() {
@@ -55,8 +59,12 @@ export default function ClassicSettingsServersPage() {
                 <ClassicTable>
                   <thead>
                     <tr>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Id')}</th>
                       <th className={classicTh}>{t('Name')}</th>
-                      <th className={classicTh}>{t('Host')}</th>
+                      <th className={classicTh}>{t('Url')}</th>
+                      <th className={classicTh}>{t('Path to index')}</th>
+                      <th className={classicTh}>{t('Path to ZMS')}</th>
+                      <th className={classicTh}>{t('Path to API')}</th>
                       <th className={classicTh}>{t('Status')}</th>
                       <th className={clsx(classicTh, 'text-end')}>{t('Monitors')}</th>
                       <th className={clsx(classicTh, 'text-end')}>{t('Load')}</th>
@@ -69,37 +77,26 @@ export default function ClassicSettingsServersPage() {
                   <tbody>
                     {s.rows.length === 0 && (
                       <tr>
-                        <td colSpan={9} className={clsx(classicTd, 'py-6 text-center text-zinc-500')}>
+                        <td colSpan={COLUMN_COUNT} className={clsx(classicTd, 'py-6 text-center text-zinc-500')}>
                           {t('No servers registered. The default install is single-node.')}
                         </td>
                       </tr>
                     )}
-                    {s.rows.map(({ server, monitorCount, load }) => (
-                      <tr key={server.id}>
-                        <td className={classicTd}>
-                          {canEdit ? (
-                            <button type="button" onClick={() => s.startEdit(server)} className={classicLink}>
-                              {server.name}
-                            </button>
-                          ) : server.name}
-                        </td>
-                        <td className={clsx(classicTd, 'font-mono text-xs')}>
-                          {server.hostname}{server.port != null ? `:${server.port}` : ''}
-                        </td>
-                        <td className={clsx(classicTd, 'text-xs')}><StatusText status={server.status} /></td>
-                        <td className={clsx(classicTd, 'text-end font-mono tabular-nums')}>{monitorCount}</td>
-                        <LoadTds load={load} pct={pct} />
-                        <td className={clsx(classicTd, 'text-end whitespace-nowrap')}>
-                          <RequirePerm feature="system" level="Edit">
-                            <ClassicButton onClick={() => s.startEdit(server)} aria-label={t('Edit {{name}}', { name: server.name })}>{t('Edit')}</ClassicButton>{' '}
-                            <ClassicButton onClick={() => s.requestDelete(server)} aria-label={t('Delete {{name}}', { name: server.name })}>{t('Delete')}</ClassicButton>
-                          </RequirePerm>
-                        </td>
-                      </tr>
+                    {s.rows.map((row) => (
+                      <ServerRows
+                        key={row.server.id}
+                        row={row}
+                        pct={pct}
+                        canEdit={canEdit}
+                        expanded={s.expandedId === row.server.id}
+                        onToggle={() => s.toggleDetail(row.server.id)}
+                        onEdit={() => s.startEdit(row.server)}
+                        onDelete={() => s.requestDelete(row.server)}
+                      />
                     ))}
                     {s.localLoad && (
                       <tr className="text-zinc-600">
-                        <td className={clsx(classicTd, 'italic')} colSpan={3}>
+                        <td className={clsx(classicTd, 'italic')} colSpan={7}>
                           {t('This host')}
                           <span className="ms-1 text-[10px] not-italic text-zinc-400">
                             ({t('stats recorded without a server id')})
@@ -113,6 +110,11 @@ export default function ClassicSettingsServersPage() {
                   </tbody>
                 </ClassicTable>
               </QueryState>
+
+              {/* Said once for the whole page — see `UpdateServerRequest` in the OpenAPI spec. */}
+              <p className="text-xs text-zinc-500">
+                {t('Only name, hostname, port and status are writable; the API does not accept the rest yet.')}
+              </p>
 
               <RequirePerm feature="system" level="Edit">
                 <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} onCancel={s.cancelEdit} />
@@ -136,6 +138,95 @@ export default function ClassicSettingsServersPage() {
   );
 }
 
+type Pct = (v: number | null, suffix?: string) => string;
+
+/** One server row plus the read-only detail row it expands into. */
+function ServerRows({ row, pct, canEdit, expanded, onToggle, onEdit, onDelete }: {
+  row: ServerRow;
+  pct: Pct;
+  canEdit: boolean;
+  expanded: boolean;
+  onToggle: () => void;
+  onEdit: () => void;
+  onDelete: () => void;
+}) {
+  const { t } = useTranslation();
+  const { server, monitorCount, load, url } = row;
+  const mono = clsx(classicTd, 'font-mono text-xs');
+
+  return (
+    <>
+      <tr>
+        <td className={clsx(mono, 'text-end tabular-nums')}>{server.id}</td>
+        <td className={classicTd}>
+          {canEdit ? (
+            <button type="button" onClick={onEdit} className={classicLink}>{server.name}</button>
+          ) : server.name}
+        </td>
+        <td className={mono}>{url ?? '—'}</td>
+        <td className={mono}>{server.path_to_index || '—'}</td>
+        <td className={mono}>{server.path_to_zms || '—'}</td>
+        <td className={mono}>{server.path_to_api || '—'}</td>
+        <td className={clsx(classicTd, 'text-xs')}><StatusText status={server.status} /></td>
+        <td className={clsx(classicTd, 'text-end font-mono tabular-nums')}>{monitorCount}</td>
+        <LoadTds load={load} pct={pct} />
+        <td className={clsx(classicTd, 'text-end whitespace-nowrap')}>
+          <ClassicButton
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-label={t('Details for {{name}}', { name: server.name })}
+          >
+            {expanded ? t('Hide') : t('Details')}
+          </ClassicButton>{' '}
+          <RequirePerm feature="system" level="Edit">
+            <ClassicButton onClick={onEdit} aria-label={t('Edit {{name}}', { name: server.name })}>{t('Edit')}</ClassicButton>{' '}
+            <ClassicButton onClick={onDelete} aria-label={t('Delete {{name}}', { name: server.name })}>{t('Delete')}</ClassicButton>
+          </RequirePerm>
+        </td>
+      </tr>
+      {expanded && (
+        <tr>
+          <td colSpan={COLUMN_COUNT} className={clsx(classicTd, 'bg-zinc-50')}>
+            <ServerDetail row={row} />
+          </td>
+        </tr>
+      )}
+    </>
+  );
+}
+
+/** Legacy's RunStats / RunAudit / RunTrigger / RunEventNotification, plus state and coordinates. */
+function ServerDetail({ row }: { row: ServerRow }) {
+  const { t } = useTranslation();
+  const { server, daemons, coords } = row;
+  const daemonLabels: Record<ServerDaemon, string> = {
+    zmstats: t('Run stats'),
+    zmaudit: t('Run audit'),
+    zmtrigger: t('Run trigger'),
+    zmeventnotification: t('Run event notification'),
+  };
+  const items: Array<[string, string]> = [
+    ...daemons.map(({ daemon, enabled }): [string, string] => [
+      daemonLabels[daemon], enabled ? t('Yes') : t('No'),
+    ]),
+    [t('Protocol'), server.protocol || '—'],
+    [t('Hostname'), server.hostname || '—'],
+    [t('Run state'), server.state_id != null ? String(server.state_id) : '—'],
+    [t('Coordinates'), coords ?? '—'],
+  ];
+
+  return (
+    <dl className="grid grid-cols-4 gap-x-6 gap-y-2 text-xs py-1">
+      {items.map(([label, value]) => (
+        <div key={label} className="flex gap-2">
+          <dt className="text-zinc-500">{label}</dt>
+          <dd className="font-mono text-zinc-800">{value}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
 /** Legacy `server.php` paints CpuLoad > 5 and free mem/swap < 10% red. */
 const TONE_CLS: Record<LoadTone, string> = {
   ok: '',
@@ -144,7 +235,7 @@ const TONE_CLS: Record<LoadTone, string> = {
   none: 'text-zinc-400',
 };
 
-function LoadTds({ load, pct }: { load: ServerLoadSummary | null; pct: (v: number | null, suffix?: string) => string }) {
+function LoadTds({ load, pct }: { load: ServerLoadSummary | null; pct: Pct }) {
   const cell = clsx(classicTd, 'text-end font-mono tabular-nums');
   const cpuLoad = load?.cpuLoad ?? null;
   const memFree = load?.memFreePercent ?? null;

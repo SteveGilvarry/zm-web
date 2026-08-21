@@ -8,8 +8,9 @@
  *
  * The seeded store (`src/test/msw/handlers.ts`) holds two rows — an INFO
  * `zmc_m1` "Starting capture" and an ERROR `zma_m1` "Shared data size
- * conflict" — which is enough to tell server-side filtering (component,
- * level `>=`) from the page-local narrowing the hook does on top.
+ * conflict". Every filter is a query param the mock honours the way the
+ * backend does (zm-api#21), so these assert the request as well as the
+ * rows that come back.
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -33,9 +34,9 @@ async function findTable(): Promise<HTMLElement> {
   return screen.findByRole('table');
 }
 
-/** The exact-level chip row, which shares the name "Level" with the column. */
+/** The severity-threshold chip row ("this level or worse"). */
 function levelChips(): HTMLElement {
-  return screen.getByRole('group', { name: 'Level' });
+  return screen.getByRole('group', { name: 'Minimum level' });
 }
 
 describe('LogsPage (modern) — rendering', () => {
@@ -140,7 +141,18 @@ describe('LogsPage (modern) — severity rendering', () => {
 });
 
 describe('LogsPage (modern) — level chips', () => {
-  it('pushes the exact level into the URL and narrows the page', async () => {
+  it('pushes the severity threshold into the URL and the request', async () => {
+    const seen: Array<string | null> = [];
+    server.use(
+      http.get('/api/v3/logs', ({ request }) => {
+        const url = new URL(request.url);
+        seen.push(url.searchParams.get('min_level'));
+        const rows = url.searchParams.get('min_level') === 'error'
+          ? db.logs.filter((l) => l.level <= -2)
+          : db.logs;
+        return HttpResponse.json(paginated(rows, { total: rows.length }));
+      }),
+    );
     const user = userEvent.setup();
     const { router } = renderRoute('/logs');
     await findTable();
@@ -148,39 +160,31 @@ describe('LogsPage (modern) — level chips', () => {
     await user.click(within(levelChips()).getByRole('button', { name: 'Error' }));
 
     await waitFor(() => {
-      expect(router.state.location.search).toMatchObject({ level: -2 });
+      expect(router.state.location.search).toMatchObject({ min_level: 'error' });
     });
+    await waitFor(() => expect(seen).toContain('error'));
     await waitFor(() => {
       expect(screen.queryByText('Starting capture')).not.toBeInTheDocument();
     });
     expect(screen.getByText('Shared data size conflict')).toBeInTheDocument();
-
-    // The backend `level` param is a `>=` bound, so the exact match happens
-    // on the fetched page — the page has to say so.
-    const note = screen.getByTestId('logs-page-local-note');
-    expect(note).toHaveTextContent(
-      'Level, search and date filters apply within the current page only (1 of 2 rows match).',
-    );
+    // No "current page only" caveat left to print.
+    expect(screen.queryByTestId('logs-page-local-note')).not.toBeInTheDocument();
   });
 
-  it('sends the chip level to the backend as a query param', async () => {
-    const seen: Array<string | null> = [];
-    server.use(
-      http.get('/api/v3/logs', ({ request }) => {
-        seen.push(new URL(request.url).searchParams.get('level'));
-        return HttpResponse.json(paginated(db.logs, { total: db.logs.length }));
-      }),
-    );
+  it('means "this level or worse": warning keeps the error row too', async () => {
     const user = userEvent.setup();
     renderRoute('/logs');
     await findTable();
 
     await user.click(within(levelChips()).getByRole('button', { name: 'Warning' }));
-    await waitFor(() => expect(seen).toContain('-1'));
+    await waitFor(() => {
+      expect(screen.queryByText('Starting capture')).not.toBeInTheDocument();
+    });
+    expect(screen.getByText('Shared data size conflict')).toBeInTheDocument();
   });
 
-  it('reflects ?level= from the URL on the chip and the table', async () => {
-    renderRoute('/logs?level=-2');
+  it('reflects ?min_level= from the URL on the chip and the table', async () => {
+    renderRoute('/logs?min_level=error');
 
     const table = await findTable();
     expect(within(table).getByText('Shared data size conflict')).toBeInTheDocument();
@@ -191,9 +195,22 @@ describe('LogsPage (modern) — level chips', () => {
     );
   });
 
-  it('toggles the level off when the active summary card is clicked again', async () => {
+  it('drops an unknown min_level rather than sending it on to a 400', async () => {
+    const seen: Array<string | null> = [];
+    server.use(
+      http.get('/api/v3/logs', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('min_level'));
+        return HttpResponse.json(paginated(db.logs, { total: db.logs.length }));
+      }),
+    );
+    renderRoute('/logs?min_level=panic');
+    await findTable();
+    expect(seen).toEqual([null]);
+  });
+
+  it('toggles the threshold off when the active summary card is clicked again', async () => {
     const user = userEvent.setup();
-    const { router } = renderRoute('/logs?level=-2');
+    const { router } = renderRoute('/logs?min_level=error');
     await findTable();
 
     const strip = screen.getByRole('region', { name: 'Logs summary' });
@@ -202,12 +219,12 @@ describe('LogsPage (modern) — level chips', () => {
 
     await user.click(errors);
     await waitFor(() => {
-      expect(router.state.location.search).not.toHaveProperty('level');
+      expect(router.state.location.search).not.toHaveProperty('min_level');
     });
     expect(await screen.findByText('Starting capture')).toBeInTheDocument();
   });
 
-  it('filters to warnings from the summary card', async () => {
+  it('filters to warnings and worse from the summary card', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/logs');
     await findTable();
@@ -216,8 +233,65 @@ describe('LogsPage (modern) — level chips', () => {
     await user.click(within(strip).getByRole('button', { name: 'Warnings: 0' }));
 
     await waitFor(() => {
-      expect(router.state.location.search).toMatchObject({ level: -1 });
+      expect(router.state.location.search).toMatchObject({ min_level: 'warning' });
     });
+  });
+});
+
+describe('LogsPage (modern) — sort and clear', () => {
+  it('flips the timestamp column between desc and asc, with aria-sort', async () => {
+    const seen: Array<string | null> = [];
+    server.use(
+      http.get('/api/v3/logs', ({ request }) => {
+        seen.push(new URL(request.url).searchParams.get('sort'));
+        return HttpResponse.json(paginated(db.logs, { total: db.logs.length }));
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderRoute('/logs');
+    const table = await findTable();
+
+    const header = within(table).getByRole('columnheader', { name: /Timestamp/ });
+    expect(header).toHaveAttribute('aria-sort', 'descending');
+
+    await user.click(within(header).getByRole('button', { name: 'Sort by timestamp' }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ sort: 'asc' }));
+    await waitFor(() => expect(seen).toContain('asc'));
+    expect(
+      within(screen.getByRole('table')).getByRole('columnheader', { name: /Timestamp/ }),
+    ).toHaveAttribute('aria-sort', 'ascending');
+  });
+
+  it('clears the logs behind a confirmation, scoped to the filters on screen', async () => {
+    let deleted: URLSearchParams | null = null;
+    server.use(
+      http.delete('/api/v3/logs', ({ request }) => {
+        deleted = new URL(request.url).searchParams;
+        db.logs = [];
+        return HttpResponse.json({ message: 'Deleted 2 log entries' });
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/logs?component=zmc_m1');
+    await findTable();
+
+    await user.click(screen.getByRole('button', { name: 'Clear Logs' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/matching the filters on screen/)).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Clear Logs' }));
+    expect(await screen.findByText('Deleted 2 log entries')).toBeInTheDocument();
+    expect(deleted!.get('component')).toBe('zmc_m1');
+  });
+
+  it('warns that an unfiltered clear takes the whole table', async () => {
+    const user = userEvent.setup();
+    renderRoute('/logs');
+    await findTable();
+
+    await user.click(screen.getByRole('button', { name: 'Clear Logs' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/every row in the log table/)).toBeInTheDocument();
   });
 });
 
@@ -289,7 +363,17 @@ describe('LogsPage (modern) — filters', () => {
     expect(screen.queryByText('Starting capture')).not.toBeInTheDocument();
   });
 
-  it('applies the date range client-side and reports an empty result', async () => {
+  it('sends the date range as Unix-second bounds and reports an empty result', async () => {
+    const seen: Array<string | null> = [];
+    server.use(
+      http.get('/api/v3/logs', ({ request }) => {
+        const url = new URL(request.url);
+        seen.push(url.searchParams.get('end'));
+        const end = url.searchParams.get('end');
+        const rows = end ? [] : db.logs;
+        return HttpResponse.json(paginated(rows, { total: rows.length }));
+      }),
+    );
     const user = userEvent.setup();
     const { router } = renderRoute('/logs');
     await findTable();
@@ -300,6 +384,8 @@ describe('LogsPage (modern) — filters', () => {
     await waitFor(() => {
       expect(router.state.location.search).toMatchObject({ end: '2020-01-01T00:00' });
     });
+    // Whole seconds, not milliseconds.
+    await waitFor(() => expect(seen.at(-1)).toBe(String(Date.parse('2020-01-01T00:00') / 1000)));
     expect(
       await screen.findByText('No log entries match the current filters.'),
     ).toBeInTheDocument();
@@ -316,7 +402,6 @@ describe('LogsPage (modern) — filters', () => {
       expect(router.state.location.search).toMatchObject({ start: '2020-01-01T00:00' });
     });
     expect(screen.getByText('Starting capture')).toBeInTheDocument();
-    expect(screen.getByTestId('logs-page-local-note')).toBeInTheDocument();
   });
 });
 

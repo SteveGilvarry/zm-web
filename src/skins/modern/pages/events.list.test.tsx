@@ -178,40 +178,40 @@ describe('EventsListPage — modern skin', () => {
     await screen.findByRole('link', { name: 'Download video for event 102' });
 
     expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveValue('2');
+    // An <input list=…> is a combobox, not a textbox.
     expect(screen.getByRole('combobox', { name: 'Cause' })).toHaveValue('Forced Web');
     expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('1');
     expect(screen.getByRole('combobox', { name: 'Events per page' })).toHaveValue('5');
-    expect(screen.getByPlaceholderText('Search events...')).toHaveValue('Event');
+    expect(screen.getByRole('textbox', { name: 'Name contains' })).toHaveValue('Event');
     expect(screen.getByRole('button', { name: 'ID, sorted descending' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
   });
 
-  it('applies the notes substring within the fetched page and says so', async () => {
+  it('sends the notes substring to the server and shows only what came back', async () => {
+    const urls = recordEventQueries();
     renderRoute('/events?notes=delivery');
     await screen.findByRole('link', { name: 'Download video for event 103' });
 
-    expect(screen.getByPlaceholderText('Notes contain…')).toHaveValue('delivery');
-    expect(screen.getByText('Showing 1 of 3 events')).toBeVisible();
-    expect(
-      screen.getByText('(search, cause, notes and tag apply within this page: 1 of 3 rows)'),
-    ).toBeVisible();
-    expect(screen.queryByRole('link', { name: 'Download video for event 101' })).toBeNull();
+    expect(screen.getByRole('textbox', { name: 'Notes contain' })).toHaveValue('delivery');
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('notes')).toBe('delivery'));
+    // No "within this page" caveat: the total is the filtered total.
+    expect(screen.queryByText(/within this page/)).toBeNull();
   });
 
-  it('filters by attached tag within the page', async () => {
+  it('sends the tag filter as tag_id', async () => {
     db.tags = [makeTag({ id: 1, name: 'Important' }), makeTag({ id: 2, name: 'Review' })];
     db.events = [
       makeEvent({ id: 101, monitor_id: 1, tags: [{ id: 1, name: 'Important' }] }),
       makeEvent({ id: 102, monitor_id: 1, tags: null }),
     ];
+    const urls = recordEventQueries();
     renderRoute('/events?tag=1');
     await cards();
 
     expect(screen.getByRole('combobox', { name: 'Tag' })).toHaveValue('1');
-    expect(screen.getByText('Showing 1 of 2 events')).toBeVisible();
-    expect(screen.queryByRole('link', { name: 'Download video for event 102' })).toBeNull();
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('1'));
     // Tag counts ride along in the option label.
     expect(screen.getByRole('option', { name: 'Important (3)' })).toBeInTheDocument();
   });
@@ -296,9 +296,10 @@ describe('EventsListPage — modern skin', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '2');
     await waitFor(() => expect(router.state.location.search).toEqual({ monitor_id: 2 }));
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Cause' }), 'Forced Web');
-    await waitFor(() =>
-      expect(router.state.location.search).toEqual({ monitor_id: 2, cause: 'Forced Web' }),
+    await user.type(screen.getByRole('combobox', { name: 'Cause' }), 'Forced Web');
+    await waitFor(
+      () => expect(router.state.location.search).toEqual({ monitor_id: 2, cause: 'Forced Web' }),
+      { timeout: 3000 },
     );
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), '1');
@@ -309,12 +310,12 @@ describe('EventsListPage — modern skin', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), '1');
     await waitFor(() => expect(router.state.location.search).toMatchObject({ group: 1 }));
 
-    // "All" on each select removes the param again.
+    // "All" on each select (and an empty Cause box) removes the param again.
     await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), 'all');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Cause' }), 'all');
+    await user.clear(screen.getByRole('combobox', { name: 'Cause' }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), 'all');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), 'all');
-    await waitFor(() => expect(router.state.location.search).toEqual({}));
+    await waitFor(() => expect(router.state.location.search).toEqual({}), { timeout: 3000 });
   });
 
   it('cycles the archived toggle through the URL', async () => {
@@ -355,18 +356,34 @@ describe('EventsListPage — modern skin', () => {
     );
   });
 
+  it('offers the sort fields zm-api#20 added and sends them to the API', async () => {
+    const urls = recordEventQueries();
+    const user = userEvent.setup();
+    const { router } = renderRoute('/events');
+    await cards();
+
+    for (const [label, field] of [
+      ['Name', 'name'], ['Cause', 'cause'], ['Monitor', 'monitor_id'],
+      ['Notes', 'notes'], ['Frames', 'frames'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: `Sort by ${label}` }));
+      await waitFor(() => expect(router.state.location.search).toMatchObject({ sort: field }));
+      await waitFor(() => expect(urls.at(-1)!.searchParams.get('sort')).toBe(field));
+    }
+  });
+
   it('debounces the free-text boxes into the URL', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
     await cards();
 
-    await user.type(screen.getByPlaceholderText('Search events...'), 'Event-102');
+    await user.type(screen.getByRole('textbox', { name: 'Name contains' }), 'Event-102');
     await waitFor(
       () => expect(router.state.location.search).toMatchObject({ q: 'Event-102' }),
       { timeout: 3000 },
     );
 
-    await user.type(screen.getByPlaceholderText('Notes contain…'), 'van');
+    await user.type(screen.getByRole('textbox', { name: 'Notes contain' }), 'van');
     await waitFor(
       () => expect(router.state.location.search).toMatchObject({ q: 'Event-102', notes: 'van' }),
       { timeout: 3000 },

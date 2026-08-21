@@ -9,6 +9,7 @@ import { describe, expect, it, vi, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
+import { makeDateTimeFormatters } from '@/lib/datetime';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
@@ -56,8 +57,12 @@ describe('ReportsListPage — modern skin', () => {
     const nightly = within(table.getByRole('link', { name: 'Nightly' }).closest('tr')!);
     expect(nightly.getByText('Recent motion')).toBeInTheDocument();
     expect(nightly.getByText('1440 min')).toBeInTheDocument();
-    const start = new Date('2026-08-20T22:00:00Z').toLocaleString();
-    const end = new Date('2026-08-21T06:00:00Z').toLocaleString();
+    // Rendered through `useDateTimeFormat()` — with no server patterns set
+    // that is Intl's medium date + 24h time in the viewer's zone, not the
+    // page's old `toLocaleString()`.
+    const { formatDateTime } = makeDateTimeFormatters({ locale: 'en' });
+    const start = formatDateTime('2026-08-20T22:00:00Z');
+    const end = formatDateTime('2026-08-21T06:00:00Z');
     expect(nightly.getByText(`${start} → ${end}`)).toBeInTheDocument();
 
     // Report 2 has no name, no filter, no range and no interval.

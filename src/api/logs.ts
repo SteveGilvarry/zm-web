@@ -1,4 +1,4 @@
-import { apiGet } from './client';
+import { apiDelete, apiGet } from './client';
 import type { PaginatedResponse } from '@/types';
 
 /** One log entry from `/api/v3/logs`. */
@@ -21,18 +21,43 @@ export interface LogEntry {
   line?: number | null;
 }
 
-export interface LogQueryParams {
-  page?: number;
-  page_size?: number;
+/**
+ * `min_level` — the severity threshold the legacy Log view's dropdown always
+ * meant: "this severity **or worse**". `fatal` also catches PANIC (-4) and
+ * the audit rows ZoneMinder writes at -5. Names, not numbers: the backend
+ * answers 400 for anything outside this list (zm-api#21).
+ */
+export const LOG_MIN_LEVELS = ['fatal', 'error', 'warning', 'info', 'debug'] as const;
+export type LogMinLevel = (typeof LOG_MIN_LEVELS)[number];
+
+export function isLogMinLevel(v: unknown): v is LogMinLevel {
+  return typeof v === 'string' && (LOG_MIN_LEVELS as readonly string[]).includes(v);
+}
+
+/** `LogSort` — order on `time_key`. Default `desc` (newest first). */
+export type LogSort = 'asc' | 'desc';
+
+/** Filters shared by `GET /logs` and `DELETE /logs`. */
+export interface LogFilterParams {
   /** Filter to a specific component (zmc, zma, zmaudit, …). */
   component?: string;
-  /**
-   * Numeric lower bound: the backend returns rows with `level >= this`,
-   * i.e. this severity **and everything less severe** (zm-api BT-04). To
-   * show "errors and worse" you must filter client-side.
-   */
+  /** Severity threshold: this level or worse. */
+  min_level?: LogMinLevel;
+  /** Exact `Logs.Level` match (inverted scale: 0 = INFO, -2 = ERROR). */
   level?: number;
+  /** Case-insensitive substring match on the message. */
+  search?: string;
+  /** Unix seconds; rows at or after this instant. */
+  start?: number;
+  /** Unix seconds; rows at or before this instant. */
+  end?: number;
   server_id?: number;
+}
+
+export interface LogQueryParams extends LogFilterParams {
+  page?: number;
+  page_size?: number;
+  sort?: LogSort;
 }
 
 export async function listLogs(
@@ -42,6 +67,21 @@ export async function listLogs(
     '/logs',
     params as Record<string, string | number | undefined>,
   );
+}
+
+/**
+ * Legacy "Clear Logs", scoped by the same filters as the list — so the
+ * operator deletes what the view is showing, not the whole table. Needs
+ * System (admin) permission; answers the number of rows deleted.
+ */
+export async function clearLogs(params?: LogFilterParams): Promise<{ message: string }> {
+  const qs = new URLSearchParams();
+  Object.entries(params ?? {}).forEach(([k, v]) => {
+    if (v !== undefined && v !== '') qs.append(k, String(v));
+  });
+  const query = qs.toString();
+  // `apiDelete` is typed `Promise<void>` but resolves to the parsed body.
+  return (await apiDelete(`/logs${query ? `?${query}` : ''}`)) as unknown as { message: string };
 }
 
 export async function getLog(id: number): Promise<LogEntry> {

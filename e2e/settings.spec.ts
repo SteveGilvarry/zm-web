@@ -164,7 +164,7 @@ test.describe('Settings — storage', () => {
       await expect(page.getByRole('row', { name: /e2e-events/ })).toContainText(
         '/var/cache/zoneminder/events-e2e',
       );
-      await expect(page.getByRole('row', { name: /^Default/ }).first()).toBeVisible();
+      await expect(page.getByRole('row', { name: /\bDefault\b/ }).first()).toBeVisible();
       await expect(page.getByRole('button', { name: /^edit e2e-events$/i })).toBeVisible();
     });
 

@@ -5,6 +5,7 @@
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
@@ -66,6 +67,9 @@ function stub() {
     http.get('/api/v3/servers', () =>
       HttpResponse.json({ items: [], total: 0, per_page: 100, current_page: 1, last_page: 1 }),
     ),
+    // `useDateTimeFormat` reads ZM's four date/time rows; blank = locale default.
+    http.get('/api/v3/configs/:name', ({ params }) =>
+      HttpResponse.json({ name: String(params.name), value: '' })),
   );
 }
 
@@ -78,7 +82,10 @@ describe('LogsPage — classic skin', () => {
     const headers = within(screen.getByTestId('log-table'))
       .getAllByRole('columnheader')
       .map((th) => th.textContent);
-    expect(headers).toEqual(['Date/Time', 'Component', 'PID', 'Level', 'Message', 'File', 'Line']);
+    // Date/Time carries the sort control, hence the arrow glyph.
+    expect(headers).toEqual(['Date/Time▼', 'Component', 'PID', 'Level', 'Message', 'File', 'Line']);
+    expect(within(screen.getByTestId('log-table')).getAllByRole('columnheader')[0])
+      .toHaveAttribute('aria-sort', 'descending');
 
     const row = screen.getByTestId('log-row-1');
     expect(within(row).getByText('zmc.cpp')).toBeInTheDocument();
@@ -97,14 +104,18 @@ describe('LogsPage — classic skin', () => {
     expect(screen.getByTestId('log-row-3').className).not.toContain('bg-[#fff3cd]');
   });
 
-  it('shows Clear Logs disabled until zm-api#21 lands', async () => {
+  it('offers Clear Logs behind a confirmation that names the scope', async () => {
     stub();
+    const user = userEvent.setup();
     await mount();
     await waitFor(() => expect(screen.getByTestId('log-row-1')).toBeInTheDocument());
 
     const clear = screen.getByRole('button', { name: /clear logs/i });
-    expect(clear).toBeDisabled();
-    expect(clear).toHaveAttribute('title', 'needs zm-api#21');
+    expect(clear).toBeEnabled();
+
+    await user.click(clear);
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/every row in the log table/)).toBeInTheDocument();
   });
 
   it('offers the legacy filter fields and the status line', async () => {

@@ -177,7 +177,7 @@ describe('GroupsPage — create flow', () => {
   });
 });
 
-describe('GroupsPage — edit flow (zm-api#28)', () => {
+describe('GroupsPage — edit flow', () => {
   async function editFrontYardParent(responseParent: number | null) {
     stubBaseEndpoints();
     let body: Record<string, unknown> = {};
@@ -199,19 +199,11 @@ describe('GroupsPage — edit flow (zm-api#28)', () => {
     return dialog;
   }
 
-  it('sends parent_id and stays quiet when the backend honours it', async () => {
+  // Re-parenting persists as of zm-api#28, so the save is an ordinary save:
+  // no response comparison, no warning banner.
+  it('sends parent_id and closes without a warning', async () => {
     await editFrontYardParent(2);
     await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
     expect(screen.queryByRole('status')).not.toBeInTheDocument();
-  });
-
-  it('warns, without blocking, when the backend echoes the old parent', async () => {
-    await editFrontYardParent(1);
-    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
-    const warning = await screen.findByRole('status');
-    expect(warning).toHaveTextContent(/ignores parent changes on update/);
-    expect(within(warning).getByRole('link', { name: /zm-api#28/ })).toHaveAttribute(
-      'href', 'https://github.com/SteveGilvarry/zm-api/issues/28',
-    );
   });
 });

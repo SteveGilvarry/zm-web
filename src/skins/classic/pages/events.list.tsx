@@ -14,10 +14,11 @@ import { classicSelect } from '@/skins/classic/components/events/styles';
 
 /**
  * Events list — classic skin, laid out like legacy `?view=events`: the
- * filter form row (Group / Monitor / Start ≥ / Start ≤ / Notes / Tags /
- * Archive Status) with the action buttons on the end side, the
- * bootstrap-table toolbar (search, refresh, columns, export), the legacy
- * table and its footer pager. All state is in the URL.
+ * filter form row (Group / Monitor / Start ≥ / Start ≤ / Cause / Notes /
+ * Tags / Archive Status) with the action buttons on the end side, the
+ * bootstrap-table toolbar (name search, refresh, columns, export), the
+ * legacy table and its footer pager. Every filter is a query param on
+ * `/events`; all state is in the URL.
  */
 export default function ClassicEventsListPage() {
   const { t } = useTranslation();
@@ -80,6 +81,12 @@ export default function ClassicEventsListPage() {
                 <ClassicClearableInput id="ev-end" type="datetime-local" value={s.endInputValue} onChange={s.setEndInput} ariaLabel={t('Events starting before')} className="w-48" />
               </div>
             </ClassicFilterField>
+            <ClassicFilterField label={<>{t('Cause')} <span className="text-zinc-500">LIKE</span></>} htmlFor="ev-cause">
+              <ClassicClearableInput id="ev-cause" value={s.causeFilter} onChange={s.setCauseFilter} ariaLabel={t('Cause')} list="ev-cause-suggestions" className="w-36" />
+              <datalist id="ev-cause-suggestions">
+                {s.causes.map((cause) => <option key={cause} value={cause} />)}
+              </datalist>
+            </ClassicFilterField>
             <ClassicFilterField label={<>{t('Notes')} <span className="text-zinc-500">LIKE</span></>} htmlFor="ev-notes">
               <ClassicClearableInput id="ev-notes" value={s.notesQuery} onChange={s.setNotesQuery} placeholder={t('Event Type')} className="w-36" />
             </ClassicFilterField>
@@ -110,17 +117,12 @@ export default function ClassicEventsListPage() {
 
         {/* bootstrap-table toolbar */}
         <div className="flex flex-wrap items-center justify-end gap-1.5 px-4 py-2">
-          {s.pageLocalFiltering && (
-            <span className="me-auto text-xs text-[#856404]">
-              {t('(search, cause, notes and tag apply within this page: {{shown}} of {{rows}} rows)', { shown: s.events.length, rows: s.pageRowCount })}
-            </span>
-          )}
           <input
             type="search"
             value={s.searchQuery}
             onChange={(e) => s.setSearchQuery(e.target.value)}
-            placeholder={t('Search')}
-            aria-label={t('Search events')}
+            placeholder={t('Name contains…')}
+            aria-label={t('Name contains')}
             className="px-2 py-1 text-sm border border-[#ced4da] rounded-sm w-48 focus:outline-none focus:border-[#80bdff]"
           />
           <ClassicButton tone="primary" onClick={() => s.refetch()} aria-label={t('Refresh events')} title={t('Refresh')}>

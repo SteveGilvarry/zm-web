@@ -22,7 +22,6 @@ const inspectResult = {
 const page = <T,>(items: T[]) => ({ items, total: items.length, per_page: 500, current_page: 1, last_page: 1 });
 const server = setupServer(
   http.get('/api/v3/monitor_presets', () => HttpResponse.json(page([]))),
-  http.get('/api/v3/storage', () => HttpResponse.json(page([{ id: 1, name: 'Default', path: '/x', type: 'local', enabled: 1 }]))),
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 0, user: 'admin' }, isAuthenticated: true });
@@ -37,7 +36,7 @@ describe('DiscoveryDialog', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('scan → candidates → inspect → profiles → prefilled Add dialog → POST /monitors', async () => {
+  it('scan → candidates → inspect → profiles → "Edit first" → prefilled Add dialog → POST /monitors', async () => {
     const user = userEvent.setup();
     let probeBody: unknown = null;
     let inspectBody: unknown = null;
@@ -71,7 +70,7 @@ describe('DiscoveryDialog', () => {
     expect(screen.getByText('3840×2160')).toBeInTheDocument();
     expect(screen.getByText('HIKVISION')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /create monitor/i }));
+    await user.click(screen.getByRole('button', { name: /edit first/i }));
     // The Add dialog opens prefilled from the profile.
     const dialog = await screen.findByRole('dialog', { name: /add monitor/i });
     expect(dialog).toBeInTheDocument();
@@ -87,6 +86,58 @@ describe('DiscoveryDialog', () => {
     });
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 9 })));
     expect(onClose).toHaveBeenCalled();
+  });
+
+  it('"Add camera" onboards in one call, with the credentials from the sign-in step', async () => {
+    const user = userEvent.setup();
+    let onboardBody: unknown = null;
+    let createBody: unknown = null;
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+    server.use(
+      http.post('/api/v3/discovery/probe', () => HttpResponse.json(candidates)),
+      http.post('/api/v3/discovery/inspect', () => HttpResponse.json(inspectResult)),
+      http.post('/api/v3/discovery/onboard', async ({ request }) => {
+        onboardBody = await request.json();
+        return HttpResponse.json({ id: 12, name: 'DS-2CD2087G2-LU', deleted: false });
+      }),
+      http.post('/api/v3/monitors', async ({ request }) => { createBody = await request.json(); return HttpResponse.json({ id: 99 }); }),
+    );
+
+    renderWithProviders(<DiscoveryDialog open onClose={onClose} onCreated={onCreated} />);
+    await user.click(screen.getByRole('button', { name: /^scan$/i }));
+    await user.click((await screen.findAllByRole('button', { name: /^inspect$/i }))[0]);
+    await user.type(screen.getByLabelText(/^username$/i), 'admin');
+    await user.type(screen.getByLabelText(/^password$/i), 'pw');
+    await user.click(screen.getByRole('button', { name: /^inspect$/i }));
+    await screen.findByText('mainStream');
+
+    await user.click(screen.getByRole('button', { name: /add camera/i }));
+
+    await waitFor(() => expect(onboardBody).toEqual({
+      xaddr: 'http://192.168.1.10/onvif/device_service',
+      username: 'admin',
+      password: 'pw',
+      profile_token: 'Profile_1',
+    }));
+    // The backend writes the row; the client never POSTs /monitors itself.
+    expect(createBody).toBeNull();
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 12 })));
+    expect(onClose).toHaveBeenCalled();
+  });
+
+  it('flags a candidate the backend already matched to a monitor', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.post('/api/v3/discovery/probe', () => HttpResponse.json([
+        { ...candidates[0], monitor_id: 3 },
+        candidates[1],
+      ])),
+    );
+    renderWithProviders(<DiscoveryDialog open onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^scan$/i }));
+    await screen.findByText('Front cam');
+    expect(screen.getAllByText(/already added/i)).toHaveLength(1);
   });
 
   it('a typed device-service URL skips the scan', async () => {

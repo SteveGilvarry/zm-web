@@ -5,6 +5,7 @@ import { AppShell } from '@/skins/AppShell';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
 import { useUsersPage } from '@/features/users/useUsersPage';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
@@ -152,8 +153,16 @@ export default function ClassicSettingsUsersPage() {
         </div>
       </main>
 
+      <ChangePasswordDialog isOpen={u.passwordOpen} onClose={u.closePasswordChange} />
+
       {u.editorOpen && (
-        <UserEditor key={u.editingUser?.id ?? 'new'} editing={u.editingUser} mode={u.editorMode} onClose={u.closeEditor} />
+        <UserEditor
+          key={u.editingUser?.id ?? 'new'}
+          editing={u.editingUser}
+          mode={u.editorMode}
+          onClose={u.closeEditor}
+          onChangePassword={u.editingSelf ? u.openPasswordChange : undefined}
+        />
       )}
 
       <ConfirmDialog

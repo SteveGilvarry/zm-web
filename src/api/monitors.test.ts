@@ -12,10 +12,11 @@ import {
   getLiveSessions,
   getMonitorSnapshotUrl,
   getHlsPlaylistUrl,
-  normalizeMonitor,
   canonicalEnum,
+  MONITOR_ENUMS,
 } from './monitors';
 import { useAuthStore } from '@/stores/auth';
+import { isDeleted } from '@/types';
 
 const server = setupServer();
 beforeAll(() => {
@@ -44,42 +45,36 @@ describe('getMonitors', () => {
   });
 });
 
-describe('normalizeMonitor — response casing → request casing (BT-02)', () => {
-  // Values exactly as the dev box returns them.
+describe('monitor enums come back ready to write (zm-api#18)', () => {
+  // Values exactly as the dev box returns them: the request spelling, and
+  // `deleted` as a JSON boolean. No client-side normalisation left.
   const raw = {
-    id: 1, name: 'HIKVISION', orientation: 'ROTATE_90', event_close_mode: 'system',
-    default_codec: 'auto', rtsp2_web_type: 'WebRTC', output_container: null,
+    id: 1, name: 'HIKVISION', orientation: 'Rotate90', event_close_mode: 'System',
+    default_codec: 'Auto', rtsp2_web_type: 'WebRtc', output_container: null,
     capturing: 'Always', decoding: 'Ondemand', analysing: 'None', recording: 'Always',
-    type: 'Ffmpeg', function: 'Monitor', importance: 'Normal', deleted: 0,
+    type: 'Ffmpeg', function: 'Monitor', importance: 'Normal', deleted: false,
   };
 
-  it('maps every enum field and leaves the rest alone', () => {
-    const out = normalizeMonitor(raw);
-    expect(out).toMatchObject({
-      orientation: 'Rotate90', event_close_mode: 'System', default_codec: 'Auto',
-      rtsp2_web_type: 'WebRtc', output_container: null, capturing: 'Always',
-      decoding: 'Ondemand', deleted: 0, name: 'HIKVISION',
-    });
-  });
-
-  it('is idempotent and passes unknown values through', () => {
-    const once = normalizeMonitor(raw);
-    expect(normalizeMonitor(once)).toEqual(once);
-    expect(canonicalEnum('FLIP_HORI', ['FlipHori'])).toBe('FlipHori');
-    expect(canonicalEnum('Sideways', ['Rotate0'])).toBe('Sideways');
-  });
-
-  it('getMonitors normalises every item; getMonitor the single record', async () => {
+  it('passes reads through untouched', async () => {
     server.use(
       http.get('/api/v3/monitors', () => HttpResponse.json({
-        items: [raw, { ...raw, id: 2, orientation: 'ROTATE_270' }],
+        items: [raw, { ...raw, id: 2, orientation: 'Rotate270' }],
         total: 2, per_page: 20, current_page: 1, last_page: 1,
       })),
       http.get('/api/v3/monitors/1', () => HttpResponse.json(raw)),
     );
     const page = await getMonitors();
     expect(page.items.map((m) => m.orientation)).toEqual(['Rotate90', 'Rotate270']);
-    expect((await getMonitor(1)).rtsp2_web_type).toBe('WebRtc');
+    const one = await getMonitor(1);
+    expect(one.rtsp2_web_type).toBe('WebRtc');
+    expect(one.event_close_mode).toBe('System');
+    expect(isDeleted(one)).toBe(false);
+  });
+
+  it('canonicalEnum still folds the loose spellings the camera presets use', () => {
+    expect(canonicalEnum('FLIP_HORI', ['FlipHori'])).toBe('FlipHori');
+    expect(canonicalEnum('WebRTC', MONITOR_ENUMS.rtsp2_web_type)).toBe('WebRtc');
+    expect(canonicalEnum('Sideways', ['Rotate0'])).toBe('Sideways');
   });
 });
 

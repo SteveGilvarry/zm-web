@@ -46,7 +46,7 @@ export default function EventsListPage() {
   const state = useEventsListPage();
   const {
     isAuthenticated, isLoading, error, refetch, accessToken,
-    events, total, monitors, groups, tags, causes, totals, pageLocalFiltering, pageRowCount,
+    events, total, monitors, groups, tags, causes, totals,
     searchQuery, setSearchQuery, notesQuery, setNotesQuery,
     monitorFilter, setMonitorFilter, groupFilter, setGroupFilter,
     causeFilter, setCauseFilter, tagFilter, setTagFilter,
@@ -77,7 +77,8 @@ export default function EventsListPage() {
               <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
               <input
                 type="text"
-                placeholder={t('Search events...')}
+                aria-label={t('Name contains')}
+                placeholder={t('Name contains…')}
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className={clsx(field, 'ps-10 pe-4 py-2 w-56')}
@@ -116,18 +117,21 @@ export default function EventsListPage() {
               <Monitor className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
             </div>
 
+            {/* Substring match, server-side. The datalist only suggests the
+                causes on this page — the API has no distinct-values route. */}
             <div className="relative">
-              <select
+              <input
+                type="text"
+                list="events-cause-suggestions"
                 aria-label={t('Cause')}
+                placeholder={t('Cause contains…')}
                 value={causeFilter}
                 onChange={(e) => setCauseFilter(e.target.value)}
-                className={clsx(field, 'ps-3 pe-8 py-2 appearance-none cursor-pointer')}
-              >
-                <option value="all">{t('All Causes')}</option>
-                {causes.map((cause) => (
-                  <option key={cause} value={cause}>{cause}</option>
-                ))}
-              </select>
+                className={clsx(field, 'ps-3 pe-8 py-2 w-40')}
+              />
+              <datalist id="events-cause-suggestions">
+                {causes.map((cause) => <option key={cause} value={cause} />)}
+              </datalist>
               <Filter className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
             </div>
 
@@ -153,6 +157,7 @@ export default function EventsListPage() {
 
             <input
               type="text"
+              aria-label={t('Notes contain')}
               placeholder={t('Notes contain…')}
               value={notesQuery}
               onChange={(e) => setNotesQuery(e.target.value)}
@@ -259,11 +264,6 @@ export default function EventsListPage() {
         <div className="mb-4 flex items-center justify-between text-sm text-text-muted">
           <span>
             {t('Showing {{shown}} of {{total}} events', { shown: events.length, total })}
-            {pageLocalFiltering && (
-              <span className="ms-2 text-xs text-amber">
-                {t('(search, cause, notes and tag apply within this page: {{shown}} of {{rows}} rows)', { shown: events.length, rows: pageRowCount })}
-              </span>
-            )}
           </span>
           {events.length > 0 && (
             <span className="flex items-center gap-3 font-mono text-xs">

@@ -4,20 +4,18 @@
  * of the component files so Fast Refresh keeps working and tests can hit
  * them without rendering.
  */
-import { normalizeMonitor } from '@/api/monitors';
 import type { Monitor } from '@/types';
 import { TABS, type FieldValue } from './fields';
 
 
 /**
  * Snapshot every editable field from a Monitor record into draft shape.
- * Enum fields are mapped to the request casing first (`ROTATE_90` →
- * `Rotate90`) so the selects show the stored value rather than their first
- * option, and so the PATCH diff carries values the backend accepts.
+ * Write-only fields land as `null` because `MonitorResponse` omits them —
+ * see {@link WRITE_ONLY_KEYS}.
  */
 export function extractEditableFields(monitor: Monitor): Record<string, FieldValue> {
   const out: Record<string, FieldValue> = {};
-  const m = normalizeMonitor(monitor) as unknown as Record<string, unknown>;
+  const m = monitor as unknown as Record<string, unknown>;
   for (const tab of TABS) {
     for (const f of tab.fields) {
       if (f.kind === 'group') continue;
@@ -28,6 +26,26 @@ export function extractEditableFields(monitor: Monitor): Record<string, FieldVal
     }
   }
   return out;
+}
+
+/**
+ * Fields the API takes but never gives back: `MonitorResponse` omits `pass`
+ * and `onvif_password` so a stolen read cannot leak camera credentials.
+ * The draft therefore starts blank for them no matter what is stored, and
+ * a blank one means "leave the stored secret alone" — {@link isUnsetSecret}
+ * keeps it out of the PATCH so saving an unrelated field cannot wipe a
+ * password the operator never saw.
+ *
+ * Derived from the field table rather than hardcoded, so a new password
+ * field is covered the day it is added.
+ */
+export const WRITE_ONLY_KEYS: ReadonlySet<string> = new Set(
+  TABS.flatMap((tab) => tab.fields.filter((f) => f.kind === 'password').map((f) => f.key)),
+);
+
+/** True for a write-only field the operator has not typed into. */
+export function isUnsetSecret(key: string, value: FieldValue): boolean {
+  return WRITE_ONLY_KEYS.has(key) && (value == null || String(value) === '');
 }
 
 export function sameValue(a: FieldValue, b: FieldValue): boolean {

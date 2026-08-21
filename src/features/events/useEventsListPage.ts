@@ -11,7 +11,7 @@ import { previewFilter, type FilterAstExpr, type FilterTerm } from '@/api/filter
 import { listGroupMonitors, listGroups, type Group } from '@/api/groups';
 import { getMonitors } from '@/api/monitors';
 import { getStorageList } from '@/api/storage';
-import { listTags, type Tag } from '@/api/tags';
+import { getTagDetail, listTags, type Tag } from '@/api/tags';
 import { useAuthStore } from '@/stores/auth';
 import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import { useEventsColumnsStore, EVENTS_COLUMNS, type EventsColumnKey } from '@/stores/eventsColumns';
@@ -83,9 +83,9 @@ export interface EventsListPageState {
   error: Error | null;
   refetch: () => void;
 
-  /** Events on the current page after client-side search/cause/notes/tag filters. */
+  /** The events on this page, exactly as the server filtered them. */
   events: ZmEvent[];
-  /** Rows the server sent for this page, before page-local narrowing. */
+  /** Alias of `events.length`, kept for the pager's "showing N" readout. */
   pageRowCount: number;
   total: number;
   monitors: Monitor[];
@@ -94,12 +94,14 @@ export interface EventsListPageState {
   storageLookup: Record<number, string>;
   storageName: (storageId: number) => string;
   tags: Tag[];
-  /** Distinct causes on the fetched page (plus the active filter, if any). */
+  /**
+   * Distinct causes seen on this page, for the Cause box's datalist. The
+   * API has no "distinct causes" endpoint and the box is a substring match,
+   * so this is a suggestion list, not the set of legal values.
+   */
   causes: string[];
   /** Σ duration / Σ disk across the visible page. */
   totals: { duration: number; disk: number };
-  /** True when a filter only narrows the fetched page (search / cause / notes / tag). */
-  pageLocalFiltering: boolean;
 
   searchQuery: string;
   setSearchQuery: (v: string) => void;
@@ -109,7 +111,7 @@ export interface EventsListPageState {
   setMonitorFilter: (v: number | 'all') => void;
   groupFilter: number | 'all';
   setGroupFilter: (v: number | 'all') => void;
-  /** Client-side (the backend has no cause parameter). */
+  /** Substring match on Cause, sent as the API's `cause` param. */
   causeFilter: string;
   setCauseFilter: (v: string) => void;
   tagFilter: number | 'all';
@@ -164,12 +166,22 @@ export interface EventsListPageState {
   exportCsv: () => void;
 }
 
-/** Build the preview AST for a group-wide page (the events endpoint takes one monitor id). */
+/**
+ * Build the preview AST for a group-wide page (the events endpoint takes one
+ * monitor id). `/filters/preview` evaluates the same substring filters the
+ * events endpoint does, so the group path narrows server-side too. It has no
+ * tag field, hence `eventIds`: the caller resolves the tag to its events and
+ * passes them as an `id in (…)` rule.
+ */
 export function groupEventsAst(opts: {
   monitorIds: number[];
   archived?: boolean;
   startTime?: string;
   endTime?: string;
+  name?: string;
+  cause?: string;
+  notes?: string;
+  eventIds?: number[];
   sort: EventSortField;
   dir: SortDirection;
 }): { where: FilterAstExpr; sort: { field: EventSortField; dir: SortDirection } } {
@@ -177,6 +189,10 @@ export function groupEventsAst(opts: {
   if (opts.archived !== undefined) rules.push({ field: 'archived', op: 'eq', value: opts.archived ? 1 : 0 });
   if (opts.startTime) rules.push({ field: 'start_time', op: 'gte', value: opts.startTime });
   if (opts.endTime) rules.push({ field: 'end_time', op: 'lte', value: opts.endTime });
+  if (opts.name) rules.push({ field: 'name', op: 'like', value: `%${opts.name}%` });
+  if (opts.cause) rules.push({ field: 'cause', op: 'like', value: `%${opts.cause}%` });
+  if (opts.notes) rules.push({ field: 'notes', op: 'like', value: `%${opts.notes}%` });
+  if (opts.eventIds) rules.push({ field: 'id', op: 'in', value: opts.eventIds });
   return { where: { match: 'all', rules }, sort: { field: opts.sort, dir: opts.dir } };
 }
 
@@ -216,8 +232,10 @@ export function useEventsListPage(): EventsListPageState {
   // the operator stops typing, so every keystroke does not rewrite history.
   const [searchDraft, setSearchDraft] = useState(search.q ?? '');
   const [notesDraft, setNotesDraft] = useState(search.notes ?? '');
+  const [causeDraft, setCauseDraft] = useState(search.cause ?? '');
   useEffect(() => { setSearchDraft(search.q ?? ''); }, [search.q]);
   useEffect(() => { setNotesDraft(search.notes ?? ''); }, [search.notes]);
+  useEffect(() => { setCauseDraft(search.cause ?? ''); }, [search.cause]);
   useEffect(() => {
     const id = setTimeout(() => {
       if ((search.q ?? '') !== searchDraft) setSearch({ q: searchDraft || undefined, page: undefined });
@@ -232,6 +250,13 @@ export function useEventsListPage(): EventsListPageState {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [notesDraft]);
+  useEffect(() => {
+    const id = setTimeout(() => {
+      if ((search.cause ?? '') !== causeDraft) setSearch({ cause: causeDraft || undefined, page: undefined });
+    }, 350);
+    return () => clearTimeout(id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [causeDraft]);
 
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const toggleSelected = (id: number) => {
@@ -252,7 +277,7 @@ export function useEventsListPage(): EventsListPageState {
 
   const monitorFilter: number | 'all' = search.monitor_id ?? 'all';
   const groupFilter: number | 'all' = search.group ?? 'all';
-  const causeFilter = search.cause ?? 'all';
+  const causeFilter = search.cause ?? '';
   const tagFilter: number | 'all' = search.tag ?? 'all';
   const archivedFilter: ArchivedFilter =
     search.archived === true ? 'archived' : search.archived === false ? 'unarchived' : 'all';
@@ -326,16 +351,34 @@ export function useEventsListPage(): EventsListPageState {
   });
   const tags = tagsData?.items ?? [];
 
-  // Fetch events. Cause is not a backend parameter, so it is not in the key.
+  // Every filter is a backend parameter now (zm-api#20), so every one of
+  // them is in the query key.
+  //
   // A single monitor goes through `/events`; a group (several monitors) has
   // no list parameter, so it runs through `/filters/preview` with
-  // `monitor_id in […]` — same paging, sort and ACLs, server-side.
+  // `monitor_id in […]` — same paging, sort and ACLs, server-side. Preview
+  // has no tag field, so on that path the tag is resolved to its event ids
+  // first (`/tags/{id}` already pages the events carrying it).
+  const searchQuery = (search.q ?? '').trim();
+  const notesQuery = (search.notes ?? '').trim();
+  const causeQuery = causeFilter.trim();
+
   const useGroupPath = monitorFilter === 'all' && groupMonitorIds !== null;
-  const groupReady = !useGroupPath || groupMonitorsData !== undefined;
+  const needTagIds = useGroupPath && tagFilter !== 'all';
+  const { data: tagDetail } = useQuery({
+    queryKey: ['tag-events', tagFilter],
+    queryFn: () => getTagDetail(tagFilter as number, { page: 1, page_size: 1000 }),
+    enabled: isAuthenticated && needTagIds,
+    staleTime: 60_000,
+  });
+  const groupReady =
+    (!useGroupPath || groupMonitorsData !== undefined) && (!needTagIds || tagDetail !== undefined);
+
   const { data: eventsData, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: [
       'events', page, pageSize, monitorFilter, groupMonitorIds, archivedFilter,
       dateFilter, endFilter, sortField, sortDir,
+      searchQuery, causeQuery, notesQuery, tagFilter, tagDetail?.events.length ?? null,
     ],
     queryFn: async (): Promise<PaginatedResponse<ZmEvent>> => {
       const archived = archivedFilter === 'all' ? undefined : archivedFilter === 'archived';
@@ -346,6 +389,10 @@ export function useEventsListPage(): EventsListPageState {
         return previewFilter(groupEventsAst({
           monitorIds: groupMonitorIds!, archived,
           startTime: dateFilter || undefined, endTime: endFilter || undefined,
+          name: searchQuery || undefined,
+          cause: causeQuery || undefined,
+          notes: notesQuery || undefined,
+          eventIds: needTagIds ? (tagDetail?.events ?? []).map((e) => e.id) : undefined,
           sort: sortField, dir: sortDir,
         }), { page, page_size: pageSize });
       }
@@ -358,6 +405,10 @@ export function useEventsListPage(): EventsListPageState {
         // Legacy "Start Date/Time <=" — the API bounds end_date_time instead,
         // so an event still running at this instant is left out.
         end_time: endFilter || undefined,
+        name: searchQuery || undefined,
+        cause: causeQuery || undefined,
+        notes: notesQuery || undefined,
+        tag_id: tagFilter === 'all' ? undefined : String(tagFilter),
         sort: sortField,
         direction: sortDir,
       });
@@ -386,50 +437,20 @@ export function useEventsListPage(): EventsListPageState {
     return lookup;
   }, [monitors]);
 
-  // Filter by search query, cause, notes substring, and tag attachment. The
-  // backend has no cause/notes/tags query params, so these run client-side
-  // over the current page — fine for typical event volumes, and labelled
-  // as page-local in the UI.
-  const searchQuery = search.q ?? '';
-  const notesQuery = search.notes ?? '';
-  const filteredEvents = useMemo(() => {
-    const query = searchQuery.trim().toLowerCase();
-    const notes = notesQuery.trim().toLowerCase();
-    return events.filter((event) => {
-      if (query) {
-        const matches =
-          event.name.toLowerCase().includes(query) ||
-          event.cause?.toLowerCase().includes(query) ||
-          monitorLookup[event.monitor_id]?.toLowerCase().includes(query);
-        if (!matches) return false;
-      }
-      if (causeFilter !== 'all' && (event.cause ?? '') !== causeFilter) return false;
-      if (notes) {
-        if (!event.notes?.toLowerCase().includes(notes)) return false;
-      }
-      if (tagFilter !== 'all') {
-        if (!event.tags?.some((t) => t.id === tagFilter)) return false;
-      }
-      return true;
-    });
-  }, [events, searchQuery, causeFilter, notesQuery, tagFilter, monitorLookup]);
-  const pageLocalFiltering =
-    searchQuery.trim() !== '' || notesQuery.trim() !== '' || causeFilter !== 'all' || tagFilter !== 'all';
-
   // Footer totals — sum across the visible page.
   const totals = useMemo(() => ({
-    duration: sumEventDurations(filteredEvents),
-    disk: sumEventDiskSpace(filteredEvents),
-  }), [filteredEvents]);
+    duration: sumEventDurations(events),
+    disk: sumEventDiskSpace(events),
+  }), [events]);
 
-  // Distinct causes on the page. The active filter stays in the list even
-  // when the page has no such event, so the select never shows a value it
-  // has no option for.
-  const causes = useMemo(() => {
-    const causeSet = new Set(events.map((e) => e.cause).filter((c): c is string => !!c));
-    if (causeFilter !== 'all') causeSet.add(causeFilter);
-    return Array.from(causeSet).sort();
-  }, [events, causeFilter]);
+  // Suggestions for the Cause box: the distinct causes on this page. There
+  // is no distinct-values endpoint, and a second query would only widen the
+  // list by whatever the next page happens to hold, so the datalist stays a
+  // hint over a free-text substring filter rather than a closed set.
+  const causes = useMemo(
+    () => Array.from(new Set(events.map((e) => e.cause).filter((c): c is string => !!c))).sort(),
+    [events],
+  );
 
   const showDefaultHourHint = defaultDateActive;
 
@@ -443,7 +464,6 @@ export function useEventsListPage(): EventsListPageState {
     setSearch({ monitor_id: v === 'all' ? undefined : v, page: undefined });
   const setGroupFilter = (v: number | 'all') =>
     setSearch({ group: v === 'all' ? undefined : v, page: undefined });
-  const setCauseFilter = (v: string) => setSearch({ cause: v === 'all' ? undefined : v, page: undefined });
   const setTagFilter = (v: number | 'all') => setSearch({ tag: v === 'all' ? undefined : v, page: undefined });
   const setArchivedFilter = (v: ArchivedFilter) =>
     setSearch({ archived: v === 'all' ? undefined : v === 'archived', page: undefined });
@@ -495,7 +515,7 @@ export function useEventsListPage(): EventsListPageState {
   const hidden = useEventsColumnsStore((s) => s.hidden);
   const exportCsv = () => {
     const columns: EventsColumnKey[] = EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
-    const csv = eventsToCsv(filteredEvents, columns, {
+    const csv = eventsToCsv(events, columns, {
       monitorName: (id) => monitorLookup[id] ?? String(id),
       storageName,
     });
@@ -511,7 +531,7 @@ export function useEventsListPage(): EventsListPageState {
     error: (error as Error | null) ?? null,
     refetch: () => { refetch(); },
 
-    events: filteredEvents,
+    events,
     pageRowCount: events.length,
     total: eventsData?.total || 0,
     monitors,
@@ -522,7 +542,6 @@ export function useEventsListPage(): EventsListPageState {
     tags,
     causes,
     totals,
-    pageLocalFiltering,
 
     searchQuery: searchDraft,
     setSearchQuery: setSearchDraft,
@@ -532,8 +551,8 @@ export function useEventsListPage(): EventsListPageState {
     setMonitorFilter,
     groupFilter,
     setGroupFilter,
-    causeFilter,
-    setCauseFilter,
+    causeFilter: causeDraft,
+    setCauseFilter: setCauseDraft,
     tagFilter,
     setTagFilter,
     archivedFilter,

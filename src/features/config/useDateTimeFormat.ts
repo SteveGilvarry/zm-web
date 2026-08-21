@@ -1,13 +1,20 @@
 import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { getLocale } from '@/api/locale';
+import { useAuthStore } from '@/stores/auth';
 import { makeDateTimeFormatters, type DateTimeFormatters } from '@/lib/datetime';
-import { useZmConfig } from './useZmConfig';
 
 /**
  * Timestamp formatters wired to ZoneMinder's own settings: the three
- * strftime patterns and `ZM_TIMEZONE`, rendered in the active UI locale.
- * Blank config (the common case) means locale defaults in the viewer's zone,
+ * strftime patterns and the server's effective timezone, rendered in the
+ * active UI locale. Blank patterns (the common case) mean locale defaults,
  * which is what every page did before this hook existed.
+ *
+ * Source is `GET /api/v3/system/locale` (zm-api#33) — one request that also
+ * resolves `ZM_TIMEZONE` against the host clock, which reading the raw
+ * `ZM_*` config rows could not do. A zm_api without that route 404s and the
+ * formatters stay on locale defaults.
  *
  * Pages should use this instead of calling `toLocaleString()` directly so an
  * operator who sets a format in Options sees it everywhere, and so a remote
@@ -16,13 +23,25 @@ import { useZmConfig } from './useZmConfig';
 export function useDateTimeFormat(): DateTimeFormatters {
   const { i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language ?? undefined;
-  const datePattern = useZmConfig('ZM_DATE_FORMAT_PATTERN', '');
-  const timePattern = useZmConfig('ZM_TIME_FORMAT_PATTERN', '');
-  const dateTimePattern = useZmConfig('ZM_DATETIME_FORMAT_PATTERN', '');
-  const timeZone = useZmConfig('ZM_TIMEZONE', '');
+  const { isAuthenticated } = useAuthStore();
+
+  const { data } = useQuery({
+    queryKey: ['system', 'locale'],
+    queryFn: getLocale,
+    enabled: isAuthenticated,
+    staleTime: 30 * 60_000,
+    retry: false,
+  });
 
   return useMemo(
-    () => makeDateTimeFormatters({ datePattern, timePattern, dateTimePattern, timeZone, locale }),
-    [datePattern, timePattern, dateTimePattern, timeZone, locale],
+    () =>
+      makeDateTimeFormatters({
+        datePattern: data?.date_format,
+        timePattern: data?.time_format,
+        dateTimePattern: data?.datetime_format,
+        timeZone: data?.timezone,
+        locale,
+      }),
+    [data, locale],
   );
 }

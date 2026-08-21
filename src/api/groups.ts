@@ -34,12 +34,9 @@ export async function createGroup(name: string, parentId?: number | null): Promi
 }
 
 /**
- * Rename and/or re-parent a group.
- *
- * `parent_id` on update is honoured from zm-api#28 onwards. Older builds
- * (the 2026-08 dev box among them) accept the body but keep the old parent
- * and echo it back, so callers that care compare the response's `parent_id`
- * with what they sent — `useGroupsPage` does, and warns.
+ * Rename and/or re-parent a group. `parent_id` persists (zm-api#28);
+ * omitting it leaves the parent alone, `null` moves the group to the top
+ * level. The backend rejects self-parenting and cycles.
  */
 export async function updateGroup(
   id: number,

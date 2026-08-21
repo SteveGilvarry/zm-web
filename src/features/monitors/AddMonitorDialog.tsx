@@ -58,6 +58,20 @@ const SHOWS: Record<'host' | 'path' | 'auth' | 'device' | 'protocol' | 'refresh'
   refresh:  ['WebSite'],
 };
 
+/**
+ * `pass` and `onvif_password` are write-only — the API takes them but never
+ * reads them back — so an untouched box is indistinguishable from a blank
+ * password. Send them only when the operator typed something, and let
+ * `MONITOR_CREATE_DEFAULTS` supply the blank otherwise.
+ */
+function withoutBlankSecrets(form: MonitorCreateInput): MonitorCreateInput {
+  const out = { ...form };
+  for (const key of ['pass', 'onvif_password'] as const) {
+    if (out[key] == null || out[key] === '') delete out[key];
+  }
+  return out;
+}
+
 const DEFAULT_FORM: MonitorCreateInput = {
   name: '',
   type: 'Ffmpeg',
@@ -97,7 +111,7 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
     setForm((f) => ({ ...f, [k]: v }));
 
   const create = useMutation({
-    mutationFn: () => createMonitor(form),
+    mutationFn: () => createMonitor(withoutBlankSecrets(form)),
     onSuccess: (monitor) => {
       qc.invalidateQueries({ queryKey: ['monitors'] });
       toast.success(t('Monitor "{{name}}" created.', { name: monitor.name }));

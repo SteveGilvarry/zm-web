@@ -97,8 +97,16 @@ async function audit(page: Page, key: string) {
   }
 }
 
+/**
+ * Axe results are engine-specific (contrast rounding, computed roles), so the
+ * baseline is recorded against one engine and only that one gates the build.
+ * Cross-browser rendering is covered by the rest of the suite.
+ */
+const AXE_PROJECT = 'chromium';
+
 test.describe('Accessibility', () => {
   test.skip(seededOnly.condition, seededOnly.reason);
+  test.skip(({ browserName }) => browserName !== 'chromium', `axe baseline is recorded on ${AXE_PROJECT}`);
 
   for (const skin of SKINS) {
     for (const route of ROUTES.filter((r) => r.auth)) {
@@ -117,6 +125,7 @@ test.describe('Accessibility', () => {
 
 test.describe('Accessibility — signed out', () => {
   test.skip(seededOnly.condition, seededOnly.reason);
+  test.skip(({ browserName }) => browserName !== 'chromium', `axe baseline is recorded on ${AXE_PROJECT}`);
   test.use({ storageState: ANONYMOUS });
 
   for (const skin of SKINS) {

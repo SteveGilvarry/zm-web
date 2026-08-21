@@ -6,6 +6,7 @@ import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import type { Frame } from '@/api/frames';
 import { useEventFramesPage } from '@/features/events/useEventFramesPage';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicPageTitle, ClassicPager, ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead,
@@ -88,6 +89,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
 }
 
 function FrameRow({ frame: f, maxScore }: { frame: Frame; maxScore: number }) {
+  const { formatDateTime } = useDateTimeFormat();
   const { t } = useTranslation();
   const alarm = f.type === 'Alarm';
   const pct = maxScore > 0 ? Math.round((f.score / maxScore) * 100) : 0;
@@ -102,7 +104,7 @@ function FrameRow({ frame: f, maxScore }: { frame: Frame; maxScore: number }) {
       <ClassicTd numeric>{f.event_id}</ClassicTd>
       <ClassicTd numeric>{f.frame_id}</ClassicTd>
       <ClassicTd>{f.type}</ClassicTd>
-      <ClassicTd className="whitespace-nowrap">{new Date(f.time_stamp).toLocaleString()}</ClassicTd>
+      <ClassicTd className="whitespace-nowrap">{formatDateTime(f.time_stamp)}</ClassicTd>
       <ClassicTd numeric>{Number(f.delta).toFixed(2)}</ClassicTd>
       <ClassicTd numeric>
         <span className="inline-flex items-center justify-end gap-2">

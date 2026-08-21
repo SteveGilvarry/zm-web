@@ -1,10 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders as render } from '@/test/render';
 import userEvent from '@testing-library/user-event';
 import type { ZmEvent } from '@/types';
 
 // Replace the router Link with a plain anchor so the table renders without
-// a Router context.
+// a Router context. The QueryClientProvider comes from `renderWithProviders`
+// — the table reads ZoneMinder's date/time settings through `useZmConfig`.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string }) => (
     <a href={to ?? '#'} {...rest}>
@@ -92,6 +94,34 @@ describe('ClassicEventsTable — header', () => {
       'Frames', 'Alarm Frames', 'Total Score', 'Avg. Score', 'Max. Score', 'Storage', 'DiskSpace',
     ]);
     expect(headerScope.queryByText('Emailed')).toBeNull();
+  });
+
+  it('makes Name / Cause / Monitor / Frames sortable now the backend can order by them', async () => {
+    const user = userEvent.setup();
+    const onSort = vi.fn();
+    render(
+      <ClassicEventsTable
+        events={[makeEvent()]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        sortField="cause"
+        sortDir="desc"
+        onSort={onSort}
+      />,
+    );
+    for (const [label, field] of [
+      ['Name', 'name'], ['Cause', 'cause'], ['Monitor', 'monitor_id'], ['Frames', 'frames'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }));
+      expect(onSort).toHaveBeenLastCalledWith(field);
+    }
+    // The active column carries the direction for assistive tech.
+    const cause = screen.getByRole('button', { name: /^Cause/ }).closest('th')!;
+    expect(cause).toHaveAttribute('aria-sort', 'descending');
+    // Tags and DiskSpace still have no backend column, so they stay inert.
+    expect(screen.queryByRole('button', { name: /^Tags/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^DiskSpace/ })).toBeNull();
   });
 
   it('links Frames / Alarm Frames / Max Score cells to the frames view', () => {

@@ -11,7 +11,7 @@ export interface DisplayDimensions {
 
 /**
  * The shape a camera shows on screen. ZoneMinder stores the sensor's native
- * width/height; a ROTATE_90/270 monitor is displayed portrait, so every
+ * width/height; a Rotate90/270 monitor is displayed portrait, so every
  * stage, thumbnail and zone editor sizes itself from the swapped pair.
  */
 export function displayDimensions(

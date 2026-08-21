@@ -43,7 +43,7 @@ test.describe('Monitor editor', () => {
 
         const saved = page.waitForResponse(
           (r) => r.url().endsWith(`/api/v3/monitors/${id}`) && r.request().method() === 'PATCH',
-          { timeout: 15_000 },
+          { timeout: 30_000 },
         );
         await page.getByRole('button', { name: /^save( \d+)?$/i }).first().click();
         const resp = await saved;

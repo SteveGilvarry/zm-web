@@ -16,10 +16,30 @@ export interface StorageFormData {
   path: string;
   type: string;
   enabled: number;
-  /** Written but not echoed by this backend — see `StorageWritePayload`. */
   scheme: string;
   server_id: number | null;
   url: string;
+}
+
+/** One list row plus everything the skins would otherwise derive themselves. */
+export interface StorageRow {
+  storage: ZmStorage;
+  /** `server_id`, with ZoneMinder's "no specific server" 0 folded into null. */
+  serverId: number | null;
+  /** Name from `/servers` for `serverId`, or null when it resolves to nothing. */
+  serverName: string | null;
+  /**
+   * `disk_space` as a share (0-100) of the largest figure in the list. The API
+   * gives bytes on the store and no filesystem total, so this is a comparison
+   * between the listed stores — never a percentage of the disk. Null when the
+   * backend has no cached figure for the row.
+   */
+  diskPercent: number | null;
+}
+
+/** ZoneMinder stores "any server" as 0; the picker and the list treat it as none. */
+function normalizeServerId(id: number | null | undefined): number | null {
+  return id === 0 || id === undefined ? null : id;
 }
 
 const EMPTY_FORM: StorageFormData = {
@@ -68,7 +88,7 @@ export function useStoragePage() {
     queryFn: () => listServers({ page: 1, page_size: 200 }),
     enabled: isAuthenticated,
   });
-  const servers = serversQ.data?.items ?? [];
+  const servers = useMemo(() => serversQ.data?.items ?? [], [serversQ.data]);
 
   const storageItems = useMemo(() => storageData?.items ?? [], [storageData]);
   const totalPages = storageData?.last_page || 1;
@@ -81,6 +101,22 @@ export function useStoragePage() {
       (s) => s.name.toLowerCase().includes(q) || s.path.toLowerCase().includes(q),
     );
   }, [storageItems, searchQuery]);
+
+  const rows = useMemo<StorageRow[]>(() => {
+    const largest = Math.max(0, ...filteredItems.map((s) => s.disk_space ?? 0));
+    return filteredItems.map((storage) => {
+      const serverId = normalizeServerId(storage.server_id);
+      return {
+        storage,
+        serverId,
+        serverName: servers.find((srv) => srv.id === serverId)?.name ?? null,
+        diskPercent:
+          storage.disk_space == null || largest <= 0
+            ? null
+            : Math.round((storage.disk_space / largest) * 100),
+      };
+    });
+  }, [filteredItems, servers]);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -103,13 +139,13 @@ export function useStoragePage() {
     updateMutation.reset();
     setEditingStorage(storage);
     setFormData({
-      ...EMPTY_FORM,
       name: storage.name,
       path: storage.path,
       type: storage.type,
       enabled: storage.enabled,
-      // StorageResponse has no scheme/server_id/url yet, so edits start blank.
-      scheme: '',
+      scheme: storage.scheme || EMPTY_FORM.scheme,
+      server_id: normalizeServerId(storage.server_id),
+      url: storage.url ?? '',
     });
     setModalOpen(true);
   };
@@ -189,10 +225,7 @@ export function useStoragePage() {
   const submitForm = () => {
     const payload = toStoragePayload(formData);
     if (editingStorage) {
-      // Leave scheme alone unless the operator picked one: the response
-      // cannot tell us the current value, so '' must not clobber it.
-      const data = formData.scheme ? payload : { ...payload, scheme: undefined };
-      updateMutation.mutate({ id: editingStorage.id, data });
+      updateMutation.mutate({ id: editingStorage.id, data: payload });
     } else {
       createMutation.mutate(payload);
     }
@@ -223,7 +256,7 @@ export function useStoragePage() {
     isError: storageQ.isError,
     error: storageQ.error,
     refetch: () => void storageQ.refetch(),
-    filteredItems,
+    rows,
     searchQuery,
     setSearchQuery,
     page,

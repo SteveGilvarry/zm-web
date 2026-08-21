@@ -495,22 +495,21 @@ describe('MonitorEditor — General relationships', () => {
 });
 
 /* ------------------------------------------------------------------------ */
-/*  Live-shaped record: raw DB enum casing                                  */
+/*  Live-shaped record, as GET /monitors/{id} returns it                    */
 /* ------------------------------------------------------------------------ */
 
 describe('MonitorEditor — record as the API returns it', () => {
-  // Copied from GET /monitors/1 on the dev box: the response echoes the DB
-  // strings (ROTATE_90, system, auto, WebRTC) while the request enums want
-  // Rotate90 / System / Auto / WebRtc.
+  // Copied from GET /monitors/1 on the dev box (zm-api#18): enums already
+  // carry the request spelling, and `pass` / `onvif_password` are absent —
+  // they are write-only, so no read ever reveals them.
   const live = {
     ...monitor,
-    orientation: 'ROTATE_90',
-    event_close_mode: 'system',
-    default_codec: 'auto',
-    rtsp2_web_type: 'WebRTC',
+    orientation: 'Rotate90',
+    event_close_mode: 'System',
+    default_codec: 'Auto',
+    rtsp2_web_type: 'WebRtc',
     output_container: null,
     method: 'rtpRtsp',
-    pass: 'hunter2',
     save_jpe_gs: 3,
     restream: 0,
     video_writer: 2,
@@ -528,8 +527,6 @@ describe('MonitorEditor — record as the API returns it', () => {
     await user.click(screen.getByRole('button', { name: /^source$/i }));
     expect((screen.getByDisplayValue('Rotate right (90°)') as HTMLSelectElement).value).toBe('Rotate90');
     expect((screen.getByDisplayValue('TCP') as HTMLSelectElement).value).toBe('rtpRtsp');
-    const pass = screen.getByDisplayValue('hunter2') as HTMLInputElement;
-    expect(pass.type).toBe('password');
 
     await user.click(screen.getByRole('button', { name: /^recording$/i }));
     expect((screen.getByDisplayValue('System') as HTMLSelectElement).value).toBe('System');
@@ -547,7 +544,7 @@ describe('MonitorEditor — record as the API returns it', () => {
     expect((screen.getByDisplayValue('Default') as HTMLSelectElement).value).toBe('2');
   });
 
-  it('PATCHes only the changed key, in request casing', async () => {
+  it('PATCHes only the changed key', async () => {
     const captured = patchSpy();
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={live} onClose={() => {}} />);
@@ -559,6 +556,50 @@ describe('MonitorEditor — record as the API returns it', () => {
     await user.click(screen.getByRole('button', { name: /^save 2$/i }));
 
     await waitFor(() => expect(captured()).toEqual({ orientation: 'Rotate180', save_jpe_gs: 1 }));
+  });
+
+  it('shows the write-only passwords as "unchanged" rather than empty boxes', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={live} onClose={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const pass = screen.getByLabelText('Password') as HTMLInputElement;
+    expect(pass.type).toBe('password');
+    expect(pass.value).toBe('');
+    expect(pass.placeholder).toMatch(/unchanged/i);
+    expect(screen.getByText(/no pending changes/i)).toBeInTheDocument();
+  });
+
+  it('saving an unrelated field does not send a password, so the stored one survives', async () => {
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={live} onClose={() => {}} />);
+
+    const nameInput = screen.getByDisplayValue('Front Door');
+    await user.tripleClick(nameInput);
+    await user.keyboard('Back Door');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+
+    await waitFor(() => expect(captured()).toEqual({ name: 'Back Door' }));
+  });
+
+  it('typing a password sends it; clearing the box again sends nothing', async () => {
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={live} onClose={() => {}} />);
+
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const pass = screen.getByLabelText('Password') as HTMLInputElement;
+    await user.type(pass, 'hunter2');
+    expect(screen.getByText(/1 unsaved change/i)).toBeInTheDocument();
+
+    // Emptying it must not count as an edit — blank means "keep the stored one".
+    await user.clear(pass);
+    expect(screen.getByText(/no pending changes/i)).toBeInTheDocument();
+
+    await user.type(pass, 'hunter2');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    await waitFor(() => expect(captured()).toEqual({ pass: 'hunter2' }));
   });
 
   it('keeps a stored value that is not in the legacy list selectable', async () => {

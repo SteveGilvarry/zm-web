@@ -18,6 +18,9 @@ export async function updateEvent(id: number, payload: EventUpdatePayload): Prom
 export const EVENT_SORT_FIELDS = [
   'start_time', 'end_time', 'alarm_frames', 'max_score',
   'avg_score', 'tot_score', 'length', 'id',
+  // zm-api#20 widened the enum; a backend older than that answers 400 for
+  // these five.
+  'name', 'cause', 'monitor_id', 'notes', 'frames',
 ] as const;
 export type EventSortField = (typeof EVENT_SORT_FIELDS)[number];
 export type SortDirection = 'asc' | 'desc';
@@ -28,9 +31,9 @@ export function isEventSortField(v: unknown): v is EventSortField {
 
 /**
  * Map a legacy `ZM_WEB_EVENT_SORT_FIELD` value (the PHP UI's column names)
- * onto the backend's sort enum. Columns the API cannot sort by (Name, Cause,
- * MonitorName, DiskSpace, Frames) fall back to `start_time`, which is what
- * the legacy default is anyway.
+ * onto the backend's sort enum. The only legacy columns left without a
+ * backend equivalent are `DiskSpace` and `Tags`; they fall back to
+ * `start_time`, which is the legacy default anyway.
  */
 export function legacySortFieldToApi(legacy: string): EventSortField {
   switch (legacy.trim()) {
@@ -42,6 +45,11 @@ export function legacySortFieldToApi(legacy: string): EventSortField {
     case 'TotScore': return 'tot_score';
     case 'AvgScore': return 'avg_score';
     case 'MaxScore': return 'max_score';
+    case 'Name': return 'name';
+    case 'Cause': return 'cause';
+    case 'Notes': return 'notes';
+    case 'Frames': return 'frames';
+    case 'Monitor': case 'MonitorId': case 'MonitorName': return 'monitor_id';
     default: return isEventSortField(legacy) ? legacy : 'start_time';
   }
 }
@@ -60,6 +68,14 @@ export interface EventQueryParams {
   end_time?: string;
   archived?: boolean;
   alarm_frames_min?: number;
+  /** Case-insensitive substring match on `Events.Cause` (zm-api#20). */
+  cause?: string;
+  /** Case-insensitive substring match on `Events.Name` (zm-api#20). */
+  name?: string;
+  /** Case-insensitive substring match on `Events.Notes` (zm-api#20). */
+  notes?: string;
+  /** Comma-separated tag ids; an event matching **any** of them is kept. */
+  tag_id?: string;
   sort?: EventSortField;
   direction?: SortDirection;
 }

@@ -9,12 +9,8 @@ import { useAuthStore } from '@/stores/auth';
 
 const page = <T,>(items: T[]) => ({ items, total: items.length, per_page: 500, current_page: 1, last_page: 1 });
 
-// createMonitor resolves storage_id from the first storage area before POSTing;
-// the preset picker lists /monitor_presets.
+// The preset picker lists /monitor_presets.
 const server = setupServer(
-  http.get('/api/v3/storage', () => HttpResponse.json(page([
-    { id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 },
-  ]))),
   http.get('/api/v3/monitor_presets', () => HttpResponse.json(page([
     {
       id: 1, model_id: null, name: 'Amcrest, IP8M-T2499EW 640x480, RTP/RTSP', type: 'Ffmpeg',
@@ -111,7 +107,34 @@ describe('AddMonitorDialog — submit', () => {
     // Defaults were spread in (random representative check).
     expect(body()!.image_buffer_count).toBeDefined();
     expect(body()!.section_length).toBeDefined();
-    expect(body()!.storage_id).toBe(1);
+    // 0 is ZoneMinder's "Default" storage area, not a missing value.
+    expect(body()!.storage_id).toBe(0);
+  });
+
+  it('omits the camera password when the operator leaves it blank', async () => {
+    const user = userEvent.setup();
+    const body = postSpy();
+
+    renderWithProviders(<AddMonitorDialog open={true} onClose={vi.fn()} />);
+    await user.type(screen.getByPlaceholderText(/front door/i), 'Garage');
+    await user.click(screen.getByRole('button', { name: /create monitor/i }));
+
+    // Falls through to the defaults blob's blank rather than the form's ''.
+    await waitFor(() => expect(body()?.name).toBe('Garage'));
+    expect(body()!.pass).toBe('');
+  });
+
+  it('sends the camera password the operator typed', async () => {
+    const user = userEvent.setup();
+    const body = postSpy();
+
+    renderWithProviders(<AddMonitorDialog open={true} onClose={vi.fn()} />);
+    await user.type(screen.getByPlaceholderText(/front door/i), 'Garage');
+    await user.type(screen.getByPlaceholderText(/^pass$/i), 'hunter2');
+    await user.click(screen.getByRole('button', { name: /create monitor/i }));
+
+    await waitFor(() => expect(body()?.name).toBe('Garage'));
+    expect(body()!.pass).toBe('hunter2');
   });
 
   it('closes the dialog and reports the created monitor', async () => {

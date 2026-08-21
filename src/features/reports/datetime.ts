@@ -1,4 +1,5 @@
-import i18next from '@/i18n';
+import { useTranslation } from 'react-i18next';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 
 /** `<input type="datetime-local">` expects 'YYYY-MM-DDTHH:MM' in local time. */
 export function toLocalDatetime(d: Date): string {
@@ -6,9 +7,18 @@ export function toLocalDatetime(d: Date): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function formatDateRange(start?: string | null, end?: string | null): string {
-  if (!start && !end) return '—';
-  const s = start ? new Date(start).toLocaleString() : '—';
-  const e = end ? new Date(end).toLocaleString() : '—';
-  return i18next.t('{{start}} → {{end}}', { start: s, end: e });
+/**
+ * `start → end` for a saved report's window, rendered through ZoneMinder's
+ * own date/time patterns and server zone.
+ */
+export function useDateRangeFormat(): (start?: string | null, end?: string | null) => string {
+  const { t } = useTranslation();
+  const { formatDateTime } = useDateTimeFormat();
+  return (start, end) => {
+    if (!start && !end) return '—';
+    return t('{{start}} → {{end}}', {
+      start: (start && formatDateTime(start)) || '—',
+      end: (end && formatDateTime(end)) || '—',
+    });
+  };
 }

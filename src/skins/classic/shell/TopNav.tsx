@@ -1,15 +1,18 @@
+import { useState } from 'react';
 import { Link, useLocation, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
   LayoutDashboard, RefreshCcw, LayoutGrid, Film, Video, Settings, ScrollText,
-  UsersRound, Filter as FilterIcon, FileText, ShieldCheck, UserRound, LogOut,
+  UsersRound, Filter as FilterIcon, FileText, ShieldCheck, UserRound, KeyRound, LogOut,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { logout as apiLogout } from '@/api/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
 import { usePerms } from '@/features/auth/usePerms';
+import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
+import { useCurrentUsername } from '@/features/auth/useMe';
 import { canSeeNav } from '@/features/nav/navPerms';
 import { Button } from '@/components/common/Button';
 
@@ -40,8 +43,10 @@ export function ClassicTopNav() {
   const { t } = useTranslation();
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, clearAuth } = useAuthStore();
+  const { clearAuth } = useAuthStore();
+  const username = useCurrentUsername();
   const { perms, can } = usePerms();
+  const [passwordOpen, setPasswordOpen] = useState(false);
   // Same canView() gating as the legacy navbar.
   const items = useNavItems().filter((i) => canSeeNav(perms, i.to));
 
@@ -82,12 +87,23 @@ export function ClassicTopNav() {
           </ul>
         </nav>
         <div className="flex items-center gap-3 text-sm">
-          {user?.user && (
+          {username && (
             <span className="flex items-center gap-1.5 text-classic-nav-link">
               <UserRound size={15} aria-hidden />
-              <span>{user.user}</span>
+              <span>{username}</span>
             </span>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            onClick={() => setPasswordOpen(true)}
+            className="text-classic-nav-link hover:text-classic-nav-fg hover:bg-white/10"
+            title={t('Change password')}
+            aria-label={t('Change password')}
+          >
+            <KeyRound size={15} aria-hidden />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -102,6 +118,8 @@ export function ClassicTopNav() {
           {can('system', 'Edit') && <SystemRunningToggle tone="light" />}
         </div>
       </div>
+
+      <ChangePasswordDialog isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </header>
   );
 }

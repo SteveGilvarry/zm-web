@@ -4,12 +4,14 @@ import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, St
 
 /**
  * Enum vocabularies of `Create/UpdateMonitorRequest` (OpenAPI components).
- * GET responses echo the raw DB strings instead — `ROTATE_90`, `system`,
- * `auto`, `WebRTC` — which the request enums reject, so a record read from
- * the API could not be written back (backend ticket BT-02). Every monitor
- * read goes through `normalizeMonitor()` so the rest of the app only ever
- * sees the request casing. `contract.test.ts` checks these lists against
- * the OpenAPI snapshot.
+ * Since zm_api #18 (dev box 2026-08-22) GET responses use exactly this
+ * spelling too, so a record read from the API can be written straight back
+ * — verified live: `GET /monitors/1` returns `Rotate90`, `System`, `Auto`,
+ * `WebRtc`. Older builds echoed the raw DB strings (`ROTATE_90`, `system`,
+ * `auto`, `WebRTC`) and needed a normalising pass on every read; that pass
+ * is gone. Against such a build the enum selects would show their first
+ * option instead of the stored value. `contract.test.ts` checks these lists
+ * against the OpenAPI snapshot.
  */
 export const MONITOR_ENUMS = {
   type: ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'Curl', 'WebSite', 'Vnc'],
@@ -31,33 +33,27 @@ export const MONITOR_ENUMS = {
 
 const foldEnum = (s: string) => s.replace(/_/g, '').toLowerCase();
 
-/** `ROTATE_90` → `Rotate90`, `WebRTC` → `WebRtc`. Unknown values pass through untouched. */
+/**
+ * Fold a loosely-spelled enum value onto its request member: `ROTATE_90` →
+ * `Rotate90`, `WebRTC` → `WebRtc`. Unknown values pass through untouched.
+ * The API no longer needs this; the bundled camera presets do, because
+ * their JSON is transcribed from ZoneMinder's own preset files.
+ */
 export function canonicalEnum(value: string, members: readonly string[]): string {
   const key = foldEnum(value);
   return members.find((m) => foldEnum(m) === key) ?? value;
 }
 
-/** Map a monitor record's enum fields from the response spelling to the request spelling. Idempotent. */
-export function normalizeMonitor<T extends Partial<Monitor>>(raw: T): T {
-  const out: Record<string, unknown> = { ...raw };
-  for (const [key, members] of Object.entries(MONITOR_ENUMS)) {
-    const v = out[key];
-    if (typeof v === 'string') out[key] = canonicalEnum(v, members);
-  }
-  return out as T;
-}
-
 export async function getMonitors(params?: PaginationParams): Promise<PaginatedResponse<Monitor>> {
-  const page = await apiGet<PaginatedResponse<Monitor>>('/monitors', params);
-  return { ...page, items: page.items.map(normalizeMonitor) };
+  return apiGet<PaginatedResponse<Monitor>>('/monitors', params);
 }
 
 export async function getMonitor(id: number): Promise<Monitor> {
-  return normalizeMonitor(await apiGet<Monitor>(`/monitors/${id}`));
+  return apiGet<Monitor>(`/monitors/${id}`);
 }
 
 export async function updateMonitor(id: number, data: Partial<Monitor>): Promise<Monitor> {
-  return normalizeMonitor(await apiPatch<Partial<Monitor>, Monitor>(`/monitors/${id}`, data));
+  return apiPatch<Partial<Monitor>, Monitor>(`/monitors/${id}`, data);
 }
 
 export async function deleteMonitor(id: number): Promise<void> {
@@ -77,7 +73,7 @@ export interface AlarmControlRequest {
 }
 
 export async function controlMonitorAlarm(id: number, body: AlarmControlRequest): Promise<Monitor> {
-  return normalizeMonitor(await apiPatch<AlarmControlRequest, Monitor>(`/monitors/${id}/alarm`, body));
+  return apiPatch<AlarmControlRequest, Monitor>(`/monitors/${id}/alarm`, body);
 }
 
 // Live streaming — endpoints are protected by Feature::Stream + monitor ACL.

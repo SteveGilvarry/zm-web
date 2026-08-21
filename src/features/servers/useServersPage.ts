@@ -6,6 +6,7 @@ import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { fetchLatestServerStats, summarizeStat, type ServerLoadSummary } from './serverStats';
+import { serverCoords, serverDaemons, serverUrl, type ServerDaemonFlag } from './serverFields';
 
 export interface ServerRow {
   server: Server;
@@ -13,6 +14,12 @@ export interface ServerRow {
   monitorCount: number;
   /** Newest `zmstats.pl` sample for this server, if any. */
   load: ServerLoadSummary | null;
+  /** Legacy `Url` column — `protocol://hostname:port`, null without a hostname. */
+  url: string | null;
+  /** RunStats / RunAudit / RunTrigger / RunEventNotification, in that order. */
+  daemons: ServerDaemonFlag[];
+  /** `Latitude, Longitude`, or null unless the row carries both. */
+  coords: string | null;
 }
 
 /**
@@ -58,6 +65,9 @@ export function useServersPage() {
         server,
         monitorCount: counts.get(server.id) ?? 0,
         load: stat ? summarizeStat(stat) : null,
+        url: serverUrl(server),
+        daemons: serverDaemons(server),
+        coords: serverCoords(server),
       };
     });
   }, [servers, monitorsQ.data, statsQ.data]);
@@ -76,6 +86,13 @@ export function useServersPage() {
   };
 
   const [editing, setEditing] = useState<Server | null>(null);
+
+  /**
+   * The read-only half of the row (daemon flags, state, coordinates) does not
+   * fit the table, so one row at a time expands to show it.
+   */
+  const [expandedId, setExpandedId] = useState<number | null>(null);
+  const toggleDetail = (id: number) => setExpandedId((cur) => (cur === id ? null : id));
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteServer(id),
@@ -109,6 +126,8 @@ export function useServersPage() {
     statsError: statsQ.error?.message ?? null,
     confirmDelete,
     invalidateServers,
+    expandedId,
+    toggleDetail,
     editing,
     startEdit: setEditing,
     cancelEdit: () => setEditing(null),

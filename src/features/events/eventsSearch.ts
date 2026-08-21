@@ -10,15 +10,17 @@ export interface EventsSearchParams {
   monitor_id?: number;
   /** Group filter — resolved to its monitors via `/groups-monitors`. */
   group?: number;
+  /** Substring match on Cause (the API's `cause` param). */
   cause?: string;
   archived?: boolean;
   /** Start ≥, `YYYY-MM-DDTHH:MM[:SS]` local wall clock or a full ISO stamp. */
   start?: string;
   /** Start ≤ (sent as the API's `end_time` bound, see `useEventsListPage`). */
   end?: string;
+  /** Substring match on Notes (the API's `notes` param). */
   notes?: string;
   tag?: number;
-  /** Free-text search over name / cause / monitor (page-local). */
+  /** Substring match on Name (the API's `name` param). */
   q?: string;
   page?: number;
   page_size?: number;
@@ -75,8 +77,8 @@ export function toZmDateTime(local: string): string {
 
 /**
  * The ad-hoc list filters as ZoneMinder filter terms, so the "Filter"
- * button can hand them to a new saved filter. Page-local filters that the
- * daemon cannot evaluate (free-text search) are left out on purpose.
+ * button can hand them to a new saved filter. Every list filter maps onto
+ * an attribute `zmfilter.pl` understands, so nothing is dropped.
  */
 export function termsFromEventsSearch(s: EventsSearchParams): FilterTerm[] {
   const terms: FilterTerm[] = [];
@@ -86,8 +88,9 @@ export function termsFromEventsSearch(s: EventsSearchParams): FilterTerm[] {
   if (s.group != null) push('Group', '=', String(s.group));
   if (s.start) push('StartDateTime', '>=', toZmDateTime(s.start));
   if (s.end) push('StartDateTime', '<=', toZmDateTime(s.end));
-  if (s.cause) push('Cause', '=', s.cause);
+  if (s.cause) push('Cause', 'LIKE', s.cause);
   if (s.notes) push('Notes', 'LIKE', s.notes);
+  if (s.q) push('Name', 'LIKE', s.q);
   if (s.tag != null) push('Tags', '=', String(s.tag));
   if (s.archived !== undefined) push('Archived', '=', s.archived ? '1' : '0');
   // First term carries no conjunction (ZoneMinder's shape).

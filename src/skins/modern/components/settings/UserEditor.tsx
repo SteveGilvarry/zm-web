@@ -5,6 +5,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { Info, Loader2, Shield } from 'lucide-react';
 
 import { Modal } from '@/components/common/Modal';
+import { Button } from '@/components/common/Button';
 import { PermissionMatrix } from '@/features/users/PermissionMatrix';
 import { buildTopLevelRows } from '@/features/users/permissions';
 import { USER_FIELDS_ISSUE_URL, USERNAME_PATTERN_SOURCE, useAccountForm } from '@/features/users/useAccountForm';
@@ -24,13 +25,16 @@ interface UserEditorProps {
    * those only email saves on this backend.
    */
   mode?: 'admin' | 'self';
+  /** Present when the row being edited is the signed-in operator's own:
+   *  closes this dialog and opens the self-service password form. */
+  onChangePassword?: () => void;
 }
 
 /**
  * Create / edit dialog. Mount it only while open, keyed on the user being
  * edited, so the tab resets to Account whenever it opens or switches user.
  */
-export function UserEditor({ editing, onClose, mode = 'admin' }: UserEditorProps) {
+export function UserEditor({ editing, onClose, mode = 'admin', onChangePassword }: UserEditorProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<EditorTab>('account');
@@ -70,6 +74,7 @@ export function UserEditor({ editing, onClose, mode = 'admin' }: UserEditorProps
             <AccountForm
               editing={editing}
               selfEdit={selfEdit}
+              onChangePassword={onChangePassword}
               onSaved={() => {
                 queryClient.invalidateQueries({ queryKey: ['users'] });
                 onClose();
@@ -93,9 +98,10 @@ interface AccountFormProps {
   onSaved: () => void;
   onCancel: () => void;
   selfEdit?: boolean;
+  onChangePassword?: () => void;
 }
 
-function AccountForm({ editing, onSaved, onCancel, selfEdit = false }: AccountFormProps) {
+function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePassword }: AccountFormProps) {
   const { t } = useTranslation();
   const { formData, setField, toggleEnabled, error, usernameError, isSaving, submitDisabled, submit, isLocked } =
     useAccountForm(editing, onSaved, { selfEdit });
@@ -108,7 +114,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false }: AccountFo
         <div role="note" className="flex items-start gap-2 text-xs text-text-muted bg-panel border border-border-subtle rounded p-3">
           <Info size={14} className="mt-0.5 shrink-0 text-amber" />
           <p className="leading-relaxed">
-            {t('You are editing your own account. Legacy lets you change your password, language and home view here; this zm_api build only saves Email, so that is the one field offered.')}
+            {t('You are editing your own account. Email saves here and your password changes below; language and home view are not stored by this zm_api build.')}
           </p>
         </div>
       )}
@@ -150,6 +156,14 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false }: AccountFo
         {usernameError && <p role="alert" className="mt-1 text-[11px] text-crimson">{usernameError}</p>}
       </div>
 
+      {onChangePassword ? (
+        <div className="flex items-center justify-between gap-4 rounded border border-border-subtle bg-panel p-3">
+          <p className="text-xs text-text-muted">
+            {t('Your own password is changed through the self-service form.')}
+          </p>
+          <Button onClick={onChangePassword}>{t('Change password')}</Button>
+        </div>
+      ) : (
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1.5">
@@ -189,6 +203,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false }: AccountFo
           />
         </div>
       </div>
+      )}
 
       <div className="grid grid-cols-2 gap-4">
         <div>

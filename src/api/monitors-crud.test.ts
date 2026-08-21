@@ -7,27 +7,14 @@ import {
 import { useAuthStore } from '@/stores/auth';
 import type { Monitor } from '@/types';
 
-let storageCalls = 0;
-const server = setupServer(
-  // Create/clone resolve a missing storage_id from the first storage area.
-  http.get('/api/v3/storage', () => {
-    storageCalls++;
-    return HttpResponse.json({
-      items: [{ id: 7, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 }],
-      total: 1, per_page: 1, current_page: 1, last_page: 1,
-    });
-  }),
-);
+const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'warn' });
 });
-afterEach(() => {
-  server.resetHandlers();
-  storageCalls = 0;
-});
+afterEach(() => server.resetHandlers());
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -97,7 +84,7 @@ describe('createMonitor — function → mode coercion', () => {
     expect(body.name).toBe('cam');
   });
 
-  it('fills storage_id from GET /storage when the caller gives none, and skips the lookup otherwise', async () => {
+  it('sends storage_id 0 — ZoneMinder\'s Default area — unless the caller names one', async () => {
     const bodies: Array<Record<string, unknown>> = [];
     server.use(http.post('/api/v3/monitors', async ({ request }) => {
       bodies.push(await request.json() as Record<string, unknown>);
@@ -105,34 +92,42 @@ describe('createMonitor — function → mode coercion', () => {
     }));
 
     await createMonitor({ name: 'cam' });
-    expect(bodies[0].storage_id).toBe(7);
-    expect(storageCalls).toBe(1);
+    expect(bodies[0].storage_id).toBe(0);
 
     await createMonitor({ name: 'cam2', storage_id: 3 });
     expect(bodies[1].storage_id).toBe(3);
-    expect(storageCalls).toBe(1);
   });
 
-  it('fails with a readable message when no storage area exists', async () => {
-    server.use(http.get('/api/v3/storage', () => HttpResponse.json({
-      items: [], total: 0, per_page: 1, current_page: 1, last_page: 1,
-    })));
-    await expect(createMonitor({ name: 'cam' })).rejects.toThrow(/storage area/i);
+  it('sends a blank password only when the caller supplies one', async () => {
+    const bodies: Array<Record<string, unknown>> = [];
+    server.use(http.post('/api/v3/monitors', async ({ request }) => {
+      bodies.push(await request.json() as Record<string, unknown>);
+      return HttpResponse.json({ id: 99 });
+    }));
+
+    await createMonitor({ name: 'cam', pass: 'hunter2' });
+    expect(bodies[0].pass).toBe('hunter2');
+    // Omitted by the caller ⇒ the defaults blob's blank, because
+    // CreateMonitorRequest requires the key even though reads never echo it.
+    await createMonitor({ name: 'cam2' });
+    expect(bodies[1].pass).toBe('');
   });
 });
 
 /**
- * Shaped like a live `GET /monitors/{id}` body: raw DB enum strings, integer
- * `deleted`, null container, ZoneMinder's -1 / 0 defaults the create
- * validator rejects, plus read-only keys the request schema does not know.
+ * Shaped like a live `GET /monitors/{id}` body: request-spelled enums,
+ * boolean `deleted`, null container, ZoneMinder's -1 / 0 defaults, no
+ * `pass` / `onvif_password` (write-only), plus read-only keys the request
+ * schema does not know. `image_buffer_count: 0` is the one value the
+ * create validator still refuses.
  */
 const RAW_SOURCE = {
   id: 5, name: 'Garage', sequence: 5, zone_count: 2,
   width: 1280, height: 720, type: 'Ffmpeg', function: 'Monitor',
-  orientation: 'ROTATE_90', event_close_mode: 'system', default_codec: 'auto',
-  rtsp2_web_type: 'WebRTC', output_container: null, deleted: 0,
+  orientation: 'Rotate90', event_close_mode: 'System', default_codec: 'Auto',
+  rtsp2_web_type: 'WebRtc', output_container: null, deleted: false,
   brightness: -1, contrast: -1, hue: -1, colour: -1,
-  image_buffer_count: 3, max_image_buffer_count: 0, stream_replay_buffer: 0,
+  image_buffer_count: 0, max_image_buffer_count: 0, stream_replay_buffer: 0,
   storage_id: 0, restream: 0, rtsp_user: null, method: 'rtpRtsp',
   // not in CreateMonitorRequest — must be dropped
   created_at: '2026-01-01T00:00:00Z', status: 'Connected',
@@ -154,12 +149,16 @@ describe('MONITOR_CREATE_DEFAULTS', () => {
     expect(MONITOR_CREATE_DEFAULTS).not.toHaveProperty('janus_rtsp_user');
   });
 
-  it('stays above the backend minimums ZoneMinder itself violates (BT-20)', () => {
+  it("are ZoneMinder's own new-monitor values, so a dashboard row matches a legacy one", () => {
+    // -1 = "leave it to the camera"; probed live against zm_api 2026-08-22,
+    // which accepts all four (the older build's >= 0 floor is gone).
     for (const k of ['brightness', 'contrast', 'hue', 'colour'] as const) {
-      expect(MONITOR_CREATE_DEFAULTS[k]).toBeGreaterThanOrEqual(0);
+      expect(MONITOR_CREATE_DEFAULTS[k]).toBe(-1);
     }
-    expect(MONITOR_CREATE_DEFAULTS.max_image_buffer_count).toBeGreaterThanOrEqual(1);
-    expect(MONITOR_CREATE_DEFAULTS.stream_replay_buffer).toBeGreaterThanOrEqual(1);
+    expect(MONITOR_CREATE_DEFAULTS.max_image_buffer_count).toBe(0); // unlimited
+    expect(MONITOR_CREATE_DEFAULTS.stream_replay_buffer).toBe(0);   // off
+    expect(MONITOR_CREATE_DEFAULTS.storage_id).toBe(0);             // "Default"
+    expect(MONITOR_CREATE_DEFAULTS.image_buffer_count).toBe(3);
   });
 });
 
@@ -174,22 +173,25 @@ describe('toCreatePayload', () => {
     expect(out.sequence).toBeNull();
     expect(out.deleted).toBe(false);
 
-    // enum casing + required non-null container
+    // enums pass through; the container is the one required non-null
     expect(out.orientation).toBe('Rotate90');
     expect(out.event_close_mode).toBe('System');
     expect(out.default_codec).toBe('Auto');
     expect(out.rtsp2_web_type).toBe('WebRtc');
     expect(out.output_container).toBe('Auto');
 
-    // BT-20 floors
-    expect(out.brightness).toBe(0);
-    expect(out.colour).toBe(0);
-    expect(out.max_image_buffer_count).toBe(MONITOR_CREATE_DEFAULTS.max_image_buffer_count);
-    expect(out.stream_replay_buffer).toBe(MONITOR_CREATE_DEFAULTS.stream_replay_buffer);
+    // ZoneMinder's own -1 / 0 survive the round trip now
+    expect(out.brightness).toBe(-1);
+    expect(out.colour).toBe(-1);
+    expect(out.max_image_buffer_count).toBe(0);
+    expect(out.stream_replay_buffer).toBe(0);
+    expect(out.storage_id).toBe(0);
+
+    // the one floor left: image_buffer_count 0 is refused by the create validator
+    expect(out.image_buffer_count).toBe(MONITOR_CREATE_DEFAULTS.image_buffer_count);
 
     // source values that are fine pass through; defaults fill the gaps
     expect(out.width).toBe(1280);
-    expect(out.image_buffer_count).toBe(3);
     expect(out.zone_count).toBe(2);
     expect(out.section_length).toBe(MONITOR_CREATE_DEFAULTS.section_length);
     expect(Object.keys(out).sort()).toEqual(Object.keys(MONITOR_CREATE_DEFAULTS).sort());
@@ -217,11 +219,13 @@ describe('cloneMonitor', () => {
     // clone goes to the end of the sequence.
     expect(posted).not.toHaveProperty('id');
     expect(posted.sequence).toBeNull();
-    // the GET body's raw casing / 0-1 deleted are converted
     expect(posted.orientation).toBe('Rotate90');
     expect(posted.deleted).toBe(false);
-    // storage_id 0 on the source resolves to the first storage area
-    expect(posted.storage_id).toBe(7);
+    // storage_id copies straight over — 0 is a legal "Default", not a sentinel
+    expect(posted.storage_id).toBe(0);
+    // the source's passwords were never readable, so the clone starts blank
+    expect(posted.pass).toBe('');
+    expect(posted.onvif_password).toBe('');
   });
 
   it('keeps the source storage_id when it names a row', async () => {
@@ -235,7 +239,6 @@ describe('cloneMonitor', () => {
     );
     await cloneMonitor(5);
     expect(posted.storage_id).toBe(2);
-    expect(storageCalls).toBe(0);
   });
 
   it('honours an explicit newName argument', async () => {

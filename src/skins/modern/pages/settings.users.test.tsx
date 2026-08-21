@@ -130,6 +130,34 @@ describe('Users page — legacy list features', () => {
     await waitFor(() => expect(mockSearch.uid).toBeUndefined());
   });
 
+  it('sends you to the self-service password form when editing your own row', async () => {
+    seedUsers();
+    mockSearch.uid = 1;
+    const user = userEvent.setup();
+    renderPage();
+
+    const editor = await screen.findByRole('dialog', { name: /edit admin/i });
+    // Your own password does not go through PUT /users/{id} at all, so the
+    // dead password inputs are replaced by a route to PUT /me/password.
+    expect(within(editor).queryByPlaceholderText('Not editable yet')).not.toBeInTheDocument();
+    await user.click(within(editor).getByRole('button', { name: /change password/i }));
+
+    // The editor closes first — no dialog stacked inside a dialog.
+    await waitFor(() => expect(mockSearch.uid).toBeUndefined());
+    const pw = await screen.findByRole('dialog', { name: 'Change password' });
+    expect(within(pw).getByLabelText('Current password')).toBeInTheDocument();
+  });
+
+  it('offers no password form when editing somebody else', async () => {
+    seedUsers();
+    mockSearch.uid = 2;
+    renderPage();
+
+    const editor = await screen.findByRole('dialog', { name: /edit viewer/i });
+    expect(within(editor).queryByRole('button', { name: /change password/i })).not.toBeInTheDocument();
+    expect(within(editor).getByPlaceholderText('Not editable yet')).toBeDisabled();
+  });
+
   it('marks rows and bulk-deletes them, never the signed-in user', async () => {
     seedUsers();
     const deleted: string[] = [];

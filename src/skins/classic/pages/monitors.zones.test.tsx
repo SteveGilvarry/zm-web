@@ -13,6 +13,7 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import type { UserClaims } from '@/types';
+import { makeZone } from '@/test/fixtures';
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
@@ -64,10 +65,21 @@ const MONITOR = {
   storage_id: 1,
 };
 
-/** Zone coords are "x,y x,y …" in view space. */
+/**
+ * Zone coords are "x,y x,y …" in view space; `area` is ZoneMinder's own
+ * stored `Zones.Area`, which is what the Area column prints — the polygon is
+ * never recounted here.
+ */
 const ZONES = [
-  { id: 11, monitor_id: 7, name: 'All', type: 'Active', units: 'Percent', coords: '0,0 1920,0 1920,1080 0,1080', num_coords: 4 },
-  { id: 12, monitor_id: 7, name: 'Porch', type: 'Exclusive', units: 'Pixels', coords: '0,0 960,0 960,540 0,540', num_coords: 4 },
+  makeZone({
+    id: 11, monitor_id: 7, name: 'All', type: 'Active', units: 'Percent',
+    coords: '0,0 1920,0 1920,1080 0,1080', num_coords: 4, area: 2_073_600,
+  }),
+  makeZone({
+    id: 12, monitor_id: 7, name: 'Porch', type: 'Exclusive', units: 'Pixels',
+    coords: '0,0 960,0 960,540 0,540', num_coords: 4, area: 518_400,
+    min_alarm_pixels: 3456, max_alarm_pixels: 691_200,
+  }),
 ];
 
 const server = setupServer();
@@ -105,7 +117,7 @@ async function mount(monitorId = 7) {
 }
 
 describe('ClassicMonitorZonesPage', () => {
-  it('renders a row per zone with its type and pixel/percent area', async () => {
+  it('renders a row per zone with its type and the backend\'s area', async () => {
     stubOk();
     await mount();
 
@@ -114,9 +126,8 @@ describe('ClassicMonitorZonesPage', () => {
     expect(within(table).getByRole('button', { name: 'Porch' })).toBeInTheDocument();
     expect(within(table).getByText('Exclusive')).toBeInTheDocument();
 
-    // 'All' spans the whole 1920x1080 frame.
+    // Zones.Area straight from the API, plus its share of the 1920x1080 frame.
     expect(within(table).getByText('2,073,600 / 100.00')).toBeInTheDocument();
-    // 'Porch' is a quarter of it.
     expect(within(table).getByText('518,400 / 25.00')).toBeInTheDocument();
 
     // The picture carries one polygon per zone, titled with the zone name.
@@ -221,13 +232,82 @@ describe('ClassicMonitorZonesPage', () => {
     await waitFor(() => expect(screen.getByTestId('zones-picture')).toBeInTheDocument());
   });
 
+  it('shows the opened zone\'s legacy motion settings, read-only', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+
+    await user.click(await screen.findByRole('button', { name: 'Porch' }));
+
+    const settings = await screen.findByRole('table', { name: 'Motion settings' });
+    expect(screen.getByText(
+      'Motion settings are read-only: the API accepts only the zone name and polygon.',
+    )).toBeInTheDocument();
+
+    const row = (label: string) =>
+      within(settings).getByText(label).closest('tr') as HTMLTableRowElement;
+    expect(within(row('Check Method')).getByText('Blobs')).toBeInTheDocument();
+    expect(within(row('Min/Max Pixel Threshold')).getByText('25 / —')).toBeInTheDocument();
+    expect(within(row('Filter Width/Height')).getByText('3 / 3')).toBeInTheDocument();
+    expect(within(row('Zone Area')).getByText('518,400')).toBeInTheDocument();
+    // Pixels units, so the alarmed area is a raw pixel count.
+    expect(within(row('Min/Max Alarmed Area')).getByText('3,456 / 691,200')).toBeInTheDocument();
+    expect(within(row('Min/Max Blobs')).getByText('1 / —')).toBeInTheDocument();
+    expect(within(row('Overload Frame Ignore Count')).getByText('0')).toBeInTheDocument();
+
+    // AlarmRGB 0xff0000 paints a real swatch next to its hex.
+    const swatch = within(settings).getByTestId('zone-alarm-swatch');
+    expect(swatch).toHaveStyle({ backgroundColor: '#ff0000' });
+    expect(within(row('Alarm Colour')).getByText('#ff0000')).toBeInTheDocument();
+
+    // Nothing here is editable — the API takes name + polygon only.
+    expect(within(settings).queryAllByRole('textbox')).toHaveLength(0);
+    expect(within(settings).queryAllByRole('spinbutton')).toHaveLength(0);
+  });
+
+  it('shows percent thresholds and an em dash for the settings the backend left null', async () => {
+    stubOk([
+      makeZone({
+        id: 11, monitor_id: 7, name: 'All', units: 'Percent', area: 9926,
+        min_alarm_pixels: 0.05, max_alarm_pixels: 75.06,
+        max_pixel_threshold: null, alarm_rgb: null, min_blobs: null, max_blobs: null,
+      }),
+    ]);
+    const user = userEvent.setup();
+    await mount();
+
+    await user.click(await screen.findByRole('button', { name: 'All' }));
+    const settings = await screen.findByRole('table', { name: 'Motion settings' });
+
+    expect(within(settings).getByText('0.05% / 75.06%')).toBeInTheDocument();
+    expect(within(settings).getByText('— / —')).toBeInTheDocument();
+    // No colour → no swatch at all, just the dash.
+    expect(within(settings).queryByTestId('zone-alarm-swatch')).toBeNull();
+  });
+
+  it('shows no settings table until a zone is opened', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+
+    await screen.findByRole('button', { name: 'All' });
+    expect(screen.queryByRole('table', { name: 'Motion settings' })).toBeNull();
+
+    // A brand-new zone has no stored settings either.
+    await user.click(screen.getByRole('button', { name: 'Add New Zone' }));
+    expect(screen.queryByRole('table', { name: 'Motion settings' })).toBeNull();
+  });
+
   it('opens the editor in "new" mode from Add New Zone', async () => {
     stubOk();
     const user = userEvent.setup();
     await mount();
 
     await user.click(await screen.findByRole('button', { name: 'Add New Zone' }));
-    expect(await screen.findByText('New zone')).toBeInTheDocument();
+    // Add New Zone seeds the editor's draft straight away — one click, as in
+    // legacy, so the heading and the draft's name field both read "New zone".
+    expect(await screen.findByDisplayValue('New zone')).toBeInTheDocument();
+    expect(screen.getAllByText('New zone').length).toBeGreaterThan(0);
   });
 
   it('flags a zone whose polygon runs outside the frame', async () => {

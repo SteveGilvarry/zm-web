@@ -13,7 +13,13 @@ describe('parseEventsSearch', () => {
   });
 
   it('rejects sort fields the backend does not know', () => {
-    expect(parseEventsSearch({ sort: 'name', dir: 'sideways', page: 0 })).toEqual({});
+    expect(parseEventsSearch({ sort: 'disk_space', dir: 'sideways', page: 0 })).toEqual({});
+  });
+
+  it('accepts the sort fields zm-api#20 added', () => {
+    for (const sort of ['name', 'cause', 'monitor_id', 'notes', 'frames']) {
+      expect(parseEventsSearch({ sort }).sort).toBe(sort);
+    }
   });
 
   it('reads archived=false and numeric booleans', () => {
@@ -37,8 +43,11 @@ describe('termsFromEventsSearch', () => {
     ]);
   });
 
-  it('leaves page-local free text out', () => {
-    expect(termsFromEventsSearch({ q: 'door', page: 3 })).toEqual([]);
+  it('maps the name and cause substring boxes onto LIKE terms', () => {
+    expect(termsFromEventsSearch({ q: 'door', cause: 'Motion', page: 3 })).toEqual([
+      { obr: '0', attr: 'Cause', op: 'LIKE', val: 'Motion', cbr: '0' },
+      { cnj: 'and', obr: '0', attr: 'Name', op: 'LIKE', val: 'door', cbr: '0' },
+    ]);
   });
 });
 

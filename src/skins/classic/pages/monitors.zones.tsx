@@ -8,7 +8,8 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { useZonesListPage } from '@/features/zones/useZonesListPage';
-import { zoneArea, zoneColour, zoneOutOfBounds, zonePixelPoints } from '@/features/zones/zoneArea';
+import { zoneArea, zoneAreaMismatch, zoneColour, zoneOutOfBounds, zonePixelPoints } from '@/features/zones/zoneArea';
+import { zoneSettingRows } from '@/features/zones/zoneSettings';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicHeader, ClassicPage, ClassicTable, ClassicTd, ClassicTh, ClassicThead,
@@ -27,6 +28,8 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
   useDocumentTitle(t('Zones'));
 
   const frame = view ?? { width: 0, height: 0 };
+  // Legacy's editor shows the settings for the zone you opened from the list.
+  const openZone = zones.find((z) => z.id === page.editing) ?? null;
   const typeLabel = (type: string): string => {
     switch (type) {
       case 'Active': return t('Active');
@@ -62,7 +65,13 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
                     </h2>
                     <ClassicButton size="sm" icon={<X size={12} />} onClick={page.closeEditor}>{t('Done')}</ClassicButton>
                   </div>
-                  <ZoneEditor monitorId={monitor.id} width={view.width} height={view.height} />
+                  <ZoneEditor
+                    monitorId={monitor.id}
+                    width={view.width}
+                    height={view.height}
+                    openZoneId={page.editing}
+                    onSelectionChange={(id) => (id == null ? page.closeEditor() : page.openEditor(id))}
+                  />
                 </div>
               ) : (
                 <div
@@ -140,7 +149,10 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
                     <tr><ClassicTd colSpan={4} className="text-center text-zinc-500">{t('No zones defined')}</ClassicTd></tr>
                   )}
                   {zones.map((z) => {
+                    // Measured from the polygon: ZoneMinder's stored Area is
+                    // not recomputed when the API changes Coords (zm-api#43).
                     const area = zoneArea(z, frame);
+                    const staleArea = frame.width > 0 && zoneAreaMismatch(z, frame);
                     const oob = frame.width > 0 && zoneOutOfBounds(z, frame);
                     return (
                       <tr key={z.id}>
@@ -159,6 +171,17 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
                         <ClassicTd>{typeLabel(z.type)}</ClassicTd>
                         <ClassicTd className="tabular-nums">
                           {area.px.toLocaleString()} / {area.pct.toFixed(2)}
+                          {staleArea && (
+                            <span
+                              className="ms-1 text-amber-700"
+                              title={t(
+                                "ZoneMinder's stored area ({{stored}}) disagrees with the polygon; it is not recomputed when the coordinates change.",
+                                { stored: (z.area ?? 0).toLocaleString() },
+                              )}
+                            >
+                              *
+                            </span>
+                          )}
                         </ClassicTd>
                         <ClassicTd className="text-center">
                           <input
@@ -183,6 +206,40 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
                   </ClassicButton>
                 </div>
               </RequirePerm>
+
+              {/* Legacy's editor settings panel — read-only for now. */}
+              {openZone && (
+                <div className="mt-4">
+                  <h2 className="text-base font-bold text-zinc-900 text-center mb-1">
+                    {t('Motion settings')}
+                  </h2>
+                  <p className="text-xs text-zinc-600 mb-2">
+                    {t('Motion settings are read-only: the API accepts only the zone name and polygon.')}
+                  </p>
+                  <ClassicTable aria-label={t('Motion settings')}>
+                    <tbody>
+                      {zoneSettingRows(openZone, t).map((row) => (
+                        <tr key={row.key}>
+                          <ClassicTd className="font-semibold whitespace-nowrap">{row.label}</ClassicTd>
+                          <ClassicTd className="tabular-nums">
+                            <span className="inline-flex items-center gap-2">
+                              {row.swatch && (
+                                <span
+                                  data-testid="zone-alarm-swatch"
+                                  className="inline-block w-3.5 h-3.5 border border-zinc-400 rounded-sm"
+                                  style={{ backgroundColor: row.swatch }}
+                                  aria-hidden
+                                />
+                              )}
+                              {row.value}
+                            </span>
+                          </ClassicTd>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </ClassicTable>
+                </div>
+              )}
             </div>
           </div>
         </QueryState>

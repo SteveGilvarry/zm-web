@@ -246,25 +246,33 @@ describe('ClassicEventsListPage — filters', () => {
     await waitFor(() => expect(eventRequests.at(-1)?.get('archived')).toBe('true'));
   });
 
-  it('narrows the page locally with the search box and says so', async () => {
+  it('sends the name search box to the backend', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    await user.type(screen.getByRole('searchbox', { name: 'Search events' }), 'continuous');
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'Event-1' })).toBeNull());
-    expect(screen.getByRole('link', { name: 'Event-2' })).toBeInTheDocument();
-    expect(screen.getByText(/apply within this page: 1 of 2 rows/)).toBeInTheDocument();
+    await user.type(screen.getByRole('searchbox', { name: 'Name contains' }), 'continuous');
+    await waitFor(() => expect(eventRequests.at(-1)?.get('name')).toBe('continuous'));
+    // The old "applies within this page" caveat is gone with the workaround.
+    expect(screen.queryByText(/within this page/)).toBeNull();
   });
 
-  it('narrows by notes substring', async () => {
+  it('sends the notes substring to the backend', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
     await user.type(screen.getByLabelText(/Notes/), 'parcel');
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'Event-1' })).toBeNull());
-    expect(screen.getByRole('link', { name: 'Event-2' })).toBeInTheDocument();
+    await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('parcel'));
+  });
+
+  it('sends the cause substring to the backend', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+
+    await user.type(screen.getByLabelText(/Cause/), 'Contin');
+    await waitFor(() => expect(eventRequests.at(-1)?.get('cause')).toBe('Contin'));
   });
 
   it('resets every filter from the toolbar', async () => {
@@ -295,14 +303,13 @@ describe('ClassicEventsListPage — filters', () => {
     expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
   });
 
-  it('narrows by tag', async () => {
+  it('sends the tag filter as tag_id', async () => {
     const user = userEvent.setup();
     stub({ events: [event(1, { tags: [] }), event(2, { tags: [{ id: 5, name: 'person' }] })] });
     await mountAndSettle();
 
     await user.selectOptions(screen.getByLabelText(/Tags/), '5');
-    await waitFor(() => expect(screen.queryByRole('link', { name: 'Event-1' })).toBeNull());
-    expect(screen.getByRole('link', { name: 'Event-2' })).toBeInTheDocument();
+    await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5'));
   });
 
   it('bounds the window with the two Start Date/Time fields', async () => {

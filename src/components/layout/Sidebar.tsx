@@ -1,4 +1,4 @@
-import { useEffect, useRef, useSyncExternalStore } from 'react';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
@@ -18,6 +18,7 @@ import {
   FileText,
   ShieldCheck,
   Power,
+  KeyRound,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -28,6 +29,8 @@ import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { logout as apiLogout } from '@/api/auth';
 import { usePerms } from '@/features/auth/usePerms';
+import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
+import { useCurrentUsername } from '@/features/auth/useMe';
 import { canSeeNav } from '@/features/nav/navPerms';
 import { Button } from '@/components/common/Button';
 
@@ -95,8 +98,10 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const router = useRouterState();
   const navigate = useNavigate();
   const currentPath = router.location.pathname;
-  const { user, clearAuth } = useAuthStore();
+  const { clearAuth } = useAuthStore();
+  const username = useCurrentUsername();
   const { perms } = usePerms();
+  const [passwordOpen, setPasswordOpen] = useState(false);
   const items = useNavItems();
   const asideRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
@@ -232,16 +237,27 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
         >
           <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
             <span className="text-accent font-medium text-sm">
-              {user?.user?.charAt(0).toUpperCase() || '?'}
+              {username?.charAt(0).toUpperCase() || '?'}
             </span>
           </div>
           {!collapsed && (
             <div className="flex-1 min-w-0">
               <p className="text-sm font-medium text-fg truncate">
-                {user?.user || t('Unknown')}
+                {username || t('Unknown')}
               </p>
             </div>
           )}
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            onClick={() => setPasswordOpen(true)}
+            className="hover:text-accent hover:bg-accent/10"
+            title={t('Change password')}
+            aria-label={t('Change password')}
+          >
+            <KeyRound size={16} aria-hidden />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -255,6 +271,8 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           </Button>
         </div>
       </div>
+
+      <ChangePasswordDialog isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </aside>
   );
 }

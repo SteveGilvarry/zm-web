@@ -1,8 +1,7 @@
 /**
  * Classic log viewer — the paths `logs.test.tsx` leaves out: the filter
- * controls writing back to the URL, the message search, the page-local
- * filtering warning, the server dropdown, CSV export, paging and the
- * empty/permission states.
+ * controls writing back to the URL, the message search, the server
+ * dropdown, CSV export, paging and the empty/permission states.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
@@ -62,6 +61,9 @@ function stub(opts: { logs?: unknown[]; servers?: unknown[]; total?: number; las
     }),
     http.get('/api/v3/servers', () =>
       HttpResponse.json({ items: servers, total: servers.length, per_page: 100, current_page: 1, last_page: 1 })),
+    // `useDateTimeFormat` reads ZM's four date/time rows; blank = locale default.
+    http.get('/api/v3/configs/:name', ({ params }) =>
+      HttpResponse.json({ name: String(params.name), value: '' })),
   );
 }
 
@@ -97,37 +99,36 @@ describe('ClassicLogsPage — extra paths', () => {
     expect(lastSearch({ page: 4 })).toEqual({ component: 'zmc_m3' });
   });
 
-  it('pushes the exact level into the URL and then narrows the page to it', async () => {
+  it('pushes the severity threshold into the URL and the request', async () => {
     stub();
     const user = userEvent.setup();
     await mount();
     await screen.findByTestId('log-row-1');
 
-    await user.selectOptions(screen.getByLabelText('Level'), '-1');
-    expect(lastSearch()).toEqual({ level: -1 });
+    await user.selectOptions(screen.getByLabelText('Level'), 'warning');
+    expect(lastSearch()).toEqual({ min_level: 'warning' });
 
-    // Re-render as the router would, with the level applied.
+    // Re-render as the router would, with the threshold applied.
     cleanup();
-    mockSearch = { level: -1 };
+    mockSearch = { min_level: 'warning' };
     await mount();
-    await waitFor(() => expect(screen.getAllByTestId(/^log-row-/)).toHaveLength(1));
-    expect(screen.getByTestId('log-row-2')).toBeInTheDocument();
-    // A page-local filter warns that the total is still server-wide.
-    expect(screen.getByText(/narrow the current page only/)).toBeInTheDocument();
+    await waitFor(() => expect(logQueries.at(-1)?.get('min_level')).toBe('warning'));
+    // No page-local caveat: the backend did the filtering.
+    expect(screen.queryByText(/current page only/)).toBeNull();
   });
 
-  it('clears the level again when All is chosen', async () => {
-    mockSearch = { level: -1 };
+  it('clears the threshold again when All is chosen', async () => {
+    mockSearch = { min_level: 'warning' };
     stub();
     const user = userEvent.setup();
     await mount();
     await screen.findByTestId('log-row-2');
 
     await user.selectOptions(screen.getByLabelText('Level'), '');
-    expect(lastSearch({ level: -1 })).toEqual({});
+    expect(lastSearch({ min_level: 'warning' })).toEqual({});
   });
 
-  it('commits the message search on submit and filters the page by substring', async () => {
+  it('commits the message search on submit and sends it as ?search=', async () => {
     stub();
     const user = userEvent.setup();
     await mount();
@@ -139,8 +140,9 @@ describe('ClassicLogsPage — extra paths', () => {
 
     cleanup();
     mockSearch = { q: 'MQTT' };
+    stub({ logs: [LOGS[1]] });
     await mount();
-    await waitFor(() => expect(screen.getAllByTestId(/^log-row-/)).toHaveLength(1));
+    await waitFor(() => expect(logQueries.at(-1)?.get('search')).toBe('MQTT'));
     expect(screen.getByText('MQTT connect returns 14')).toBeInTheDocument();
   });
 

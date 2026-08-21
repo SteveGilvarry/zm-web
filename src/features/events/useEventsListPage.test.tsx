@@ -173,20 +173,32 @@ describe('useEventsListPage', () => {
     expect(result.current.showDefaultHourHint).toBe(true);
   });
 
-  it('filters client-side by search text and notes inside the default hour', async () => {
+  it('sends the name and notes boxes to the server as query params', async () => {
     stub();
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
+    expect(eventRequests[0].has('name')).toBe(false);
 
     act(() => result.current.setSearchQuery('continuous'));
-    // Free text is committed to the URL after a short pause.
-    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([2]));
+    // Free text is committed to the URL after a short pause, then refetched.
+    await waitFor(() => expect(eventRequests.at(-1)!.get('name')).toBe('continuous'));
     // Narrowing further keeps the seeded hour (legacy keeps its prefilled term too).
     expect(result.current.showDefaultHourHint).toBe(true);
+    // Nothing is dropped locally: the page is whatever the server answered.
+    expect(result.current.events).toHaveLength(2);
 
     act(() => result.current.setSearchQuery(''));
     act(() => result.current.setNotesQuery('parcel'));
-    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([2]));
+    await waitFor(() => expect(eventRequests.at(-1)!.get('notes')).toBe('parcel'));
+    expect(eventRequests.at(-1)!.has('name')).toBe(false);
+  });
+
+  it('sends the tag filter as tag_id', async () => {
+    mockSearch = { tag: 4 };
+    stub();
+    renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(eventRequests).toHaveLength(1));
+    expect(eventRequests[0].get('tag_id')).toBe('4');
   });
 
   it('runs a group filter through /filters/preview with the group\'s monitor ids', async () => {
@@ -210,6 +222,51 @@ describe('useEventsListPage', () => {
     expect(eventRequests).toHaveLength(0);
   });
 
+  it('pushes the substring filters into the group preview AST as LIKE rules', async () => {
+    mockSearch = { group: 3, q: 'door', cause: 'Motion', notes: 'parcel' };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toEqual([
+      { field: 'monitor_id', op: 'in', value: [1, 2] },
+      { field: 'name', op: 'like', value: '%door%' },
+      { field: 'cause', op: 'like', value: '%Motion%' },
+      { field: 'notes', op: 'like', value: '%parcel%' },
+    ]);
+  });
+
+  it('resolves a tag to event ids on the group path, where the AST has no tag field', async () => {
+    mockSearch = { group: 3, tag: 4 };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/v3/tags/4', () => HttpResponse.json({
+        id: 4, name: 'review', events: [{ id: 9, monitor_id: 1, name: 'Event 9' }],
+        total_events: 1, current_page: 1, last_page: 1, per_page: 1000,
+      })),
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toContainEqual(
+      { field: 'id', op: 'in', value: [9] },
+    );
+  });
+
   it('exposes the active filters as ZoneMinder terms for the Filter button', async () => {
     mockSearch = { monitor_id: 7, archived: true };
     stub();
@@ -231,19 +288,27 @@ describe('useEventsListPage', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
 
-  it('filters by cause client-side and keeps the chosen cause in the options', async () => {
+  it('sends the cause box to the server and suggests the page\'s causes', async () => {
     stub();
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
 
     act(() => result.current.setCauseFilter('Continuous'));
-    expect(result.current.events.map((e) => e.id)).toEqual([2]);
-    // Cause never goes to the server — it is not a backend parameter.
-    expect(eventRequests.every((q) => !q.has('cause'))).toBe(true);
+    await waitFor(() => expect(eventRequests.at(-1)!.get('cause')).toBe('Continuous'));
+    // The datalist stays a suggestion list of what came back, nothing more.
+    expect(result.current.causes).toEqual(['Continuous', 'Motion']);
+  });
 
-    act(() => result.current.setCauseFilter('Linked'));
-    expect(result.current.events).toEqual([]);
-    expect(result.current.causes).toEqual(['Continuous', 'Linked', 'Motion']);
+  it('widens the sort enum to the columns zm-api#20 added', async () => {
+    mockSearch = { sort: 'cause', dir: 'desc' };
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(eventRequests).toHaveLength(1));
+    expect(eventRequests[0].get('sort')).toBe('cause');
+    expect(eventRequests[0].get('direction')).toBe('desc');
+
+    act(() => result.current.toggleSort('frames'));
+    await waitFor(() => expect(eventRequests.at(-1)!.get('sort')).toBe('frames'));
   });
 
   it('honours ?archived=true from the URL as a server-side filter, without the last-hour bound', async () => {

@@ -138,19 +138,18 @@ test.describe('Events list', () => {
       }
     });
 
-    test(`${skin}: the search box narrows the rows on the page @route:events.list`, async ({
+    test(`${skin}: the name search asks the backend and narrows the rows @route:events.list`, async ({
       loggedInPage: page,
     }) => {
       await openAllEvents(page, skin);
 
-      const search = page
-        .locator('input[placeholder*="Search events" i], input[aria-label*="Search events" i]')
-        .first();
-      await expect(search).toBeVisible();
-      await search.fill(String(SEED.events.last));
+      // Seeded event names are "Event-<id>", so the id is a unique substring.
+      const needle = `Event-${SEED.events.last}`;
+      const pending = eventsList(page, (q) => q.get('name') === needle);
+      await page.getByLabel('Name contains', { exact: true }).fill(needle);
+      const resp = await pending;
 
-      // Whatever the layout, the matching event stays and a non-matching one
-      // goes. Search is applied to the rows already fetched.
+      expect(await total(resp)).toBe(1);
       await expect(page.locator(`a[href="/events/${SEED.events.last}"]`).first()).toBeVisible();
       await expect(page.locator(`a[href="/events/${SEED.events.open}"]`)).toHaveCount(0);
     });

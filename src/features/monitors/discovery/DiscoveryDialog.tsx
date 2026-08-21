@@ -1,7 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
-import { Radar, X, Loader2, ChevronLeft, Search, Plus } from 'lucide-react';
+import { Radar, X, Loader2, ChevronLeft, Search, Plus, Check, SlidersHorizontal } from 'lucide-react';
 import type { InspectProfile } from '@/api/discovery';
 import type { MonitorCreateInput } from '@/api/monitors-crud';
 import type { Monitor } from '@/types';
@@ -22,9 +22,15 @@ const TIMEOUTS = [2000, 5000, 10000];
 /**
  * The legacy "SCAN NETWORK" / `?view=onvifprobe` wizard: probe the LAN for
  * ONVIF cameras (or type a device-service URL), inspect one with
- * credentials, pick a media profile, and hand the resolved stream to the
- * Add dialog prefilled. The backend has no one-shot onboard endpoint, so
- * the last step is the normal create.
+ * credentials, then turn a media profile into a monitor.
+ *
+ * Two ways out of the last step. "Add camera" posts to
+ * `/discovery/onboard`, where the backend re-inspects, picks the profile's
+ * RTSP URI and writes the row itself — the credentials the operator just
+ * typed end up on the monitor, which the client-side route cannot promise
+ * because the API never reads a password back. "Edit first" keeps the old
+ * route: prefill the Add dialog for a camera that needs a different name,
+ * resolution or function before it exists.
  */
 export function DiscoveryDialog({ open, onClose, onCreated }: DiscoveryDialogProps) {
   if (!open) return null;
@@ -35,7 +41,7 @@ export default DiscoveryDialog;
 
 function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'open'>) {
   const { t } = useTranslation();
-  const d = useDiscovery();
+  const d = useDiscovery((monitor) => { onCreated?.(monitor); onClose(); });
   const [timeoutMs, setTimeoutMs] = useState(TIMEOUTS[1]);
   const [prefill, setPrefill] = useState<Partial<MonitorCreateInput> | null>(null);
 
@@ -134,7 +140,13 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                           <td className="px-3 py-2 text-text-secondary">{c.hardware ?? '—'}</td>
                           <td className="px-3 py-2 text-text-secondary">{c.location ?? '—'}</td>
                           <td className="px-3 py-2 font-mono text-text-muted" dir="ltr">{c.xaddrs[0] ?? '—'}</td>
-                          <td className="px-3 py-2 text-end">
+                          <td className="px-3 py-2 text-end whitespace-nowrap">
+                            {c.monitor_id != null && (
+                              <span className="me-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-emerald">
+                                <Check size={10} />
+                                {t('Already added')}
+                              </span>
+                            )}
                             <button type="button" onClick={() => d.pick(c)} disabled={!c.xaddrs[0]} className={secondary}>
                               {t('Inspect')}
                             </button>
@@ -232,6 +244,12 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                 <Fact label={t('Events')} value={d.result.events_service ? t('Yes') : t('No')} />
               </dl>
 
+              {d.result.monitor_id != null && (
+                <p className="text-xs text-amber">
+                  {t('This camera is already monitor #{{id}}. Adding it again makes a second monitor on the same stream.', { id: d.result.monitor_id })}
+                </p>
+              )}
+
               {d.result.profiles.length === 0 ? (
                 <p className="text-xs text-text-muted">{t('The camera reported no media profiles.')}</p>
               ) : (
@@ -258,10 +276,23 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                             {p.width && p.height ? `${p.width}×${p.height}` : '—'}
                           </td>
                           <td className="px-3 py-2 font-mono text-text-muted break-all" dir="ltr">{p.stream_uri ?? t('(not provided)')}</td>
-                          <td className="px-3 py-2 text-end">
-                            <button type="button" onClick={() => startCreate(p)} className={primary}>
-                              <Plus size={12} />
-                              {t('Create monitor')}
+                          <td className="px-3 py-2 text-end whitespace-nowrap">
+                            <button
+                              type="button"
+                              onClick={() => startCreate(p)}
+                              className={clsx(secondary, 'me-2')}
+                            >
+                              <SlidersHorizontal size={12} />
+                              {t('Edit first')}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => d.onboard(p.token)}
+                              disabled={d.onboarding != null}
+                              className={primary}
+                            >
+                              {d.onboarding === p.token ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
+                              {t('Add camera')}
                             </button>
                           </td>
                         </tr>

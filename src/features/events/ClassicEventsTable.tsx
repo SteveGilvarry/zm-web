@@ -10,6 +10,7 @@ import {
 import { formatBytes } from '@/lib/format';
 import { ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead } from '@/skins/classic/components/events/primitives';
 import { classicLink } from '@/skins/classic/components/events/styles';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { formatDurationHms, sumEventDurations, sumEventDiskSpace } from './duration';
 import { useEventsColumnLabels } from './columnLabels';
 import { COLUMN_SORT_FIELD } from './sortColumns';
@@ -39,18 +40,6 @@ const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
   'duration', 'frames', 'alarm_frames', 'tot_score', 'avg_score', 'max_score', 'disk_space',
 ]);
 
-const TIME_FORMAT: Intl.DateTimeFormatOptions = {
-  year: 'numeric', month: '2-digit', day: '2-digit',
-  hour: '2-digit', minute: '2-digit', second: '2-digit',
-  hour12: false,
-};
-
-function fmtTime(iso: string | null | undefined): string {
-  if (!iso) return '—';
-  const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? '—' : d.toLocaleString([], TIME_FORMAT);
-}
-
 /**
  * Legacy `?view=events` table: the same columns in the same order as
  * ZoneMinder 1.39 (Thumbnail, Id, Name, Archived, Emailed, Monitor, Cause, Tags,
@@ -66,6 +55,9 @@ export function ClassicEventsTable({
 }: ClassicEventsTableProps) {
   const { t } = useTranslation();
   const labels = useEventsColumnLabels();
+  // ZoneMinder's own date/time patterns and server zone (see useDateTimeFormat).
+  const { formatDateTime } = useDateTimeFormat();
+  const fmtTime = (iso: string | null | undefined) => (iso ? formatDateTime(iso) || '—' : '—');
   const hidden = useEventsColumnsStore((s) => s.hidden);
   const visible: EventsColumnKey[] = EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
 

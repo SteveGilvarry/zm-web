@@ -13,10 +13,20 @@ export function polygonArea(points: Array<{ x: number; y: number }>): number {
 }
 
 /**
- * Legacy "Area (px/%)" cell. ZoneMinder stores `Coords` in pixels of the
- * view frame whatever `Units` says — `Units` only scales the threshold
- * fields (MinAlarmPixels etc.). Treating Percent-unit coords as percentages
- * is exactly the bug that corrupted zones before (plan F-3), so don't.
+ * Area of a zone's polygon, in pixels and as a share of the view frame.
+ *
+ * This is what the list and the detail panel show, and what the editor shows
+ * while the operator drags. It is deliberately *not* `ZoneResponse.area`:
+ * that column is written by ZoneMinder's own zone editor and the API changes
+ * `Coords` without recomputing it (zm-api#43), so on a zone last saved by
+ * anything else the stored figure is stale — every zone on the dev box
+ * reports a four-digit `area` for a full-frame polygon. Where the two
+ * disagree, `zoneAreaMismatch()` says so rather than quietly picking one.
+ *
+ * ZoneMinder stores `Coords` in pixels of the view frame whatever `Units`
+ * says — `Units` only scales the threshold fields (MinAlarmPixels etc.).
+ * Treating Percent-unit coords as percentages is exactly the bug that
+ * corrupted zones before (plan F-3), so don't.
  */
 export function zoneArea(
   zone: Pick<Zone, 'coords' | 'units'>,
@@ -25,6 +35,37 @@ export function zoneArea(
   const frameArea = frame.width * frame.height;
   const px = Math.round(polygonArea(parseCoords(zone.coords)));
   return { px, pct: frameArea > 0 ? (px / frameArea) * 100 : 0 };
+}
+
+/**
+ * ZoneMinder's stored `Zones.Area` and its share of the view frame — what
+ * legacy prints. Kept so the detail panel can show the stored value beside
+ * the measured one; see `zoneAreaMismatch()` for why they can differ.
+ */
+export function zoneReportedArea(
+  zone: Pick<Zone, 'area'>,
+  frame: { width: number; height: number },
+): { px: number; pct: number } {
+  const frameArea = frame.width * frame.height;
+  const px = zone.area ?? 0;
+  return { px, pct: frameArea > 0 ? (px / frameArea) * 100 : 0 };
+}
+
+/**
+ * True when the stored `Area` disagrees with the polygon by more than a
+ * rounding wobble. ZoneMinder converts the percentage forms of the pixel
+ * thresholds using `Area`, so a stale value is not just a wrong readout —
+ * it skews what the operator sees and, if they save, what gets stored
+ * (zm-api#43). Worth surfacing rather than hiding.
+ */
+export function zoneAreaMismatch(
+  zone: Pick<Zone, 'coords' | 'units' | 'area'>,
+  frame: { width: number; height: number },
+): boolean {
+  if (zone.area == null) return false;
+  const measured = zoneArea(zone, frame).px;
+  if (measured === 0) return false;
+  return Math.abs(measured - zone.area) / measured > 0.01;
 }
 
 /** Polygon points in frame pixels (for the SVG overlay) — coords already are. */

@@ -11,11 +11,57 @@ import {
   type Zone, type ZoneType, type Point,
 } from '@/api/zones';
 import { useRefreshingSnapshot } from '@/hooks/useRefreshingSnapshot';
+import { zoneArea } from './zoneArea';
 
 interface ZoneEditorProps {
   monitorId: number;
   width: number;
   height: number;
+  /**
+   * Zone the parent wants open — the classic list's row click, or `'new'`
+   * for its Add New Zone. Omit to leave the editor uncontrolled.
+   */
+  openZoneId?: number | 'new' | null;
+  /** Fires when the selection changes, so the parent can mirror it. */
+  onSelectionChange?: (id: ZoneSelection) => void;
+}
+
+/** The zone the editor has open: an id, a not-yet-created zone, or nothing. */
+export type ZoneSelection = number | 'new' | null;
+
+interface ZoneDraft {
+  id: number | null;
+  name: string;
+  type: string;
+  units: 'Pixels' | 'Percent';
+  points: Point[];
+}
+
+function draftFromZone(z: Zone): ZoneDraft {
+  return {
+    id: z.id,
+    name: z.name,
+    type: z.type,
+    units: z.units === 'Percent' ? 'Percent' : 'Pixels',
+    points: parseCoords(z.coords),
+  };
+}
+
+/** A fresh zone starts as the middle 60% of the frame, like legacy's default. */
+function newZoneDraft(width: number, height: number, name: string): ZoneDraft {
+  const m = 0.2;
+  return {
+    id: null,
+    name,
+    type: 'Active',
+    units: 'Pixels',
+    points: [
+      { x: width * m,       y: height * m       },
+      { x: width * (1 - m), y: height * m       },
+      { x: width * (1 - m), y: height * (1 - m) },
+      { x: width * m,       y: height * (1 - m) },
+    ],
+  };
 }
 
 const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string }> = {
@@ -63,7 +109,7 @@ function zoneTypeHint(type: string, t: TFunction): string {
  * Edits stay in local state until the operator clicks Save; the form on the
  * right edits name + type while the canvas edits geometry.
  */
-export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
+export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange }: ZoneEditorProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
 
@@ -71,7 +117,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
     queryKey: ['zones', monitorId],
     queryFn: () => listZonesForMonitor(monitorId, { page: 1, page_size: 50 }),
   });
-  const zones: Zone[] = zonesQ.data?.items ?? [];
+  const zones: Zone[] = useMemo(() => zonesQ.data?.items ?? [], [zonesQ.data]);
 
   // Drives the snapshot below the polygon — keeps the editor visually live.
   const snapshotUrl = useRefreshingSnapshot(monitorId, true);
@@ -85,43 +131,50 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
   });
   const presets = presetsQ.data?.items ?? [];
 
-  const [selectedId, setSelectedId] = useState<number | 'new' | null>(null);
-  const [draft, setDraft] = useState<{
-    id: number | null;
-    name: string;
-    type: string;
-    units: 'Pixels' | 'Percent';
-    points: Point[];
-  } | null>(null);
+  // Selection is controlled when the parent passes `openZoneId` (both skins
+  // do, so their list rows and settings panel stay in step) and owned here
+  // otherwise. No effect syncs the two — that only ever fights the parent.
+  const controlled = openZoneId !== undefined;
+  const [internalId, setInternalId] = useState<ZoneSelection>(null);
+  const selectedId: ZoneSelection = controlled ? openZoneId : internalId;
 
-  // When the user picks a zone from the list, hydrate the local draft.
-  const loadZone = (z: Zone) => {
-    setSelectedId(z.id);
-    setDraft({
-      id: z.id,
-      name: z.name,
-      type: z.type,
-      units: (z.units === 'Percent' ? 'Percent' : 'Pixels') as 'Pixels' | 'Percent',
-      points: parseCoords(z.coords),
-    });
+  const select = (id: ZoneSelection) => {
+    if (!controlled) setInternalId(id);
+    onSelectionChange?.(id);
   };
-  const startNewZone = () => {
-    setSelectedId('new');
-    // Default rectangle: middle 60% of the frame.
-    const m = 0.2;
-    setDraft({
-      id: null,
-      name: t('New zone'),
-      type: 'Active',
-      units: 'Pixels',
-      points: [
-        { x: width * m,         y: height * m         },
-        { x: width * (1 - m),   y: height * m         },
-        { x: width * (1 - m),   y: height * (1 - m)   },
-        { x: width * m,         y: height * (1 - m)   },
-      ],
-    });
+
+  // The draft the form starts from, rebuilt whenever the selection moves.
+  const baseDraft = useMemo<ZoneDraft | null>(() => {
+    if (selectedId == null) return null;
+    if (selectedId === 'new') return newZoneDraft(width, height, t('New zone'));
+    const z = zones.find((x) => x.id === selectedId);
+    return z ? draftFromZone(z) : null; // null while the list is still loading
+  }, [selectedId, zones, width, height, t]);
+
+  // Unsaved edits, tagged with the zone they belong to. A refetch of the
+  // list lands underneath without wiping what the operator typed, and
+  // selecting another zone shows that zone's stored values again — no effect
+  // resetting state, which is what the React Compiler rules forbid anyway.
+  const [edited, setEdited] = useState<{ for: number | 'new'; draft: ZoneDraft } | null>(null);
+  const draft = edited && edited.for === selectedId ? edited.draft : baseDraft;
+  const setDraft = (next: ZoneDraft) => {
+    if (selectedId != null) setEdited({ for: selectedId, draft: next });
   };
+
+  const loadZone = (z: Zone) => select(z.id);
+  const startNewZone = () => select('new');
+  const clearSelection = () => {
+    setEdited(null);
+    select(null);
+  };
+
+  // Live area of the polygon being dragged; a draft has no stored area yet.
+  const draftArea = draft
+    ? zoneArea(
+        { coords: serializeCoords(draft.points), units: draft.units },
+        { width, height },
+      )
+    : null;
   // Units only change how ZoneMinder interprets the threshold fields
   // (min/max area etc.). Coords are always stored in pixels, so switching
   // units must leave the polygon alone.
@@ -162,16 +215,14 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
     },
     onSuccess: () => {
       invalidate();
-      setSelectedId(null);
-      setDraft(null);
+      clearSelection();
     },
   });
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteZone(id),
     onSuccess: () => {
       invalidate();
-      setSelectedId(null);
-      setDraft(null);
+      clearSelection();
     },
   });
 
@@ -184,9 +235,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
         snapshotUrl={snapshotUrl}
         otherZones={zones.filter((z) => draft?.id !== z.id)}
         draft={draft}
-        onDraftPointsChange={(points) =>
-          setDraft((d) => (d ? { ...d, points } : d))
-        }
+        onDraftPointsChange={(points) => { if (draft) setDraft({ ...draft, points }); }}
       />
 
       {/* Sidebar — zone list + form */}
@@ -245,7 +294,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                 {draft.id == null ? t('New zone') : t('Editing #{{id}}', { id: draft.id })}
               </span>
               <button
-                onClick={() => { setSelectedId(null); setDraft(null); }}
+                onClick={clearSelection}
                 aria-label={t('Cancel edit')}
                 className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
               >
@@ -304,6 +353,16 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                   ))}
                 </select>
               </Field>
+            )}
+            {draftArea && (
+              <div className="text-[10px] font-mono text-text-muted">
+                {/* "Draft", not "Zone Area": the settings panel shows the
+                    stored Zones.Area, and the two disagree while you drag. */}
+                {t('Draft area {{px}} px ({{pct}}%)', {
+                  px: draftArea.px.toLocaleString(),
+                  pct: draftArea.pct.toFixed(2),
+                })}
+              </div>
             )}
             <div className="text-[10px] text-text-muted">
               {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}

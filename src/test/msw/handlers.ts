@@ -1,5 +1,8 @@
 import { http, HttpResponse, type HttpHandler } from 'msw';
 
+import { useAuthStore } from '@/stores/auth';
+import { PERM_FEATURES } from '@/features/auth/perms';
+
 import type { Monitor, PaginatedResponse, User, ZmConfig, ZmEvent, ZmStorage } from '@/types';
 import type { Control } from '@/api/controls';
 import type { Filter } from '@/api/filters';
@@ -96,7 +99,7 @@ function seed(): MockDb {
         sequence: 2,
         width: 2160,
         height: 3840,
-        orientation: 'ROTATE_90',
+        orientation: 'Rotate90',
         analysing: 'None',
         recording: 'None',
         controllable: 1,
@@ -263,6 +266,22 @@ const auth: HttpHandler[] = [
     }),
   ),
   http.post(`${API}/auth/logout`, () => HttpResponse.json({ message: 'ok' })),
+  // The signed-in operator. A real backend and the token it issued agree
+  // about permissions, so this mirrors the test's `perms` claim rather than
+  // handing back the seed row — otherwise every permission-gating test would
+  // have `/me` quietly promote its restricted operator to admin.
+  http.get(`${API}/me`, () => {
+    const claims = useAuthStore.getState().user;
+    const row = { ...db.users[0] };
+    if (claims?.uid != null) row.id = claims.uid;
+    if (claims?.user) row.username = claims.user;
+    if (claims?.perms) {
+      for (const feature of PERM_FEATURES) row[feature] = claims.perms[feature] ?? 'None';
+    }
+    return HttpResponse.json(row);
+  }),
+  http.put(`${API}/me/password`, () =>
+    HttpResponse.json({ message: 'Password changed; please sign in again' })),
 ];
 
 const monitors: HttpHandler[] = [
@@ -383,7 +402,18 @@ const events: HttpHandler[] = [
   http.get(`${API}/events`, ({ request }) => {
     const url = new URL(request.url);
     const monitorId = num(url.searchParams.get('monitor_id'));
-    const rows = monitorId ? db.events.filter((e) => e.monitor_id === monitorId) : db.events;
+    const like = (haystack: string | null | undefined, needle: string | null) =>
+      !needle || (haystack ?? '').toLowerCase().includes(needle.toLowerCase());
+    const tagIds = (url.searchParams.get('tag_id') ?? '')
+      .split(',').map((v) => Number(v)).filter((n) => Number.isFinite(n) && n > 0);
+    let rows = monitorId ? db.events.filter((e) => e.monitor_id === monitorId) : db.events;
+    // Mirror zm-api#20: case-insensitive substring on name/cause/notes and
+    // "any of these tags" on tag_id.
+    rows = rows.filter((e) =>
+      like(e.name, url.searchParams.get('name')) &&
+      like(e.cause, url.searchParams.get('cause')) &&
+      like(e.notes, url.searchParams.get('notes')) &&
+      (tagIds.length === 0 || (e.tags ?? []).some((t) => tagIds.includes(t.id))));
     return HttpResponse.json(pageOf(request, rows));
   }),
   http.get(`${API}/events/counts/:hours`, ({ params }) =>
@@ -563,6 +593,18 @@ const system: HttpHandler[] = [
   http.post(`${API}/system/restart`, () => HttpResponse.json({ message: 'restarted' })),
   http.post(`${API}/system/logrot`, () => HttpResponse.json({ message: 'rotated' })),
   http.get(`${API}/server/health_check`, () => HttpResponse.json({ status: 'ok' })),
+  // Server locale (zm-api#33). Null zone + blank patterns is a default
+  // install: timestamps render with Intl in the viewer's zone, which is what
+  // page tests assert. Override per test to exercise the server-zone path.
+  http.get(`${API}/system/locale`, () =>
+    HttpResponse.json({
+      timezone: null,
+      utc_offset: '+00:00',
+      utc_offset_seconds: 0,
+      date_format: '',
+      datetime_format: '',
+      time_format: '',
+    })),
   http.get(`${API}/server-stats`, ({ request }) =>
     HttpResponse.json(pageOf(request, [makeServerStat()])),
   ),
@@ -598,17 +640,57 @@ const filters: HttpHandler[] = [
   ),
 ];
 
+/**
+ * `GET /logs` and `DELETE /logs` take the same filters (zm-api#21):
+ * `min_level` is a *threshold* — that severity or worse, on ZoneMinder's
+ * inverted scale, with `fatal` also catching PANIC.
+ */
+const MIN_LEVEL_CEILING: Record<string, number> = {
+  fatal: -3, error: -2, warning: -1, info: 0, debug: 9,
+};
+
+/** `time_key` is epoch seconds on a live box, ISO in the fixtures. */
+function logSeconds(timeKey: string): number | null {
+  if (/^-?\d+(\.\d+)?$/.test(timeKey)) return Number(timeKey);
+  const ms = Date.parse(timeKey);
+  return Number.isNaN(ms) ? null : ms / 1000;
+}
+
+function filteredLogs(url: URL): LogEntry[] {
+  const component = url.searchParams.get('component');
+  const minLevel = url.searchParams.get('min_level');
+  const level = num(url.searchParams.get('level'));
+  const search = url.searchParams.get('search');
+  const start = num(url.searchParams.get('start'));
+  const end = num(url.searchParams.get('end'));
+  const serverId = num(url.searchParams.get('server_id'));
+  return db.logs.filter((l) => {
+    if (component && l.component !== component) return false;
+    if (minLevel && l.level > (MIN_LEVEL_CEILING[minLevel] ?? 9)) return false;
+    if (level != null && l.level !== level) return false;
+    if (search && !l.message.toLowerCase().includes(search.toLowerCase())) return false;
+    if (serverId != null && l.server_id !== serverId) return false;
+    const at = logSeconds(l.time_key);
+    if (start != null && at != null && at < start) return false;
+    if (end != null && at != null && at > end) return false;
+    return true;
+  });
+}
+
 const misc: HttpHandler[] = [
   http.get(`${API}/logs`, ({ request }) => {
     const url = new URL(request.url);
-    const component = url.searchParams.get('component');
-    const level = num(url.searchParams.get('level'));
-    let rows = db.logs;
-    if (component) rows = rows.filter((l) => l.component === component);
-    // The backend returns `level >= n` — this severity and everything less
-    // severe (zm-api BT-04); mirror that so client-side filtering is tested.
-    if (level != null) rows = rows.filter((l) => l.level >= level);
+    let rows = filteredLogs(url);
+    // `sort` orders on time_key; desc (newest first) is the default.
+    if (url.searchParams.get('sort') === 'asc') {
+      rows = rows.slice().sort((a, b) => (logSeconds(a.time_key) ?? 0) - (logSeconds(b.time_key) ?? 0));
+    }
     return HttpResponse.json(pageOf(request, rows));
+  }),
+  http.delete(`${API}/logs`, ({ request }) => {
+    const doomed = new Set(filteredLogs(new URL(request.url)).map((l) => l.id));
+    db.logs = db.logs.filter((l) => !doomed.has(l.id));
+    return HttpResponse.json({ message: `Deleted ${doomed.size} log entries` });
   }),
   http.get(`${API}/logs/:id`, ({ params }) => {
     const log = db.logs.find((l) => l.id === Number(params.id));

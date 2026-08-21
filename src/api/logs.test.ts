@@ -1,7 +1,9 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { listLogs, getLog, levelLabel, levelColor, levelRowTint } from './logs';
+import {
+  clearLogs, getLog, isLogMinLevel, levelColor, levelLabel, levelRowTint, listLogs,
+} from './logs';
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
@@ -58,22 +60,70 @@ describe('levelColor / levelRowTint (pure)', () => {
   });
 });
 
+describe('isLogMinLevel (pure)', () => {
+  it('accepts only the names the backend enum takes', () => {
+    for (const name of ['fatal', 'error', 'warning', 'info', 'debug']) {
+      expect(isLogMinLevel(name)).toBe(true);
+    }
+    // There is no `panic` variant — `fatal` already covers PANIC and below.
+    expect(isLogMinLevel('panic')).toBe(false);
+    expect(isLogMinLevel(-2)).toBe(false);
+  });
+});
+
 describe('listLogs', () => {
-  it('GETs /logs with level + component filters', async () => {
-    let capturedUrl = '';
+  it('GETs /logs with every filter zm-api#21 added', async () => {
+    let params = new URLSearchParams();
     server.use(
       http.get('/api/v3/logs', ({ request }) => {
-        capturedUrl = request.url;
+        params = new URL(request.url).searchParams;
         return HttpResponse.json({
           items: [{ id: 1, time_key: 't', level: 1, code: 'INF', component: 'zmc', message: 'hi' }],
           total: 1, per_page: 20, current_page: 1, last_page: 1,
         });
       }),
     );
-    const out = await listLogs({ level: -1, component: 'zmc' });
-    expect(capturedUrl).toContain('level=-1');
-    expect(capturedUrl).toContain('component=zmc');
+    const out = await listLogs({
+      component: 'zmc', min_level: 'error', search: 'boom',
+      start: 1780000000, end: 1780000900, sort: 'asc', server_id: 2,
+    });
+    expect(params.get('component')).toBe('zmc');
+    expect(params.get('min_level')).toBe('error');
+    expect(params.get('search')).toBe('boom');
+    expect(params.get('start')).toBe('1780000000');
+    expect(params.get('end')).toBe('1780000900');
+    expect(params.get('sort')).toBe('asc');
+    expect(params.get('server_id')).toBe('2');
     expect(out.items[0].component).toBe('zmc');
+  });
+});
+
+describe('clearLogs', () => {
+  it('DELETEs /logs with the same filters and returns the count message', async () => {
+    let params: URLSearchParams | null = null;
+    server.use(
+      http.delete('/api/v3/logs', ({ request }) => {
+        params = new URL(request.url).searchParams;
+        return HttpResponse.json({ message: 'Deleted 12 log entries' });
+      }),
+    );
+    const out = await clearLogs({ component: 'zmc', min_level: 'warning', search: 'boom' });
+    expect(out.message).toBe('Deleted 12 log entries');
+    expect(params!.get('component')).toBe('zmc');
+    expect(params!.get('min_level')).toBe('warning');
+    expect(params!.get('search')).toBe('boom');
+  });
+
+  it('sends no query string at all when nothing is filtered', async () => {
+    let url = '';
+    server.use(
+      http.delete('/api/v3/logs', ({ request }) => {
+        url = request.url;
+        return HttpResponse.json({ message: 'Deleted 900 log entries' });
+      }),
+    );
+    await clearLogs();
+    expect(url).not.toContain('?');
   });
 });
 

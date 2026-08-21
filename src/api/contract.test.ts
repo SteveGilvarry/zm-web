@@ -160,16 +160,24 @@ const CALLS: Record<string, Record<string, Call>> = {
     updateGroupPermission: { args: [1, 'View'] },
     deleteGroupPermission: { args: [1] },
   },
+  locale: {
+    getLocale: { args: [] },
+  },
+  me: {
+    getMe: { args: [] },
+    changeMyPassword: { args: [{ current_password: 'a', new_password: 'b' }] },
+  },
   logs: {
     listLogs: { args: [] },
     getLog: { args: [1] },
+    clearLogs: { args: [] },
+    isLogMinLevel: 'pure',
     levelLabel: 'pure',
     levelColor: 'pure',
     levelRowTint: 'pure',
   },
   'monitors-crud': {
     toCreatePayload: 'pure',
-    resolveStorageId: { args: [0] },
     createMonitor: { args: [{ name: 'm', storage_id: 1 }] },
     cloneMonitor: { args: [1] },
     deleteMonitor: { args: [1] },
@@ -177,7 +185,6 @@ const CALLS: Record<string, Record<string, Call>> = {
   },
   monitors: {
     canonicalEnum: 'pure',
-    normalizeMonitor: 'pure',
     getMonitors: { args: [] },
     getMonitor: { args: [1] },
     updateMonitor: { args: [1, { name: 'm' }] },
@@ -314,6 +321,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   discovery: {
     probeCameras: { args: [2000] },
     inspectCamera: { args: [{ xaddr: 'http://cam/onvif/device_service', username: '', password: '' }] },
+    onboardCamera: { args: [{ xaddr: 'http://cam/onvif/device_service', username: '', password: '' }] },
   },
 };
 

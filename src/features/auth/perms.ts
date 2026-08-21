@@ -1,4 +1,4 @@
-import type { PermFeature, PermLevel, UserClaims, UserPerms } from '@/types';
+import type { PermFeature, PermLevel, User, UserClaims, UserPerms } from '@/types';
 
 /** Ordering of permission levels; higher grants everything below it. */
 const RANK: Record<PermLevel, number> = { None: 0, View: 1, Edit: 2, Create: 3 };
@@ -65,6 +65,20 @@ export function effectivePerms(claims: Pick<UserClaims, 'perms'> | null | undefi
   const levels: UserPerms = { ...ALL_NONE };
   for (const feature of PERM_FEATURES) {
     const value = raw[feature];
+    if (isPermLevel(value)) levels[feature] = value;
+  }
+  return { known: true, levels };
+}
+
+/**
+ * The same set read off a `UserResponse` row (`GET /me`, `/users/{id}`),
+ * where the 8 permission columns are top-level strings. This is the live
+ * value; `effectivePerms()` reads the login-time snapshot in the token.
+ */
+export function permsFromUser(user: Pick<User, PermFeature>): EffectivePerms {
+  const levels: UserPerms = { ...ALL_NONE };
+  for (const feature of PERM_FEATURES) {
+    const value = user[feature];
     if (isPermLevel(value)) levels[feature] = value;
   }
   return { known: true, levels };

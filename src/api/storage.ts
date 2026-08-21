@@ -5,18 +5,26 @@ import type { ZmStorage, PaginatedResponse } from '@/types';
 export const STORAGE_SCHEMES = ['Deep', 'Medium', 'Shallow'] as const;
 export type StorageScheme = (typeof STORAGE_SCHEMES)[number];
 
+/**
+ * Body for `POST /storage` and (partially) `PATCH /storage/{id}`.
+ *
+ * Mirrors Create/UpdateStorageRequest. `do_delete` and `disk_space` are read
+ * back from `StorageResponse` but are not writable — zmaudit owns them.
+ *
+ * Needs a zm_api with the full `StorageResponse` row (zm-api#24): older builds
+ * drop `scheme` / `server_id` / `url` from the response, so the list columns
+ * and the edit form would come back blank after a save. No runtime fallback.
+ */
 export interface StorageWritePayload {
   name: string;
   path: string;
   type: string;
   enabled: number;
-  /**
-   * `scheme`, `server_id` and `url` are accepted by Create/UpdateStorageRequest
-   * but `StorageResponse` does not echo them yet, so the list cannot show
-   * what is stored. Send them; do not expect them back.
-   */
+  /** Directory layout for events: `Deep` | `Medium` | `Shallow`. */
   scheme?: string | null;
+  /** Owning cluster server; null (or 0) means every server can reach the path. */
   server_id?: number | null;
+  /** s3fs / remote URL; null for a plain local path. */
   url?: string | null;
 }
 

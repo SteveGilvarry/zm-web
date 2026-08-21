@@ -1,7 +1,8 @@
 import { useMutation } from '@tanstack/react-query';
 import { useState } from 'react';
-import { inspectCamera, probeCameras, type CameraCandidate, type InspectResult } from '@/api/discovery';
+import { inspectCamera, onboardCamera, probeCameras, type CameraCandidate, type InspectResult } from '@/api/discovery';
 import { toast } from '@/components/common/toastStore';
+import type { Monitor } from '@/types';
 
 export type DiscoveryStep = 'scan' | 'inspect' | 'profiles';
 
@@ -16,6 +17,8 @@ export interface DiscoveryState {
   result: InspectResult | null;
   isScanning: boolean;
   isInspecting: boolean;
+  /** Token of the profile currently being onboarded, or null. */
+  onboarding: string | null;
   scanError: unknown;
   inspectError: unknown;
   scan: (timeoutMs: number) => void;
@@ -24,17 +27,20 @@ export interface DiscoveryState {
   setUsername: (v: string) => void;
   setPassword: (v: string) => void;
   inspect: () => void;
+  /** One-shot add: the backend inspects and creates the monitor itself. */
+  onboard: (profileToken: string) => void;
   back: () => void;
   reset: () => void;
 }
 
 /**
  * The ONVIF discovery wizard's state: probe → pick a candidate (or type a
- * device-service URL) → inspect with credentials → choose a profile. Both
- * network calls are mutations because they are slow, user-triggered and
+ * device-service URL) → inspect with credentials → choose a profile, then
+ * either onboard it in one call or hand a prefill to the Add dialog. Every
+ * network call is a mutation because they are slow, user-triggered and
  * never worth caching.
  */
-export function useDiscovery(): DiscoveryState {
+export function useDiscovery(onCreated?: (monitor: Monitor) => void): DiscoveryState {
   const [step, setStep] = useState<DiscoveryStep>('scan');
   const [selected, setSelected] = useState<CameraCandidate | null>(null);
   const [xaddr, setXaddr] = useState('');
@@ -50,6 +56,12 @@ export function useDiscovery(): DiscoveryState {
     onSuccess: () => setStep('profiles'),
     onError: toast.apiError,
   });
+  const onboard = useMutation({
+    mutationFn: (profileToken: string) =>
+      onboardCamera({ xaddr: xaddr.trim(), username, password, profile_token: profileToken }),
+    onSuccess: (monitor) => onCreated?.(monitor),
+    onError: toast.apiError,
+  });
 
   return {
     step,
@@ -61,6 +73,7 @@ export function useDiscovery(): DiscoveryState {
     result: inspect.data ?? null,
     isScanning: probe.isPending,
     isInspecting: inspect.isPending,
+    onboarding: onboard.isPending ? onboard.variables ?? null : null,
     scanError: probe.error,
     inspectError: inspect.error,
     scan: (timeoutMs) => { setSelected(null); probe.mutate(timeoutMs); },
@@ -73,6 +86,7 @@ export function useDiscovery(): DiscoveryState {
     setUsername,
     setPassword,
     inspect: () => { if (xaddr.trim()) inspect.mutate(); },
+    onboard: (profileToken) => { if (xaddr.trim()) onboard.mutate(profileToken); },
     back: () => {
       if (step === 'profiles') { inspect.reset(); setStep('inspect'); }
       else if (step === 'inspect') { setSelected(null); setStep('scan'); }
@@ -80,6 +94,7 @@ export function useDiscovery(): DiscoveryState {
     reset: () => {
       probe.reset();
       inspect.reset();
+      onboard.reset();
       setSelected(null);
       setXaddr('');
       setStep('scan');

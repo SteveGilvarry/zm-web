@@ -1,27 +1,24 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/auth';
-import { LOG_LEVEL, listLogs, type LogEntry } from '@/api/logs';
+import { clearLogs, listLogs, type LogEntry, type LogMinLevel, type LogSort } from '@/api/logs';
 import { listServers } from '@/api/servers';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { downloadCsv, logsToCsv, type LogColumnKey } from './csv';
-import {
-  dateInputToMs,
-  matchesLevel,
-  matchesMessageQuery,
-  summarizeLogs,
-  withinTimeRange,
-} from './filter';
+import { dateInputToUnix, parseLogTime, summarizeLogs } from './filter';
 import { ALL_LOG_COLUMNS, DEFAULT_VISIBLE_LOG_COLUMNS } from './columns';
 
 /** URL search params for `/logs/`; the route's `validateSearch` produces this. */
 export interface LogsSearchParams {
   component?: string;
-  level?: number;
+  /** Severity threshold ("this level or worse"), the API's `min_level`. */
+  min_level?: LogMinLevel;
   server_id?: number;
   q?: string;
   start?: string;
   end?: string;
+  sort?: LogSort;
   page?: number;
 }
 
@@ -34,20 +31,19 @@ const COMMON_COMPONENTS = [
 ];
 
 /**
- * Exact-level chips on ZoneMinder's scale (lower = more severe). The backend
- * `level` parameter is a numeric `>=` bound — it returns the chosen level
- * *and everything less severe* — so a chip sends `level=N` to trim the set
- * server-side and then keeps only `level === N` rows within the page. The
- * label is the ZM code; the page translates it.
+ * Severity chips, wired straight to the API's `min_level`: each one means
+ * "this level **or worse**", which is what the legacy dropdown always meant.
+ * There is no separate PANIC chip because the enum has none — `fatal`
+ * already returns PANIC (-4) and below. The label is the ZM code; the page
+ * translates it.
  */
-export const LEVEL_CHIPS: ReadonlyArray<{ value: number | undefined; code: string }> = [
-  { value: undefined, code: 'ALL' },
-  { value: LOG_LEVEL.PANIC,   code: 'PNC' },
-  { value: LOG_LEVEL.FATAL,   code: 'FAT' },
-  { value: LOG_LEVEL.ERROR,   code: 'ERR' },
-  { value: LOG_LEVEL.WARNING, code: 'WAR' },
-  { value: LOG_LEVEL.INFO,    code: 'INF' },
-  { value: LOG_LEVEL.DEBUG,   code: 'DBG' },
+export const LEVEL_CHIPS: ReadonlyArray<{ value: LogMinLevel | undefined; code: string }> = [
+  { value: undefined,  code: 'ALL' },
+  { value: 'fatal',    code: 'FAT' },
+  { value: 'error',    code: 'ERR' },
+  { value: 'warning',  code: 'WAR' },
+  { value: 'info',     code: 'INF' },
+  { value: 'debug',    code: 'DBG' },
 ];
 
 export const LOGS_PAGE_SIZE_OPTIONS: readonly number[] = [25, 50, 100, 200, 500];
@@ -77,20 +73,17 @@ function loadColumnPrefs(): LogColumnKey[] {
   }
 }
 
-export function formatLogTime(s: string): string {
-  // time_key may be ISO-ish OR epoch seconds; show local time with seconds.
-  let d: Date;
-  if (/^-?\d+(\.\d+)?$/.test(s)) {
-    d = new Date(Number(s) * 1000);
-  } else {
-    d = new Date(s);
-  }
-  if (isNaN(d.getTime())) return s;
-  return d.toLocaleString([], {
-    year: '2-digit', month: '2-digit', day: '2-digit',
-    hour: '2-digit', minute: '2-digit', second: '2-digit',
-    hour12: false,
-  });
+/**
+ * Render a `time_key` (epoch seconds or ISO) through ZoneMinder's own
+ * date/time settings and server zone. A hook, not a helper, because the
+ * patterns come from the API.
+ */
+export function useLogTimeFormat(): (timeKey: string) => string {
+  const { formatDateTime } = useDateTimeFormat();
+  return (timeKey) => {
+    const ms = parseLogTime(timeKey);
+    return Number.isNaN(ms) ? timeKey : formatDateTime(new Date(ms));
+  };
 }
 
 export interface LogsPageState {
@@ -101,30 +94,27 @@ export interface LogsPageState {
   error: Error | null;
   refetch: () => void;
 
-  /** Current page after client-side level/message/date filtering. */
+  /** This page of rows, as the server filtered and ordered them. */
   logs: LogEntry[];
-  /** Rows the server sent for this page, before client-side narrowing. */
-  pageRowCount: number;
   total: number;
+  /** Severity counts over the rows on screen (see `summarizeLogs`). */
   summary: ReturnType<typeof summarizeLogs>;
   page: number;
   pageSize: number;
   pageSizeOptions: readonly number[];
   setPageSize: (n: number) => void;
   totalPages: number;
-  /**
-   * True when a filter only applies within the fetched page (exact level,
-   * message search, date range) — the counts and "Displaying" range are
-   * then page-local, and the UI says so.
-   */
-  pageLocalFiltering: boolean;
 
   componentFilter: string;
-  levelFilter: number | undefined;
+  /** Severity threshold; every filter here is server-side. */
+  minLevel: LogMinLevel | undefined;
   serverFilter: number | undefined;
   startInput: string;
   endInput: string;
   messageQuery: string;
+  /** Time-column order: `desc` (newest first) unless the header flips it. */
+  sort: LogSort;
+  toggleSort: () => void;
   /** Local mirror of the search box; committed to the URL on Enter/blur. */
   searchDraft: string;
   setSearchDraft: (v: string) => void;
@@ -144,12 +134,28 @@ export interface LogsPageState {
   setVisibleColumns: (cols: LogColumnKey[]) => void;
 
   exportCsv: () => void;
+
+  /** True while the Clear Logs confirmation is open. */
+  confirmingClear: boolean;
+  askClear: () => void;
+  cancelClear: () => void;
+  /** `DELETE /logs` with the filters currently on screen. */
+  confirmClear: () => void;
+  clearing: boolean;
+  clearError: Error | null;
+  /** Result line from the last successful clear, or null. */
+  clearedMessage: string | null;
+  dismissCleared: () => void;
+  /** True when Clear Logs would delete a filtered subset, not the lot. */
+  clearIsFiltered: boolean;
 }
 
 /**
- * Log viewer state. Filters round-trip through the URL (component / level /
- * server hit the backend; message search + date range apply client-side over
- * the current page). Column picks persist in localStorage.
+ * Log viewer state. Every filter — component, severity threshold, server,
+ * message search, date range — and the time-column order round-trip through
+ * the URL and are applied by the backend (zm-api#21), so the counts and the
+ * pager describe the whole matching set, not one page. Column picks persist
+ * in localStorage.
  */
 export function useLogsPage(): LogsPageState {
   const { isAuthenticated } = useAuthStore();
@@ -159,11 +165,12 @@ export function useLogsPage(): LogsPageState {
   const [pageSize, setPageSizeState] = useState<number>(loadPageSizePref);
   const page = search.page ?? 1;
   const componentFilter = search.component ?? '';
-  const levelFilter = search.level;
+  const minLevel = search.min_level;
   const serverFilter = search.server_id;
   const messageQuery = search.q ?? '';
   const startInput = search.start ?? '';
   const endInput = search.end ?? '';
+  const sort: LogSort = search.sort === 'asc' ? 'asc' : 'desc';
 
   // Local mirror of the search box so each keystroke doesn't push history.
   const [searchDraft, setSearchDraft] = useState(messageQuery);
@@ -203,18 +210,27 @@ export function useLogsPage(): LogsPageState {
     setSearch({ page: undefined });
   };
 
+  // The date inputs are local wall clock; the API wants Unix seconds.
+  const startUnix = useMemo(() => dateInputToUnix(startInput), [startInput]);
+  const endUnix = useMemo(() => dateInputToUnix(endInput), [endInput]);
+
+  /** The filter set the view is showing — shared by the list and the clear. */
+  const filters = {
+    component: componentFilter || undefined,
+    min_level: minLevel,
+    search: messageQuery.trim() || undefined,
+    start: startUnix ?? undefined,
+    end: endUnix ?? undefined,
+    server_id: serverFilter,
+  };
+  const clearIsFiltered = Object.values(filters).some((v) => v !== undefined);
+
   const { data, isLoading, refetch, isFetching, isError, error } = useQuery({
-    queryKey: ['logs', page, pageSize, componentFilter, levelFilter, serverFilter],
-    queryFn: () =>
-      listLogs({
-        page,
-        page_size: pageSize,
-        component: componentFilter || undefined,
-        // `>=` on the server: trims rows more severe than the chip; the
-        // exact match happens below, per page.
-        level: levelFilter,
-        server_id: serverFilter,
-      }),
+    queryKey: [
+      'logs', page, pageSize, sort, componentFilter, minLevel, serverFilter,
+      messageQuery, startUnix, endUnix,
+    ],
+    queryFn: () => listLogs({ ...filters, page, page_size: pageSize, sort }),
     enabled: isAuthenticated,
     refetchInterval: 30_000,
   });
@@ -229,35 +245,18 @@ export function useLogsPage(): LogsPageState {
   const servers = useMemo(() => serversData?.items ?? [], [serversData]);
   const showServerFilter = servers.length > 1;
 
-  const rawLogs: LogEntry[] = useMemo(() => data?.items ?? [], [data]);
+  const logs: LogEntry[] = useMemo(() => data?.items ?? [], [data]);
 
-  const startMs = useMemo(() => dateInputToMs(startInput), [startInput]);
-  const endMs   = useMemo(() => dateInputToMs(endInput), [endInput]);
-
-  // Apply the exact level, message search and date range over the current
-  // page. Component / server are server-side; level is half-and-half (see
-  // LEVEL_CHIPS). All of them round-trip through the URL.
-  const filteredLogs = useMemo(() => {
-    return rawLogs.filter(
-      (l) =>
-        matchesLevel(l, levelFilter) &&
-        matchesMessageQuery(l, messageQuery) &&
-        withinTimeRange(l, startMs, endMs),
-    );
-  }, [rawLogs, levelFilter, messageQuery, startMs, endMs]);
-  const pageLocalFiltering =
-    levelFilter !== undefined || messageQuery.trim() !== '' || startMs !== null || endMs !== null;
-
-  const summary = useMemo(() => summarizeLogs(filteredLogs), [filteredLogs]);
+  const summary = useMemo(() => summarizeLogs(logs), [logs]);
   const totalPages = data?.last_page ?? 1;
 
   // Discover any components in the current page that aren't in our default
   // list, so the dropdown stays useful in installs we don't pre-know about.
   const allComponents = useMemo(() => {
     const set = new Set<string>(COMMON_COMPONENTS);
-    rawLogs.forEach((l) => set.add(l.component));
+    logs.forEach((l) => set.add(l.component));
     return Array.from(set).sort();
-  }, [rawLogs]);
+  }, [logs]);
 
   const serverLookup = useMemo(() => {
     const m: Record<number, string> = {};
@@ -266,10 +265,24 @@ export function useLogsPage(): LogsPageState {
   }, [servers]);
 
   const exportCsv = () => {
-    const csv = logsToCsv(filteredLogs, visibleColumns);
+    const csv = logsToCsv(logs, visibleColumns);
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     downloadCsv(`zm-logs-${stamp}.csv`, csv);
   };
+
+  // Clear Logs — legacy's destructive toolbar button. Scoped to whatever the
+  // view is filtered to, so the confirmation can name what goes.
+  const queryClient = useQueryClient();
+  const [confirmingClear, setConfirmingClear] = useState(false);
+  const [clearedMessage, setClearedMessage] = useState<string | null>(null);
+  const clearMutation = useMutation({
+    mutationFn: () => clearLogs(filters),
+    onSuccess: (res) => {
+      setConfirmingClear(false);
+      setClearedMessage(res?.message ?? '');
+      queryClient.invalidateQueries({ queryKey: ['logs'] });
+    },
+  });
 
   return {
     isAuthenticated,
@@ -279,8 +292,7 @@ export function useLogsPage(): LogsPageState {
     error: (error as Error | null) ?? null,
     refetch: () => { refetch(); },
 
-    logs: filteredLogs,
-    pageRowCount: rawLogs.length,
+    logs,
     total: data?.total ?? 0,
     summary,
     page,
@@ -288,14 +300,15 @@ export function useLogsPage(): LogsPageState {
     pageSizeOptions: LOGS_PAGE_SIZE_OPTIONS,
     setPageSize,
     totalPages,
-    pageLocalFiltering,
 
     componentFilter,
-    levelFilter,
+    minLevel,
     serverFilter,
     startInput,
     endInput,
     messageQuery,
+    sort,
+    toggleSort: () => setSearch({ sort: sort === 'desc' ? 'asc' : undefined, page: undefined }),
     searchDraft,
     setSearchDraft,
     commitSearchDraft: () => setSearch({ q: searchDraft || undefined }),
@@ -313,5 +326,15 @@ export function useLogsPage(): LogsPageState {
     setVisibleColumns,
 
     exportCsv,
+
+    confirmingClear,
+    askClear: () => { setClearedMessage(null); setConfirmingClear(true); },
+    cancelClear: () => setConfirmingClear(false),
+    confirmClear: () => clearMutation.mutate(),
+    clearing: clearMutation.isPending,
+    clearError: (clearMutation.error as Error | null) ?? null,
+    clearedMessage,
+    dismissCleared: () => setClearedMessage(null),
+    clearIsFiltered,
   };
 }

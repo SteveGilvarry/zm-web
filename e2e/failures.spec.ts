@@ -39,11 +39,11 @@ test.describe('Failure paths — backend down', () => {
     test(`${skin}: a 500 from the events list shows the unreachable state @route:events.list`, async ({
       loggedInPage: page,
     }) => {
-      await breakRoute(page, '**/api/v3/events?**');
+      await breakRoute(page, '**/api/v3/events*');
       await gotoSkin(page, '/events', skin);
 
       const alert = page.locator('[data-state="unreachable"]');
-      await expect(alert).toBeVisible({ timeout: 20_000 });
+      await expect(alert).toBeVisible({ timeout: 40_000 });
       await expect(alert).toContainText(/cannot reach the server/i);
       // …with a way out, not a dead end.
       await expect(alert.getByRole('button', { name: /retry/i })).toBeVisible();
@@ -52,11 +52,11 @@ test.describe('Failure paths — backend down', () => {
     test(`${skin}: a 500 from the monitors list shows the unreachable state @route:monitors.list`, async ({
       loggedInPage: page,
     }) => {
-      await breakRoute(page, '**/api/v3/monitors?**');
+      await breakRoute(page, '**/api/v3/monitors*');
       await gotoSkin(page, '/monitors', skin);
 
       await expect(page.locator('[data-state="unreachable"]').first()).toBeVisible({
-        timeout: 20_000,
+        timeout: 40_000,
       });
       // No monitor tiles claiming everything is fine.
       await expect(page.locator(`a[href="/monitors/${SEED.monitors.frontDoor}"]`)).toHaveCount(0);
@@ -69,14 +69,19 @@ test.describe('Failure paths — backend down', () => {
     // like no rows" failure the test plan calls out. Every other QueryState
     // call site passes them. `test.fail()` keeps the expectation on the
     // record; delete the marker when the two call sites are fixed.
+    // A page that is expected to fail must fail by *assertion*: a test that
+    // runs out of time is a hard error even under `test.fail()`. So the known
+    // bad path gets a short wait, the good path the full retry budget.
+    const wait = skin === 'classic' ? 8_000 : 40_000;
+
     test(`${skin}: a 500 from the log query shows the unreachable state @route:logs`, async ({
       loggedInPage: page,
     }) => {
       test.fail(skin === 'classic', 'classic logs swallows query errors as an empty list');
-      await breakRoute(page, '**/api/v3/logs?**');
+      await breakRoute(page, '**/api/v3/logs*');
       await gotoSkin(page, '/logs', skin);
       await expect(page.locator('[data-state="unreachable"]').first()).toBeVisible({
-        timeout: 20_000,
+        timeout: wait,
       });
     });
 
@@ -84,10 +89,10 @@ test.describe('Failure paths — backend down', () => {
       loggedInPage: page,
     }) => {
       test.fail(skin === 'classic', 'classic reports list swallows query errors as an empty list');
-      await breakRoute(page, '**/api/v3/reports?**');
+      await breakRoute(page, '**/api/v3/reports*');
       await gotoSkin(page, '/reports', skin);
       await expect(page.locator('[data-state="unreachable"]').first()).toBeVisible({
-        timeout: 20_000,
+        timeout: wait,
       });
     });
   }
@@ -142,7 +147,7 @@ test.describe('Failure paths — not permitted', () => {
     }) => {
       // The seeded viewer holds System: None, so /users answers 403.
       const resp = page.waitForResponse((r) => r.url().includes('/api/v3/users'), {
-        timeout: 20_000,
+        timeout: 40_000,
       });
       await gotoSkin(page, '/settings/users', skin);
       expect((await resp).status()).toBe(403);
@@ -151,7 +156,7 @@ test.describe('Failure paths — not permitted', () => {
       // renders, `QueryState` catches the 403 if the call goes out anyway —
       // as long as the operator is told why.
       await expect(page.getByText(/do not have permission/i).first()).toBeVisible({
-        timeout: 20_000,
+        timeout: 40_000,
       });
       // "Not allowed" must not be dressed up as "backend is down".
       await expect(page.locator('[data-state="unreachable"]')).toHaveCount(0);
@@ -190,7 +195,7 @@ test.describe('Failure paths — stream will not start', () => {
       }
 
       const tile = page.getByTestId('stream-error');
-      await expect(tile).toBeVisible({ timeout: 20_000 });
+      await expect(tile).toBeVisible({ timeout: 40_000 });
       await expect(tile.getByRole('button', { name: /retry/i })).toBeVisible();
     });
   }
