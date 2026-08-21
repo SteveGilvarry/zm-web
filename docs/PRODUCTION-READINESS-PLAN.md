@@ -219,30 +219,59 @@ Still open, with what each one blocks:
 
 ## 8. Test strategy
 
-### Where it stands
+### Where it stands (2026-08-22, waves 5–6)
 
-- 83 unit files / 725 tests / ≈8 s, MSW-backed; 10 e2e specs / 18 tests against the live dev box on Chromium + WebKit (≈11 s / ≈15 s at 7 workers).
-- Real coverage (now configured to measure all of `src/**`): **54.2% statements, 49.2% branches, 50.8% functions, 55.0% lines.** `src/api` 94%, `src/features` 78%, `src/routes` **18%**, `src/skins` **3%**. 27 files at 0%, including 18 route files and both shells.
-- Every route-level test mocks `@tanstack/react-router` and `@/skins/AppShell`, so the router, `?skin=`, search params, `<Outlet/>` nesting and all chrome are never executed.
-- 10 of 24 routes have no test of any kind; 7 of those are mutation-heavy admin pages.
-- Several tests enshrine live bugs (storage PUT, logs severity map, `log_rotate` path, POST logout, phantom `use_onvif`, zone percent rescale, `{rules}` filter format, numeric `length`).
-- The e2e suite mutates the dev box (first monitor's notes, real events, filters with no cleanup on failure), runs 7 workers despite a "serial" comment, and passes silently when data is thin. No CI runs anything.
-
-### Plan
-
-| Tier | What | Effort |
+| | at review | now |
 |---|---|---|
-| 0 — Safety net | CI workflow; coverage thresholds (configured; ratchet with each tier); remove the committed credential; `workers: 1` until e2e is hermetic; make MSW `onUnhandledRequest: 'error'` actually fail tests; fix the `/events/{id}/info` handler | 0.5 d |
-| 1 — Fixture layer | OpenAPI-generated types; `src/test/fixtures/*` factories with full required fields, 0/1 ints, string decimals, legacy enum casing; one shared `handlers.ts` + `server.use()` overrides; a vitest that validates every default handler against the OpenAPI schema (ajv); the wrapper contract test from W1 | 2 d |
-| 2 — Route tests with a real router | `renderRoute(path, {skin, search})` helper: memory-history router from `routeTree.gen.ts`, real `AppShell`, QueryClient, seeded auth + perms. Per route, both skins: loads; empty; 500 → error state; 403 → read-only; each mutation → request shape + refetch; search-param round trip. Shell tests for `TopNav`, `StatBar`, `Sidebar`, `AppShell`, `__root` (`?skin=`, `view=` shims, redirect) | 8–10 d |
-| 3 — Streaming | Scripted `MockWebSocket`/`RTCPeerConnection`: offer → answer → ICE → connected; ICE failed → reconnect; accept-then-close → bounded backoff; keepalive; HLS `xhrSetup` header, `master.m3u8`, network-error backoff, `stop` does not call `/stop`. E2E playback assertions (`readyState >= 2`, `currentTime` advancing) on both browsers for live and event video incl. HEVC on WebKit | 2 d |
-| 4 — Seeded e2e on zm_api's docker DB **(decided 2026-08-21)** | Reuse zm_api's `docker-compose.test.yml` MariaDB + schema; `e2e/seed/seed.sql` with deterministic fixtures (admin + view-only users, 4 monitors incl. ROTATE_90/270, pixel-coord zones, events across 48 h, tags, groups, a legacy `{terms}` filter, a gridstack layout, logs at every level); `e2e/seed/up.sh` brings DB + zm_api up; Playwright `E2E_MODE=seeded` with `globalSetup` health wait. Live streaming stays on the nightly against a real box | 3 d |
-| 5 — E2E per legacy page | One spec per page in both skins, happy + failure paths (500/503, expired refresh token → login, stream start 500, WS drop); a script that maps `src/routes/**` to `e2e/**` by `@route` tag and fails CI when a route has none | 8–12 d |
-| 6 — Classic visual regression | Playwright `toHaveScreenshot()` per classic page in mock mode, baseline hand-reviewed against the legacy captures (retake the six mis-captures first); mask timestamps/thumbnails | 2 d |
-| 7 — A11y + mobile | `@axe-core/playwright` on every route; a 390 px project; keyboard-only flows for login, events, modals | 1.5 d |
-| Nightly | Streaming/live assertions against a real ZoneMinder box (WebRTC, HLS, PTZ); fixtures created and deleted through the API under an `e2e-` prefix. Never the shared dev box for mutations | 2 d + box |
+| unit tests / files | 725 / 83 | **3,373 / 272** |
+| statements / branches | 54.2% / 49.2% | **95.7% / 89.0%** |
+| functions / lines | 50.8% / 55.0% | **95.8% / 97.1%** |
+| files at 0% | 27 | **0** |
+| routes with a test | 14 of 24 | **every page key, both skins** |
+| e2e | 18, live box only | **430 seeded (chromium + mobile + webkit), 28 live** |
+| CI | none | typecheck, lint, unit + coverage + per-file floor, i18n check, build, audit, container smoke, seeded e2e |
 
-Thresholds: hold at today's floor now; release bar **85 / 75 / 85 / 85** global, `src/api` 95/90, `src/features` 90/80, `src/routes` 80/70, `src/skins` 90, `src/streaming` + `src/hooks` 85/75, `perFile` so no new 0% file lands. New feature work in Section 6 is done test-first against the Tier-1 fixtures so most of Tier 2/5 is absorbed into feature effort rather than added after.
+Thresholds are the release bar (85/75/85/85 aggregate) plus a per-file floor
+enforced by `npm run coverage:floor` — `thresholds.perFile` applies the
+*global* numbers to every file and a glob group is evaluated as an aggregate
+with its own `perFile` ignored, so the config could not express it. The
+script was verified to fail on a file that is genuinely under.
+
+### What the tiers delivered
+
+- **Tier 0–1** — CI; coverage measured over all of `src/**`; 24 fixture
+  factories validated against the tracked OpenAPI snapshot
+  (`src/test/openapi/openapi.json`) by `fixtures.schema.test.ts`, so a
+  backend change breaks the fixtures instead of leaking into runtime; shared
+  MSW handlers with an in-memory store so CRUD round-trips.
+- **Tier 2** — `renderRoute()` builds the real TanStack router from
+  `routeTree.gen`, so route files, `SkinPage`, skin chrome, `beforeLoad`
+  guards and search params execute under test. `src/routes` went 0% → 100%.
+- **Tier 3** — streaming: scripted WebSocket delivering real signalling
+  messages (offer → answer → ICE → connected, ICE failure → reconnect,
+  accept-then-close → bounded backoff, keepalive without pong), and the HLS
+  paths including token rotation.
+- **Tier 4** — seeded stack: zm_api's own MariaDB recipe on :3308 plus
+  `e2e/seed/seed.sql`. The suite no longer needs, or mutates, the dev box.
+- **Tier 5** — a spec per route in both skins, plus failure paths (500,
+  expired refresh, 403, stream failure). `route-coverage.spec.ts` reads
+  `src/skins/pageKeys.ts` and fails on any untagged page key.
+- **Tier 6** — deferred: classic visual regression. The a11y baseline plays
+  the same ratcheting role for now.
+- **Tier 7** — axe on 23 routes × 2 skins, ratcheted against
+  `e2e/a11y-baseline.json` (31 known violations, mostly colour-contrast in
+  the classic palette); a 390 px mobile project asserting no horizontal
+  overflow and a working drawer.
+
+### What the tests caught that review did not
+
+Every one of these was found by a test running against real code or a real
+backend, and each is fixed: report creation rejected by zm_api over
+millisecond precision; classic Logs, classic Reports, classic Report detail
+and classic Options all reading a dead backend as "no rows"; dead sparkline
+tooltips (React 19 hoists a bare `<title>` into `<head>`); the classic
+pager's GO button blocked by native validation; no field in the monitor
+editor having an accessible name; the coverage floor that enforced nothing.
 
 ## 9. Roadmap
 
