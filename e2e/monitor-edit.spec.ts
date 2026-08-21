@@ -37,15 +37,21 @@ test.describe('Monitor editor', () => {
           .first()
           .click();
 
-        const notesField = page.getByRole('textbox', { name: /notes/i }).first();
-        await expect(notesField).toBeVisible({ timeout: 15_000 });
+        // Scope everything to the editor overlay: the watch page underneath
+        // has its own Save (PTZ presets), which is what `.first()` used to
+        // find in WebKit.
+        const editor = page.getByTestId('monitor-editor');
+        await expect(editor).toBeVisible({ timeout: 15_000 });
+
+        const notesField = editor.getByRole('textbox', { name: /notes/i }).first();
+        await expect(notesField).toBeVisible();
         await notesField.fill(notes);
 
         const saved = page.waitForResponse(
           (r) => r.url().endsWith(`/api/v3/monitors/${id}`) && r.request().method() === 'PATCH',
           { timeout: 30_000 },
         );
-        await page.getByRole('button', { name: /^save( \d+)?$/i }).first().click();
+        await editor.getByRole('button', { name: /^save( \d+)?$/i }).first().click();
         const resp = await saved;
 
         expect(resp.status()).toBe(200);

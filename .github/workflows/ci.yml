@@ -24,6 +24,8 @@ jobs:
         run: npx tsc -b
       - name: Unit tests with coverage thresholds
         run: npx vitest run --coverage
+      - name: Per-file coverage floor
+        run: npm run coverage:floor
       - name: i18n catalogue is up to date
         run: npm run i18n:check
       - name: Production build

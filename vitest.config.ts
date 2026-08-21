@@ -52,16 +52,10 @@ export default defineConfig({
         branches: 75,
         functions: 85,
         lines: 85,
-        // …and a per-file floor so no module can quietly go untested. It sits
-        // well below the aggregate bar on purpose: one uncovered guard in a
-        // small file should not block a PR, a file nobody tested should.
-        'src/**/*.{ts,tsx}': {
-          perFile: true,
-          lines: 50,
-          statements: 50,
-          functions: 40,
-          branches: 25,
-        },
+        // Per-file enforcement is NOT done here: `perFile: true` would apply
+        // these same numbers to every file, and a glob group is evaluated as
+        // an aggregate (its `perFile` is ignored — measured, not assumed).
+        // `npm run coverage:floor` does it instead, after the run.
       },
     },
   },

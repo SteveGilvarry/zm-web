@@ -21,12 +21,13 @@
     "i18n:check": "i18next --config i18next-parser.config.mjs --fail-on-update && node scripts/i18n-plurals.mjs && git diff --quiet -- src/locales/en/translation.json",
     "i18n:seed": "node scripts/i18n-from-zm.mjs",
     "css:logical": "node scripts/codemod-logical-css.mjs",
-    "test:coverage": "vitest run --coverage",
+    "test:coverage": "vitest run --coverage && node scripts/coverage-floor.mjs",
     "test:e2e:seeded": "E2E_MODE=seeded playwright test",
     "e2e:seed:up": "bash e2e/seed/up.sh",
     "e2e:seed:reset": "bash e2e/seed/reset.sh",
     "e2e:seed:down": "bash e2e/seed/down.sh",
-    "e2e:seed:api": "bash e2e/seed/api.sh"
+    "e2e:seed:api": "bash e2e/seed/api.sh",
+    "coverage:floor": "node scripts/coverage-floor.mjs"
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.1.18",

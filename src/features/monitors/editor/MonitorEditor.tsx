@@ -235,7 +235,10 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
   const linkClass = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-border-subtle text-xs text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors';
 
   return (
-    <div className="fixed inset-0 z-40 bg-void/95 backdrop-blur-md flex flex-col animate-in fade-in duration-150">
+    <div
+      data-testid="monitor-editor"
+      className="fixed inset-0 z-40 bg-void/95 backdrop-blur-md flex flex-col animate-in fade-in duration-150"
+    >
       {/* Header strip — title, quick links, delete, cancel */}
       <div className="flex items-center justify-between gap-4 px-6 py-3 border-b border-cyan/20 bg-surface/40">
         <div className="flex items-center gap-3 min-w-0">
