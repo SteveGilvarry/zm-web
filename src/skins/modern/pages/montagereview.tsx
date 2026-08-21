@@ -1,6 +1,6 @@
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Pause, Play, Radio, Calendar, FastForward, ZoomIn, ZoomOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { Pause, Play, Radio, Calendar, FastForward, ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2} from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { StreamCell } from '@/components/common/StreamCell';
@@ -97,9 +97,24 @@ export default function MontageReviewPage() {
                 <button type="button" onClick={() => page.pan(0.5)} aria-label={t('Pan later')} title={t('Pan later')} className={toolBtn(false)}>
                   <ChevronRight size={12} className="rtl:-scale-x-100" aria-hidden />
                 </button>
+                <button
+                  type="button"
+                  onClick={page.fit}
+                  disabled={page.isFitting || page.selectedMonitors.length === 0}
+                  aria-label={t('Fit the window to the recorded events')}
+                  title={t('Fit the window to the recorded events')}
+                  className={toolBtn(false)}
+                >
+                  <Maximize2 size={12} aria-hidden />
+                </button>
                 <span className={clsx('text-[11px] font-mono tabular-nums', preset === 'custom' ? 'text-cyan' : 'text-text-muted')}>
                   {fmt(clock.rangeStart)} – {fmt(clock.rangeEnd)}
                 </span>
+                {page.fitEmpty && (
+                  <span role="status" className="text-[11px] text-warn">
+                    {t('No events to fit')}
+                  </span>
+                )}
               </>
             )}
           </div>

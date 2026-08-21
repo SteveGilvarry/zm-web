@@ -13,10 +13,8 @@ export const REVIEW_MAX_PAGES = 40;
  * pagination until the last page. The server sorts (`sort=start_time`), so
  * paging is stable while new events land at the far end.
  *
- * Timestamps are used as the API returns them. The dev box (old build) stamps
- * server-local `DATETIME`s with `Z`; the 12-legacy-upgrade-bridge build sends
- * true UTC. Windows computed here are UTC, so on the old build a window can
- * look shifted by the server's UTC offset — a backend fix, not ours.
+ * Timestamps are true UTC (zm-api#16), so the windows computed here line up
+ * with what the operator sees.
  */
 export async function fetchReviewEvents(
   monitorId: number,

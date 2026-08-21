@@ -329,3 +329,60 @@ describe('useMontageReviewPage — backend trouble', () => {
     }
   });
 });
+
+describe('fit — legacy "Fit" button', () => {
+  const page = (items: unknown[]) => ({
+    items, total: items.length, per_page: 1, current_page: 1, last_page: 1,
+  });
+  const event = (id: number, start: string, end: string) => ({
+    id, monitor_id: 1, start_date_time: start, end_date_time: end,
+  });
+
+  it('narrows the window onto the events the API reports', async () => {
+    stubMonitors();
+    const asked: string[] = [];
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        const url = new URL(request.url);
+        const dir = url.searchParams.get('direction') ?? '';
+        asked.push(`${url.searchParams.get('monitor_id')}:${dir}`);
+        return HttpResponse.json(page([
+          dir === 'asc'
+            ? event(1, '2026-08-21T10:00:00Z', '2026-08-21T10:10:00Z')
+            : event(2, '2026-08-21T12:00:00Z', '2026-08-21T12:30:00Z'),
+        ]));
+      }),
+    );
+
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.selectedMonitors.length).toBeGreaterThan(0));
+
+    act(() => result.current.fit());
+    await waitFor(() => expect(result.current.isFitting).toBe(false));
+
+    // First and last event asked for, per selected monitor.
+    expect(asked.some((a) => a.endsWith(':asc'))).toBe(true);
+    expect(asked.some((a) => a.endsWith(':desc'))).toBe(true);
+    expect(result.current.fitEmpty).toBe(false);
+    expect(result.current.preset).toBe('custom');
+    expect(result.current.clock.rangeStart.getTime())
+      .toBeLessThanOrEqual(Date.parse('2026-08-21T10:00:00Z'));
+    expect(result.current.clock.rangeEnd.getTime())
+      .toBeGreaterThanOrEqual(Date.parse('2026-08-21T12:30:00Z'));
+    // Far tighter than the 24 h default it started from.
+    expect(result.current.clock.rangeEnd.getTime() - result.current.clock.rangeStart.getTime())
+      .toBeLessThan(4 * 60 * 60 * 1000);
+  });
+
+  it('leaves the range alone and says so when there are no events', async () => {
+    stubMonitors();
+    server.use(http.get('/api/v3/events', () => HttpResponse.json(page([]))));
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.selectedMonitors.length).toBeGreaterThan(0));
+    const before = result.current.clock.rangeStart.getTime();
+
+    act(() => result.current.fit());
+    await waitFor(() => expect(result.current.fitEmpty).toBe(true));
+    expect(result.current.clock.rangeStart.getTime()).toBe(before);
+  });
+});

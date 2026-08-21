@@ -1,8 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
+import { getEvents } from '@/api/events';
+import { fitRange, type EventSpan } from './fitRange';
+import { eventEndMs } from './useReviewEvents';
 import { useRouteSearch, searchInt, searchString } from '@/features/monitors/useRouteSearch';
 import { useReviewClock, type ReviewClock } from './useReviewClock';
 import type { Monitor } from '@/types';
@@ -103,6 +106,11 @@ export interface MontageReviewPageState {
   setCustomRange: (start: Date, end: Date) => void;
   pan: (fraction: number) => void;
   zoom: (factor: number) => void;
+  /** Legacy "Fit": shrink the window onto the events that exist. */
+  fit: () => void;
+  isFitting: boolean;
+  /** Set when Fit found nothing to fit; cleared on the next range change. */
+  fitEmpty: boolean;
   isLive: boolean;
   clock: ReviewClock;
   /** Legacy scale slider 0.1–1.0 (cell size relative to the camera). */
@@ -121,6 +129,7 @@ export interface MontageReviewPageState {
 
 export function useMontageReviewPage(): MontageReviewPageState {
   const { isAuthenticated } = useAuthStore();
+  const qc = useQueryClient();
   const search = useRouteSearch();
   const urlMonitorId = searchInt(search, 'monitor_id');
   const urlMin = parseLegacyTime(searchString(search, 'min_time'));
@@ -174,6 +183,46 @@ export function useMontageReviewPage(): MontageReviewPageState {
     clock.setRange(r.start, r.end);
   };
 
+  // Fit. The tracks fetch their own events per monitor, so rather than hold a
+  // second copy here we ask the API for each selected monitor's first and
+  // last event — two tiny requests per monitor, and only when Fit is clicked.
+  const [isFitting, setIsFitting] = useState(false);
+  const [fitEmpty, setFitEmpty] = useState(false);
+  const fit = () => {
+    if (isFitting || selectedMonitors.length === 0) return;
+    setIsFitting(true);
+    setFitEmpty(false);
+    const edge = (monitorId: number, direction: 'asc' | 'desc') =>
+      qc.fetchQuery({
+        queryKey: ['reviewEdge', monitorId, direction],
+        queryFn: () => getEvents({ monitor_id: monitorId, page: 1, page_size: 1, sort: 'start_time', direction }),
+        staleTime: 30_000,
+      });
+    void Promise.all(
+      selectedMonitors.flatMap((m) => [edge(m.id, 'asc'), edge(m.id, 'desc')]),
+    )
+      .then((pages) => {
+        const nowMs = Date.now();
+        const spans: EventSpan[] = [];
+        for (const page of pages) {
+          for (const event of page.items ?? []) {
+            const startMs = Date.parse(event.start_date_time ?? '');
+            const endMs = eventEndMs(event, nowMs);
+            if (!Number.isNaN(startMs) && endMs != null) spans.push({ startMs, endMs });
+          }
+        }
+        const range = fitRange(spans);
+        if (!range) {
+          setFitEmpty(true);
+          return;
+        }
+        setPresetState('custom');
+        applyRange(range.start, range.end);
+      })
+      .catch(() => setFitEmpty(true))
+      .finally(() => setIsFitting(false));
+  };
+
   // Fetch monitors (only enabled / capturing ones make sense for review).
   const monitorsQ = useQuery({
     queryKey: ['monitors'],
@@ -219,6 +268,9 @@ export function useMontageReviewPage(): MontageReviewPageState {
     setCustomRange,
     pan,
     zoom,
+    fit,
+    isFitting,
+    fitEmpty,
     isLive,
     clock,
     scale,

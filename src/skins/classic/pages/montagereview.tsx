@@ -105,6 +105,15 @@ export default function ClassicMontageReviewPage() {
           {presetBtn('all', t('All Events'))}
           {presetBtn('live', t('Live'))}
           <ClassicButton onClick={() => page.pan(0.5)} disabled={isLive}>{t('Pan')} &gt;</ClassicButton>
+          <ClassicButton
+            onClick={page.fit}
+            disabled={isLive || page.isFitting || page.selectedMonitors.length === 0}
+          >
+            {t('Fit')}
+          </ClassicButton>
+          {page.fitEmpty && (
+            <span role="status" className="text-xs text-red-700">{t('No events to fit')}</span>
+          )}
           {!isLive && (
             <ClassicButton tone={clock.isPlaying ? 'primary' : 'default'} onClick={clock.togglePlay} aria-pressed={clock.isPlaying}>
               {clock.isPlaying ? t('Pause') : t('Play')}
