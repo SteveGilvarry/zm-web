@@ -50,10 +50,6 @@ export function ModernShell({ title, children }: ModernShellProps) {
         {children}
       </div>
       <ToastViewport />
-      {/* Background grid */}
-      <div className="fixed inset-0 pointer-events-none -z-10">
-        <div className="absolute inset-0 bg-grid opacity-20" />
-      </div>
     </div>
   );
 }

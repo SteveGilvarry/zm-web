@@ -27,6 +27,8 @@ import { formatBytes } from '@/lib/format';
 import { formatDuration } from '@/features/events/duration';
 import { useEventsListPage } from '@/features/events/useEventsListPage';
 import { EventCard } from '../components/EventCard';
+import { EventsTable } from '../components/EventsTable';
+import { useEventsColumnsStore } from '@/stores/eventsColumns';
 
 const field = clsx(
   'bg-surface border border-border-subtle rounded-lg',
@@ -58,6 +60,8 @@ export default function EventsListPage() {
     selectedIds, toggleSelected, clearSelection, showThumbs, monitorLookup,
     filterLinkSearch, exportCsv,
   } = state;
+  const view = useEventsColumnsStore((st) => st.view);
+  const setView = useEventsColumnsStore((st) => st.setView);
 
   const archivedLabel = {
     all: t('All'),
@@ -277,7 +281,27 @@ export default function EventsListPage() {
           )}
         </div>
 
-        <EventsSortBar sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
+        <div className="flex items-center justify-between gap-3 mb-3">
+          {view === 'cards'
+            ? <EventsSortBar sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
+            : <span />}
+          <div role="group" aria-label={t('List layout')} className="flex items-center gap-1 rounded border border-border-subtle bg-surface p-0.5">
+            {(['table', 'cards'] as const).map((mode) => (
+              <button
+                key={mode}
+                type="button"
+                aria-pressed={view === mode}
+                onClick={() => setView(mode)}
+                className={clsx(
+                  'px-2 py-1 rounded text-xs font-medium transition-colors',
+                  view === mode ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
+              >
+                {mode === 'table' ? t('Table') : t('Cards')}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <QueryState
           isLoading={isLoading}
@@ -286,21 +310,40 @@ export default function EventsListPage() {
           onRetry={refetch}
           empty={events.length === 0}
           emptyMessage={t('No events found')}
-          emptyAction={<p className="text-xs text-text-muted">{t('Try adjusting your filters')}</p>}
+          emptyAction={<p className="text-xs text-fg-dim">{t('Try adjusting your filters')}</p>}
         >
-          <div className="space-y-3 stagger-children">
-            {events.map((event) => (
-              <EventCard
-                key={event.id}
-                event={event}
-                monitorName={monitorLookup[event.monitor_id] || t('Monitor {{id}}', { id: event.monitor_id })}
-                token={accessToken}
-                isSelected={selectedIds.has(event.id)}
-                onToggleSelected={() => toggleSelected(event.id)}
-                showThumbnail={showThumbs}
-              />
-            ))}
-          </div>
+          {view === 'table' ? (
+            <EventsTable
+              events={events}
+              monitorName={(id) => monitorLookup[id] || t('Monitor {{id}}', { id })}
+              token={accessToken ?? undefined}
+              selectedIds={selectedIds}
+              onToggleSelected={toggleSelected}
+              onToggleAll={() => {
+                const all = events.every((e) => selectedIds.has(e.id));
+                if (all) clearSelection();
+                else events.forEach((e) => { if (!selectedIds.has(e.id)) toggleSelected(e.id); });
+              }}
+              showThumbnail={showThumbs}
+              sortField={sortField}
+              sortDir={sortDir}
+              onSort={toggleSort}
+            />
+          ) : (
+            <div className="space-y-3">
+              {events.map((event) => (
+                <EventCard
+                  key={event.id}
+                  event={event}
+                  monitorName={monitorLookup[event.monitor_id] || t('Monitor {{id}}', { id: event.monitor_id })}
+                  token={accessToken}
+                  isSelected={selectedIds.has(event.id)}
+                  onToggleSelected={() => toggleSelected(event.id)}
+                  showThumbnail={showThumbs}
+                />
+              ))}
+            </div>
+          )}
         </QueryState>
 
         <BulkActionBar selectedIds={selectedIds} onClear={clearSelection} />

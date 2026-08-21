@@ -9,7 +9,6 @@ import {
   Wifi,
   Radio,
   VideoOff,
-  HardDrive,
 } from 'lucide-react';
 import type { StreamProtocol, Monitor as MonitorType } from '@/types';
 import { isOrientationRotated } from '@/types';
@@ -17,7 +16,7 @@ import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { StatCard } from '@/components/console/StatCard';
+import { ConsoleSummary } from '../components/ConsoleSummary';
 import { MonitorThumbnail } from '@/components/console/MonitorThumbnail';
 import { EventsFeed } from '@/components/console/EventsFeed';
 import { SystemStatus } from '@/components/console/SystemStatus';
@@ -58,49 +57,49 @@ export default function ConsolePage() {
           <MonitorFilterBar monitors={monitors} onChange={setFilteredMonitors} />
         </div>
 
-        {/* Stats Row */}
-        <div className="grid grid-cols-2 xl:grid-cols-4 gap-4 mb-6 stagger-children">
-          <StatCard
-            label={t('Monitors')}
-            value={filteredMonitors.length}
-            icon={<Monitor size={20} />}
-            variant="cyan"
-            subtitle={t('{{count}} active', { count: activeMonitors.length })}
-          />
-          <StatCard
-            label={t('Events (24h)')}
-            value={eventCount24h}
-            icon={<Video size={20} />}
-            variant="amber"
-            subtitle={t('events')}
-          />
-          <StatCard
-            label={t('Recording')}
-            value={recordingMonitors.length}
-            icon={<Activity size={20} />}
-            variant="crimson"
-            subtitle={t('cameras')}
-          />
-          <StatCard
-            label={t('Storage')}
-            value={systemStats?.disk_usage_percent != null
-              ? `${systemStats.disk_usage_percent.toFixed(0)}%`
-              : '—'}
-            icon={<HardDrive size={20} />}
-            variant={
-              systemStats?.disk_usage_percent != null && systemStats.disk_usage_percent > 90
-                ? 'crimson'
-                : systemStats?.disk_usage_percent != null && systemStats.disk_usage_percent > 75
-                  ? 'amber'
-                  : 'emerald'
-            }
-            subtitle={
-              systemStats?.free_disk != null
+        {/* Overview — plain readings; see ConsoleSummary for why they are
+            not cards. Only disk pressure and live recording take a colour. */}
+        <ConsoleSummary
+          label={t('Overview')}
+          stats={[
+            {
+              label: t('Monitors'),
+              value: filteredMonitors.length,
+              detail: t('{{count}} active', { count: activeMonitors.length }),
+            },
+            {
+              label: t('Events (24h)'),
+              value: eventCount24h,
+            },
+            {
+              label: t('Recording'),
+              value: recordingMonitors.length,
+              detail: t('cameras'),
+              mark: recordingMonitors.length > 0 ? (
+                <span
+                  aria-hidden
+                  className="w-2 h-2 rounded-full bg-recording self-center"
+                />
+              ) : undefined,
+            },
+            {
+              label: t('Storage'),
+              value: systemStats?.disk_usage_percent != null
+                ? `${systemStats.disk_usage_percent.toFixed(0)}%`
+                : '—',
+              detail: systemStats?.free_disk != null
                 ? t('{{size}} free', { size: formatGB(systemStats.free_disk) })
-                : t('disk capacity')
-            }
-          />
-        </div>
+                : undefined,
+              tone: systemStats?.disk_usage_percent == null
+                ? 'normal'
+                : systemStats.disk_usage_percent > 90
+                  ? 'danger'
+                  : systemStats.disk_usage_percent > 75
+                    ? 'warn'
+                    : 'normal',
+            },
+          ]}
+        />
 
         {/* Main Grid */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
@@ -117,7 +116,7 @@ export default function ConsolePage() {
                     aria-label={t('WebRTC live thumbnails')}
                     onClick={() => setLiveProtocol('webrtc')}
                     className={clsx(
-                      'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
+                      'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
                       liveProtocol === 'webrtc'
                         ? 'bg-cyan/20 text-cyan'
                         : 'text-text-muted hover:text-text-primary',
@@ -133,7 +132,7 @@ export default function ConsolePage() {
                     aria-label={t('HLS live thumbnails')}
                     onClick={() => setLiveProtocol('hls')}
                     className={clsx(
-                      'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
+                      'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
                       liveProtocol === 'hls'
                         ? 'bg-cyan/20 text-cyan'
                         : 'text-text-muted hover:text-text-primary',
@@ -149,7 +148,7 @@ export default function ConsolePage() {
                     aria-label={t('Static thumbnails (no streaming)')}
                     onClick={() => setLiveProtocol(null)}
                     className={clsx(
-                      'flex items-center gap-1 px-2 py-1 rounded text-[10px] font-medium transition-all',
+                      'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
                       liveProtocol === null
                         ? 'bg-text-muted/20 text-text-secondary'
                         : 'text-text-muted hover:text-text-primary',

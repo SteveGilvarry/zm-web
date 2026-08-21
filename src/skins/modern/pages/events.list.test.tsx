@@ -48,38 +48,41 @@ function recordEventQueries(
  * element in the card with a stable accessible name — then widened to the
  * card element that link sits in.
  */
-function card(id: number) {
+/**
+ * One event's row. The list renders a table by default now (docs/DESIGN.md);
+ * the per-event download link is still the anchor that identifies it.
+ */
+function row(id: number) {
   const link = screen.getByRole('link', { name: `Download video for event ${id}` });
-  return within(link.parentElement!);
+  return within(link.closest('tr') ?? link.parentElement!);
 }
 
-/** Wait for the card list to paint. */
-async function cards() {
+/** Wait for the list to paint. */
+async function rows() {
   return screen.findByRole('link', { name: 'Download video for event 101' });
 }
 
 describe('EventsListPage — modern skin', () => {
-  it('renders one card per event with monitor, cause, scores and archive state', async () => {
+  it('renders one row per event with monitor, cause, counts and archive state', async () => {
     renderRoute('/events');
-    await cards();
+    await rows();
 
     expect(screen.getByText('Showing 3 of 3 events')).toBeVisible();
 
-    const front = card(101);
+    const front = row(101);
     expect(front.getByText('Event-101')).toBeVisible();
-    expect(front.getByText('#101')).toBeVisible();
+    expect(front.getByText('101')).toBeVisible();
     expect(front.getByText('Front Door')).toBeVisible();
     expect(front.getByText('Motion')).toBeVisible();
     expect(front.getByText('9000')).toBeVisible();   // frames
     expect(front.getByText('120')).toBeVisible();    // alarm frames
-    expect(front.getByText('4820')).toBeVisible();   // tot score
-    expect(front.queryByText('Archived')).toBeNull();
+    expect(front.queryByLabelText('Archived')).toBeNull();
 
-    // 102 lives on monitor 2 and is archived.
-    const drive = card(102);
+    // 102 lives on monitor 2 and is archived — the row carries the mark.
+    const drive = row(102);
     expect(drive.getByText('Driveway')).toBeVisible();
     expect(drive.getByText('Forced Web')).toBeVisible();
-    expect(drive.getByText('Archived')).toBeVisible();
+    expect(drive.getByLabelText('Archived')).toBeVisible();
 
     // Footer totals sum the visible page (600 + 13 + 600 s, 3 × 40 MB).
     expect(screen.getByTestId('modern-total-duration')).toHaveTextContent('Σ Duration 20:13');
@@ -95,7 +98,7 @@ describe('EventsListPage — modern skin', () => {
     const urls = recordEventQueries();
     const user = userEvent.setup();
     renderRoute('/events');
-    await cards();
+    await rows();
 
     const hint = screen.getByTestId('default-hour-hint');
     expect(hint).toHaveTextContent('Showing events from the last hour only');
@@ -116,7 +119,7 @@ describe('EventsListPage — modern skin', () => {
   it('does not seed the last hour when the URL already names a filter', async () => {
     const urls = recordEventQueries();
     renderRoute('/events?monitor_id=1');
-    await cards();
+    await rows();
 
     expect(screen.queryByTestId('default-hour-hint')).toBeNull();
     await waitFor(() => expect(urls).toHaveLength(1));
@@ -183,7 +186,7 @@ describe('EventsListPage — modern skin', () => {
     expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('1');
     expect(screen.getByRole('combobox', { name: 'Events per page' })).toHaveValue('5');
     expect(screen.getByRole('textbox', { name: 'Name contains' })).toHaveValue('Event');
-    expect(screen.getByRole('button', { name: 'ID, sorted descending' })).toHaveAttribute(
+    expect(screen.getByRole('button', { name: 'Id, sorted descending' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -208,7 +211,7 @@ describe('EventsListPage — modern skin', () => {
     ];
     const urls = recordEventQueries();
     renderRoute('/events?tag=1');
-    await cards();
+    await rows();
 
     expect(screen.getByRole('combobox', { name: 'Tag' })).toHaveValue('1');
     await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('1'));
@@ -231,7 +234,7 @@ describe('EventsListPage — modern skin', () => {
     );
 
     renderRoute('/events?group=1&archived=false');
-    await cards();
+    await rows();
 
     await waitFor(() => expect(body).toBeDefined());
     expect(body).toEqual({
@@ -291,7 +294,7 @@ describe('EventsListPage — modern skin', () => {
   it('writes the monitor, cause, tag and group filters back to the URL', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
     await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '2');
     await waitFor(() => expect(router.state.location.search).toEqual({ monitor_id: 2 }));
@@ -321,7 +324,7 @@ describe('EventsListPage — modern skin', () => {
   it('cycles the archived toggle through the URL', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
     await user.click(screen.getByRole('button', { name: 'Archived' }));
     await waitFor(() => expect(router.state.location.search).toEqual({ archived: true }));
@@ -336,7 +339,7 @@ describe('EventsListPage — modern skin', () => {
   it('toggles sort field and direction from the sort bar', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
     // start_time / ascending is the default from ZM_WEB_EVENT_SORT_*.
     expect(screen.getByRole('button', { name: 'Start, sorted ascending' })).toHaveAttribute(
@@ -360,11 +363,13 @@ describe('EventsListPage — modern skin', () => {
     const urls = recordEventQueries();
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
+    // The table sorts by the columns it shows; `notes` has no column, so it
+    // is reachable through the URL (`?sort=notes`) rather than a header.
     for (const [label, field] of [
       ['Name', 'name'], ['Cause', 'cause'], ['Monitor', 'monitor_id'],
-      ['Notes', 'notes'], ['Frames', 'frames'],
+      ['Frames', 'frames'],
     ] as const) {
       await user.click(screen.getByRole('button', { name: `Sort by ${label}` }));
       await waitFor(() => expect(router.state.location.search).toMatchObject({ sort: field }));
@@ -375,7 +380,7 @@ describe('EventsListPage — modern skin', () => {
   it('debounces the free-text boxes into the URL', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
     await user.type(screen.getByRole('textbox', { name: 'Name contains' }), 'Event-102');
     await waitFor(
@@ -393,7 +398,7 @@ describe('EventsListPage — modern skin', () => {
   it('writes the date bounds and the page size, then resets everything', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
     const after = screen.getByLabelText('Events starting after');
     await user.clear(after);
@@ -420,7 +425,7 @@ describe('EventsListPage — modern skin', () => {
     const urls = recordEventQueries();
     const user = userEvent.setup();
     renderRoute('/events');
-    await cards();
+    await rows();
     await waitFor(() => expect(urls).toHaveLength(1));
 
     await user.click(screen.getByRole('button', { name: 'Refresh events' }));
@@ -435,7 +440,7 @@ describe('EventsListPage — modern skin', () => {
     const urls = recordEventQueries((rows) => paginated(rows, { total: 75, per_page: 25 }));
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
     expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Go to page 1' })).toHaveAttribute(
@@ -463,7 +468,7 @@ describe('EventsListPage — modern skin', () => {
     recordEventQueries((rows) => paginated(rows, { total: 75, per_page: 25 }));
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
     // The pager unmounts while the next page is in flight, so re-query it.
     const jump = () => screen.getByRole('spinbutton', { name: 'Jump to page' });
@@ -487,7 +492,7 @@ describe('EventsListPage — modern skin', () => {
     recordEventQueries((rows) => paginated(rows, { total: 250, per_page: 25 }));
     const user = userEvent.setup();
     const { router } = renderRoute('/events?page=5');
-    await cards();
+    await rows();
 
     // Middle of a ten-page set: the window centres on the current page.
     expect(
@@ -517,7 +522,7 @@ describe('EventsListPage — modern skin', () => {
 
   it('hides the pager when everything fits on one page', async () => {
     renderRoute('/events');
-    await cards();
+    await rows();
     expect(screen.queryByRole('button', { name: 'Next page' })).toBeNull();
     expect(screen.queryByRole('spinbutton', { name: 'Jump to page' })).toBeNull();
   });
@@ -529,14 +534,15 @@ describe('EventsListPage — modern skin', () => {
   it('keeps the bulk bar hidden until a row is selected', async () => {
     const user = userEvent.setup();
     renderRoute('/events');
-    await cards();
+    await rows();
 
     expect(screen.queryByRole('region', { name: 'Bulk event actions' })).toBeNull();
 
-    await user.click(card(101).getByRole('button', { name: 'Select event' }));
+    await user.click(row(101).getByRole('checkbox', { name: /^Select event/ }));
     const bar = within(screen.getByRole('region', { name: 'Bulk event actions' }));
     expect(bar.getByText('1 selected')).toBeVisible();
-    expect(card(101).getByRole('button', { name: 'Deselect event' })).toBeVisible();
+    // A checkbox announces its own state, so the label stays constant.
+    expect(row(101).getByRole('checkbox', { name: /^Select event/ })).toBeChecked();
 
     await user.click(bar.getByRole('button', { name: 'Clear selection' }));
     expect(screen.queryByRole('region', { name: 'Bulk event actions' })).toBeNull();
@@ -553,9 +559,9 @@ describe('EventsListPage — modern skin', () => {
     );
 
     renderRoute('/events');
-    await cards();
-    await user.click(card(101).getByRole('button', { name: 'Select event' }));
-    await user.click(card(103).getByRole('button', { name: 'Select event' }));
+    await rows();
+    await user.click(row(101).getByRole('checkbox', { name: /^Select event/ }));
+    await user.click(row(103).getByRole('checkbox', { name: /^Select event/ }));
 
     const bar = within(screen.getByRole('region', { name: 'Bulk event actions' }));
     expect(bar.getByText('2 selected')).toBeVisible();
@@ -583,8 +589,8 @@ describe('EventsListPage — modern skin', () => {
     );
 
     renderRoute('/events');
-    await cards();
-    await user.click(card(102).getByRole('button', { name: 'Select event' }));
+    await rows();
+    await user.click(row(102).getByRole('checkbox', { name: /^Select event/ }));
     await user.click(
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'Unarchive' }),
@@ -606,8 +612,8 @@ describe('EventsListPage — modern skin', () => {
     );
 
     renderRoute('/events');
-    await cards();
-    await user.click(card(101).getByRole('button', { name: 'Select event' }));
+    await rows();
+    await user.click(row(101).getByRole('checkbox', { name: /^Select event/ }));
     await user.click(
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'Delete' }),
@@ -632,8 +638,8 @@ describe('EventsListPage — modern skin', () => {
     );
 
     renderRoute('/events');
-    await cards();
-    await user.click(card(101).getByRole('button', { name: 'Select event' }));
+    await rows();
+    await user.click(row(101).getByRole('checkbox', { name: /^Select event/ }));
     await user.click(
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'Delete' }),
@@ -652,8 +658,8 @@ describe('EventsListPage — modern skin', () => {
     );
 
     renderRoute('/events');
-    await cards();
-    await user.click(card(101).getByRole('button', { name: 'Select event' }));
+    await rows();
+    await user.click(row(101).getByRole('checkbox', { name: /^Select event/ }));
     await user.click(
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'Archive' }),
@@ -675,8 +681,8 @@ describe('EventsListPage — modern skin', () => {
     );
 
     renderRoute('/events');
-    await cards();
-    await user.click(card(101).getByRole('button', { name: 'Select event' }));
+    await rows();
+    await user.click(row(101).getByRole('checkbox', { name: /^Select event/ }));
     await user.click(
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'Edit' }),
@@ -693,9 +699,9 @@ describe('EventsListPage — modern skin', () => {
   it('hides every editing action from a view-only operator', async () => {
     const user = userEvent.setup();
     renderRoute('/events', { perms: { events: 'View' } });
-    await cards();
+    await rows();
 
-    await user.click(card(101).getByRole('button', { name: 'Select event' }));
+    await user.click(row(101).getByRole('checkbox', { name: /^Select event/ }));
     const bar = within(screen.getByRole('region', { name: 'Bulk event actions' }));
 
     // Read-only actions stay.
@@ -711,9 +717,9 @@ describe('EventsListPage — modern skin', () => {
   it('opens the first selected event from the bulk View button', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/events');
-    await cards();
+    await rows();
 
-    await user.click(card(103).getByRole('button', { name: 'Select event' }));
+    await user.click(row(103).getByRole('checkbox', { name: /^Select event/ }));
     await user.click(
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'View' }),
@@ -736,7 +742,7 @@ describe('EventsListPage — modern skin', () => {
     const user = userEvent.setup();
 
     renderRoute('/events');
-    await cards();
+    await rows();
     await user.click(screen.getByRole('button', { name: 'Export visible events as CSV' }));
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
@@ -749,7 +755,7 @@ describe('EventsListPage — modern skin', () => {
   it('opens the column chooser from the toolbar', async () => {
     const user = userEvent.setup();
     renderRoute('/events');
-    await cards();
+    await rows();
 
     const columns = screen.getByRole('button', { name: /^Columns/ });
     expect(columns).toHaveAttribute('aria-expanded', 'false');

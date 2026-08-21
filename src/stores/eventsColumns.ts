@@ -61,9 +61,19 @@ export const EVENTS_COLUMNS: EventsColumnDef[] = [
   { key: 'disk_space',   label: 'DiskSpace',    defaultVisible: true },
 ];
 
+/** How the modern events list draws its rows. */
+export type EventsView = 'table' | 'cards';
+
 interface EventsColumnsState {
   /** Column keys explicitly hidden by the operator. */
   hidden: EventsColumnKey[];
+  /**
+   * Table by default: an operator scans a list, and the card layout fits
+   * three and a half events on a screen where the table fits twenty (see
+   * docs/DESIGN.md). Cards stay available for browsing by thumbnail.
+   */
+  view: EventsView;
+  setView: (view: EventsView) => void;
   /** Toggle one column's visibility. */
   toggle: (key: EventsColumnKey) => void;
   /** Show every known column. */
@@ -81,6 +91,8 @@ export const useEventsColumnsStore = create<EventsColumnsState>()(
   persist(
     (set, get) => ({
       hidden: initialHidden(),
+      view: 'table',
+      setView: (view) => set({ view }),
       toggle: (key) =>
         set((s) => {
           const has = s.hidden.includes(key);
@@ -97,7 +109,7 @@ export const useEventsColumnsStore = create<EventsColumnsState>()(
       // localStorage — the column layout is a user preference, not a
       // per-tab working set, so we want it to outlive the session.
       storage: createJSONStorage(() => localStorage),
-      partialize: (state) => ({ hidden: state.hidden }),
+      partialize: (state) => ({ hidden: state.hidden, view: state.view }),
     },
   ),
 );

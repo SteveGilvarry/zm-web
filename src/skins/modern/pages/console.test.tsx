@@ -46,8 +46,13 @@ beforeEach(() => {
  * A StatCard exposes no landmark or accessible name, so reach it through
  * its subtitle (unique per card) and walk up to the card body.
  */
-function statCard(subtitle: string): HTMLElement {
-  return screen.getByText(subtitle).parentElement as HTMLElement;
+/**
+ * One reading in the console's overview strip, found by its label. Scoped to
+ * the region: "Monitors" also names a sidebar link and the tile panel.
+ */
+async function summaryStat(label: string): Promise<HTMLElement> {
+  const overview = await screen.findByRole('region', { name: 'Overview' });
+  return within(overview).getByText(label).parentElement as HTMLElement;
 }
 
 /**
@@ -67,21 +72,25 @@ async function renderConsole() {
 }
 
 describe('Console — renders with data', () => {
-  it('summarises the fleet in the four stat cards', async () => {
+  it('summarises the fleet in the overview strip', async () => {
     await renderConsole();
+    const overview = await screen.findByRole('region', { name: 'Overview' });
 
     // Two seeded monitors, both capturing.
     await waitFor(() => expect(screen.getByText('2 active')).toBeInTheDocument());
-    expect(within(statCard('2 active')).getByText('2')).toBeInTheDocument();
+    expect(within(await summaryStat('Monitors')).getByText('2')).toBeInTheDocument();
 
     // Three seeded events, all inside the 24h count window.
-    expect(within(statCard('events')).getByText('3')).toBeInTheDocument();
+    expect(within(await summaryStat('Events (24h)')).getByText('3')).toBeInTheDocument();
 
     // Only Front Door records (Driveway is recording: 'None').
-    expect(within(statCard('cameras')).getByText('1')).toBeInTheDocument();
+    expect(within(await summaryStat('Recording')).getByText('1')).toBeInTheDocument();
 
-    // 500 GB of 1 TB used.
-    expect(within(statCard('466 GB free')).getByText('50%')).toBeInTheDocument();
+    // 500 GB of 1 TB used — under the 75% mark, so no colour.
+    expect(within(await summaryStat('Storage')).getByText('50%')).toBeInTheDocument();
+    const storage = within(overview).getByText('50%');
+    expect(storage).not.toHaveClass('text-warn');
+    expect(storage).not.toHaveClass('text-danger');
   });
 
   it('renders one tile per monitor, linking into the watch page', async () => {
@@ -187,8 +196,10 @@ describe('Console — empty and error states', () => {
     db.systemStatus = makeSystemStatus({ stats: undefined });
     await renderConsole();
 
-    expect(await screen.findByText('disk capacity')).toBeInTheDocument();
-    expect(within(statCard('disk capacity')).getByText('—')).toBeInTheDocument();
+    // No stats to report: an em dash, and no free-space line under it.
+    expect(within(await screen.findByRole('region', { name: 'Overview' })).getByText('—'))
+      .toBeInTheDocument();
+    expect(screen.queryByText(/free$/)).toBeNull();
   });
 });
 
@@ -300,6 +311,9 @@ describe('Console — live session badges', () => {
     await renderConsole();
 
     expect(await screen.findByText('65.2 GB free')).toBeInTheDocument();
-    expect(within(statCard('65.2 GB free')).getByText('93%')).toBeInTheDocument();
+    const storage = within(await summaryStat('Storage')).getByText('93%');
+    expect(storage).toBeInTheDocument();
+    // Past 90%: the reading itself is the message, so it takes the danger tone.
+    expect(storage).toHaveClass('text-danger');
   });
 });
