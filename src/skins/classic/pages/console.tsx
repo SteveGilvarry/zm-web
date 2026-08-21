@@ -420,6 +420,11 @@ function CountCell({ monitorId, count, disk, archived }: { monitorId: number; co
       >
         {count}
       </Link>
+      {/* Yes, the literal string. ZoneMinder's own `human_filesize()`
+          returns 'null' for a null size (functions.php), and a monitor with
+          no events makes `SUM(DiskSpace)` NULL — so this is what the legacy
+          console prints in that cell. Faithful, not a bug: don't "fix" it to
+          0 B or an em dash without changing legacy too. */}
       <div className="text-[11px] text-zinc-500">{count > 0 && disk > 0 ? formatBytes(disk) : 'null'}</div>
     </ClassicTd>
   );
