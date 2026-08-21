@@ -141,10 +141,13 @@ Contents:
   `Events_Tags` links.
 - **Groups** `e2e-Outdoor` (monitors 9001, 9002, 9004) and child `e2e-Front`
   (9001).
-- **Filters** 9001 `e2e-PurgeWhenFull`: the stock `{"terms":[…]}` query_json
-  verbatim (legacy `attr/op/val/cnj/obr/cbr` tokens), `AutoDelete=1`,
-  `Background=1`. 9002 `e2e-Motion only`: the dashboard's own
-  `{"rules":[…]}` shape so the rule builder renders it. **Report** 9001
+- **Filters**, one per wire format the page has to cope with. 9001
+  `e2e-PurgeWhenFull`: the stock `{"terms":[…]}` query_json verbatim (legacy
+  `attr/op/val/cnj/obr/cbr` tokens), `AutoDelete=1`, `Background=1`. 9002
+  `e2e-Motion only`: the dashboard's **retired** `{"rules":[…]}` shape — the
+  rule builder no longer reads it and must say so with Save disabled instead
+  of overwriting it. 9003 `e2e-Recent motion`: a readable `{"terms":[…]}`
+  filter with no destructive action, for the match preview. **Report** 9001
   `e2e-Weekly motion` references filter 9002.
 - **States** `e2e-Night`, `e2e-Away` in the `id:Capturing:Analysing:Recording`
   definition format; `default` stays active.

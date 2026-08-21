@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect, gotoSkin, SKINS, seededOnly, type Skin } from './fixtures';
 import { SEED } from './seed/seed-data';
 
@@ -25,7 +26,7 @@ test.describe('Montage Review', () => {
       await expect(page.getByRole('button', { name: 'PLAY' })).toBeVisible();
       await expect(page.getByText(/timeline/i).first()).toBeVisible();
       for (const name of ['e2e-Front Door', 'e2e-Driveway', 'e2e-Garage', 'e2e-PTZ Dome']) {
-        await expect(page.getByText(name).first()).toBeVisible();
+        await expect(visibleText(page, name)).toBeVisible();
       }
     });
 
@@ -59,7 +60,12 @@ test.describe('Montage Review', () => {
         skin,
       );
       await expect(page).toHaveURL(new RegExp(`monitor_id=${SEED.monitors.driveway}`));
-      await expect(page.getByText('e2e-Driveway').first()).toBeVisible();
+      await expect(visibleText(page, 'e2e-Driveway')).toBeVisible();
     });
   }
 });
+
+/** See cycle.spec.ts — the classic filter bar hides camera names in <option>s. */
+function visibleText(page: Page, text: string) {
+  return page.getByText(text, { exact: true }).filter({ visible: true }).first();
+}

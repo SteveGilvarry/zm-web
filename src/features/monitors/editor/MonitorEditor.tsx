@@ -587,6 +587,7 @@ function FieldInput({
         value={value == null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value)}
         placeholder={field.placeholder}
+        aria-label={field.label}
         aria-invalid={invalid || undefined}
         className={clsx(baseInput, 'font-mono text-xs leading-relaxed resize-y')}
       />
@@ -606,6 +607,7 @@ function FieldInput({
         max={field.max}
         step={field.integer ? 1 : 'any'}
         placeholder={field.placeholder}
+        aria-label={field.label}
         aria-invalid={invalid || undefined}
         className={clsx(baseInput, 'font-mono tabular-nums')}
       />
@@ -656,6 +658,7 @@ function FieldInput({
           if (raw === '') { onChange(null); return; }
           onChange(optionsAreNumeric ? Number(raw) : raw);
         }}
+        aria-label={field.label}
         aria-invalid={invalid || undefined}
         className={clsx(baseInput, 'cursor-pointer')}
       >
@@ -721,6 +724,7 @@ function FieldInput({
       value={value == null ? '' : String(value)}
       onChange={(e) => onChange(e.target.value)}
       placeholder={field.placeholder}
+      aria-label={field.label}
       aria-invalid={invalid || undefined}
       className={clsx(baseInput, 'font-mono')}
     />

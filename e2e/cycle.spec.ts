@@ -1,3 +1,4 @@
+import type { Page } from '@playwright/test';
 import { test, expect, gotoSkin, SKINS, seededOnly } from './fixtures';
 
 /**
@@ -17,13 +18,13 @@ test.describe('Cycle', () => {
       // Cycling starts on the first camera; pause so the timer cannot move it
       // underneath the assertions.
       await page.getByRole('button', { name: /^pause cycling$/i }).click();
-      await expect(page.getByText('e2e-Front Door').first()).toBeVisible();
+      await expect(visibleText(page, 'e2e-Front Door')).toBeVisible();
 
       await page.getByRole('button', { name: /^next monitor$/i }).click();
-      await expect(page.getByText('e2e-Driveway').first()).toBeVisible();
+      await expect(visibleText(page, 'e2e-Driveway')).toBeVisible();
 
       await page.getByRole('button', { name: /^previous monitor$/i }).click();
-      await expect(page.getByText('e2e-Front Door').first()).toBeVisible();
+      await expect(visibleText(page, 'e2e-Front Door')).toBeVisible();
     });
 
     test(`${skin}: picking a camera from the rail jumps straight to it @route:cycle`, async ({
@@ -33,7 +34,16 @@ test.describe('Cycle', () => {
       await page.getByRole('button', { name: /^pause cycling$/i }).click();
 
       await page.getByRole('button', { name: 'e2e-Garage', exact: true }).click();
-      await expect(page.getByText('e2e-Garage').first()).toBeVisible();
+      await expect(visibleText(page, 'e2e-Garage')).toBeVisible();
     });
   }
 });
+
+/**
+ * The classic filter bar renders every camera as an <option>, which
+ * `getByText` happily matches even though it is not visible. Restrict to
+ * what an operator can actually see.
+ */
+function visibleText(page: Page, text: string) {
+  return page.getByText(text, { exact: true }).filter({ visible: true }).first();
+}

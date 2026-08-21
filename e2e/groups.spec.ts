@@ -33,18 +33,20 @@ test.describe('Groups', () => {
       const name = `e2e-probe-${testInfo.project.name}-${skin}-${Date.now()}`;
       await gotoSkin(page, '/groups', skin);
 
+      // Wait for the list before touching the toolbar: both skins re-render
+      // when the groups query lands, which would blank a half-typed field.
+      await expect(page.getByText('e2e-Outdoor').first()).toBeVisible();
+
+      await page.getByRole('button', { name: /^new group$/i }).click();
+      const dialog = page.getByRole('dialog', { name: /create group/i });
+      await expect(dialog).toBeVisible();
+      await dialog.getByLabel('Name', { exact: true }).fill(name);
+
       const created = page.waitForResponse(
         (r) => r.url().endsWith('/api/v3/groups') && r.request().method() === 'POST',
         { timeout: 15_000 },
       );
-      page.once('dialog', (d) => void d.accept(name));
-      await page.getByRole('button', { name: /^new group$/i }).click();
-      // Skins that use an inline field rather than a prompt: fill it.
-      const field = page.getByRole('textbox', { name: /group name/i });
-      if (await field.count()) {
-        await field.fill(name);
-        await page.getByRole('button', { name: /^(create|save|add)$/i }).first().click();
-      }
+      await dialog.getByRole('button', { name: /^save$/i }).click();
       const createResp = await created;
       expect(createResp.status()).toBe(201);
       const id = (await createResp.json()).id as number;

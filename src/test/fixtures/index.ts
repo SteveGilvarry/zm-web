@@ -3,7 +3,7 @@
  *
  * One factory per backend resource, each returning the *full* required field
  * set of its `…Response` schema in the OpenAPI snapshot
- * (`legacy-requirements/review-2026-08-21/openapi-2026-08-21.json`) with the
+ * (`src/test/openapi/openapi.json`) with the
  * values the live box actually sends — 0/1 ints for booleans, decimals as
  * strings, raw DB enum casing on monitor reads. `fixtures.schema.test.ts`
  * checks every factory against that snapshot, so a backend change that

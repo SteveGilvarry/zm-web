@@ -157,11 +157,11 @@ describe('Run State page — apply', () => {
 });
 
 describe('Run State page — daemon controls', () => {
-  it('Start confirms first then POSTs /states/change/start', async () => {
+  it('Start confirms first then POSTs /server/control/start', async () => {
     setupHappyPath();
     let hits = 0;
     server.use(
-      http.post('/api/v3/states/change/start', () => {
+      http.post('/api/v3/server/control/start', () => {
         hits += 1;
         return HttpResponse.json({ message: 'starting' });
       }),
@@ -178,11 +178,11 @@ describe('Run State page — daemon controls', () => {
     await waitFor(() => expect(hits).toBe(1));
   });
 
-  it('Stop confirms first then POSTs /states/change/stop', async () => {
+  it('Stop confirms first then POSTs /server/control/stop', async () => {
     setupHappyPath();
     let hits = 0;
     server.use(
-      http.post('/api/v3/states/change/stop', () => {
+      http.post('/api/v3/server/control/stop', () => {
         hits += 1;
         return HttpResponse.json({ message: 'stopping' });
       }),
@@ -202,11 +202,11 @@ describe('Run State page — daemon controls', () => {
     await waitFor(() => expect(hits).toBe(1));
   });
 
-  it('Restart confirms first then POSTs /states/change/restart', async () => {
+  it('Restart confirms first then POSTs /server/control/restart', async () => {
     setupHappyPath();
     let hits = 0;
     server.use(
-      http.post('/api/v3/states/change/restart', () => {
+      http.post('/api/v3/server/control/restart', () => {
         hits += 1;
         return HttpResponse.json({ message: 'restarting' });
       }),

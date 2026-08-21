@@ -1,125 +1,94 @@
-import { test, expect } from './fixtures';
+import type { Page } from '@playwright/test';
+import {
+  test,
+  expect,
+  gotoSkin,
+  SKINS,
+  seededOnly,
+  scratchEvents,
+  apiFetch,
+  type Skin,
+} from './fixtures';
 
 /**
- * Bulk events — archive flow. Selecting events surfaces a sticky
- * BulkActionBar (role="region", aria-label="Bulk event actions") with
- * Archive / Unarchive / Delete buttons. The bar fans out one PATCH per id,
- * so we wait for the bar to vanish (signals all mutations finished and
- * the selection was cleared).
- *
- * The test is idempotent: archived IDs are tracked and unarchived in
- * afterEach. If the test environment has fewer than 2 unarchived events,
- * the test skips cleanly.
+ * Bulk actions on the events list, in both skins. The earlier version of this
+ * spec selected "the first two rows" on whatever backend it found, which made
+ * it race the other projects and skip silently when the data was thin. It now
+ * takes a reserved, disjoint pair of seeded events per (project, skin), acts
+ * on exactly those, and unarchives them again.
  */
-test.describe('Bulk events — archive', () => {
-  const archivedIds: number[] = [];
 
-  test('select multiple events and archive them in one shot', async ({ loggedInPage: page }) => {
-    await page.goto('/events');
+/** Select one event by id, whatever the row layout is. */
+async function selectEvent(page: Page, skin: Skin, id: number) {
+  if (skin === 'classic') {
+    await page.getByRole('checkbox', { name: `Select event ${id}` }).check();
+    return;
+  }
+  // Modern hides the per-card checkbox until hover; the row is the card that
+  // links to this event.
+  const card = page
+    .locator('div')
+    .filter({ has: page.locator(`a[href="/events/${id}"]`) })
+    .filter({ has: page.getByRole('button', { name: 'Select event' }) })
+    .last();
+  await card.getByRole('button', { name: 'Select event' }).click({ force: true });
+}
 
-    // Filter to unarchived so we know our test set isn't already archived.
-    // The three-state filter has buttons labelled all / unarchived / archived.
-    await page.getByRole('button', { name: /^unarchived$/i }).click();
-    // Let the events query refetch under the new filter before we read it.
-    await page.waitForResponse(
-      (r) => r.url().includes('/api/v3/events') && r.url().includes('archived=false'),
-      { timeout: 10_000 },
-    ).catch(() => {});
-    await page.waitForLoadState('networkidle');
+test.describe('Bulk events', () => {
+  test.skip(seededOnly.condition, seededOnly.reason);
 
-    // EventCard rows in the modern skin: the only descendants on the
-    // events list with this exact structure are <div> > <button
-    // aria-label="Select event"> + <a href="/events/N">. Iterate row by
-    // row so each captured id is paired with the click we make.
-    const cardRows = page.locator('div.group:has(button[aria-label="Select event"]):has(a[href^="/events/"])');
-    const cardCount = await cardRows.count();
+  for (const skin of SKINS) {
+    test(`${skin}: selecting rows and archiving them PATCHes each one @route:events.list`, async ({
+      loggedInPage: page,
+    }, testInfo) => {
+      const ids = scratchEvents(testInfo.project.name, skin, 2);
 
-    test.skip(cardCount < 2, 'Not enough unarchived events in the test environment for bulk archive');
+      await gotoSkin(page, '/events', skin);
+      // Drop the default one-hour window, then widen the page so both
+      // reserved rows are on screen whatever their position in the 32.
+      await page.getByTestId('default-hour-hint').getByRole('button', { name: /clear/i }).click();
+      await page.getByLabel(/(rows )?per page/i).first().selectOption('50');
+      for (const id of ids) {
+        await expect(page.locator(`a[href="/events/${id}"]`).first()).toBeVisible({
+          timeout: 15_000,
+        });
+      }
 
-    const selectCount = Math.min(3, cardCount);
-    expect(selectCount).toBeGreaterThanOrEqual(2);
+      const patched = new Set<number>();
+      page.on('response', (resp) => {
+        const m = resp.url().match(/\/api\/v3\/events\/(\d+)$/);
+        if (m && resp.request().method() === 'PATCH' && resp.ok()) patched.add(Number(m[1]));
+      });
 
-    for (let i = 0; i < selectCount; i++) {
-      const row = cardRows.nth(i);
-      const href = await row.locator('a[href^="/events/"]').first().getAttribute('href');
-      const m = href?.match(/\/events\/(\d+)/);
-      if (m) archivedIds.push(parseInt(m[1], 10));
-      // Force the click since the checkbox starts hidden until hover.
-      await row.getByRole('button', { name: /^select event$/i }).click({ force: true });
-    }
+      try {
+        for (const id of ids) await selectEvent(page, skin, id);
 
-    // The bulk action bar should be visible with the right count.
-    const bar = page.getByRole('region', { name: /bulk event actions/i });
-    await expect(bar).toBeVisible();
-    await expect(bar.getByText(`${selectCount} selected`)).toBeVisible();
+        // The selection is reported before anything destructive happens.
+        await expect(page.getByText(`${ids.length} selected`).first()).toBeVisible();
 
-    // Collect all PATCH responses for our archived IDs as the bar fans out.
-    const patchedIds = new Set<number>();
-    page.on('response', (resp) => {
-      const m = resp.url().match(/\/api\/v3\/events\/(\d+)/);
-      if (m && resp.request().method() === 'PATCH' && resp.ok()) {
-        patchedIds.add(parseInt(m[1], 10));
+        await page
+          .getByRole('button', { name: /^archive$/i })
+          .first()
+          .click();
+
+        // Every selected row produced its own PATCH…
+        await expect(() => expect([...patched].sort()).toEqual([...ids].sort())).toPass({
+          timeout: 30_000,
+        });
+
+        // …and the backend agrees, not just the cache.
+        for (const id of ids) {
+          const after = await apiFetch(page, `/api/v3/events/${id}`);
+          expect((after.body as { archived: number }).archived, `event ${id}`).toBe(1);
+        }
+      } finally {
+        for (const id of ids) {
+          await apiFetch(page, `/api/v3/events/${id}`, {
+            method: 'PATCH',
+            body: { archived: false },
+          });
+        }
       }
     });
-
-    await bar.getByRole('button', { name: /^archive$/i }).click();
-
-    // The bar should clear once all mutations resolve (onClear is invoked
-    // from onSuccess after the sequential fan-out completes).
-    await expect(bar).toBeHidden({ timeout: 30_000 });
-
-    // Every selected id should have produced a successful PATCH.
-    for (const id of archivedIds) {
-      expect(patchedIds.has(id), `event ${id} should have been PATCHed`).toBe(true);
-    }
-
-    // Verify the events are archived on the backend (avoid pagination /
-    // timing issues by querying directly).
-    const archivedStatuses = await page.evaluate(async (ids) => {
-      const raw = window.localStorage.getItem('zm-auth');
-      if (!raw) return [];
-      const { state } = JSON.parse(raw);
-      const out: Array<{ id: number; archived: number }> = [];
-      for (const id of ids) {
-        const r = await fetch(`/api/v3/events/${id}`, {
-          headers: { Authorization: `Bearer ${state.accessToken}` },
-        });
-        if (r.ok) {
-          const ev = await r.json();
-          out.push({ id, archived: ev.archived });
-        }
-      }
-      return out;
-    }, archivedIds);
-
-    expect(archivedStatuses.length).toBe(archivedIds.length);
-    for (const ev of archivedStatuses) {
-      expect(ev.archived, `event ${ev.id} should be archived after bulk-archive`).toBe(1);
-    }
-  });
-
-  test.afterEach(async ({ loggedInPage: page }) => {
-    // Unarchive everything the test touched, one by one. Use the API
-    // directly (via the same axios client) so cleanup is reliable even if
-    // the UI is mid-render.
-    for (const id of archivedIds.splice(0)) {
-      await page.evaluate(async (eventId) => {
-        try {
-          const raw = window.localStorage.getItem('zm-auth');
-          if (!raw) return;
-          const { state } = JSON.parse(raw);
-          await fetch(`/api/v3/events/${eventId}`, {
-            method: 'PATCH',
-            headers: {
-              'Content-Type': 'application/json',
-              Authorization: `Bearer ${state.accessToken}`,
-            },
-            body: JSON.stringify({ archived: false }),
-          });
-        } catch {
-          // best-effort cleanup
-        }
-      }, id);
-    }
-  });
+  }
 });

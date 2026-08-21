@@ -3,6 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { listControls, getControl, deleteControl, type Control } from '@/api/controls';
+import { isDeleted } from '@/types';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
@@ -69,7 +70,7 @@ export function usePtzControlsPage() {
   const monitorsByControl = useMemo(() => {
     const out = new Map<number, Pick<Monitor, 'id' | 'name'>[]>();
     for (const m of monitorsQ.data?.items ?? []) {
-      if (m.control_id == null || m.deleted === 1) continue;
+      if (m.control_id == null || isDeleted(m)) continue;
       const bucket = out.get(m.control_id) ?? [];
       bucket.push({ id: m.id, name: m.name });
       out.set(m.control_id, bucket);

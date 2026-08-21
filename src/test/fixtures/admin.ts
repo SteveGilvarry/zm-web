@@ -108,6 +108,12 @@ export function makeStorage(overrides: Partial<ZmStorage> = {}): ZmStorage {
     path: '/var/cache/zoneminder/events',
     type: 'local',
     enabled: 1,
+    // Full row since zm-api#24.
+    scheme: 'Medium',
+    server_id: 0,
+    url: null,
+    disk_space: 46_548_754_474,
+    do_delete: 1,
     ...overrides,
   };
 }
@@ -120,6 +126,18 @@ export function makeServer(overrides: Partial<Server> = {}): Server {
     hostname: 'zm-node-1.local',
     port: 80,
     status: 'Running',
+    // Full row since zm-api#25.
+    protocol: 'http',
+    path_to_index: '/zm/index.php',
+    path_to_zms: '/zm/cgi-bin/nph-zms',
+    path_to_api: '/zm/api',
+    zmaudit: 1,
+    zmstats: 1,
+    zmtrigger: 0,
+    zmeventnotification: 0,
+    state_id: null,
+    latitude: null,
+    longitude: null,
     ...overrides,
   };
 }

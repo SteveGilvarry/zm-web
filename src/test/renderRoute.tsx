@@ -87,20 +87,26 @@ function base64url(value: unknown): string {
 }
 
 /** An unsigned but structurally real JWT, so `parseJwt` reads the claims back. */
-export function makeTestToken(claims: Partial<UserClaims> = {}): {
-  token: string;
-  claims: UserClaims;
-} {
-  const full: UserClaims = {
+export function makeTestToken(claims: UserClaims): string {
+  return `${base64url({ alg: 'none', typ: 'JWT' })}.${base64url(claims)}.sig`;
+}
+
+/** The claim set a signed-in operator carries, with `perms` per the options. */
+export function makeTestClaims(
+  options: Pick<RenderRouteOptions, 'perms' | 'claims'> = {},
+): UserClaims {
+  const { perms = ALL_EDIT, claims = {} } = options;
+  const base: UserClaims = {
     iat: Math.floor(Date.now() / 1000),
     exp: Math.floor(Date.now() / 1000) + 3600,
     user: 'admin',
     uid: 1,
     typ: 'access',
-    perms: ALL_EDIT,
     ...claims,
   };
-  return { token: `${base64url({ alg: 'none', typ: 'JWT' })}.${base64url(full)}.sig`, claims: full };
+  // `perms: null` models a token from a pre-RBAC backend: no claim at all,
+  // which `effectivePerms()` reads as "everything is Edit, the backend gates".
+  return perms === null ? base : { ...base, perms: { ...ALL_EDIT, ...perms } };
 }
 
 function makeQueryClient() {
@@ -114,7 +120,7 @@ function makeQueryClient() {
 
 /** Seed the auth store without going through `setTokens` (which arms a refresh timer). */
 export function seedAuth(options: Pick<RenderRouteOptions, 'perms' | 'authenticated' | 'claims'> = {}) {
-  const { authenticated = true, perms = ALL_EDIT, claims = {} } = options;
+  const { authenticated = true, perms, claims } = options;
   if (!authenticated) {
     useAuthStore.setState({
       accessToken: null,
@@ -125,13 +131,9 @@ export function seedAuth(options: Pick<RenderRouteOptions, 'perms' | 'authentica
     });
     return null;
   }
-  const { token, claims: full } = makeTestToken({
-    ...claims,
-    ...(perms === null ? {} : { perms: { ...ALL_EDIT, ...perms } }),
-  });
-  if (perms === null) delete (full as { perms?: unknown }).perms;
+  const full = makeTestClaims({ perms, claims });
   useAuthStore.setState({
-    accessToken: token,
+    accessToken: makeTestToken(full),
     refreshToken: 'test.refresh.token',
     user: full,
     isAuthenticated: true,

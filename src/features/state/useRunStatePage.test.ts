@@ -81,8 +81,8 @@ function stubAll(states: unknown[] = STATES, monitors: unknown[] = MONITORS) {
       requests.push({ method: 'POST', url: '/api/v3/system/state', body });
       return HttpResponse.json({ success: true, message: 'applied' });
     }),
-    http.post('/api/v3/states/change/:action', ({ params }) => {
-      requests.push({ method: 'POST', url: `/api/v3/states/change/${params.action}`, body: null });
+    http.post('/api/v3/server/control/:action', ({ params }) => {
+      requests.push({ method: 'POST', url: `/api/v3/server/control/${params.action}`, body: null });
       return HttpResponse.json({ message: `daemons ${params.action}ed` });
     }),
   );
@@ -251,7 +251,7 @@ describe('useRunStatePage — apply / delete / daemon actions', () => {
     expect(requests).toHaveLength(0);
   });
 
-  it('a daemon action posts to /states/change/<action> and reports its message', async () => {
+  it('a daemon action posts to /server/control/<action> and reports its message', async () => {
     stubAll();
     const { result } = mount();
     await waitFor(() => expect(result.current.states).toHaveLength(2));
@@ -261,7 +261,7 @@ describe('useRunStatePage — apply / delete / daemon actions', () => {
 
     act(() => result.current.confirmDaemon());
     await waitFor(() => expect(requests).toContainEqual({
-      method: 'POST', url: '/api/v3/states/change/restart', body: null,
+      method: 'POST', url: '/api/v3/server/control/restart', body: null,
     }));
     expect(result.current.daemonTarget).toBeNull();
     await waitFor(() => expect(result.current.daemonSuccess).toBe(true));
@@ -280,7 +280,7 @@ describe('useRunStatePage — apply / delete / daemon actions', () => {
   it('reports a failed daemon action instead of swallowing it', async () => {
     stubAll();
     server.use(
-      http.post('/api/v3/states/change/:action', () =>
+      http.post('/api/v3/server/control/:action', () =>
         HttpResponse.json({ kind: 'INTERNAL', error_message: 'zmpkg.pl not found' }, { status: 500 }),
       ),
     );

@@ -130,10 +130,12 @@ test.describe('Events list', () => {
       const resp = await pending;
 
       expect(new URL(resp.url()).searchParams.get('archived')).toBe('true');
-      expect(await total(resp)).toBe(SEED.events.archived.length);
-      await expect(
-        page.locator(`a[href="/events/${SEED.events.archived[0]}"]`).first(),
-      ).toBeVisible();
+      // At least the six the seed archives. Not exactly six: the archive
+      // round-trip specs run in parallel and have rows archived meanwhile.
+      expect(await total(resp)).toBeGreaterThanOrEqual(SEED.events.archived.length);
+      for (const id of SEED.events.archived) {
+        await expect(page.locator(`a[href="/events/${id}"]`).first()).toBeVisible();
+      }
     });
 
     test(`${skin}: the search box narrows the rows on the page @route:events.list`, async ({

@@ -108,8 +108,14 @@ test.describe('Settings — servers', () => {
     }, testInfo) => {
       const name = `e2e-probe-${testInfo.project.name}-${skin}-${Date.now()}`;
       await gotoSkin(page, '/settings/servers', skin);
+      // The registered-servers table re-renders when the list query lands and
+      // again when the live-stats poll does; let it settle before typing, or
+      // the controlled inputs get reset under us and Register stays disabled.
+      await expect(page.getByRole('row', { name: /e2e-server-1/ })).toBeVisible();
 
-      await page.getByLabel('Name', { exact: true }).fill(name);
+      const nameField = page.getByLabel('Name', { exact: true });
+      await nameField.fill(name);
+      await expect(nameField).toHaveValue(name);
       await page.getByLabel('Host', { exact: true }).fill('probe.example.test');
 
       const created = page.waitForResponse(
@@ -129,8 +135,12 @@ test.describe('Settings — servers', () => {
           (r) => r.url().endsWith(`/api/v3/servers/${id}`) && r.request().method() === 'DELETE',
           { timeout: 15_000 },
         );
-        page.once('dialog', (d) => void d.accept());
         await page.getByRole('button', { name: `Delete ${name}` }).click();
+        // Destructive actions go through the in-app ConfirmDialog, not
+        // window.confirm — so the second click is on the modal's button.
+        const confirm = page.getByRole('dialog', { name: /delete server/i });
+        await expect(confirm).toBeVisible();
+        await confirm.getByRole('button', { name: /^delete$/i }).click();
         await deleted;
         await expect(page.getByRole('row', { name: new RegExp(name) })).toHaveCount(0, {
           timeout: 10_000,
@@ -163,11 +173,10 @@ test.describe('Settings — storage', () => {
     }) => {
       await gotoSkin(page, '/settings/storage', skin);
       await page.getByRole('button', { name: /^edit e2e-events$/i }).click();
-      // The path is editable, not just displayed.
+      // The path is editable, not just displayed, and opens on its real value.
       await expect(
-        page.getByRole('textbox').filter({ hasText: '' }).first(),
+        page.locator('input[value="/var/cache/zoneminder/events-e2e"]'),
       ).toBeVisible();
-      await expect(page.getByDisplayValue('/var/cache/zoneminder/events-e2e')).toBeVisible();
     });
   }
 });

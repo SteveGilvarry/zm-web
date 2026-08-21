@@ -15,9 +15,31 @@ export interface Zone {
   name: string;
   type: ZoneType | string;
   units: 'Pixels' | 'Percent' | string;
-  /** Space-separated "x,y" pairs — the polygon's vertex list. */
+  /** Space-separated "x,y" pairs — the polygon's vertex list, in pixels. */
   coords: string;
   num_coords: number;
+
+  /* Motion-detection settings. Returned since zm-api#22; `UpdateZoneRequest`
+   * still accepts only `name` + `polygon`, so these are read-only for now. */
+  /** Polygon area in pixels, computed by the backend. */
+  area?: number;
+  check_method?: string;
+  min_pixel_threshold?: number | null;
+  max_pixel_threshold?: number | null;
+  min_alarm_pixels?: number | null;
+  max_alarm_pixels?: number | null;
+  filter_x?: number | null;
+  filter_y?: number | null;
+  min_filter_pixels?: number | null;
+  max_filter_pixels?: number | null;
+  min_blob_pixels?: number | null;
+  max_blob_pixels?: number | null;
+  min_blobs?: number | null;
+  max_blobs?: number | null;
+  overload_frames?: number;
+  extend_alarm_frames?: number;
+  /** Packed RGB of the zone's alarm colour. */
+  alarm_rgb?: number | null;
 }
 
 export async function listZonesForMonitor(

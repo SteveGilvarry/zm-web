@@ -1,4 +1,5 @@
-import { test, expect, gotoSkin, SKINS, seededOnly } from './fixtures';
+import type { Page } from '@playwright/test';
+import { test, expect, gotoSkin, SKINS, seededOnly, type Skin } from './fixtures';
 import { SEED } from './seed/seed-data';
 
 /**
@@ -51,18 +52,29 @@ test.describe('Console', () => {
     }
   });
 
+  // Both skins filter by group; e2e-Front holds only the front door. Modern
+  // uses a listbox popover, classic the legacy <select>.
+  const pickFrontGroup = {
+    modern: async (page: Page) => {
+      await page.getByRole('button', { name: 'Groups filter' }).click();
+      // The popover is a listbox of checkboxes, one per group.
+      await page.getByRole('checkbox', { name: 'e2e-Front', exact: true }).check();
+      await page.keyboard.press('Escape');
+    },
+    classic: async (page: Page) => {
+      await page.getByLabel(/^groupid/i).selectOption({ label: 'e2e-Front' });
+    },
+  } satisfies Record<Skin, (page: Page) => Promise<void>>;
+
   for (const skin of SKINS) {
     test(`${skin}: the monitor filter bar narrows the list @route:console`, async ({
       loggedInPage: page,
     }) => {
       await gotoSkin(page, '/', skin);
+      await expect(page.locator(`a[href="/monitors/${SEED.monitors.garage}"]`).first())
+        .toBeVisible();
 
-      // Both skins filter by group; e2e-Front holds only the front door.
-      const group = page
-        .getByLabel(/^groups? ?filter$/i)
-        .or(page.getByLabel(/^groupid/i))
-        .first();
-      await group.selectOption({ label: 'e2e-Front' });
+      await pickFrontGroup[skin](page);
 
       await expect(page.locator(`a[href="/monitors/${SEED.monitors.frontDoor}"]`).first())
         .toBeVisible();

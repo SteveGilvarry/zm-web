@@ -65,10 +65,10 @@ describe('SystemRunningToggle — run-state chooser (R3)', () => {
     expect(within(dialog).getByRole('button', { name: /^apply$/i })).toBeDisabled();
   });
 
-  it('Start: choose, Apply, confirm → POST /states/change/start', async () => {
+  it('Start: choose, Apply, confirm → POST /server/control/start', async () => {
     seed(false);
     let hits = 0;
-    server.use(http.post('/api/v3/states/change/start', () => { hits += 1; return HttpResponse.json({ message: 'ok' }); }));
+    server.use(http.post('/api/v3/server/control/start', () => { hits += 1; return HttpResponse.json({ message: 'ok' }); }));
     const user = userEvent.setup();
     renderWithProviders(<SystemRunningToggle />);
     await waitFor(() => screen.getByText(/^stopped$/i));
@@ -85,7 +85,7 @@ describe('SystemRunningToggle — run-state chooser (R3)', () => {
   it('Stop: cancelling the confirm sends nothing', async () => {
     seed(true);
     let hits = 0;
-    server.use(http.post('/api/v3/states/change/stop', () => { hits += 1; return HttpResponse.json({ message: 'ok' }); }));
+    server.use(http.post('/api/v3/server/control/stop', () => { hits += 1; return HttpResponse.json({ message: 'ok' }); }));
     const user = userEvent.setup();
     renderWithProviders(<SystemRunningToggle />);
     await waitFor(() => screen.getByText(/^running$/i));

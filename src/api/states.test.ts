@@ -123,10 +123,10 @@ describe('applyState', () => {
 });
 
 describe('changeDaemonState', () => {
-  it('POSTs /states/change/start', async () => {
+  it('POSTs /server/control/start', async () => {
     let hits = 0;
     server.use(
-      http.post('/api/v3/states/change/start', () => {
+      http.post('/api/v3/server/control/start', () => {
         hits += 1;
         return HttpResponse.json({ message: 'starting' });
       }),
@@ -136,10 +136,10 @@ describe('changeDaemonState', () => {
     expect(out.message).toBe('starting');
   });
 
-  it('POSTs /states/change/restart', async () => {
+  it('POSTs /server/control/restart', async () => {
     let hits = 0;
     server.use(
-      http.post('/api/v3/states/change/restart', () => {
+      http.post('/api/v3/server/control/restart', () => {
         hits += 1;
         return HttpResponse.json({ message: 'restarting' });
       }),

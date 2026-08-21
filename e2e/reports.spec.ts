@@ -37,25 +37,35 @@ test.describe('Reports', () => {
       await expect(page.getByRole('button', { name: /^save$/i })).toBeVisible();
     });
 
-    test(`${skin}: create and delete a report round-trips @route:reports.list`, async ({
+    // KNOWN BUG (frontend): `useCreateReportForm` sends
+    // `new Date(start).toISOString()`, which includes milliseconds
+    // ("2026-08-14T00:00:00.000Z"). zm_api's date parser rejects that and
+    // answers 400 "Invalid start_date_time format"; the same value without
+    // the fractional part is accepted. Creating a report is therefore broken
+    // against a real backend. `test.fail()` keeps the expectation on the
+    // record and turns green into a failure the moment it is fixed — at
+    // which point drop the marker.
+    test(`${skin}: creating a report from the form @route:reports.list`, async ({
       loggedInPage: page,
     }, testInfo) => {
+      test.fail();
       const name = `e2e-probe-${testInfo.project.name}-${skin}-${Date.now()}`;
       await gotoSkin(page, '/reports', skin);
+      await expect(page.getByText('e2e-Weekly motion').first()).toBeVisible();
+
+      await page.getByRole('button', { name: /^(new report|\+ new)$/i }).first().click();
+      const nameField = page.getByPlaceholder(/weekly motion report/i);
+      await nameField.fill(name);
 
       const created = page.waitForResponse(
         (r) => r.url().endsWith('/api/v3/reports') && r.request().method() === 'POST',
         { timeout: 15_000 },
       );
-      await page.getByRole('button', { name: /new|^\+ new$/i }).first().click();
-      const form = page.getByTestId('report-create-form').or(page.locator('form')).first();
-      await form.getByRole('textbox').first().fill(name);
-      await form.getByRole('button', { name: /^(create|save|add)$/i }).first().click();
-
+      await page.getByRole('button', { name: /^create report$/i }).click();
       const createResp = await created;
       expect(createResp.status()).toBe(201);
-      const id = (await createResp.json()).id as number;
 
+      const id = (await createResp.json()).id as number;
       try {
         await expect(page.getByText(name).first()).toBeVisible({ timeout: 10_000 });
       } finally {

@@ -1,4 +1,6 @@
-import { test, expect } from './fixtures';
+import type { Page } from '@playwright/test';
+import { test, expect, gotoSkin, SKINS, seededOnly, type Skin } from './fixtures';
+import { SEED } from './seed/seed-data';
 
 /**
  * Filters page — full CRUD round-trip against the real backend.
@@ -11,7 +13,7 @@ import { test, expect } from './fixtures';
  * webkit/chromium runs don't collide.
  */
 test.describe('Filters — CRUD round-trip', () => {
-  test('create with a condition, reload, re-open, edit, rename and delete', async ({ loggedInPage: page, browserName }) => {
+  test('create with a condition, reload, re-open, edit, rename and delete @route:filters', async ({ loggedInPage: page, browserName }) => {
     const baseName = `e2e-probe-${browserName}-${Date.now()}`;
     const renamed = `e2e-probe-renamed-${browserName}-${Date.now()}`;
 
@@ -106,7 +108,7 @@ test.describe('Filters — CRUD round-trip', () => {
     await expect(page.getByRole('button', { name: new RegExp(`^${renamed}`) })).toHaveCount(0, { timeout: 10_000 });
   });
 
-  test('the stock PurgeWhenFull filter opens with its three conditions and Save is enabled', async ({ loggedInPage: page }) => {
+  test('the stock PurgeWhenFull filter opens with its three conditions and Save is enabled @route:filters', async ({ loggedInPage: page }) => {
     await page.goto('/filters');
     // Wait for the saved list to load before deciding whether the stock filter exists.
     await page.getByRole('button', { name: /new filter/i }).waitFor();
@@ -121,3 +123,114 @@ test.describe('Filters — CRUD round-trip', () => {
     // Read-only check: we never click Save here.
   });
 });
+
+
+/**
+ * The parts of the filter page that are not the create/edit form: reading
+ * ZoneMinder's own `{"terms": […]}` wire format, the action flags, and the
+ * match preview. Both skins, since the classic page is a different form over
+ * the same `useFilterPage` state.
+ */
+test.describe('Filters — legacy format, actions and preview', () => {
+  test.skip(seededOnly.condition, seededOnly.reason);
+
+  for (const skin of SKINS) {
+    test(`${skin}: a legacy {terms} filter opens as editable rows @route:filters`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/filters', skin);
+      await openSeededFilter(page, skin, SEED.filters.purgeWhenFull, 'e2e-PurgeWhenFull');
+
+      // seed.sql stores the stock PurgeWhenFull query_json verbatim: three
+      // legacy attr/op/val terms. They have to survive the round trip into
+      // the rule builder, not be dropped as "unreadable".
+      await expect(page.getByTestId('filter-term')).toHaveCount(3);
+      await expect(page.getByTestId('filter-term').nth(1).getByLabel('Attribute'))
+        .toHaveValue('DiskPercent');
+      await expect(page.getByTestId('unreadable-query')).toHaveCount(0);
+    });
+
+    test(`${skin}: the saved action flags come back set @route:filters`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/filters', skin);
+      await openSeededFilter(page, skin, SEED.filters.purgeWhenFull, 'e2e-PurgeWhenFull');
+
+      // The seeded filter carries AutoDelete=1 and Background=1. Modern
+      // renders the flags as switches, classic as legacy checkboxes.
+      if (skin === 'classic') {
+        await expect(page.getByRole('checkbox', { name: /delete all matches/i })).toBeChecked();
+        await expect(page.getByRole('checkbox', { name: /run filter in background/i }))
+          .toBeChecked();
+      } else {
+        await expect(page.getByRole('switch', { name: /delete all matches/i }))
+          .toHaveAttribute('aria-checked', 'true');
+        await expect(page.getByRole('switch', { name: /^run in background$/i }))
+          .toHaveAttribute('aria-checked', 'true');
+      }
+    });
+
+    test(`${skin}: a filter in a format the builder cannot read refuses to save @route:filters`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/filters', skin);
+      await openSeededFilter(page, skin, SEED.filters.unreadableRules, 'e2e-Motion only', {
+        expectConditions: false,
+      });
+
+      // Filter 9002 holds the dashboard's retired `{"rules": […]}` shape.
+      // Overwriting it would silently drop conditions, so the page shows the
+      // raw query and disables saving instead.
+      await expect(page.getByTestId('unreadable-query')).toBeVisible();
+      await expect(page.getByRole('button', { name: /^save$/i })).toBeDisabled();
+    });
+
+    test(`${skin}: List matches previews what the filter would act on @route:filters`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/filters', skin);
+      await openSeededFilter(page, skin, SEED.filters.recentMotion, 'e2e-Recent motion');
+
+      await page.getByRole('button', { name: /^list matches$/i }).click();
+
+      // The count is reported either way — `useFilterPreview` asks the
+      // backend when the conditions translate to query params and otherwise
+      // filters the last window client-side. Both must say which they did.
+      await expect(page.getByText(/matches? \(.*preview\)/i).first()).toBeVisible({
+        timeout: 20_000,
+      });
+      await expect(page.getByRole('button', { name: /^hide matches$/i })).toBeVisible();
+      // …and Montage Review is reachable, framed by the same conditions.
+      await expect(page.getByRole('link', { name: /view matches/i })).toHaveAttribute(
+        'href',
+        /montagereview/,
+      );
+    });
+  }
+});
+
+/**
+ * Modern lists saved filters as buttons down the side; classic uses the
+ * legacy `Use Filter` select at the top. Same state either way.
+ */
+async function openSeededFilter(
+  page: Page,
+  skin: Skin,
+  id: number,
+  name: string,
+  opts: { expectConditions?: boolean } = {},
+) {
+  if (skin === 'classic') {
+    // Select by value: the option labels carry legacy suffixes ("*" for a
+    // background filter, "&" for a concurrent one).
+    await page.getByLabel(/^use filter/i).selectOption(String(id));
+  } else {
+    await page.getByRole('button', { name: new RegExp(`^${name}`) }).click();
+  }
+  await expect(page.getByRole('textbox', { name: /^name$/i }).or(page.getByPlaceholder('Untitled filter')).first())
+    .toHaveValue(name);
+  if (opts.expectConditions !== false) {
+    await expect(page.getByRole('button', { name: /add condition/i })).toBeVisible();
+  }
+}
+

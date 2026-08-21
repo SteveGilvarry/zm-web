@@ -54,7 +54,7 @@ import {
 
 const SPEC_PATH = resolvePath(
   __dirname,
-  '../../../legacy-requirements/review-2026-08-21/openapi-2026-08-21.json',
+  '../openapi/openapi.json',
 );
 
 interface Schema {

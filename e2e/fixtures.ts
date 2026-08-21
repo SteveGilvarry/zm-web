@@ -198,6 +198,32 @@ export function scratchEvent(projectName: string, skin: Skin): number {
 }
 
 /**
+ * A disjoint run of `count` seeded events this test may mutate, one slot per
+ * (project, skin) pair out of `SEED.events.scratchBulk`. For the bulk-action
+ * specs, which archive several rows at once.
+ */
+export function scratchEvents(projectName: string, skin: Skin, count = 2): number[] {
+  const pool = SEED.events.scratchBulk;
+  const slots = Math.floor(pool.length / count);
+  let hash = 0;
+  for (const ch of projectName) hash = (hash * 31 + ch.charCodeAt(0)) % 1_000_003;
+  const slot = (hash * 2 + (skin === 'classic' ? 1 : 0)) % slots;
+  return pool.slice(slot * count, slot * count + count);
+}
+
+/**
+ * A seeded monitor whose free-text fields this test may edit. Same
+ * anti-collision rule as `scratchEvent`; monitors 9002 and 9003 carry the
+ * rotation fixtures, so only their notes are ever touched.
+ */
+export function scratchMonitor(projectName: string): number {
+  const pool = [SEED.monitors.driveway, SEED.monitors.garage, SEED.monitors.ptzDome];
+  let hash = 0;
+  for (const ch of projectName) hash = (hash * 31 + ch.charCodeAt(0)) % 1_000_003;
+  return pool[hash % pool.length];
+}
+
+/**
  * Call an API endpoint with the page's own session — for arranging state a
  * spec needs and for putting rows back afterwards, without driving the UI.
  */

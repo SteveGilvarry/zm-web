@@ -351,9 +351,16 @@ UPDATE Storage SET DiskSpace = (SELECT COALESCE(SUM(DiskSpace), 0) FROM Events W
 WHERE Id = 9001;
 
 -- ---------------------------------------------------------------------------
--- Filters. 9001 copies the stock PurgeWhenFull `{"terms":[...]}` query_json
--- (legacy operator/attr tokens, obr/cbr brackets). 9002 is in the dashboard's
--- own `{"rules":[...]}` shape so the rule builder renders it.
+-- Filters, one per wire format the dashboard has to cope with.
+--   9001 `e2e-PurgeWhenFull` — the stock PurgeWhenFull `{"terms":[…]}`
+--        query_json verbatim (legacy attr/op/val tokens, obr/cbr brackets),
+--        AutoDelete + Background set. This is the format ZoneMinder writes.
+--   9002 `e2e-Motion only`   — the dashboard's *old* `{"rules":[…]}` shape.
+--        The rule builder no longer reads it: the page must say so and
+--        disable Save rather than overwrite it. Keep it as the fixture for
+--        that honest-refusal path.
+--   9003 `e2e-Recent motion` — a readable `{"terms":[…]}` filter with no
+--        destructive action, for the match preview.
 -- ---------------------------------------------------------------------------
 INSERT INTO Filters
   (Id, Name, UserId, ExecuteInterval, Query_json,
@@ -368,6 +375,11 @@ VALUES
    0, 0, 0, 0, 0, 1, 0, 0),
   (9002, 'e2e-Motion only', 9001, 0,
    '{"rules":[{"field":"cause","operator":"=","value":"Motion","conjunction":"and"}],"sort":{"field":"start_date_time","dir":"desc"}}',
+   0, 0, 0, 0, 0, '', '', '',
+   NULL, 'Individual', 0, 0, '', 0,
+   0, 0, 0, 0, 0, 0, 0, 0),
+  (9003, 'e2e-Recent motion', 9001, 0,
+   '{"sort_field":"StartDateTime","terms":[{"attr":"Cause","op":"LIKE","val":"Motion"}],"limit":50,"sort_asc":0}',
    0, 0, 0, 0, 0, '', '', '',
    NULL, 'Individual', 0, 0, '', 0,
    0, 0, 0, 0, 0, 0, 0, 0);

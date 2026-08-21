@@ -86,7 +86,9 @@ export type MonitorStatus =
 export interface Monitor {
   id: number;
   name: string;
-  deleted: number;
+  /** Soft-delete flag. Newer zm_api builds serialise this as a JSON boolean;
+   *  older ones sent 0/1 — use `isDeleted()` rather than comparing directly. */
+  deleted: boolean | number;
   notes?: string | null;
   server_id?: number | null;
   storage_id: number;
@@ -114,7 +116,8 @@ export interface Monitor {
   onvif_url: string;
   onvif_events_path: string;
   onvif_username: string;
-  onvif_password: string;
+  /** Write-only: newer zm_api builds never echo camera secrets back. */
+  onvif_password?: string;
   onvif_options: string;
   onvif_event_listener: number;
   onvif_alarm_text?: string | null;
@@ -418,6 +421,11 @@ export interface PaginatedResponse<T> {
 // ============================================
 
 // Convert API integer (0/1) to boolean
+/** True when a monitor row is soft-deleted, whatever shape the API used. */
+export function isDeleted(monitor: { deleted?: boolean | number | null }): boolean {
+  return monitor.deleted === true || monitor.deleted === 1;
+}
+
 export function toBool(value: number | undefined | null): boolean {
   return value === 1;
 }
@@ -456,6 +464,18 @@ export interface ZmStorage {
   path: string;
   type: string;
   enabled: number;
+
+  /* Full row since zm-api#24. */
+  /** Directory scheme: `Deep` | `Medium` | `Shallow`. */
+  scheme?: string;
+  /** Owning server; `0` on a single-node install. */
+  server_id?: number | null;
+  /** s3fs / remote URL, null for local storage. */
+  url?: string | null;
+  /** Bytes used by events on this store. */
+  disk_space?: number | null;
+  /** 0/1 — whether ZoneMinder may delete from this store. */
+  do_delete?: number;
 }
 
 // ============================================

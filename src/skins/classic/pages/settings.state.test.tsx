@@ -82,8 +82,8 @@ function seed(over: unknown[] = []) {
       sent.push({ method: 'POST', path: '/system/state', body });
       return HttpResponse.json({ success: true, message: 'applied' });
     }),
-    http.post('/api/v3/states/change/:action', ({ params }) => {
-      sent.push({ method: 'POST', path: `/states/change/${params.action}`, body: null });
+    http.post('/api/v3/server/control/:action', ({ params }) => {
+      sent.push({ method: 'POST', path: `/server/control/${params.action}`, body: null });
       return HttpResponse.json({ message: 'zmpkg.pl restart' });
     }),
     http.post('/api/v3/states', async ({ request }) => {
@@ -281,7 +281,7 @@ describe('ClassicSettingsStatePage', () => {
     let dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('Stop ZoneMinder? Recording will halt across every monitor.');
     await user.click(within(dialog).getByRole('button', { name: 'Stop' }));
-    await waitFor(() => expect(sent).toEqual([{ method: 'POST', path: '/states/change/stop', body: null }]));
+    await waitFor(() => expect(sent).toEqual([{ method: 'POST', path: '/server/control/stop', body: null }]));
     // The response message is echoed next to the buttons.
     expect(await screen.findByText('zmpkg.pl restart')).toBeInTheDocument();
 
@@ -290,20 +290,20 @@ describe('ClassicSettingsStatePage', () => {
     expect(dialog).toHaveTextContent('Restart ZoneMinder?');
     await user.click(within(dialog).getByRole('button', { name: 'Restart' }));
     await waitFor(() => expect(sent).toHaveLength(2));
-    expect(sent[1].path).toBe('/states/change/restart');
+    expect(sent[1].path).toBe('/server/control/restart');
 
     await user.click(screen.getByRole('button', { name: 'Start' }));
     dialog = await screen.findByRole('dialog');
     expect(dialog).toHaveTextContent('Start ZoneMinder?');
     await user.click(within(dialog).getByRole('button', { name: 'Start' }));
     await waitFor(() => expect(sent).toHaveLength(3));
-    expect(sent[2].path).toBe('/states/change/start');
+    expect(sent[2].path).toBe('/server/control/start');
   });
 
   it('shows a failed supervisor call inline', async () => {
     signIn();
     seed([
-      http.post('/api/v3/states/change/:action', () =>
+      http.post('/api/v3/server/control/:action', () =>
         HttpResponse.json({ kind: 'INTERNAL', error_message: 'zmpkg.pl not found' }, { status: 500 })),
     ]);
     const user = userEvent.setup();

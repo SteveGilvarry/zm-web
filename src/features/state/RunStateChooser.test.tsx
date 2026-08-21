@@ -46,8 +46,8 @@ function stubStates(items: unknown[] = STATES) {
       requests.push({ method: 'POST', url: '/api/v3/system/state', body: await request.json() });
       return HttpResponse.json({ success: true, message: 'applied' });
     }),
-    http.post('/api/v3/states/change/:action', ({ params }) => {
-      requests.push({ method: 'POST', url: `/api/v3/states/change/${params.action}`, body: null });
+    http.post('/api/v3/server/control/:action', ({ params }) => {
+      requests.push({ method: 'POST', url: `/api/v3/server/control/${params.action}`, body: null });
       return HttpResponse.json({ message: 'ok' });
     }),
   );
@@ -239,7 +239,7 @@ describe('RunStateChooser — daemon actions', () => {
     ['stop', 'Stop ZoneMinder', /Recording will halt/],
     ['restart', 'Restart ZoneMinder', /Capture streams will reconnect/],
     ['start', 'Start ZoneMinder', /Capture and analysis daemons will launch/],
-  ])('%s confirms with its own copy and POSTs /states/change/%s', async (action, title, copy) => {
+  ])('%s confirms with its own copy and POSTs /server/control/%s', async (action, title, copy) => {
     const user = userEvent.setup();
     stubStates();
     renderChooser();
@@ -255,7 +255,7 @@ describe('RunStateChooser — daemon actions', () => {
     await user.click(within(dialog).getByRole('button', { name: verb }));
 
     await waitFor(() => expect(requests).toEqual([
-      { method: 'POST', url: `/api/v3/states/change/${action}`, body: null },
+      { method: 'POST', url: `/api/v3/server/control/${action}`, body: null },
     ]));
   });
 });
@@ -283,7 +283,7 @@ describe('RunStateChooser — failures', () => {
   it('surfaces a network failure the same way', async () => {
     const user = userEvent.setup();
     stubStates();
-    server.use(http.post('/api/v3/states/change/:action', () => HttpResponse.error()));
+    server.use(http.post('/api/v3/server/control/:action', () => HttpResponse.error()));
     renderChooser();
 
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());

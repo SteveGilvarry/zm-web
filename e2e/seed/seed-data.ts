@@ -40,11 +40,24 @@ export const SEED = {
      * so parallel workers never touch the same row.
      */
     scratch: [9021, 9022, 9023, 9024, 9026, 9027, 9028, 9029],
+    /**
+     * A second reserved pool, for the bulk-action specs that need more than
+     * one row at a time. Same rule: unarchived, and nothing else asserts on
+     * them. `scratchEvents()` hands out a disjoint pair per project x skin.
+     */
+    scratchBulk: [9006, 9007, 9008, 9009, 9011, 9012, 9013, 9014, 9016, 9017, 9018, 9019],
   },
 
   tags: { person: 9001, vehicle: 9002, falseAlarm: 9003 },
   groups: { outdoor: 9001, front: 9002 },
-  filters: { purgeWhenFull: 9001, motionOnly: 9002 },
+  filters: {
+    /** Legacy `{"terms":[…]}` with AutoDelete + Background — the stock shape. */
+    purgeWhenFull: 9001,
+    /** The dashboard's retired `{"rules":[…]}` shape; must refuse to edit it. */
+    unreadableRules: 9002,
+    /** Readable `{"terms":[…]}`, no destructive action — safe to preview. */
+    recentMotion: 9003,
+  },
   report: 9001,
   states: { night: 9001, away: 9002 },
   montageLayout: 9001,

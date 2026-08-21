@@ -627,7 +627,7 @@ const misc: HttpHandler[] = [
     makeUser({ ...(body as Partial<User>), id }), { update: 'PUT' }),
   ...crud<MontageLayout>('/montage_layouts', () => db.montageLayouts, (body, id) =>
     makeMontageLayout({ ...(body as Partial<MontageLayout>), id })),
-  http.post(`${API}/states/change/:action`, () =>
+  http.post(`${API}/server/control/:action`, () =>
     HttpResponse.json({ success: true, message: 'ok' }),
   ),
   ...crud<State>('/states', () => db.states, (body, id) =>
@@ -637,7 +637,7 @@ const misc: HttpHandler[] = [
 /**
  * The default set. Order matters: literal paths come before the `:id`
  * patterns that would otherwise swallow them (`/configs/categories`,
- * `/filters/preview`, `/states/change/{action}`).
+ * `/filters/preview`, `/server/control/{action}`).
  */
 export const handlers: HttpHandler[] = [
   ...auth,

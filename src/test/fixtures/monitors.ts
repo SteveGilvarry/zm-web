@@ -11,11 +11,13 @@ import type { Zone } from '@/api/zones';
  * turns them into `Rotate0`/`System`/`Auto`/`WebRtc`, so fixtures that used
  * the tidy casing would silently skip that conversion.
  */
+// `pass` and `onvif_password` are write-only since zm-api removed them from
+// MonitorResponse — a fixture that echoes them would not match the schema.
 export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
   return {
     id: 1,
     name: 'Front Door',
-    deleted: 0,
+    deleted: false,
     notes: null,
     server_id: null,
     storage_id: 1,
@@ -41,7 +43,6 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     onvif_url: '',
     onvif_events_path: '',
     onvif_username: '',
-    onvif_password: '',
     onvif_options: '',
     onvif_event_listener: 0,
     onvif_alarm_text: null,
@@ -60,7 +61,6 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     second_path: null,
     options: null,
     user: null,
-    pass: null,
     width: 1920,
     height: 1080,
     colours: 4,
@@ -209,6 +209,24 @@ export function makeZone(overrides: Partial<Zone> = {}): Zone {
     units: 'Percent',
     coords: '0,0 1919,0 1919,1079 0,1079',
     num_coords: 4,
+    // Motion settings — returned since the zone-detail work (zm-api#22).
+    area: 1920 * 1080,
+    check_method: 'Blobs',
+    min_pixel_threshold: 25,
+    max_pixel_threshold: null,
+    min_alarm_pixels: 3456,
+    max_alarm_pixels: null,
+    filter_x: 3,
+    filter_y: 3,
+    min_filter_pixels: 3456,
+    max_filter_pixels: 691200,
+    min_blob_pixels: 6912,
+    max_blob_pixels: null,
+    min_blobs: 1,
+    max_blobs: null,
+    overload_frames: 0,
+    extend_alarm_frames: 0,
+    alarm_rgb: 16711680,
     ...overrides,
   };
 }

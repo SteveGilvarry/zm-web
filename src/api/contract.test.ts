@@ -32,7 +32,7 @@ import { MONITOR_ENUMS } from './monitors';
 /*  Spec                                                                    */
 /* ------------------------------------------------------------------------ */
 
-const SPEC_PATH = resolvePath(__dirname, '../../legacy-requirements/review-2026-08-21/openapi-2026-08-21.json');
+const SPEC_PATH = resolvePath(__dirname, '../test/openapi/openapi.json');
 
 type Schema = {
   $ref?: string;
