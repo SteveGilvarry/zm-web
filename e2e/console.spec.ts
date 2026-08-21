@@ -1,30 +1,72 @@
-import { test, expect } from './fixtures';
+import { test, expect, gotoSkin, SKINS, seededOnly } from './fixtures';
+import { SEED } from './seed/seed-data';
 
+/**
+ * Console — the landing page, in both skins. Modern is a stat row plus a
+ * justified thumbnail grid; classic is the legacy dense table with the
+ * SCAN/ADD/CLONE toolbar. Both read the same `useConsoleData`, so the counts
+ * they show are the assertion that matters.
+ */
 test.describe('Console', () => {
-  test('renders the monitor grid with activity ribbons', async ({ loggedInPage: page }) => {
-    // After login we should be on the Console root.
-    await expect(page).toHaveURL('/');
-    // Top stat row is present.
-    await expect(page.getByText(/monitors/i).first()).toBeVisible();
-    await expect(page.getByText(/events \(24h\)/i)).toBeVisible();
-    await expect(page.getByText(/recording/i).first()).toBeVisible();
-    await expect(page.getByText(/storage/i).first()).toBeVisible();
-    // At least one monitor tile appears. Tiles are <a href="/monitors/...">.
-    const tiles = page.locator('a[href^="/monitors/"]');
-    await expect(tiles.first()).toBeVisible();
-  });
+  test.skip(seededOnly.condition, seededOnly.reason);
 
-  test('System panel shows the daemons list', async ({ loggedInPage: page }) => {
-    // The 'Daemons' caption appears in the System panel. There may also
-    // be a "No daemons reported." fallback when ZM has nothing to report;
-    // matching on the exact uppercase caption disambiguates.
+  test('modern: stat row and one tile per monitor @route:console', async ({
+    loggedInPage: page,
+  }) => {
+    await gotoSkin(page, '/', 'modern');
+
+    for (const label of [/monitors/i, /events \(24h\)/i, /recording/i, /storage/i]) {
+      await expect(page.getByText(label).first()).toBeVisible();
+    }
+    for (const id of SEED.monitors.all) {
+      await expect(page.locator(`a[href="/monitors/${id}"]`).first()).toBeVisible();
+    }
+    // The System panel is present whether or not any daemon reports in.
     await expect(page.getByText('Daemons', { exact: true })).toBeVisible();
   });
 
-  test('header status strip is interactive (hover reveals detail)', async ({ loggedInPage: page }) => {
-    // Hovering the LOAD/CPU/MEM/DISK strip reveals a tooltip with the
-    // SYSTEM heading. Only checks the strip is present; tooltip is
-    // hover-only and viewport-dependent.
-    await expect(page.getByText(/^load$/i).first()).toBeVisible();
+  test('classic: the legacy table lists every monitor with its event counts @route:console', async ({
+    loggedInPage: page,
+  }) => {
+    await gotoSkin(page, '/', 'classic');
+
+    const table = page.getByTestId('console-classic-table');
+    await expect(table).toBeVisible();
+    await expect(table.locator('tbody tr')).toHaveCount(SEED.monitors.all.length);
+
+    const row = page.getByTestId(`console-row-${SEED.monitors.frontDoor}`);
+    await expect(row).toContainText('e2e-Front Door');
+    // Event counts are links into a pre-filtered events list, as in legacy.
+    await expect(
+      row.locator(`a[href*="/events?monitor_id=${SEED.monitors.frontDoor}"]`).first(),
+    ).toBeVisible();
+    // …and the zone count links to the zone editor.
+    await expect(row.locator(`a[href="/monitors/${SEED.monitors.frontDoor}/zones"]`)).toBeVisible();
+    // Runtime status per row, plus the totals line the legacy footer shows.
+    await expect(page.getByTestId(`console-runtime-${SEED.monitors.frontDoor}`)).toContainText('15');
+    await expect(page.getByTestId('console-runtime-totals')).toBeVisible();
+    // Legacy operator toolbar.
+    for (const name of [/^add$/i, /^clone$/i, /^edit$/i, /^delete$/i]) {
+      await expect(page.getByRole('button', { name })).toBeVisible();
+    }
   });
+
+  for (const skin of SKINS) {
+    test(`${skin}: the monitor filter bar narrows the list @route:console`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/', skin);
+
+      // Both skins filter by group; e2e-Front holds only the front door.
+      const group = page
+        .getByLabel(/^groups? ?filter$/i)
+        .or(page.getByLabel(/^groupid/i))
+        .first();
+      await group.selectOption({ label: 'e2e-Front' });
+
+      await expect(page.locator(`a[href="/monitors/${SEED.monitors.frontDoor}"]`).first())
+        .toBeVisible();
+      await expect(page.locator(`a[href="/monitors/${SEED.monitors.garage}"]`)).toHaveCount(0);
+    });
+  }
 });

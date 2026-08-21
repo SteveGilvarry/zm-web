@@ -8,7 +8,7 @@ interface MainLayoutProps {
 
 export function MainLayout({ title }: MainLayoutProps) {
   return (
-    <div className="min-h-screen bg-void">
+    <div className="min-h-screen bg-bg">
       <Sidebar />
 
       {/* Main content area with left margin for sidebar */}
@@ -30,14 +30,14 @@ export function MainLayout({ title }: MainLayoutProps) {
           className="absolute inset-0"
           style={{
             background:
-              'radial-gradient(ellipse at top left, transparent 0%, var(--color-void) 70%)',
+              'radial-gradient(ellipse at top left, transparent 0%, var(--bg) 70%)',
           }}
         />
         <div
           className="absolute inset-0"
           style={{
             background:
-              'radial-gradient(ellipse at bottom right, transparent 0%, var(--color-void) 70%)',
+              'radial-gradient(ellipse at bottom right, transparent 0%, var(--bg) 70%)',
           }}
         />
       </div>

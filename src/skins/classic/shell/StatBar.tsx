@@ -32,7 +32,7 @@ export function ClassicStatBar() {
   const swapUsedPct = stats ? pct(stats.total_swap - stats.free_swap, stats.total_swap) : null;
 
   return (
-    <div className="bg-[#2b343d] text-cyan-200 text-xs px-4 py-1 flex items-center gap-5 flex-wrap border-b border-black/30">
+    <div className="bg-classic-nav-deep text-classic-nav-link text-label px-4 py-1 flex items-center gap-5 flex-wrap border-b border-black/30">
       {stats?.cpu_load != null && (
         <span>{t('Load')}: {stats.cpu_load.toFixed(2)}</span>
       )}
@@ -48,7 +48,7 @@ export function ClassicStatBar() {
       {swapUsedPct != null && (
         <span>{t('Swap')}: {swapUsedPct}%</span>
       )}
-      <span className="ms-auto opacity-75">
+      <span className="ms-auto opacity-80">
         {version?.version ? `v${version.version}` : ''}
       </span>
     </div>

@@ -229,9 +229,17 @@ function JumpTo({ page, totalPages, onJump }: { page: number; totalPages: number
   const [value, setValue] = useState(String(page));
   useEffect(() => { setValue(String(page)); }, [page]);
   const submit = () => {
-    const n = Number(value);
-    if (Number.isInteger(n) && n >= 1 && n <= totalPages && n !== page) onJump(n);
-    else setValue(String(page));
+    // Clamp rather than reject: legacy's GO takes you to the nearest valid
+    // page. (`min`/`max` attributes here would make the browser block submit
+    // and the button would appear dead.)
+    const n = Math.round(Number(value));
+    if (Number.isFinite(n) && value.trim() !== '') {
+      const target = Math.min(Math.max(n, 1), Math.max(totalPages, 1));
+      if (target !== page) onJump(target);
+      else setValue(String(page));
+    } else {
+      setValue(String(page));
+    }
   };
   return (
     <form
@@ -242,8 +250,6 @@ function JumpTo({ page, totalPages, onJump }: { page: number; totalPages: number
     >
       <input
         type="number"
-        min={1}
-        max={totalPages}
         value={value}
         onChange={(e) => setValue(e.target.value)}
         aria-label={t('Jump to page')}

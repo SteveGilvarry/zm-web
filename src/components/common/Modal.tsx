@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { X } from 'lucide-react';
+import { Button } from './Button';
 
 interface ModalProps {
   isOpen: boolean;
@@ -98,16 +99,17 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
         )}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-border-subtle">
-          <h2 id={titleId} className="text-lg font-semibold text-text-primary">{title}</h2>
-          <button
-            type="button"
+          <h2 id={titleId} className="text-lg font-semibold text-fg">{title}</h2>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
             onClick={onClose}
             data-modal-close
             aria-label={t('Close')}
-            className="p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-panel transition-colors"
           >
-            <X size={18} />
-          </button>
+            <X size={18} aria-hidden />
+          </Button>
         </div>
         <div className="p-5">{children}</div>
       </div>

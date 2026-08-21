@@ -30,7 +30,7 @@ export function ModernShell({ title, children }: ModernShellProps) {
   const setNavOpen = (open: boolean) => setOpenedAt(open ? pathname : null);
 
   return (
-    <div className="min-h-screen bg-void">
+    <div className="min-h-screen bg-bg">
       <Sidebar mobileOpen={navOpen} onMobileClose={() => setNavOpen(false)} />
       {navOpen && (
         <div

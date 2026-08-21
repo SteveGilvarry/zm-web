@@ -393,7 +393,10 @@ INSERT INTO MontageLayouts (Id, Name, UserId, Positions) VALUES
 
 -- ---------------------------------------------------------------------------
 -- Logs: 200 rows, ids 9001..9200, 37 s apart going back ~2 h.
--- Level mix per 10 rows: 1 ERR (-2), 2 WAR (-1), 7 INF (0).
+-- Every ZoneMinder severity is represented so the level filter has rows to
+-- find at each stop. Mix per 20 rows: 2 ERR (-2), 4 WAR (-1), 1 FAT (-3),
+-- 1 PNC (-4), 2 DBG (1), 10 INF (0) — over 200 rows that is
+-- 20 ERR / 40 WAR / 10 FAT / 10 PNC / 20 DBG / 100 INF.
 -- ---------------------------------------------------------------------------
 INSERT INTO Logs (Id, TimeKey, Component, ServerId, Pid, Level, Code, Message, File, Line)
 WITH RECURSIVE seq AS (SELECT 1 AS n UNION ALL SELECT n + 1 FROM seq WHERE n < 200)
@@ -403,12 +406,33 @@ SELECT
   ELT(1 + (n MOD 5), 'zmc_m9001', 'zma_m9002', 'zmdc', 'zmfilter', 'web_js'),
   9001,
   4100 + (n MOD 7),
-  CASE n MOD 10 WHEN 0 THEN -2 WHEN 1 THEN -1 WHEN 2 THEN -1 ELSE 0 END,
-  CASE n MOD 10 WHEN 0 THEN 'ERR' WHEN 1 THEN 'WAR' WHEN 2 THEN 'WAR' ELSE 'INF' END,
-  CASE n MOD 10
+  CASE n MOD 20
+    WHEN 0 THEN -2 WHEN 10 THEN -2
+    WHEN 1 THEN -1 WHEN 2 THEN -1 WHEN 11 THEN -1 WHEN 12 THEN -1
+    WHEN 3 THEN -3
+    WHEN 13 THEN -4
+    WHEN 4 THEN 1 WHEN 14 THEN 1
+    ELSE 0
+  END,
+  CASE n MOD 20
+    WHEN 0 THEN 'ERR' WHEN 10 THEN 'ERR'
+    WHEN 1 THEN 'WAR' WHEN 2 THEN 'WAR' WHEN 11 THEN 'WAR' WHEN 12 THEN 'WAR'
+    WHEN 3 THEN 'FAT'
+    WHEN 13 THEN 'PNC'
+    WHEN 4 THEN 'DBG' WHEN 14 THEN 'DBG'
+    ELSE 'INF'
+  END,
+  CASE n MOD 20
     WHEN 0 THEN CONCAT('e2e #', n, ': Unable to read from socket, retrying (errno 104)')
+    WHEN 10 THEN CONCAT('e2e #', n, ': Unable to read from socket, retrying (errno 104)')
     WHEN 1 THEN CONCAT('e2e #', n, ': Buffer overrun at index ', n MOD 50, ', image count ', 50 + (n MOD 200))
+    WHEN 11 THEN CONCAT('e2e #', n, ': Buffer overrun at index ', n MOD 50, ', image count ', 50 + (n MOD 200))
     WHEN 2 THEN CONCAT('e2e #', n, ': Capture FPS dropped below 5 on monitor 900', 1 + (n MOD 4))
+    WHEN 12 THEN CONCAT('e2e #', n, ': Capture FPS dropped below 5 on monitor 900', 1 + (n MOD 4))
+    WHEN 3 THEN CONCAT('e2e #', n, ': Shared memory not valid, cannot continue')
+    WHEN 13 THEN CONCAT('e2e #', n, ': Failed to allocate image buffer, aborting')
+    WHEN 4 THEN CONCAT('e2e #', n, ': Queued packet at ', n MOD 60, 's, queue depth ', n MOD 12)
+    WHEN 14 THEN CONCAT('e2e #', n, ': Queued packet at ', n MOD 60, 's, queue depth ', n MOD 12)
     ELSE CONCAT('e2e #', n, ': Monitor 900', 1 + (n MOD 4), ' capture ', 10 + (n MOD 20), '.0 fps, analysis 5.0 fps')
   END,
   ELT(1 + (n MOD 4), 'zm_monitor.cpp', 'zm_ffmpeg_camera.cpp', 'zmdc.pl', 'zm_event.cpp'),

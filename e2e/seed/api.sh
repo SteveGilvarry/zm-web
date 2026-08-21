@@ -37,6 +37,11 @@ for form in APP__ APP_; do
   export "${form}DB__DATABASE_NAME=$E2E_DB_NAME"
   export "${form}SERVER__ADDR=127.0.0.1"
   export "${form}SERVER__PORT=$E2E_API_PORT"
+  # zm_api throttles /auth/* to 1 token/2 s with a burst of 10 per IP. That is
+  # brute-force protection for a real deployment; here every worker comes from
+  # 127.0.0.1 and a suite of ~100 specs trips it, turning the sign-in into a
+  # flaky "Login failed". 0 disables the auth limiter (settings/base.toml).
+  export "${form}SERVER__MIDDLEWARE__AUTH_RATE_LIMIT_BURST=0"
 done
 
 info "zm_api -> $DATABASE_URL, listening on $E2E_API_URL"

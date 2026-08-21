@@ -175,7 +175,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                       </div>
                     )}
                     {streamError && streamState === 'failed' && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white" role="alert">
+                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white" role="alert" data-testid="stream-error">
                         <AlertTriangle size={28} className="text-amber-400 mb-2" aria-hidden />
                         <p className="text-sm mb-2 max-w-xs text-center">{streamError}</p>
                         <ClassicButton tone="primary" onClick={page.retry}>{t('Retry')}</ClassicButton>

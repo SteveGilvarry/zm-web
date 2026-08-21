@@ -1,0 +1,66 @@
+import { test, expect, gotoSkin, SKINS, seededOnly, apiFetch } from './fixtures';
+import { SEED } from './seed/seed-data';
+
+/**
+ * Reports list and detail (`/reports`, `/reports/$id`) in both skins. The
+ * seed ships report 9001 `e2e-Weekly motion` pointing at filter 9002, with a
+ * 10080-minute interval — a week — which is also the shape that exposed the
+ * "interval is seconds, not minutes" ambiguity upstream.
+ */
+test.describe('Reports', () => {
+  test.skip(seededOnly.condition, seededOnly.reason);
+
+  for (const skin of SKINS) {
+    test(`${skin}: the list shows the seeded report and its filter @route:reports.list`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/reports', skin);
+
+      const link = page.locator(`a[href="/reports/${SEED.report}"]`).first();
+      await expect(link).toBeVisible();
+      await expect(link).toContainText('e2e-Weekly motion');
+      // The row names the filter it runs, not just an id.
+      await expect(page.getByText('e2e-Motion only').first()).toBeVisible();
+    });
+
+    test(`${skin}: opening a report loads its saved settings @route:reports.detail`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/reports', skin);
+      await page.locator(`a[href="/reports/${SEED.report}"]`).first().click();
+
+      await expect(page).toHaveURL(new RegExp(`/reports/${SEED.report}`));
+      await expect(page.getByRole('heading', { name: /events per hour/i })).toBeVisible();
+      // Name and interval come back from the row, not from defaults.
+      await expect(page.getByRole('textbox').first()).toHaveValue(/e2e-Weekly motion/);
+      await expect(page.locator('input[type="number"]').first()).toHaveValue('10080');
+      await expect(page.getByRole('button', { name: /^save$/i })).toBeVisible();
+    });
+
+    test(`${skin}: create and delete a report round-trips @route:reports.list`, async ({
+      loggedInPage: page,
+    }, testInfo) => {
+      const name = `e2e-probe-${testInfo.project.name}-${skin}-${Date.now()}`;
+      await gotoSkin(page, '/reports', skin);
+
+      const created = page.waitForResponse(
+        (r) => r.url().endsWith('/api/v3/reports') && r.request().method() === 'POST',
+        { timeout: 15_000 },
+      );
+      await page.getByRole('button', { name: /new|^\+ new$/i }).first().click();
+      const form = page.getByTestId('report-create-form').or(page.locator('form')).first();
+      await form.getByRole('textbox').first().fill(name);
+      await form.getByRole('button', { name: /^(create|save|add)$/i }).first().click();
+
+      const createResp = await created;
+      expect(createResp.status()).toBe(201);
+      const id = (await createResp.json()).id as number;
+
+      try {
+        await expect(page.getByText(name).first()).toBeVisible({ timeout: 10_000 });
+      } finally {
+        await apiFetch(page, `/api/v3/reports/${id}`, { method: 'DELETE' });
+      }
+    });
+  }
+});

@@ -150,9 +150,10 @@ Contents:
   definition format; `default` stays active.
 - **MontageLayouts** 9001 `e2e-Wall`: legacy gridstack positions, a flat
   `[{monitor_id,x,y,w,h}]` array on a 12-column grid.
-- **Logs** 9001-9200: 200 rows 37 s apart, levels `-2` ERR ×20, `-1` WAR ×40,
-  `0` INF ×140, components `zmc_m9001`, `zma_m9002`, `zmdc`, `zmfilter`,
-  `web_js`.
+- **Logs** 9001-9200: 200 rows 37 s apart covering every ZoneMinder
+  severity — `-4` PNC ×10, `-3` FAT ×10, `-2` ERR ×20, `-1` WAR ×40,
+  `0` INF ×100, `1` DBG ×20 — so the level filter has rows at each stop.
+  Components `zmc_m9001`, `zma_m9002`, `zmdc`, `zmfilter`, `web_js`.
 
 Timestamps are relative to `NOW()` at load time (container clock, UTC), so
 the "last 24 h / 48 h" views stay populated however old the container is.

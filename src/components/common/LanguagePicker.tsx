@@ -24,12 +24,12 @@ export function LanguagePicker({ className }: { className?: string }) {
 
   return (
     <label className={clsx('inline-flex items-center gap-2 text-sm', className)}>
-      <Languages size={16} className="text-text-muted" aria-hidden />
+      <Languages size={16} className="text-fg-dim" aria-hidden />
       <span className="sr-only">{t('Language')}</span>
       <select
         value={current}
         onChange={(e) => void changeLanguage(e.target.value)}
-        className="px-2 py-1.5 rounded-lg bg-surface border border-border-subtle text-text-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan/50"
+        className="px-2 py-1.5 rounded-lg bg-surface border border-border-subtle text-fg hover:border-border transition-colors"
       >
         {options.map((l) => (
           <option key={l.code} value={l.code} lang={l.code} dir={l.dir}>

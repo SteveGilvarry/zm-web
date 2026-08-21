@@ -30,7 +30,10 @@ export default function ClassicSettingsOptionsPage() {
   if (!s.isAuthenticated) return null;
 
   // Legacy Options opens on the Display tab; with no ?category= we do too.
-  const selected = s.selectedCategory ?? DISPLAY_TAB;
+  // But when the config fetch failed there are no category tabs at all, so
+  // falling back to Display would hide the failure behind the skin chooser —
+  // stay on the config pane and let its QueryState report the error.
+  const selected = s.selectedCategory ?? (s.configsIsError ? null : DISPLAY_TAB);
   const activeKey =
     s.tabs.find((tab) => tab.kind === 'category' && tab.category === selected)?.key
       ?? (selected === DISPLAY_TAB ? DISPLAY_TAB : null);

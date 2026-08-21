@@ -70,11 +70,11 @@ export function SystemRunningToggle({
   // compact — tone-aware so classic and modern skins each look at home
   const baseCls = tone === 'light'
     ? running
-      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-      : 'bg-red-600 hover:bg-red-500 text-white'
+      ? 'bg-ok hover:bg-ok-dim text-ok-fg'
+      : 'bg-danger hover:bg-danger-dim text-danger-fg'
     : running
-      ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
-      : 'border border-crimson/40 bg-crimson/15 text-crimson hover:bg-crimson/25';
+      ? 'border border-ok/40 bg-ok/15 text-ok hover:bg-ok/25'
+      : 'border border-danger/40 bg-danger/15 text-danger hover:bg-danger/25';
 
   return (
     <>
@@ -82,7 +82,7 @@ export function SystemRunningToggle({
         onClick={() => setChooserOpen(true)}
         disabled={busy}
         className={clsx(
-          'inline-flex items-center gap-1.5 px-2 py-1 rounded font-mono text-[11px] uppercase tracking-wider transition-all',
+          'inline-flex items-center gap-1.5 px-2 py-1 rounded font-mono text-label uppercase tracking-wider transition-all',
           baseCls,
           busy && 'opacity-70 cursor-wait',
         )}

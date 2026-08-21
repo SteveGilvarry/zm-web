@@ -357,6 +357,7 @@ function UnitToggleBtn({ active, onClick, label }: {
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={clsx(
         'px-2 py-0.5 rounded border transition-colors',

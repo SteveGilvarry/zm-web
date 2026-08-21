@@ -26,8 +26,9 @@ interface MonitorThumbnailProps {
   /** Per-monitor event summary pulled from the parent's useConsoleData so we
    *  don't refetch per card. Undefined = loading. */
   summary?: EventSummary;
-  /** 24-length hourly histogram for this monitor, oldest-first (index 0
-   *  = 23h ago, index 23 = current hour). Omitted while still loading. */
+  /** 24-length hourly histogram for this monitor, newest-first (index 0 =
+   *  the current hour, index 23 = ~24h ago), as `bucketEvents` produces it.
+   *  Omitted while still loading. */
   hourly?: number[];
   /** Optional fixed width in pixels — set by a justified-row layout
    *  outside the component. When omitted the tile flows naturally. */
@@ -293,13 +294,14 @@ function Sparkline({ hourly }: SparklineProps) {
                   height: `${Math.max(heightPct, 6)}%`,
                   opacity,
                 }}
-              >
-                <title>
-                  {hoursAgo === 0
+                // A bare <title> element inside a <div> is hoisted into
+                // <head> by React 19 — the tooltip has to be an attribute.
+                title={
+                  hoursAgo === 0
                     ? t('last hour · {{count}} event', { count: v })
-                    : t('{{hours}}h ago · {{count}} event', { hours: hoursAgo, count: v })}
-                </title>
-              </div>
+                    : t('{{hours}}h ago · {{count}} event', { hours: hoursAgo, count: v })
+                }
+              />
             )}
           </div>
         );

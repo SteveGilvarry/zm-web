@@ -11,6 +11,7 @@ import { logout as apiLogout } from '@/api/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
 import { usePerms } from '@/features/auth/usePerms';
 import { canSeeNav } from '@/features/nav/navPerms';
+import { Button } from '@/components/common/Button';
 
 /**
  * Classic ZoneMinder top navigation. Same items, order and labels as the
@@ -54,9 +55,9 @@ export function ClassicTopNav() {
   };
 
   return (
-    <header className="bg-[#3c4956] text-white border-b border-black/40 sticky top-0 z-30">
+    <header className="bg-classic-nav text-classic-nav-fg border-b border-black/40 sticky top-0 z-30">
       <div className="px-4 py-2 flex items-center gap-6 flex-wrap">
-        <div className="text-2xl font-semibold tracking-tight text-amber-400">
+        <div className="text-2xl font-semibold tracking-tight text-classic-nav-brand">
           ZoneMinder
         </div>
         <nav aria-label={t('Main')} className="flex-1">
@@ -69,8 +70,8 @@ export function ClassicTopNav() {
                   className={clsx(
                     'flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors',
                     'hover:bg-white/10',
-                    isActive(item.to) && 'bg-white/15 text-cyan-300',
-                    !isActive(item.to) && 'text-cyan-200',
+                    isActive(item.to) && 'bg-white/15 text-classic-nav-fg',
+                    !isActive(item.to) && 'text-classic-nav-link',
                   )}
                 >
                   <span aria-hidden className="leading-none">{item.icon}</span>
@@ -82,20 +83,22 @@ export function ClassicTopNav() {
         </nav>
         <div className="flex items-center gap-3 text-sm">
           {user?.user && (
-            <span className="flex items-center gap-1.5 text-cyan-100">
+            <span className="flex items-center gap-1.5 text-classic-nav-link">
               <UserRound size={15} aria-hidden />
               <span>{user.user}</span>
             </span>
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
             onClick={handleLogout}
-            className="flex items-center gap-1 hover:underline text-cyan-200"
+            className="text-classic-nav-link hover:text-classic-nav-fg hover:bg-white/10"
             title={t('Log out')}
             aria-label={t('Log out')}
           >
             <LogOut size={15} className="rtl:-scale-x-100" aria-hidden />
-          </button>
+          </Button>
           {can('system', 'Edit') && <SystemRunningToggle tone="light" />}
         </div>
       </div>

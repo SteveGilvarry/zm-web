@@ -32,7 +32,12 @@ export default function ClassicReportDetailPage({ reportId }: { reportId: number
     <AppShell title={t('Report')}>
       <main className="flex-1 p-4 overflow-auto bg-zinc-50">
         <div className="max-w-screen-2xl mx-auto space-y-3">
-          <QueryState isLoading={s.isLoading} isError={s.isError || !s.report}>
+          <QueryState
+            isLoading={s.isLoading}
+            isError={s.isError || !s.report}
+            error={s.error}
+            onRetry={s.refetch}
+          >
             {s.report && (
               <ReportDetailBody report={s.report} filters={s.filters} onSaved={s.onSaved} />
             )}

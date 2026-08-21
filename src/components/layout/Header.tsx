@@ -8,6 +8,7 @@ import { getSystemStatus, getVersion } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { Button } from '@/components/common/Button';
 
 interface HeaderProps {
   title?: string;
@@ -68,19 +69,20 @@ export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
       {/* Left: menu (mobile) + title */}
       <div className="flex items-center gap-3 min-w-0">
         {onMenu && (
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            icon
             onClick={onMenu}
             aria-label={t('Open menu')}
             aria-controls="app-sidebar"
             aria-expanded={menuOpen}
-            className="lg:hidden p-2 -ms-1 rounded-lg text-text-secondary hover:text-text-primary hover:bg-panel transition-colors"
+            className="lg:hidden -ms-1"
           >
             <Menu size={20} aria-hidden />
-          </button>
+          </Button>
         )}
         {title && (
-          <h1 className="text-lg font-semibold text-text-primary truncate">{title}</h1>
+          <h1 className="text-lg font-semibold text-fg truncate">{title}</h1>
         )}
       </div>
 
@@ -88,7 +90,7 @@ export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
       {isAuthenticated && stats && (
         <div className="relative hidden lg:block group">
           {/* Compact glanceable strip — same layout as before */}
-          <div className="flex items-center gap-4 text-[11px] font-mono tabular-nums text-text-muted px-3 py-1.5 rounded-md border border-transparent group-hover:border-cyan/20 group-hover:bg-surface/40 transition-colors cursor-default">
+          <div className="flex items-center gap-4 text-label font-mono tabular-nums text-fg-dim px-3 py-1.5 rounded-md border border-transparent group-hover:border-accent/20 group-hover:bg-surface/40 transition-colors cursor-default">
             {stats.cpu_load != null && (
               <StatItem icon={<Gauge size={11} />} label={t("LOAD")} value={stats.cpu_load.toFixed(2)} />
             )}
@@ -123,15 +125,15 @@ export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
           <div
             role="tooltip"
             className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50
-              w-72 px-4 py-3 rounded-lg border border-cyan/30
-              bg-panel/95 backdrop-blur-md shadow-[0_8px_32px_rgba(0,0,0,0.4)]
+              w-72 px-4 py-3 rounded-lg border border-accent/30
+              bg-surface-2/95 backdrop-blur-md shadow-elevated
               opacity-0 invisible group-hover:opacity-100 group-hover:visible
               transition-all duration-150 pointer-events-none"
           >
-            <h4 className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan mb-2">
+            <h4 className="text-label font-mono font-semibold text-accent mb-2">
               {t('System')}
             </h4>
-            <dl className="space-y-1.5 text-[11px] font-mono">
+            <dl className="space-y-1.5 text-label font-mono">
               {stats.cpu_load != null && (
                 <DetailRow label={t("Load")} value={stats.cpu_load.toFixed(2)} />
               )}
@@ -181,24 +183,24 @@ export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
         <div
           className={clsx(
             'flex items-center gap-2 px-3 py-1.5 rounded-lg',
-            isConnected ? 'bg-emerald/10' : 'bg-crimson/10'
+            isConnected ? 'bg-ok/10' : 'bg-danger/10'
           )}
         >
           {isConnected ? (
             <>
-              <Wifi className="text-emerald" size={14} aria-hidden />
-              <span className="sr-only sm:not-sr-only text-xs font-medium text-emerald">{t('Connected')}</span>
+              <Wifi className="text-ok" size={14} aria-hidden />
+              <span className="sr-only sm:not-sr-only text-label font-medium text-ok">{t('Connected')}</span>
             </>
           ) : (
             <>
-              <WifiOff className="text-crimson" size={14} aria-hidden />
-              <span className="sr-only sm:not-sr-only text-xs font-medium text-crimson">{t('Disconnected')}</span>
+              <WifiOff className="text-danger" size={14} aria-hidden />
+              <span className="sr-only sm:not-sr-only text-label font-medium text-danger">{t('Disconnected')}</span>
             </>
           )}
         </div>
 
         <div className="hidden sm:flex flex-col items-end text-end">
-          <span className="text-sm font-mono text-text-primary tabular-nums">
+          <span className="text-sm font-mono text-fg tabular-nums">
             {currentTime.toLocaleTimeString(locale, {
               hour12: false,
               hour: '2-digit',
@@ -206,7 +208,7 @@ export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
               second: '2-digit',
             })}
           </span>
-          <span className="text-[10px] font-mono text-text-muted">
+          <span className="text-label font-mono text-fg-dim">
             {version?.version ? `v${version.version} · ` : ''}
             {currentTime.toLocaleDateString(locale, {
               weekday: 'short',
@@ -231,11 +233,11 @@ function StatItem({
   return (
     <span className={clsx(
       'inline-flex items-center gap-1',
-      tone === 'warn' ? 'text-amber' : 'text-text-secondary',
+      tone === 'warn' ? 'text-warn' : 'text-fg-muted',
     )}>
       {icon}
-      <span className="text-text-dim">{label}</span>
-      <span className="text-text-primary">{value}</span>
+      <span className="text-fg-dim">{label}</span>
+      <span className="text-fg">{value}</span>
     </span>
   );
 }
@@ -249,11 +251,11 @@ function DetailRow({
 }) {
   return (
     <div className="flex items-center justify-between gap-3">
-      <dt className="text-text-dim uppercase tracking-wider text-[10px]">{label}</dt>
+      <dt className="text-fg-dim">{label}</dt>
       <dd
         className={clsx(
           'tabular-nums',
-          tone === 'warn' ? 'text-amber' : 'text-text-primary',
+          tone === 'warn' ? 'text-warn' : 'text-fg',
         )}
       >
         {value}

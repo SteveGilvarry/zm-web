@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { AlertCircle, Inbox, Loader2, Lock, RefreshCw, WifiOff } from 'lucide-react';
 import { apiErrorMessage, classifyApiError } from '@/api/client';
+import { Button } from './Button';
 
 interface QueryStateProps {
   isLoading: boolean;
@@ -47,8 +48,8 @@ export function QueryState({
   if (isLoading) {
     return (
       <Frame className={className} role="status">
-        <Loader2 size={20} className="animate-spin text-cyan" aria-hidden />
-        <p className="text-sm text-text-muted">{loadingMessage ?? t('Loading…')}</p>
+        <Loader2 size={20} className="animate-spin text-accent" aria-hidden />
+        <p className="text-sm text-fg-dim">{loadingMessage ?? t('Loading…')}</p>
       </Frame>
     );
   }
@@ -58,8 +59,8 @@ export function QueryState({
     if (kind === 'forbidden') {
       return (
         <Frame className={className} role="status" data-state="forbidden">
-          <Lock size={20} className="text-amber" aria-hidden />
-          <p className="text-sm text-text-primary">{t('You do not have permission to view this.')}</p>
+          <Lock size={20} className="text-warn" aria-hidden />
+          <p className="text-sm text-fg">{t('You do not have permission to view this.')}</p>
         </Frame>
       );
     }
@@ -67,25 +68,21 @@ export function QueryState({
     return (
       <Frame className={className} role="alert" data-state={unreachable ? 'unreachable' : 'error'}>
         {unreachable ? (
-          <WifiOff size={20} className="text-crimson" aria-hidden />
+          <WifiOff size={20} className="text-danger" aria-hidden />
         ) : (
-          <AlertCircle size={20} className="text-crimson" aria-hidden />
+          <AlertCircle size={20} className="text-danger" aria-hidden />
         )}
-        <p className="text-sm text-text-primary">
+        <p className="text-sm text-fg">
           {unreachable ? t('Cannot reach the server.') : t('Failed to load.')}
         </p>
         {!unreachable && error != null && (
-          <p className="text-xs text-text-muted font-mono break-all">{apiErrorMessage(error)}</p>
+          <p className="text-label text-fg-dim font-mono break-all">{apiErrorMessage(error)}</p>
         )}
         {onRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="mt-1 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-border-subtle bg-panel text-text-secondary hover:text-text-primary transition-colors"
-          >
+          <Button size="sm" onClick={onRetry} className="mt-1">
             <RefreshCw size={13} aria-hidden />
             {t('Retry')}
-          </button>
+          </Button>
         )}
       </Frame>
     );
@@ -94,8 +91,8 @@ export function QueryState({
   if (empty) {
     return (
       <Frame className={className} role="status" data-state="empty">
-        <Inbox size={20} className="text-text-muted" aria-hidden />
-        <p className="text-sm text-text-muted">{emptyMessage ?? t('Nothing to show.')}</p>
+        <Inbox size={20} className="text-fg-dim" aria-hidden />
+        <p className="text-sm text-fg-dim">{emptyMessage ?? t('Nothing to show.')}</p>
         {emptyAction}
       </Frame>
     );

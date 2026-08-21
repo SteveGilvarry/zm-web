@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { AlertTriangle, Home, RefreshCw, SearchX } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { apiErrorMessage, classifyApiError } from '@/api/client';
+import { Button } from './Button';
+import { buttonClasses } from './styles';
 
 /**
  * Router `defaultErrorComponent`: a route's loader or component threw.
@@ -26,16 +28,16 @@ export function RouteErrorFallback({ error, reset }: ErrorComponentProps) {
   return (
     <AppShell title={t('Error')}>
       <FallbackBody
-        icon={<AlertTriangle size={28} className="text-crimson" aria-hidden />}
+        icon={<AlertTriangle size={28} className="text-danger" aria-hidden />}
         heading={heading}
         detail={kind === 'forbidden' ? undefined : apiErrorMessage(error)}
         actions={
           <>
             {kind !== 'forbidden' && (
-              <button type="button" onClick={retry} className={BUTTON}>
+              <Button size="sm" onClick={retry}>
                 <RefreshCw size={14} aria-hidden />
                 {t('Retry')}
-              </button>
+              </Button>
             )}
             <Link to="/" className={BUTTON}>
               <Home size={14} aria-hidden />
@@ -54,7 +56,7 @@ export function NotFoundFallback() {
   return (
     <AppShell title={t('Not found')}>
       <FallbackBody
-        icon={<SearchX size={28} className="text-amber" aria-hidden />}
+        icon={<SearchX size={28} className="text-warn" aria-hidden />}
         heading={t('There is no page at this address.')}
         actions={
           <Link to="/" className={BUTTON}>
@@ -74,17 +76,17 @@ export function NotFoundFallback() {
 export function AppCrashFallback({ error, reset }: { error: Error; reset: () => void }) {
   const { t } = useTranslation();
   return (
-    <div className="min-h-screen bg-void text-text-primary flex items-center justify-center p-6">
+    <div className="min-h-screen bg-bg text-fg flex items-center justify-center p-6">
       <FallbackBody
-        icon={<AlertTriangle size={28} className="text-crimson" aria-hidden />}
+        icon={<AlertTriangle size={28} className="text-danger" aria-hidden />}
         heading={t('The dashboard hit an error it could not recover from.')}
         detail={error.message}
         actions={
           <>
-            <button type="button" onClick={reset} className={BUTTON}>
+            <Button size="sm" onClick={reset}>
               <RefreshCw size={14} aria-hidden />
               {t('Try again')}
-            </button>
+            </Button>
             <a href={import.meta.env.BASE_URL} className={BUTTON}>
               <Home size={14} aria-hidden />
               {t('Go to console')}
@@ -96,8 +98,8 @@ export function AppCrashFallback({ error, reset }: { error: Error; reset: () => 
   );
 }
 
-const BUTTON =
-  'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm border border-border-subtle bg-panel text-text-secondary hover:text-text-primary transition-colors';
+/** `<Link>` / `<a>` can't be a `<Button>`, so they borrow its recipe. */
+const BUTTON = buttonClasses('secondary', 'sm');
 
 function FallbackBody({
   icon,
@@ -114,7 +116,7 @@ function FallbackBody({
     <div role="alert" className="flex flex-col items-center justify-center gap-3 py-16 px-6 text-center">
       {icon}
       <h2 className="text-lg font-semibold">{heading}</h2>
-      {detail && <p className="text-sm text-text-muted font-mono break-all max-w-xl">{detail}</p>}
+      {detail && <p className="text-label text-fg-dim font-mono break-all max-w-xl">{detail}</p>}
       <div className="flex items-center gap-2 mt-2">{actions}</div>
     </div>
   );

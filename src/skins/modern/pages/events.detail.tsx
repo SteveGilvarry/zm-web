@@ -359,12 +359,14 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                         {/* Skip buttons */}
                         <button
                           onClick={() => s.handleSkip(-10)}
+                          aria-label={t('Back 10 seconds')}
                           className="p-2 rounded-lg text-white/70 hover:text-white transition-colors"
                         >
                           <SkipBack size={16} />
                         </button>
                         <button
                           onClick={() => s.handleSkip(10)}
+                          aria-label={t('Forward 10 seconds')}
                           className="p-2 rounded-lg text-white/70 hover:text-white transition-colors"
                         >
                           <SkipForward size={16} />

@@ -225,7 +225,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                 <button
                   type="button"
                   onClick={stopStream}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-crimson/80 text-white hover:bg-crimson transition-colors"
+                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-danger text-danger-fg hover:bg-danger-dim transition-colors"
                 >
                   <Pause size={14} aria-hidden />
                   <span className="text-sm font-medium">{t('Stop')}</span>
@@ -237,7 +237,11 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
 
         {/* Error overlay */}
         {!stills && streamError && streamState === 'failed' && (
-          <div className="absolute inset-0 flex items-center justify-center bg-black/60">
+          <div
+            role="alert"
+            data-testid="stream-error"
+            className="absolute inset-0 flex items-center justify-center bg-black/60"
+          >
             <div className="text-center">
               <AlertTriangle size={32} className="mx-auto mb-2 text-amber" />
               <p className="text-sm text-white mb-3">{streamError}</p>

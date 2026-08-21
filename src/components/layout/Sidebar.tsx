@@ -29,6 +29,7 @@ import { useUiStore } from '@/stores/ui';
 import { logout as apiLogout } from '@/api/auth';
 import { usePerms } from '@/features/auth/usePerms';
 import { canSeeNav } from '@/features/nav/navPerms';
+import { Button } from '@/components/common/Button';
 
 interface NavItem {
   label: string;
@@ -150,46 +151,45 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       <div className="h-14 flex items-center justify-between px-4 border-b border-border-subtle">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Shield className="text-cyan" size={24} aria-hidden />
-            <span className="font-mono font-semibold text-cyan tracking-tight">
-              ZM<span className="text-text-secondary">dash</span>
+            <Shield className="text-accent" size={24} aria-hidden />
+            <span className="font-mono font-semibold text-accent tracking-tight">
+              ZM<span className="text-fg-muted">dash</span>
             </span>
           </div>
         )}
-        {collapsed && <Shield className="text-cyan mx-auto" size={24} aria-hidden />}
+        {collapsed && <Shield className="text-accent mx-auto" size={24} aria-hidden />}
         {onMobileClose && (
-          <button
+          <Button
             ref={closeRef}
-            type="button"
+            variant="ghost"
+            size="sm"
+            icon
             onClick={onMobileClose}
             aria-label={t('Close menu')}
-            className="lg:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-panel transition-colors"
+            className="lg:hidden"
           >
             <X size={18} aria-hidden />
-          </button>
+          </Button>
         )}
       </div>
 
       {/* Collapse toggle (desktop only) */}
-      <button
-        type="button"
+      <Button
+        variant="secondary"
+        size="sm"
+        icon
         onClick={toggleSidebar}
         aria-label={collapsed ? t('Expand sidebar') : t('Collapse sidebar')}
         aria-expanded={!collapsed}
         className={clsx(
           'absolute -end-3 top-20 z-50 hidden lg:flex',
-          'w-6 h-6 rounded-full',
-          'bg-panel border border-border',
-          'items-center justify-center',
-          'text-text-muted hover:text-text-primary',
-          'transition-colors duration-fast',
-          'hover:bg-elevated'
+          'w-6 h-6 p-0 rounded-full border-border hover:bg-surface-3',
         )}
       >
         {collapsed
           ? <ChevronRight size={14} className="rtl:-scale-x-100" aria-hidden />
           : <ChevronLeft size={14} className="rtl:-scale-x-100" aria-hidden />}
-      </button>
+      </Button>
 
       {/* Main navigation */}
       <nav aria-label={t('Main')} className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
@@ -227,30 +227,32 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
         <div
           className={clsx(
             'flex items-center gap-3 px-3 py-2 rounded-lg',
-            'bg-panel/50'
+            'bg-surface-2/50'
           )}
         >
-          <div className="w-8 h-8 rounded-full bg-cyan/20 flex items-center justify-center">
-            <span className="text-cyan font-medium text-sm">
+          <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+            <span className="text-accent font-medium text-sm">
               {user?.user?.charAt(0).toUpperCase() || '?'}
             </span>
           </div>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text-primary truncate">
+              <p className="text-sm font-medium text-fg truncate">
                 {user?.user || t('Unknown')}
               </p>
             </div>
           )}
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
             onClick={handleLogout}
-            className="p-1.5 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+            className="hover:text-danger hover:bg-danger/10"
             title={t('Log out')}
             aria-label={t('Log out')}
           >
             <LogOut size={16} className="rtl:-scale-x-100" aria-hidden />
-          </button>
+          </Button>
         </div>
       </div>
     </aside>
@@ -275,19 +277,19 @@ function NavLink({
         'transition-all duration-fast',
         'group relative',
         isActive
-          ? 'bg-cyan/10 text-cyan'
-          : 'text-text-secondary hover:text-text-primary hover:bg-panel'
+          ? 'bg-accent/10 text-accent'
+          : 'text-fg-muted hover:text-fg hover:bg-surface-2'
       )}
     >
       {/* Active indicator */}
       {isActive && (
-        <div className="absolute start-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan rounded-e" />
+        <div className="absolute start-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-accent rounded-e" />
       )}
 
       <span
         className={clsx(
           'flex-shrink-0',
-          isActive ? 'text-cyan' : 'text-text-muted group-hover:text-text-secondary'
+          isActive ? 'text-accent' : 'text-fg-dim group-hover:text-fg-muted'
         )}
       >
         {item.icon}
@@ -298,7 +300,7 @@ function NavLink({
       )}
 
       {!collapsed && item.badge !== undefined && item.badge > 0 && (
-        <span className="ms-auto px-2 py-0.5 text-xs font-mono bg-crimson/20 text-crimson rounded">
+        <span className="ms-auto px-2 py-0.5 text-label font-mono bg-danger/20 text-danger rounded">
           {item.badge}
         </span>
       )}
@@ -309,7 +311,7 @@ function NavLink({
           role="tooltip"
           className={clsx(
             'absolute start-full ms-2 px-2 py-1 rounded',
-            'bg-elevated text-text-primary text-sm font-medium',
+            'bg-surface-3 text-fg text-sm font-medium',
             'opacity-0 invisible group-hover:opacity-100 group-hover:visible',
             'transition-all duration-fast',
             'whitespace-nowrap z-50',

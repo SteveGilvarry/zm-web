@@ -29,8 +29,8 @@ export function Panel({
       {title && (
         <div className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <div className="flex items-center gap-2">
-            {icon && <span className="text-text-muted">{icon}</span>}
-            <h3 className="font-medium text-text-primary">{title}</h3>
+            {icon && <span className="text-fg-dim">{icon}</span>}
+            <h3 className="font-medium text-fg">{title}</h3>
           </div>
           {action && <div>{action}</div>}
         </div>

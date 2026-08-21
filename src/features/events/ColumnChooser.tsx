@@ -80,8 +80,8 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
                   className={clsx(
                     'inline-flex items-center justify-center w-4 h-4 rounded border',
                     visible
-                      ? (variant === 'classic' ? 'bg-cyan-600 border-cyan-600 text-white' : 'bg-cyan border-cyan text-void')
-                      : (variant === 'classic' ? 'border-zinc-300 bg-white' : 'border-border-subtle bg-surface'),
+                      ? 'bg-accent border-accent text-accent-fg'
+                      : 'border-border bg-surface',
                   )}
                 >
                   {visible && <Check size={11} strokeWidth={3} />}

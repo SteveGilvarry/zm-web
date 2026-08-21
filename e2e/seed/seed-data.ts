@@ -33,6 +33,13 @@ export const SEED = {
     /** Have 10 Frames rows each (frames 4-6 are Alarm). */
     withFrames: [9002, 9003],
     archived: [9005, 9010, 9015, 9020, 9025, 9030],
+    /**
+     * Unarchived events reserved for specs that mutate (archive, rename,
+     * edit notes). Nothing else asserts on them, and `scratchEvent()` in
+     * e2e/fixtures.ts hands a different one to each browser project x skin
+     * so parallel workers never touch the same row.
+     */
+    scratch: [9021, 9022, 9023, 9024, 9026, 9027, 9028, 9029],
   },
 
   tags: { person: 9001, vehicle: 9002, falseAlarm: 9003 },
@@ -41,5 +48,13 @@ export const SEED = {
   report: 9001,
   states: { night: 9001, away: 9002 },
   montageLayout: 9001,
-  logs: { first: 9001, count: 200 },
+  /**
+   * 200 rows covering every ZoneMinder severity, so the level filter has
+   * something to find at each stop. Counts are exact (see seed.sql).
+   */
+  logs: {
+    first: 9001,
+    count: 200,
+    byCode: { PNC: 10, FAT: 10, ERR: 20, WAR: 40, INF: 100, DBG: 20 },
+  },
 } as const;
