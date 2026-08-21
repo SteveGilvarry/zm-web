@@ -291,7 +291,6 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                 <p className="text-text-muted">{t('Monitor is disabled')}</p>
               </>
             )}
-            <div className="absolute inset-0 scanlines pointer-events-none" />
           </div>
         )}
       </div>

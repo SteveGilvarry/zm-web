@@ -119,8 +119,6 @@ export function MonitorThumbnail({
               </div>
             </div>
 
-            <div className="absolute inset-0 scanlines pointer-events-none" />
-
             {(hasMotion || hasAlarm) && (
               <div
                 className={clsx(

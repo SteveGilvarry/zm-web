@@ -461,7 +461,6 @@ function StreamVideo({
       )}
 
       {/* Scanlines */}
-      <div className="absolute inset-0 scanlines pointer-events-none" />
     </div>
   );
 }
