@@ -182,40 +182,40 @@ Deliberately out of scope: bandwidth profiles (the stub "High" chip is gone from
 
 ## 7. Backend tickets for zm_api
 
-Filed 2026-08-21 as issues #16–#38 on `SteveGilvarry/zm-api` (several rows share one issue). Sorted by what they unblock. "Remains" = already in the 2026-06-30 list and still open.
+Filed 2026-08-21 as issues #16–#39 on `SteveGilvarry/zm-api`. **The dev box was updated 2026-08-22 (766c1a7..1a13ff0) and most of them shipped.** Verified live and closed:
 
-| # | Ticket | Unblocks | Pri |
+| # | Was | Now |
+|---|---|---|
+| [16](https://github.com/SteveGilvarry/zm-api/issues/16) | event `DATETIME`s stamped `Z` but server-local | true UTC — verified against the wall clock |
+| [17](https://github.com/SteveGilvarry/zm-api/issues/17) | unknown routes → 500 text/plain | 404 `{"kind":"NOT_FOUND_ERROR",…}` |
+| [18](https://github.com/SteveGilvarry/zm-api/issues/18) | monitor GETs echoed raw DB enums | canonical `Rotate90`/`System`/`Auto`/`WebRtc`, `deleted` a JSON boolean; camera secrets are write-only |
+| [20](https://github.com/SteveGilvarry/zm-api/issues/20) | no `cause`/`notes`/`name`/`tag` filters | all four, plus `EventSortField` widened to name/cause/monitor_id/notes/frames |
+| [21](https://github.com/SteveGilvarry/zm-api/issues/21) | `level` was an inverted numeric bound | named `min_level` (`fatal…debug`), `search`, `start`, `end`, `sort`, and `DELETE /logs` |
+| [24](https://github.com/SteveGilvarry/zm-api/issues/24) | `StorageResponse` was 5 fields | `scheme`, `server_id`, `url`, `disk_space`, `do_delete` |
+| [28](https://github.com/SteveGilvarry/zm-api/issues/28) | `parent_id` ignored on update | persists — verified |
+| [33](https://github.com/SteveGilvarry/zm-api/issues/33) | no server timezone | `GET /system/locale` → zone, offset and the three format patterns |
+
+Also new and now in use: `GET /me`, `PUT /me/password`, `POST /discovery/onboard`. **Breaking:** `POST /states/change/{action}` was replaced by `POST /server/control/{action}` — the dashboard follows it as of commit `50e7dc3`.
+
+Still open, with what each one blocks:
+
+| # | Ticket | Blocks | Pri |
 |---|---|---|---|
-| [BT-00](https://github.com/SteveGilvarry/zm-api/issues/16) | **Event (and other `DATETIME`) timestamps are server-local stamped `Z`.** Emit true UTC or a real offset; logs/monitor-status already do | F-9; every event time, Montage Review | P0 |
-| [BT-01](https://github.com/SteveGilvarry/zm-api/issues/17) | Unmatched routes return HTTP 500 text/plain; return 404 JSON (405 for wrong method) | Feature detection (pipeline, discovery, frames image); honest error states | P1 |
-| [BT-02](https://github.com/SteveGilvarry/zm-api/issues/18) | `MonitorResponse` echoes raw DB enum strings (`ROTATE_90`, `WebRTC`, `auto`, `system`, `deleted: 0`) that the request enums reject; normalise like `EventResponse.orientation` already is | F-2, editor selects, clone | P1 |
-| [BT-03](https://github.com/SteveGilvarry/zm-api/issues/20) | `GET /events`: add `cause`, `notes`, `name`, `tag_id` filters; widen `EventSortField` (name, cause, monitor, notes) | Events filter bar, sort | P1 |
-| [BT-04](https://github.com/SteveGilvarry/zm-api/issues/21) | `GET /logs?level` semantics (today `>=` numeric, so `level=-2` returns INF rows); add `max_level`/exact, `search`, `start`/`end`, `sort`; fix the param description | Logs filters | P1 |
-| [BT-05](https://github.com/SteveGilvarry/zm-api/issues/22) | Zones: expose motion settings on `ZoneResponse`/`Create`/`Update` (`check_method`, thresholds, filter, blob, overload, extend, `alarm_rgb`); let update change `type`/`units`/`coords` | Zones editor depth; F-3 silent drops | P1 |
-| [BT-06](https://github.com/SteveGilvarry/zm-api/issues/23) | `Create/UpdateUserRequest`: permission levels, `password`, `name`, `phone`, `language`, `home_view`, `api_enabled`, `max_bandwidth`; echo on `UserResponse` (remains) | Users admin, self-edit, HomeView | P1 |
-| [BT-07](https://github.com/SteveGilvarry/zm-api/issues/24) | `StorageResponse`: return `scheme`, `server_id`, `url`, `do_delete`, disk usage, event count/size (half-done: requests accept the first three) | Storage page, header per-storage usage | P1 |
-| [BT-09](https://github.com/SteveGilvarry/zm-api/issues/26) | `GET /frames/{id}/image` (remains) | Frame stepping, frames table | P1 |
-| [BT-20](https://github.com/SteveGilvarry/zm-api/issues/19) | Monitor create validation rejects ZoneMinder's own defaults (`brightness=-1`, `storage_id=0`, `max_image_buffer_count=0`, `stream_replay_buffer=0`) | F-2 | P1 |
-| [BT-08](https://github.com/SteveGilvarry/zm-api/issues/25) | `ServerResponse` + requests: `protocol`, `path_to_*`, daemon flags, lat/lng, monitor count (remains) | Servers admin | P2 |
-| [BT-10](https://github.com/SteveGilvarry/zm-api/issues/27) | Real API-token resource (`POST/GET/DELETE /auth/tokens`); document that `/sessions` is PHP web sessions | F-6 | P2 |
-| [BT-11](https://github.com/SteveGilvarry/zm-api/issues/28) | `UpdateGroupRequest.parent_id` (remains) | Group re-parent | P2 |
-| [BT-12](https://github.com/SteveGilvarry/zm-api/issues/29) | Reports: `description`; make dates optional on update (name-only edit 422s today) (remains) | Reports | P2 |
-| [BT-13](https://github.com/SteveGilvarry/zm-api/issues/30) | Bulk event export (`POST /events/export`, zip/tar) (remains) | Events/Event export | P2 |
-| [BT-14](https://github.com/SteveGilvarry/zm-api/issues/21) | `DELETE /logs` with filters (remains) | Clear Logs | P2 |
-| [BT-15](https://github.com/SteveGilvarry/zm-api/issues/31) | `POST /filters/{id}/execute` with actions; keep `/preview`; accept relative dates and `monitor_name` in preview | Filters Execute now, Reports chart | P2 |
-| [BT-16](https://github.com/SteveGilvarry/zm-api/issues/32) | Spec hygiene: `/daemons*`, `/system/status` are JWT-protected but marked public; schema for `/live/sources`; 503 responses on `/search`, `/events/{id}/similar`; type the pipeline `graph`; orphan schemas | Contract tests | P2 |
-| [BT-17](https://github.com/SteveGilvarry/zm-api/issues/37) | `use_onvif` / `motion_tracker_id` decision (remains) | ONVIF tab | P3 |
-| [BT-18](https://github.com/SteveGilvarry/zm-api/issues/36) | Event-audit rollup (`missing_files`, `zero_size`, gaps) or per-monitor hourly histogram | Audit page; console sparklines without 1000-event pulls | P3 |
-| [BT-19](https://github.com/SteveGilvarry/zm-api/issues/37) | Mosaic montage-review export (remains) | Download Video | P3 |
-| [BT-21](https://github.com/SteveGilvarry/zm-api/issues/37) | `GET /auth/me` | Permission refresh without re-login | P3 |
-| [BT-22](https://github.com/SteveGilvarry/zm-api/issues/27) | Real token revocation on logout + refresh-token revocation (token still valid after `GET /auth/logout`, verified) | Logout | P2 |
-| [BT-23](https://github.com/SteveGilvarry/zm-api/issues/33) | Expose server timezone + date-format config in one place | W7 | P2 |
-| [BT-24](https://github.com/SteveGilvarry/zm-api/issues/34) | Short-lived media-scoped tokens or signed URLs for `<img>`/`<video>`/downloads | F-23 | P2 |
-| [BT-25](https://github.com/SteveGilvarry/zm-api/issues/35) | No-auth mode story (`ZM_OPT_USE_AUTH=0`) and the `LoginResponse` "Code" branch | Login | P2 |
-| [BT-26](https://github.com/SteveGilvarry/zm-api/issues/37) | Alarm enable/disable per monitor; PTZ iris/gain/white-balance/power/auto-scan; Rate / StreamQuality / StreamChannel on `StartLiveRequest`; `monitor.enabled`, `encoder_hw_accel_*`, `wall_clock_timestamps`, `go2rtc_enabled`, `default_player` on monitors; DB-connections and Swap-less stats; host shutdown; X10 On/Off; `GET /events?storage_id` | Remaining legacy controls | P3 |
-| [BT-27](https://github.com/SteveGilvarry/zm-api/issues/32) | Consistent boolean typing on requests (ints vs JSON booleans vary by schema) | Shared form code | P3 |
-
-Resolved since June on the backend side and not yet picked up by the dashboard: filter `auto_*` columns + structured `filter` query; `POST /filters/preview`; `/monitor-status`; `/discovery/probe|inspect` (+ `/onboard` on the newer build); `/control_presets`; `/configs/categories`; `/user_preferences`; `/live/sources`; `/monitor_presets`; storage requests accept `scheme/server_id/url`.
+| [19](https://github.com/SteveGilvarry/zm-api/issues/19) | create validation vs ZoneMinder's own defaults | a dashboard-created monitor matching a legacy-created one | P1 |
+| [22](https://github.com/SteveGilvarry/zm-api/issues/22) | zone motion settings are read-only (write side) | the zone editor's threshold panel; changing a zone's type | P1 |
+| [23](https://github.com/SteveGilvarry/zm-api/issues/23) | user permissions/name/phone not writable | admin permission editing and password resets (self-service password now works) | P1 |
+| [25](https://github.com/SteveGilvarry/zm-api/issues/25) | server write schema still 4 fields | the legacy Servers modal | P2 |
+| [26](https://github.com/SteveGilvarry/zm-api/issues/26) | per-frame image endpoint | frame stepping, the Frames view's thumbnails | P1 |
+| [27](https://github.com/SteveGilvarry/zm-api/issues/27) | real API-token resource + logout revocation | an honest API-tokens page; true logout | P2 |
+| [29](https://github.com/SteveGilvarry/zm-api/issues/29) | report `description`, partial update | Reports parity | P2 |
+| [30](https://github.com/SteveGilvarry/zm-api/issues/30) | bulk event export | Events/Event "Export" | P2 |
+| [31](https://github.com/SteveGilvarry/zm-api/issues/31) | filter execute; preview relative dates + `monitor_name` | Filters "Execute now"; preview for legacy filters | P2 |
+| [32](https://github.com/SteveGilvarry/zm-api/issues/32) | spec hygiene | contract tests, generated types | P2 |
+| [34](https://github.com/SteveGilvarry/zm-api/issues/34) | media-scoped tokens | removing the session JWT from `<img>`/download URLs | P2 |
+| [35](https://github.com/SteveGilvarry/zm-api/issues/35) | no-auth mode; `LoginResponse` Code branch | `ZM_OPT_USE_AUTH=0` installs | P2 |
+| [36](https://github.com/SteveGilvarry/zm-api/issues/36) | audit rollup / hourly histogram | MissingFiles + ZeroSize; console sparklines without 1000-event pulls | P3 |
+| [37](https://github.com/SteveGilvarry/zm-api/issues/37) | remaining legacy controls | alarm enable/disable, PTZ iris/power, stream rate/quality, host shutdown | P3 |
+| [39](https://github.com/SteveGilvarry/zm-api/issues/39) | `save_jpe_gs` rejects 2 and 3 | the Recording tab's bitmask select | P2 |
 
 ## 8. Test strategy
 

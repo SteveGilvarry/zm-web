@@ -8,7 +8,7 @@ import { test, expect } from './fixtures';
  * amber); the modern shell renders a left <aside> sidebar.
  */
 test.describe('Skin switching', () => {
-  test('switch modern → classic, persist across reload, switch back', async ({ loggedInPage: page }) => {
+  test('switch modern → classic, persist across reload, switch back @route:settings.options', async ({ loggedInPage: page }) => {
     // Start from the modern Console — sidebar should be visible.
     await page.goto('/');
     await expect(page.locator('aside')).toBeVisible();
@@ -51,17 +51,6 @@ test.describe('Skin switching', () => {
     await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
   });
 
-  test.afterEach(async ({ loggedInPage: page }) => {
-    // Restore modern skin so subsequent specs see the expected shell.
-    await page.evaluate(() => {
-      try {
-        const raw = window.localStorage.getItem('zm-ui');
-        const obj = raw ? JSON.parse(raw) : { state: {}, version: 0 };
-        obj.state = { ...(obj.state ?? {}), skin: 'modern' };
-        window.localStorage.setItem('zm-ui', JSON.stringify(obj));
-      } catch {
-        // ignore — best-effort cleanup
-      }
-    });
-  });
+  // No cleanup needed: every test gets its own browser context, so the
+  // persisted skin cannot leak into the next one.
 });
