@@ -78,6 +78,12 @@ own `mariadb` binary. No sudo.
 | `E2E_API_WAIT_SECS` | `30` | how long the preflight waits for zm_api health |
 | `TEST_USERNAME` / `TEST_PASSWORD` | seeded admin | override the login the fixtures use |
 
+`api.sh` also sets `SERVER__MIDDLEWARE__AUTH_RATE_LIMIT_BURST=0`. zm_api
+throttles `/auth/*` to one token per 2 s per IP; every worker here comes from
+127.0.0.1, and a suite this size otherwise trips it and the sign-in starts
+failing with "Login failed". Brute-force protection is not something a
+throwaway database needs.
+
 zm_api's `test-db` profile binds `127.0.0.1` only. `api.sh` overrides the DB
 connection (`DB__HOST/PORT/USERNAME/PASSWORD/DATABASE_NAME`) and the listen
 port (`SERVER__PORT`) through the environment, and exports each variable
@@ -166,14 +172,44 @@ Run `reset.sh` to re-anchor them.
 
 - Reference rows through `SEED` from `seed-data.ts`; do not depend on list
   order or on counts that another spec might change.
+- Assert on roles, accessible names, testids and the HTTP requests that go
+  out. Never on class names: the design tokens move.
+- Tag the test title `@route:<pageKey>`. `e2e/route-coverage.spec.ts` reads
+  `src/skins/pageKeys.ts` and fails when a page key has no tagged spec.
+- Cover both skins. `gotoSkin(page, path, skin)` from `e2e/fixtures.ts`
+  applies `?skin=` and waits for `<html data-skin>` before returning.
 - Seeded mode runs with more than one worker and two browser projects at
-  once. A spec that mutates a fixture row (archive, rename, edit notes)
-  must either create its own row first or target an id no other spec
-  touches, and restore it afterwards. The pre-existing `monitor-edit` and
-  `bulk-events` specs edit "the first row" and were written for a serial
-  live run; under seeded mode they can race each other across projects.
-  Pin them to distinct ids before relying on them in CI.
+  once, against one database. A spec that mutates a row must take one no
+  other spec touches and put it back:
+  - `scratchEvent(project, skin)` — one reserved event per (project, skin),
+    out of `SEED.events.scratch`.
+  - `scratchEvents(project, skin, n)` — a disjoint run of `n`, out of
+    `SEED.events.scratchBulk`, for the bulk-action specs.
+  - `scratchMonitor(project)` — one monitor whose free-text fields are safe
+    to edit.
+  - Anything created from scratch is named `e2e-probe-*` and deleted in a
+    `finally`, through `apiFetch(page, …)` so cleanup does not depend on the
+    UI being in a good state.
+- Do not assert an exact count of something another spec mutates. The
+  archived-events count, for instance, is asserted as "at least the six the
+  seed archives", because the archive round-trip specs run in parallel.
+- Signing in happens once per worker (`adminStorageState` in `fixtures.ts`)
+  and every test inherits it. A spec that must start signed out declares
+  `test.use({ storageState: ANONYMOUS })`.
 - `reset.sh` between runs is the blunt instrument if a spec leaves debris.
+
+## What the suite covers
+
+| File | What it holds |
+|---|---|
+| `routes.spec.ts` | One happy path per page key per skin, driven off `e2e/routes.ts` |
+| `console` / `events` / `event-detail` / `watch` / `zones` / `montage` / `montagereview` / `cycle` / `filters` / `groups` / `logs` / `reports` / `audit` / `settings` | Per-feature depth: filters, sorting, paging, and each mutation's request shape |
+| `bulk-events` / `monitor-edit` | The mutation round-trips, on reserved rows |
+| `failures.spec.ts` | Backend 500 → unreachable state; expired refresh → `/login?reason=expired`; a 403 → the forbidden state; a failed `/live/start` → the error tile |
+| `a11y.spec.ts` | axe on every route in both skins, ratcheted against `a11y-baseline.json` |
+| `mobile.spec.ts` | The 390 px project: no horizontal overflow, drawer opens and closes |
+| `route-coverage.spec.ts` | Fails when a page key in `src/skins/pageKeys.ts` has no `@route:`-tagged spec |
+| `live-playback.spec.ts` / `console-live-rotation.spec.ts` | Live mode only — real media on a real box |
 
 ## Out of scope, on purpose
 

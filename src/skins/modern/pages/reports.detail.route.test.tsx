@@ -8,6 +8,7 @@
  * gate.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
+import { toApiDateTime } from '@/features/reports/datetime';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
@@ -106,8 +107,8 @@ describe('Report detail — edit form', () => {
     expect(body).toEqual({
       name: 'Weekend',
       filter_id: 4,
-      start_date_time: new Date('2026-08-19T20:00').toISOString(),
-      end_date_time: new Date('2026-08-20T04:30').toISOString(),
+      start_date_time: toApiDateTime(new Date('2026-08-19T20:00')),
+      end_date_time: toApiDateTime(new Date('2026-08-20T04:30')),
       interval: 60,
     });
     expect(await screen.findByText('Saved.')).toBeInTheDocument();

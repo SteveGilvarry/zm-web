@@ -62,22 +62,15 @@ test.describe('Failure paths — backend down', () => {
       await expect(page.locator(`a[href="/monitors/${SEED.monitors.frontDoor}"]`)).toHaveCount(0);
     });
 
-    // KNOWN BUG (frontend): `src/skins/classic/pages/logs.tsx:196` and
-    // `src/skins/classic/pages/reports.list.tsx:49` render <QueryState>
-    // without `isError`/`error`, so a 500 arrives as an empty result and the
-    // page says "No matching records found" — the exact "backend down looks
-    // like no rows" failure the test plan calls out. Every other QueryState
-    // call site passes them. `test.fail()` keeps the expectation on the
-    // record; delete the marker when the two call sites are fixed.
-    // A page that is expected to fail must fail by *assertion*: a test that
-    // runs out of time is a hard error even under `test.fail()`. So the known
-    // bad path gets a short wait, the good path the full retry budget.
-    const wait = skin === 'classic' ? 8_000 : 40_000;
+    // Regression: classic logs and classic reports rendered <QueryState>
+    // without `isError`/`error`, so a 500 arrived as an empty result and the
+    // page said "No matching records found" — backend-down looking like
+    // no-rows, the failure the test plan calls out by name.
+    const wait = 40_000;
 
     test(`${skin}: a 500 from the log query shows the unreachable state @route:logs`, async ({
       loggedInPage: page,
     }) => {
-      test.fail(skin === 'classic', 'classic logs swallows query errors as an empty list');
       await breakRoute(page, '**/api/v3/logs*');
       await gotoSkin(page, '/logs', skin);
       await expect(page.locator('[data-state="unreachable"]').first()).toBeVisible({
@@ -88,7 +81,6 @@ test.describe('Failure paths — backend down', () => {
     test(`${skin}: a 500 from the reports list shows the unreachable state @route:reports.list`, async ({
       loggedInPage: page,
     }) => {
-      test.fail(skin === 'classic', 'classic reports list swallows query errors as an empty list');
       await breakRoute(page, '**/api/v3/reports*');
       await gotoSkin(page, '/reports', skin);
       await expect(page.locator('[data-state="unreachable"]').first()).toBeVisible({

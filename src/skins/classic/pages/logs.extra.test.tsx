@@ -243,7 +243,7 @@ describe('ClassicLogsPage — extra paths', () => {
     await waitFor(() => expect(logQueries.length).toBeGreaterThan(before));
   });
 
-  it('renders empty rather than a table when the backend is unreachable', async () => {
+  it('shows the unreachable state when the backend is down, not an empty table', async () => {
     server.use(
       http.get('/api/v3/logs', () => HttpResponse.error()),
       http.get('/api/v3/servers', () =>
@@ -251,9 +251,10 @@ describe('ClassicLogsPage — extra paths', () => {
     );
     await mount();
 
-    // The page does not pass isError to QueryState, so a dead backend reads
-    // as "no records" — see the note in the final report.
-    expect(await screen.findByText('No matching records found')).toBeInTheDocument();
+    // A dead backend must not read as "no records" — that is the failure the
+    // test plan calls out by name.
+    expect(await screen.findByText('Cannot reach the server.')).toBeInTheDocument();
+    expect(screen.queryByText('No matching records found')).toBeNull();
   });
 
   it('renders rows with missing pid / file / line without crashing', async () => {

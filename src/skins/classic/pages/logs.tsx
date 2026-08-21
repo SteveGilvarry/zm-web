@@ -207,6 +207,8 @@ export default function ClassicLogsPage() {
 
           <QueryState
             isLoading={isLoading}
+            isError={s.isError}
+            error={s.error}
             onRetry={s.refetch}
             empty={logs.length === 0}
             emptyMessage={t('No matching records found')}

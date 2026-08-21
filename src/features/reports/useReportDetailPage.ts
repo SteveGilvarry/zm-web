@@ -8,7 +8,7 @@ import { listFilters, getFilter, parseFilterQuery } from '@/api/filters';
 import { getEvents } from '@/api/events';
 import { evaluateFilter } from '@/features/filters/evaluate';
 import { bucketEventsByHour, type DailyBucket } from './bucketEventsByHour';
-import { toLocalDatetime } from './datetime';
+import { toLocalDatetime, toApiDateTime} from './datetime';
 
 export interface ReportDetailPageState {
   isAuthenticated: boolean;
@@ -115,8 +115,8 @@ export function useReportForm(report: Report, onSaved: () => void): ReportFormSt
       updateReport(report.id, {
         name: name.trim() || null,
         filter_id: filterId === '' ? null : filterId,
-        start_date_time: start ? new Date(start).toISOString() : '',
-        end_date_time: end ? new Date(end).toISOString() : '',
+        start_date_time: start ? toApiDateTime(start) : '',
+        end_date_time: end ? toApiDateTime(end) : '',
         interval: interval === '' ? null : interval,
       }),
     onSuccess: () => onSaved(),

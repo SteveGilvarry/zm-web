@@ -6,6 +6,7 @@
  * `RequirePerm` gates and every outgoing request are all exercised.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
+import { toApiDateTime } from '@/features/reports/datetime';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -171,6 +172,8 @@ describe('ReportsListPage — modern skin', () => {
     expect(body!.interval).toBeNull();
   });
 
+  // zm_api rejects fractional seconds ('400 Invalid start_date_time format'),
+  // so the payload carries whole seconds — see toApiDateTime().
   it('sends the dates typed into the create form', async () => {
     const user = userEvent.setup();
     let body: Record<string, unknown> | undefined;
@@ -199,8 +202,11 @@ describe('ReportsListPage — modern skin', () => {
     await user.click(screen.getByRole('button', { name: 'Create report' }));
 
     await waitFor(() => expect(body).toBeDefined());
-    expect(body!.start_date_time).toBe(new Date('2026-07-01T08:00').toISOString());
-    expect(body!.end_date_time).toBe(new Date('2026-07-08T20:30').toISOString());
+    // Whole seconds, no fractional part: zm_api answers 400 "Invalid
+    // start_date_time format" for `…T08:00:00.000Z` (see toApiDateTime).
+    expect(body!.start_date_time).toBe(toApiDateTime(new Date('2026-07-01T08:00')));
+    expect(body!.end_date_time).toBe(toApiDateTime(new Date('2026-07-08T20:30')));
+    expect(body!.start_date_time).not.toMatch(/\.\d{3}Z$/);
   });
 
   it('toggles the create panel closed again', async () => {

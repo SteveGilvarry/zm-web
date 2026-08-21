@@ -37,18 +37,13 @@ test.describe('Reports', () => {
       await expect(page.getByRole('button', { name: /^save$/i })).toBeVisible();
     });
 
-    // KNOWN BUG (frontend): `useCreateReportForm` sends
-    // `new Date(start).toISOString()`, which includes milliseconds
-    // ("2026-08-14T00:00:00.000Z"). zm_api's date parser rejects that and
-    // answers 400 "Invalid start_date_time format"; the same value without
-    // the fractional part is accepted. Creating a report is therefore broken
-    // against a real backend. `test.fail()` keeps the expectation on the
-    // record and turns green into a failure the moment it is fixed — at
-    // which point drop the marker.
+    // Regression: report creation used to send `toISOString()` with
+    // milliseconds, which zm_api rejects with 400 "Invalid start_date_time
+    // format". `toApiDateTime()` trims the fractional part. Only a real
+    // backend catches this — the MSW mocks accept anything.
     test(`${skin}: creating a report from the form @route:reports.list`, async ({
       loggedInPage: page,
     }, testInfo) => {
-      test.fail();
       const name = `e2e-probe-${testInfo.project.name}-${skin}-${Date.now()}`;
       await gotoSkin(page, '/reports', skin);
       await expect(page.getByText('e2e-Weekly motion').first()).toBeVisible();

@@ -4,6 +4,7 @@
  * and the read-only render for a user without events:Edit.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
+import { toApiDateTime } from '@/features/reports/datetime';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -111,8 +112,9 @@ describe('ClassicReportsListPage — extra paths', () => {
     await waitFor(() => expect(created).toHaveLength(1));
     expect(created[0]).toEqual({
       name: null,
-      start_date_time: new Date('2026-08-01T00:00').toISOString(),
-      end_date_time: new Date('2026-08-08T00:00').toISOString(),
+      // Whole seconds: zm_api rejects a fractional part (see toApiDateTime).
+      start_date_time: toApiDateTime(new Date('2026-08-01T00:00')),
+      end_date_time: toApiDateTime(new Date('2026-08-08T00:00')),
       filter_id: 7,
       interval: 30,
     });
@@ -187,15 +189,14 @@ describe('ClassicReportsListPage — extra paths', () => {
     expect(screen.queryByRole('button', { name: 'Delete report' })).toBeNull();
   });
 
-  it('renders an empty table rather than crashing when the backend is unreachable', async () => {
+  it('shows the unreachable state when the backend is down, not an empty table', async () => {
     server.use(
       http.get('/api/v3/reports', () => HttpResponse.error()),
       http.get('/api/v3/filters', () => HttpResponse.json(paged(FILTERS))),
     );
     await mount();
 
-    // The page passes isLoading={false} with no isError wiring, so a failed
-    // fetch reads as "no reports" — see the note in the final report.
-    expect(await screen.findByText('No reports yet. Create one to start.')).toBeInTheDocument();
+    expect(await screen.findByText('Cannot reach the server.')).toBeInTheDocument();
+    expect(screen.queryByText('No reports yet. Create one to start.')).toBeNull();
   });
 });

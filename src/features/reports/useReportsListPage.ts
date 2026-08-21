@@ -4,7 +4,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { listReports, createReport, deleteReport, type Report } from '@/api/reports';
 import { listFilters } from '@/api/filters';
-import { toLocalDatetime } from './datetime';
+import { toLocalDatetime, toApiDateTime} from './datetime';
 
 export interface ReportsListPageState {
   isAuthenticated: boolean;
@@ -101,8 +101,8 @@ export function useCreateReportForm(onCreated: () => void): CreateReportFormStat
     mutationFn: () =>
       createReport({
         name: name.trim() || null,
-        start_date_time: new Date(start).toISOString(),
-        end_date_time: new Date(end).toISOString(),
+        start_date_time: toApiDateTime(start),
+        end_date_time: toApiDateTime(end),
         filter_id: filterId === '' ? null : filterId,
         interval: interval === '' ? null : interval,
       }),

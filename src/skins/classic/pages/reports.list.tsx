@@ -46,7 +46,10 @@ export default function ClassicReportsListPage() {
           </RequirePerm>
 
           <QueryState
-            isLoading={false}
+            isLoading={s.isLoading}
+            isError={s.isError}
+            error={s.error}
+            onRetry={s.refetch}
             empty={reports.length === 0}
             emptyMessage={t('No reports yet. Create one to start.')}
           >
