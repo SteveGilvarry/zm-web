@@ -45,10 +45,23 @@ export default defineConfig({
       ],
       reporter: ['text-summary', 'json-summary', 'lcov'],
       thresholds: {
-        statements: 50,
-        branches: 45,
-        functions: 47,
-        lines: 51,
+        // The release bar from docs/PRODUCTION-READINESS-PLAN.md §10. Actuals
+        // sit near 96/89/96/97, so these fail on a real regression rather
+        // than on noise. Raise them, never lower them.
+        statements: 85,
+        branches: 75,
+        functions: 85,
+        lines: 85,
+        // …and a per-file floor so no module can quietly go untested. It sits
+        // well below the aggregate bar on purpose: one uncovered guard in a
+        // small file should not block a PR, a file nobody tested should.
+        'src/**/*.{ts,tsx}': {
+          perFile: true,
+          lines: 50,
+          statements: 50,
+          functions: 40,
+          branches: 25,
+        },
       },
     },
   },
