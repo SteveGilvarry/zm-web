@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode, type RefObject } from 'react';
+import { useEffect, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -10,6 +10,7 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 import { useMonitorFilter } from '@/features/monitors/useMonitorFilter';
+import { useMeasuredBox, stageFitStyle } from '@/features/monitors/useStageFit';
 import { displayDimensions } from '@/features/monitors/orientation';
 import { CYCLE_INTERVAL_OPTIONS, useCyclePage, type CycleViewMode } from '@/features/cycle/useCyclePage';
 import type { Monitor } from '@/types';
@@ -47,8 +48,7 @@ export function CycleLayout({
     setFilteredMonitors(filtered);
   }, [filtered, setFilteredMonitors]);
 
-  const stageRef = useRef<HTMLDivElement>(null);
-  const box = useBoxSize(stageRef);
+  const [stageRef, box] = useMeasuredBox<HTMLDivElement>();
 
   if (!cycle.isAuthenticated) return null;
 
@@ -161,7 +161,7 @@ export function CycleLayout({
                   className="flex-1 min-h-0 p-2 flex items-center justify-center"
                   dir="ltr"
                 >
-                  <div className="relative" style={fitStyle(box, dims.width, dims.height)}>
+                  <div className="relative" style={stageFitStyle(box, dims.width, dims.height)}>
                     {renderStage(current, viewMode)}
                   </div>
                 </div>
@@ -201,41 +201,7 @@ export function CycleLayout({
 /* ------------------------------------------------------------------------ */
 
 /** The live size of an element, tracked through a ResizeObserver. */
-function useBoxSize(ref: RefObject<HTMLElement | null>) {
-  const [box, setBox] = useState({ width: 0, height: 0 });
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      setBox({ width: r.width, height: r.height });
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return box;
-}
 
-/**
- * The largest box with the camera's displayed aspect that fits the region.
- *
- * CSS cannot express "fit both axes" for a non-replaced element with an
- * aspect ratio — `max-height` does not feed back into the derived width —
- * so the region is measured and the box sized outright.
- */
-function fitStyle(
-  box: { width: number; height: number },
-  w: number,
-  h: number,
-): CSSProperties {
-  if (box.width <= 0 || box.height <= 0 || w <= 0 || h <= 0) {
-    return { width: '100%', aspectRatio: `${w || 16} / ${h || 9}` };
-  }
-  const scale = Math.min(box.width / w, box.height / h);
-  return { width: Math.floor(w * scale), height: Math.floor(h * scale) };
-}
 
 function ModeBtn({ active, onClick, icon, children }: { active: boolean; onClick: () => void; icon: ReactNode; children: ReactNode }) {
   return (

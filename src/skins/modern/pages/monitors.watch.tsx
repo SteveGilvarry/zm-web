@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type RefObject } from 'react';
+import { type CSSProperties } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -37,6 +37,7 @@ import type { PagePropsMap } from '@/skins/types';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { SCALE_VALUES } from '@/features/monitors/watchStage';
+import { useMeasuredBox, stageFitStyle } from '@/features/monitors/useStageFit';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
@@ -86,8 +87,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     viewMode, setViewMode, stage, downloadImage, isDownloading,
   } = page;
   const id = monitorId;
-  const stageRef = useRef<HTMLDivElement>(null);
-  const box = useBoxSize(stageRef);
+  const [stageRef, box] = useMeasuredBox<HTMLDivElement>();
   // Display labels for the capture/analysis/recording wire values. The
   // values themselves are sent to the API untranslated.
   const modeLabel = (mode: string): string => {
@@ -143,7 +143,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
 
   const stageStyle: CSSProperties = stageSized
     ? { ...stage.style, maxHeight: '100%' }
-    : fitStyle(box, effW, effH);
+    : stageFitStyle(box, effW, effH);
 
   const videoPanel = (
     <div
@@ -751,38 +751,4 @@ function Row({
 }
 
 /** The live size of an element, tracked through a ResizeObserver. */
-function useBoxSize(ref: RefObject<HTMLElement | null>) {
-  const [box, setBox] = useState({ width: 0, height: 0 });
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    const measure = () => {
-      const r = el.getBoundingClientRect();
-      setBox({ width: r.width, height: r.height });
-    };
-    measure();
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
-  }, [ref]);
-  return box;
-}
 
-/**
- * The largest box with the camera's displayed aspect that fits the region.
- *
- * CSS cannot express "fit both axes" for a non-replaced element with an
- * aspect ratio — `max-height` does not feed back into the derived width —
- * so the region is measured and the box sized outright.
- */
-function fitStyle(
-  box: { width: number; height: number },
-  w: number,
-  h: number,
-): CSSProperties {
-  if (box.width <= 0 || box.height <= 0 || w <= 0 || h <= 0) {
-    return { width: '100%', aspectRatio: `${w || 16} / ${h || 9}` };
-  }
-  const scale = Math.min(box.width / w, box.height / h);
-  return { width: Math.floor(w * scale), height: Math.floor(h * scale) };
-}
