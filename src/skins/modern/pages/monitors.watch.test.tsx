@@ -1,5 +1,5 @@
 /**
- * Watch — Mission Control (`/monitors/$monitorId`), through the real router.
+ * Watch — modern skin (`/monitors/$monitorId`), through the real router.
  *
  * This is the biggest page in the skin and the one that fans out the most:
  * the stage and its overlays, the mode/protocol controls, the PTZ surface,

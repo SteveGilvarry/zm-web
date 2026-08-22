@@ -17,8 +17,8 @@ test.describe('Skin switching', () => {
     // Navigate to Settings (Appearance lives at the top of the settings page).
     await page.goto('/settings');
 
-    // The Appearance panel exposes two cards: "Mission Control" and
-    // "Classic ZoneMinder". Click the Classic option.
+    // The Appearance section exposes two cards: "Modern" and "Classic
+    // ZoneMinder". Click the Classic option.
     await page.getByRole('button', { name: /classic zoneminder/i }).click();
 
     // Classic shell mounts: the legacy top nav has the amber "ZoneMinder"
@@ -46,7 +46,7 @@ test.describe('Skin switching', () => {
     // Switch back to Modern from the classic settings page.
     // The Appearance panel is still on /settings under the classic skin.
     await page.goto('/settings');
-    await page.getByRole('button', { name: /mission control/i }).click();
+    await page.getByRole('button', { name: /modern/i }).click();
 
     // Modern shell remounts: the sidebar comes back.
     await expect(page.getByRole('complementary', { name: 'Sidebar' }))

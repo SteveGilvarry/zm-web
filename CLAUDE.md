@@ -137,7 +137,7 @@ const color = functionColors[monitorFn];
 
 `zm-dashboard` ships **two skins on one codebase**, and skins are real packages, not a theme toggle (contract: `src/skins/README.md`):
 
-- **Modern** (`src/skins/modern/`) — the content-first ops console (`docs/DESIGN.md`); also the *fallback* skin. Still named "Mission Control" in the registry and Settings.
+- **Modern** (`src/skins/modern/`) — the content-first ops console (`docs/DESIGN.md`); also the *fallback* skin.
 - **Classic ZoneMinder** (`src/skins/classic/`) — legacy layout for operators migrating from the PHP UI; fidelity target is ZM 1.39 on the dev box.
 
 Each skin exports a `SkinDefinition` (`id`, `Shell`, `rootClass` for its tokens, `pages`) and is registered in `src/skins/registry.ts`. Pages are auto-discovered from `src/skins/<id>/pages/<pageKey>.tsx` (default export, lazy — one chunk each). **Routes are thin**: `src/routes/**` only parses params and renders `<SkinPage page="events.list" />`. **All data, state and handlers live in `src/features/<feature>/use<Page>Page.ts` hooks** shared by every skin. Never branch on `useUiStore(s => s.skin)` inside pages/features — a skin *is* the branch. A page a skin lacks renders the fallback skin's page wrapped in `data-skin-fallback` (dev warning); `src/skins/registry.test.ts` keeps the explicit allow-list of borrowed classic pages — shrink it, never grow it silently.

@@ -27,14 +27,14 @@ export function SkinSwitcher() {
   // sees literal keys, falling back to the registry text for unknown skins.
   const skinName = (id: SkinId, fallback: string) => {
     switch (id) {
-      case 'modern': return t('Mission Control');
+      case 'modern': return t('Modern');
       case 'classic': return t('Classic ZoneMinder');
       default: return fallback;
     }
   };
   const skinBlurb = (id: SkinId, fallback: string) => {
     switch (id) {
-      case 'modern': return t('The modern dashboard — adaptive layouts, live thumbnails, dense data panels.');
+      case 'modern': return t('Cameras fill the screen and the chrome stays out of the way — a live wall, dense tables, dark or light.');
       case 'classic': return t('Faithful to the legacy ZoneMinder layout — top nav and dense tables, for operators migrating from the old interface.');
       default: return fallback;
     }
@@ -55,7 +55,9 @@ export function SkinSwitcher() {
     >
       <div className="flex items-center gap-2">
         <span className="text-sm font-medium">{label}</span>
-        {active === value && <span className="ms-auto text-xs text-accent">{t('Active')}</span>}
+        {/* The space is load-bearing: without it the button's accessible
+            name reads "ModernActive". */}
+        {active === value && <span className="ms-auto text-xs text-accent">{' '}{t('Active')}</span>}
       </div>
       <p className="mt-1 text-xs text-fg-dim">{blurb}</p>
     </button>

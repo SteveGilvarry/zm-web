@@ -11,7 +11,7 @@ import { renderWithProviders } from '@/test/render';
 import { useUiStore } from '@/stores/ui';
 import { SkinSwitcher } from './SkinSwitcher';
 
-const MODERN = /Mission Control/;
+const MODERN = /^Modern[ A]/;
 const CLASSIC = /Classic ZoneMinder/;
 
 beforeEach(() => {
@@ -25,7 +25,7 @@ const themeButton = (name: string) =>
 describe('SkinSwitcher — skin choice', () => {
   it('lists every registered skin with its blurb and flags the active one', () => {
     renderWithProviders(<SkinSwitcher />);
-    expect(skinButton(MODERN)).toHaveAccessibleName(/adaptive layouts, live thumbnails/);
+    expect(skinButton(MODERN)).toHaveAccessibleName(/a live wall, dense tables/);
     expect(skinButton(CLASSIC)).toHaveAccessibleName(/top nav and dense tables/);
     expect(skinButton(MODERN)).toHaveAccessibleName(/Active/);
     expect(skinButton(CLASSIC)).not.toHaveAccessibleName(/Active/);

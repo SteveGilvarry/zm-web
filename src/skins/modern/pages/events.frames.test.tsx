@@ -1,5 +1,5 @@
 /**
- * Route-level tests for the Mission Control per-frame table
+ * Route-level tests for the modern skin’s per-frame table
  * (`/events/$eventId/frames`, legacy `?view=frames&eid=`).
  *
  * Everything runs through the real router, so `validateSearch`, the page

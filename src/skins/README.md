@@ -13,7 +13,7 @@ src/skins/
   AppShell.tsx      wraps content in the active skin's Shell, sets <html class>
   discoverPages.ts  pages/*.tsx → page map (filename is the page key)
   modern/
-    index.ts        SkinDefinition for "Mission Control"
+    index.ts        SkinDefinition for "Modern"
     Shell.tsx       sidebar + header chrome
     pages/          one file per PageKey: console.tsx, events.list.tsx, …
   classic/

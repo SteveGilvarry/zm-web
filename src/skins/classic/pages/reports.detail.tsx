@@ -19,7 +19,7 @@ import { classicInput, classicSelect } from '@/skins/classic/components/events/s
 /**
  * Report detail — classic skin. Legacy toolbar (back, save, delete) over a
  * two-column form table, events-per-hour chart beneath. Same data as
- * Mission Control via `useReportDetailPage`.
+ * the modern skin via `useReportDetailPage`.
  */
 export default function ClassicReportDetailPage({ reportId }: { reportId: number }) {
   const { t } = useTranslation();

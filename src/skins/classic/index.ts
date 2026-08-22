@@ -6,7 +6,7 @@ import { ClassicShell } from './Shell';
  * Classic ZoneMinder — the legacy-layout skin. Top nav, stat strip, white
  * dense tables, the page structure operators know from the PHP UI.
  *
- * Pages it has not implemented yet fall back to Mission Control's; the
+ * Pages it has not implemented yet fall back to the modern skin's; the
  * skin-coverage test (`src/skins/registry.test.ts`) lists them.
  */
 export const classicSkin: SkinDefinition = {

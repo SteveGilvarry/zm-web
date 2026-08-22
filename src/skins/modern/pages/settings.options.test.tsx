@@ -30,10 +30,10 @@ vi.mock('@tanstack/react-router', () => ({
 // skin's chrome. Stub it; the switcher's own behaviour is not under test here.
 vi.mock('@/skins/registry', () => ({
   skins: {
-    modern: { id: 'modern', name: 'Mission Control', description: 'Dark cyan dashboard.', colorSchemes: ['light', 'dark'] },
+    modern: { id: 'modern', name: 'Modern', description: 'A live wall and dense tables.', colorSchemes: ['light', 'dark'] },
     classic: { id: 'classic', name: 'Classic ZoneMinder', description: 'Legacy tables.', colorSchemes: ['light'] },
   },
-  useSkin: () => ({ id: 'modern', name: 'Mission Control', description: 'Dark cyan dashboard.', colorSchemes: ['light', 'dark'] }),
+  useSkin: () => ({ id: 'modern', name: 'Modern', description: 'A live wall and dense tables.', colorSchemes: ['light', 'dark'] }),
 }));
 
 const { default: SettingsOptionsPage } = await import('./settings.options');

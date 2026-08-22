@@ -5,7 +5,7 @@
 ### A modern, two-skin web UI for [ZoneMinder](https://zoneminder.com) surveillance systems
 
 *Replacing ZoneMinder's aging PHP web interface with a fast React dashboard —
-one codebase that ships both an opinionated "Mission Control" theme and a
+one codebase that ships both a modern, content-first console and a
 familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)
@@ -20,11 +20,11 @@ familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarr
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/modern.png" alt="Mission Control skin — dark dashboard with stat cards and live monitor thumbnails" /></td>
+<td width="50%"><img src="docs/screenshots/modern.png" alt="Modern skin — a camera wall filling the frame under a single status line" /></td>
 <td width="50%"><img src="docs/screenshots/classic.png" alt="Classic ZoneMinder skin — legacy top nav and dense console table" /></td>
 </tr>
 <tr>
-<td align="center"><strong>🎛️ Mission Control</strong> — modern dark dashboard</td>
+<td align="center"><strong>🎛️ Modern</strong> — content-first ops console</td>
 <td align="center"><strong>🗂️ Classic</strong> — legacy ZoneMinder look</td>
 </tr>
 </table>
@@ -49,7 +49,7 @@ REST backend — and it doesn't force a redesign on operators who don't want one
 
 ## 🖥️ The two skins
 
-| | **Mission Control** | **Classic ZoneMinder** |
+| | **Modern** | **Classic ZoneMinder** |
 |---|---|---|
 | **Feel** | Dark "command center" — cyan accents, panels, glow | Legacy-style top nav + dense white tables |
 | **For** | New users, wall displays, adaptive layouts | Operators migrating from the PHP UI |
@@ -101,7 +101,7 @@ flowchart TD
         Q["🔁 TanStack Query · API client (src/api)"] --> Hooks["🧩 Feature hooks (src/features)"]
         Hooks --> Routes["🧭 TanStack Router routes"]
         Routes -->|useUiStore.skin| Shell{"AppShell"}
-        Shell -->|modern| MC["🎛️ Mission Control chrome"]
+        Shell -->|modern| MC["🎛️ Modern chrome"]
         Shell -->|classic| CL["🗂️ Classic chrome"]
     end
 

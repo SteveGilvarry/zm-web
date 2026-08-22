@@ -2,7 +2,7 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { CycleLayout } from '../layouts/CycleLayout';
 
-/** Cycle — Mission Control. Live WebRTC stream on stage; snapshots in Stills mode. */
+/** Cycle — modern skin. Live WebRTC stream on stage; snapshots in Stills mode. */
 export default function CyclePage() {
   return (
     <CycleLayout

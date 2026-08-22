@@ -11,7 +11,7 @@ vi.mock('@/skins/AppShell', () => ({
 }));
 vi.mock('@/skins/registry', () => ({
   skins: {
-    modern: { id: 'modern', name: 'Mission Control', description: 'Dark cyan dashboard.', colorSchemes: ['light', 'dark'] },
+    modern: { id: 'modern', name: 'Modern', description: 'A live wall and dense tables.', colorSchemes: ['light', 'dark'] },
     classic: { id: 'classic', name: 'Classic ZoneMinder', description: 'Legacy tables.', colorSchemes: ['light'] },
   },
   useSkin: () => ({ id: 'classic', name: 'Classic ZoneMinder', description: 'Legacy tables.', colorSchemes: ['light'] }),

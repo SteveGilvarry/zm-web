@@ -1,5 +1,5 @@
 /**
- * Zones — Mission Control (`/monitors/$monitorId/zones`), through the real
+ * Zones — modern skin (`/monitors/$monitorId/zones`), through the real
  * router. The route is the one that regressed when flat file routing nested
  * it under the Watch page, so it is mounted by URL rather than by importing
  * the component: breadcrumb, coverage readout, the polygon editor's

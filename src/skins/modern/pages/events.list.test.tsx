@@ -1,5 +1,5 @@
 /**
- * Route-level tests for the Mission Control events list (`/events`).
+ * Route-level tests for the modern skin’s events list (`/events`).
  *
  * `/events` carries the richest search-param contract in the app
  * (`monitor_id`, `group`, `cause`, `archived`, `start`, `end`, `notes`,

@@ -18,7 +18,7 @@ import { classicInput, classicLink, classicSelect } from '@/skins/classic/compon
 /**
  * Reports list — classic skin. "+ New" toolbar, inline legacy form table,
  * white bootstrap table (Name, Filter, Start, End, Interval). Same data as
- * Mission Control via `useReportsListPage`.
+ * the modern skin via `useReportsListPage`.
  */
 export default function ClassicReportsListPage() {
   const { t } = useTranslation();

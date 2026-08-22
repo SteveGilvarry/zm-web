@@ -1,5 +1,5 @@
 /**
- * Route-level tests for the Mission Control reports list (`/reports`).
+ * Route-level tests for the modern skin’s reports list (`/reports`).
  *
  * These go through the real router (`renderRoute`) and the shared MSW
  * handler set, so the route module, `SkinPage`, the modern shell, the

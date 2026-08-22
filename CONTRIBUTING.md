@@ -66,7 +66,7 @@ Before opening a PR:
 
 ## 🧭 Conventions
 
-- **Dual-skin first.** Every feature must work in both the **Mission Control** and
+- **Dual-skin first.** Every feature must work in both the **Modern** and
   **Classic** skins. Put shared data/logic in `src/features/<feature>/` (skin-agnostic
   hooks); route bodies dispatch on `useUiStore.skin` and render either the modern panel
   layout or the classic table. See [`CLAUDE.md`](CLAUDE.md) for the architecture.
@@ -90,5 +90,5 @@ relevant logs, console output, or screenshots (with any footage/credentials reda
 - [ ] I agree to the [CLA](CLA.md).
 - [ ] Tests added/updated and passing.
 - [ ] `npm run lint`, `npm test`, and `npm run build` all pass.
-- [ ] The change works in both skins (Mission Control and Classic) where applicable.
+- [ ] The change works in both skins (Modern and Classic) where applicable.
 - [ ] The change is focused and documented where it isn't self-evident.

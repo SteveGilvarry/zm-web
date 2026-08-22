@@ -22,7 +22,7 @@ interface MatchesPreviewProps {
   actions: { archive: boolean; unarchive: boolean; delete: boolean };
   /** Legacy "View Matches" target (Montage Review framed by the terms). */
   reviewSearch?: ReviewSearch;
-  /** Flat classic buttons instead of the Mission Control toggles. */
+  /** Flat classic buttons instead of the modern skin's toggles. */
   variant?: 'modern' | 'classic';
 }
 
