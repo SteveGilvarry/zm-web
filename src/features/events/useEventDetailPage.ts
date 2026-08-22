@@ -510,6 +510,32 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const downloadUrl = event ? getEventStreamUrl(event.id, accessToken || undefined) : '';
   const thumbnailUrl = event ? getEventThumbnailUrl(event.id, accessToken || undefined) : '';
 
+  // What the decoder actually produced, which is not always what the event
+  // payload's width/height say — see `decodedUpright` below.
+  const [decoded, setDecoded] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const note = () => {
+      if (el.videoWidth > 0 && el.videoHeight > 0) {
+        setDecoded((prev) =>
+          prev && prev.w === el.videoWidth && prev.h === el.videoHeight
+            ? prev
+            : { w: el.videoWidth, h: el.videoHeight },
+        );
+      }
+    };
+    note();
+    el.addEventListener('loadedmetadata', note);
+    // A source swap (direct mp4 → HLS fallback) changes the frame size
+    // without another `loadedmetadata` in every browser.
+    el.addEventListener('resize', note);
+    return () => {
+      el.removeEventListener('loadedmetadata', note);
+      el.removeEventListener('resize', note);
+    };
+  }, [event?.id]);
+
   // Container takes the camera's declared (post-rotation) aspect so a
   // portrait camera gets a portrait box. The stored mp4 SHOULD carry a
   // rotation side-data tag, but in practice the HLS path served by zm_api
@@ -520,12 +546,30 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const effH = event?.height || 9;
   const videoContainerW = isFullscreen ? 16 : effW;
   const videoContainerH = isFullscreen ? 9  : effH;
-  const useSwappedRotation = event ? isOrientationRotated(event.orientation) : false;
+  // Browsers disagree about the mp4's rotation tag. Chromium presents a
+  // Rotate90 recording already upright — `videoWidth`/`videoHeight` come back
+  // portrait — while Safari has historically ignored the tag and hands us the
+  // landscape frame. Rotating on top of a frame the decoder already rotated
+  // is exactly what leaves playback lying on its side, so trust what was
+  // decoded and fall back to the event's orientation only until metadata
+  // lands. (The stills are a separate matter: the thumbnail JPEG is stored
+  // unrotated, so it still needs the CSS transform.)
+  const decodedUpright =
+    decoded != null &&
+    decoded.w !== decoded.h &&
+    decoded.w < decoded.h === effW < effH;
+  const orientationRotates = event ? isOrientationRotated(event.orientation) : false;
+  const useSwappedRotation = orientationRotates && !decodedUpright;
   const videoElementStyle: CSSProperties | undefined = !event
     ? undefined
     : useSwappedRotation
       ? getOrientationFillStyle(event.orientation)
-      : getOrientationStyle(event.orientation);
+      : orientationRotates
+        // Already upright out of the decoder: any transform here would undo
+        // that. Flips are not covered by the rotation tag, but a camera is
+        // either rotated or flipped, never both, so there is nothing to add.
+        ? undefined
+        : getOrientationStyle(event.orientation);
 
   // Source codec hint — prefer the codec the backend detected from the actual
   // stream (/info), falling back to the default_video filename when /info
