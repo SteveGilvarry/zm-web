@@ -73,7 +73,12 @@ function clamp(v: number, lo: number, hi: number): number {
  * moves the element, it does not remount it.
  */
 export function usePinchZoom<T extends HTMLElement>(enabled = true) {
-  const ref = useRef<T>(null);
+  // A callback ref, not a RefObject: the element it attaches to is rendered
+  // conditionally (the player only exists once the event has loaded), and an
+  // effect keyed on a RefObject would have run once against a null and never
+  // re-attached.
+  const [node, setNode] = useState<T | null>(null);
+  const ref = useCallback((el: T | null) => setNode(el), []);
   const [state, setState] = useState<PinchZoomState>(IDENTITY);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ distance: number; scale: number } | null>(null);
@@ -88,7 +93,7 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
   const reset = useCallback(() => setState(IDENTITY), []);
 
   useEffect(() => {
-    const el = ref.current;
+    const el = node;
     if (!el || !enabled) return;
 
     const localCentre = (points: { x: number; y: number }[]) => {
@@ -177,7 +182,7 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
       tracked.clear();
       gesture.current = null;
     };
-  }, [enabled]);
+  }, [node, enabled]);
 
   const zoomed = state.scale > PINCH_MIN;
   const style: CSSProperties = {

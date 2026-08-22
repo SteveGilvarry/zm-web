@@ -37,7 +37,7 @@ import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { FitBox } from '@/components/common/FitBox';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
-import { getOrientationStyle } from '@/types';
+import { getOrientationStyle, getOrientationFillStyle, isOrientationRotated } from '@/types';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -258,7 +258,8 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                   className="relative w-full h-full bg-black overflow-hidden"
                 >
                   {/* Gesture surface: pinch, trackpad-pinch and drag-to-pan
-                      transform the picture, not the controls over it. It is
+                      transform the picture — video, still and zone overlay
+                      together — while the controls over it stay put. It sits
                       inside the fullscreen element, so zoom works there too. */}
                   <div ref={zoomRef} style={zoomStyle} className="absolute inset-0">
                   {/* Video element — a camera the decoder does not rotate for
@@ -278,7 +279,6 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     onPause={() => s.setIsPlaying(false)}
                     onEnded={s.handleVideoEnded}
                   />
-                  </div>
 
                   {/* Poster. Not the <video>'s own `poster`, because the
                       stored thumbnail is never rotated and the attribute
@@ -289,8 +289,16 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                       src={thumbnailUrl}
                       alt=""
                       data-testid="event-poster"
-                      className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-                      style={getOrientationStyle(event.orientation)}
+                      className={isOrientationRotated(event.orientation)
+                        ? 'object-contain pointer-events-none'
+                        : 'absolute inset-0 w-full h-full object-contain pointer-events-none'}
+                      // The still always needs rotating (the JPEG is stored
+                      // as the sensor saw it), and in a portrait frame that
+                      // means the same swap-dimensions fill the video uses
+                      // when the decoder has not already done it.
+                      style={isOrientationRotated(event.orientation)
+                        ? getOrientationFillStyle(event.orientation)
+                        : getOrientationStyle(event.orientation)}
                     />
                   )}
 
@@ -303,6 +311,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                       monitorHeight={event.height || 1080}
                     />
                   )}
+                  </div>
 
                   {/* Unsupported-codec fallback — HEVC in a browser whose MSE
                       can't decode it. Offer the download instead of a black
