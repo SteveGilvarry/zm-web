@@ -153,10 +153,9 @@ export function useMontageReviewPage(): MontageReviewPageState {
   );
   const clock = useReviewClock(initialRange.start, initialRange.end);
 
-  const applyRange = (start: Date, end: Date) => {
-    clock.setRange(start, end);
-    clock.setCurrentTime(start);
-  };
+  // Both in one call: a separate `setCurrentTime` would clamp the playhead
+  // against the range it is replacing.
+  const applyRange = (start: Date, end: Date) => clock.setRange(start, end, start);
 
   const setPreset = (next: ReviewRangePreset) => {
     setPresetState(next);

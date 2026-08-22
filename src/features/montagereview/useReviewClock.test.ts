@@ -95,6 +95,25 @@ describe('useReviewClock — setRange re-clamps the playhead', () => {
     act(() => result.current.setRange(newStart, newEnd));
     expect(result.current.currentTime).toEqual(mid);
   });
+
+  it('places the playhead in the same call, clamped to the bounds being set', () => {
+    const { result } = renderHook(() => useReviewClock(START, END));
+    const newStart = new Date('2026-03-01T00:00:00Z');
+    const newEnd = new Date('2026-03-01T06:00:00Z');
+
+    // The window does not overlap the old one, so a playhead clamped against
+    // the range still in state would land on the old edge (F-25).
+    act(() => result.current.setRange(newStart, newEnd, newStart));
+    expect(result.current.currentTime).toEqual(newStart);
+
+    // A playhead outside the new window is pulled to its nearer edge.
+    act(() => result.current.setRange(newStart, newEnd, new Date('2026-03-01T09:00:00Z')));
+    expect(result.current.currentTime).toEqual(newEnd);
+
+    // Omitting it keeps the playhead where it is.
+    act(() => result.current.setRange(newStart, newEnd));
+    expect(result.current.currentTime).toEqual(newEnd);
+  });
 });
 
 describe('useReviewClock — playback advances the clock', () => {

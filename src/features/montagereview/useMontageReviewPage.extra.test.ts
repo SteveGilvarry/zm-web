@@ -148,12 +148,12 @@ describe('useMontageReviewPage — custom range, pan and zoom', () => {
     expect(result.current.clock.currentTime).toEqual(start);
   });
 
-  // BUG (reported, source left alone): `applyRange` calls `clock.setRange`
-  // and `clock.setCurrentTime` in the same tick, and `setCurrentTime` clamps
-  // against the range state React has not committed yet. Jumping to a window
-  // that does not overlap the current one therefore pins the playhead to the
-  // OLD range's edge instead of the new start.
-  it('pins the playhead to the previous range when the new window does not overlap', () => {
+  // Regression (F-25): `applyRange` used to call `clock.setRange` and then
+  // `clock.setCurrentTime` in the same tick, and the second call clamped
+  // against the range React had not committed yet. Jumping to a window that
+  // did not overlap the current one pinned the playhead to the OLD range's
+  // edge. The clock now takes the playhead in the same call as the bounds.
+  it('parks the playhead at the start of a window that does not overlap the current one', () => {
     stubMonitors();
     const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
     const previousStart = result.current.clock.rangeStart;
@@ -163,16 +163,8 @@ describe('useMontageReviewPage — custom range, pan and zoom', () => {
     act(() => result.current.setCustomRange(start, end));
     expect(result.current.clock.rangeStart).toEqual(start);
     expect(result.current.clock.rangeEnd).toEqual(end);
-    // Should be `start`; is the stale clamp instead.
-    expect(result.current.clock.currentTime).toEqual(previousStart);
-  });
-
-  it.skip('BUG: a non-overlapping custom range should park the playhead at its start', () => {
-    stubMonitors();
-    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
-    const start = new Date('2026-01-02T03:00:00Z');
-    act(() => result.current.setCustomRange(start, new Date('2026-01-02T05:00:00Z')));
     expect(result.current.clock.currentTime).toEqual(start);
+    expect(result.current.clock.currentTime).not.toEqual(previousStart);
   });
 
   it('setCustomRange ignores an inverted or zero-width window', () => {
