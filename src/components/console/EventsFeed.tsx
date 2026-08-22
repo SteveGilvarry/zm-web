@@ -1,4 +1,5 @@
 import { clsx } from 'clsx';
+import type { CSSProperties } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import type { TFunction } from 'i18next';
@@ -6,7 +7,6 @@ import { Video, Clock, AlertTriangle } from 'lucide-react';
 import { getEventThumbnailUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
 import type { ZmEvent } from '@/types';
-import { getOrientationStyle } from '@/types';
 import { eventDurationSeconds } from '@/features/events/duration';
 
 interface EventsFeedProps {
@@ -86,7 +86,7 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
               alt=""
               data-testid="feed-thumb"
               className="absolute inset-0 w-full h-full object-contain"
-              style={getOrientationStyle(event.orientation)}
+              style={squareRotation(event.orientation)}
               loading="lazy"
               onLoad={(e) => {
                 (e.target as HTMLImageElement).style.visibility = 'visible';
@@ -95,8 +95,9 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
                 (e.target as HTMLImageElement).style.visibility = 'hidden';
               }}
             />
-            {/* A score past the alarm threshold is state, so it takes colour. */}
-            {event.max_score && event.max_score > 50 && (
+            {/* A score past the alarm threshold is state, so it takes colour.
+                Compared explicitly: `0 &&` renders a stray "0". */}
+            {(event.max_score ?? 0) > 50 && (
               <div className="absolute top-0.5 end-0.5">
                 <AlertTriangle size={10} className="text-warn" aria-hidden />
               </div>
@@ -155,4 +156,27 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
       ))}
     </div>
   );
+}
+
+/**
+ * Rotation for a thumbnail in a square box.
+ *
+ * `getOrientationStyle` scales a rotated frame by 9/16 so it survives a
+ * landscape container; in a square one that just shrinks it to a stamp. A
+ * contained image is at most as wide as the box, so a bare rotation lands
+ * inside it.
+ */
+function squareRotation(orientation?: string | null): CSSProperties | undefined {
+  if (!orientation) return undefined;
+  const norm = orientation.replace(/[_\s]/g, '').toLowerCase();
+  switch (norm) {
+    case 'rotate90':  return { transform: 'rotate(90deg)' };
+    case 'rotate180': return { transform: 'rotate(180deg)' };
+    case 'rotate270': return { transform: 'rotate(270deg)' };
+    case 'fliphori':
+    case 'fliphorizontal': return { transform: 'scaleX(-1)' };
+    case 'flipvert':
+    case 'flipvertical':   return { transform: 'scaleY(-1)' };
+    default: return undefined;
+  }
 }
