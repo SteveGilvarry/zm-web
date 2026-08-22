@@ -28,6 +28,37 @@ in alarm". The direction below fixes the cause, not the symptoms.
 6. **Dark first, light real.** Control rooms run dark; a bright office does
    not. Both themes are designed, not inverted.
 
+## Structure
+
+The direction is not a palette, it is where the space goes. Four rules
+decide that, and they are what the console and the events list were
+rebuilt around.
+
+1. **The shell is a fixed frame.** `ModernShell` is `h-screen` and the
+   content column gets exactly the viewport. A page fills it and scrolls
+   *inside* its own region (`flex-1 min-h-0 overflow-auto`), so a query
+   line, a header row and a pager stay where the operator left them.
+2. **One line of chrome, not three.** Everything a page needs on every
+   visit goes in a single 44 px line: `h-11 px-3 border-b
+   border-border-subtle bg-surface shrink-0`. Anything used occasionally
+   — the full filter set, daemon detail, column choice — goes behind a
+   `ToolbarDisclosure`, which carries a count so a filter is never
+   applied invisibly. Nothing that is merely *available* gets permanent
+   screen space.
+3. **The content owns the rest.** Cameras fill the frame with no panel
+   around them; a table starts at the top of its region and scrolls
+   under a pinned header. Summary readings sit in the line above or the
+   status bar below, never in a row of cards between the operator and
+   the thing they came for.
+4. **A wall fits the screen.** `packWall` (`src/features/console/layout.ts`)
+   picks the row count that makes the smallest camera largest inside the
+   measured box, instead of aiming at a fixed row height and running off
+   the bottom.
+
+Radii: `rounded` for controls, panels and tiles. Shadows are elevation
+and elevation only — dialogs, disclosures, toasts. A panel sits on the
+page; it does not float above it.
+
 ## Tokens
 
 Semantic only — components never name a colour. Defined per theme in
@@ -53,7 +84,9 @@ hand-rolling class strings. A page that needs a one-off style is a sign the
 primitive is missing a variant.
 
 Forbidden in pages: raw colour classes (`cyan-*`, `emerald-*`…), gradients,
-glow shadows, `text-[10px]`, uppercase tracking on data labels.
+glow shadows, `text-[10px]`, uppercase tracking on data labels, and
+decorative animation — a pulsing badge on each of sixteen tiles is
+sixteen things competing with the video.
 
 ## Classic skin
 

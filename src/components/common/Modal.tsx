@@ -94,7 +94,7 @@ export function Modal({ isOpen, onClose, title, children }: ModalProps) {
         tabIndex={-1}
         className={clsx(
           'w-full max-w-lg outline-none',
-          'bg-surface border border-border-subtle rounded-xl',
+          'bg-surface border border-border rounded',
           'shadow-elevated',
         )}
       >

@@ -29,7 +29,7 @@ export function LanguagePicker({ className }: { className?: string }) {
       <select
         value={current}
         onChange={(e) => void changeLanguage(e.target.value)}
-        className="px-2 py-1.5 rounded-lg bg-surface border border-border-subtle text-fg hover:border-border transition-colors"
+        className="px-2 py-1.5 rounded bg-surface border border-border-subtle text-fg hover:border-border transition-colors"
       >
         {options.map((l) => (
           <option key={l.code} value={l.code} lang={l.code} dir={l.dir}>

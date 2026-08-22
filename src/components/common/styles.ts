@@ -16,7 +16,7 @@ export type Tone = 'neutral' | 'accent' | 'ok' | 'warn' | 'danger' | 'info';
 
 /** Focus is handled by the base `:focus-visible` rule in `src/index.css`. */
 const CONTROL_BASE =
-  'inline-flex items-center justify-center gap-2 rounded-lg font-medium ' +
+  'inline-flex items-center justify-center gap-2 rounded font-medium ' +
   'transition-colors disabled:opacity-50 disabled:cursor-not-allowed';
 
 export const buttonSize: Record<ControlSize, string> = {
@@ -53,7 +53,7 @@ export const fieldSize: Record<ControlSize, string> = {
 };
 
 export const FIELD_BASE =
-  'w-full rounded-lg bg-surface border border-border-subtle text-fg ' +
+  'w-full rounded bg-surface border border-border-subtle text-fg ' +
   'placeholder:text-fg-faint transition-colors ' +
   'hover:border-border disabled:opacity-50 disabled:cursor-not-allowed';
 

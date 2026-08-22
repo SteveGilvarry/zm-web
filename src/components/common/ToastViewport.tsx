@@ -36,7 +36,7 @@ function ToastItem({ toast }: { toast: Toast }) {
     <div
       role={toast.tone === 'error' ? 'alert' : 'status'}
       className={clsx(
-        'pointer-events-auto flex items-start gap-3 px-4 py-3 rounded-lg border shadow-elevated text-sm',
+        'pointer-events-auto flex items-start gap-3 px-4 py-3 rounded border shadow-elevated text-sm',
         'bg-surface text-fg',
         toast.tone === 'error' && 'border-danger/50',
         toast.tone === 'success' && 'border-ok/50',
