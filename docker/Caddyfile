@@ -4,10 +4,10 @@
 #
 #   ZM_API_URL=http://192.168.0.45:8080 caddy run --config docker/Caddyfile
 #
-# `npm run build` output lives in {$ZM_DASHBOARD_ROOT} (default /srv/zm-web).
+# `npm run build` output lives in {$ZM_WEB_ROOT} (default /srv/zm-web).
 
 {$ZM_SITE_ADDRESS:zm.example.net} {
-	root * {$ZM_DASHBOARD_ROOT:/srv/zm-web}
+	root * {$ZM_WEB_ROOT:/srv/zm-web}
 	encode zstd gzip
 
 	header {

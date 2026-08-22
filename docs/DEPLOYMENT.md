@@ -109,7 +109,7 @@ extra configuration:
 
 ```bash
 ZM_SITE_ADDRESS=zm.example.net ZM_API_URL=http://192.168.0.45:8080 \
-ZM_DASHBOARD_ROOT=/var/www/zm-web caddy run --config docker/Caddyfile
+ZM_WEB_ROOT=/var/www/zm-web caddy run --config docker/Caddyfile
 ```
 
 For a LAN-only name add `tls internal` inside the site block.
