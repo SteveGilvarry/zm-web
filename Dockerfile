@@ -6,7 +6,7 @@
 #   docker build -t zm-web .
 #   docker run -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-web
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
