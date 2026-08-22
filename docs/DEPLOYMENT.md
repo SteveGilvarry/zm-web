@@ -15,6 +15,12 @@ four things, and every option below provides all four:
    the JWT travels in the `Authorization` header (or `?token=` for media and
    WebSockets), which you do not want on the wire in clear.
 
+**Which one to pick.** Option D is where this is going and what a fresh install
+should end up with: `zm_api` serves `dist/` itself, so the whole UI is one
+binary plus one directory — no PHP, no Apache, no nginx. It needs a change in
+`zm_api` that has not landed yet. Until it does, Option A (the container) is
+the supported path, and B/C exist for people who already run a web server.
+
 ## Option A: the container
 
 The image builds the app with Node 22 and serves it from `nginx:1.27-alpine`.
@@ -113,6 +119,72 @@ ZM_WEB_ROOT=/var/www/zm-web caddy run --config docker/Caddyfile
 ```
 
 For a LAN-only name add `tls internal` inside the site block.
+
+## Option D (target): served by `zm_api`
+
+The four requirements above are not four programs. `zm_api` already terminates
+TLS (`rustls`, with ACME/Let's Encrypt built in — `[server.tls]` and
+`[server.acme]` in its `settings/base.toml`), already compresses responses, and
+already ships a systemd unit and a Debian package. The only thing it does not
+do is hand back the files in `dist/`. Once it does:
+
+```
+                       ┌──────────────────────────────┐
+   browser  ──TLS──▶   │ zm_api                       │
+                       │  /api/v3/**  REST, HLS, WS   │
+                       │  /**         dist/  (SPA)    │
+                       └──────────────┬───────────────┘
+                                      │ MariaDB, /dev/shm, events on disk
+                                      ▼
+                              ZoneMinder capture daemons
+```
+
+No reverse proxy, because there is nothing to proxy to — the API and the app
+are the same origin by construction, which also retires the CORS configuration
+and the `ZM_API_BASE` cross-origin case.
+
+**What `zm_api` needs to add** (all of it inside `src/routes/mod.rs`;
+`tower-http`'s `fs` and `set-header` features are already enabled):
+
+1. A `ServeDir` rooted at a configured `web_root` (default `/usr/share/zm_web`),
+   with `not_found_service` pointing at `dist/index.html` — that is the SPA
+   fallback.
+2. Route order: the API router first, the static service as the fallback. A
+   request for `/events/29246` must reach `index.html`, and one for
+   `/api/v3/events/29246` must not.
+3. Cache-control, matching what `docker/nginx.conf.template` sets today:
+   `/assets/*` → `public, max-age=31536000, immutable`; `index.html` →
+   `no-cache`; `config.js` → `no-store`.
+4. The five security headers from `docker/headers.conf`, including the CSP.
+   Same policy, moved from nginx into a `SetResponseHeaderLayer`.
+5. `config.js` written at start-up (or served from config) the way
+   `docker/entrypoint.sh` writes it now — or dropped entirely, since a
+   same-origin install has nothing to configure.
+
+**What the install looks like then.** Two packages from one repo pair:
+
+| | |
+|---|---|
+| `zm-api` | the binary, the systemd unit, JWT keys generated on first run |
+| `zm-web` | `dist/` into `/usr/share/zm_web/`, nothing else |
+
+`apt install zm-api zm-web`, point it at the ZoneMinder database, done. The
+web package is architecture-independent and has no runtime dependencies —
+it is a directory of files.
+
+**Where it has to run.** On the ZoneMinder host. `zm_api` reads the capture
+daemons' shared memory under `/dev/shm` (`src/zm_shm.rs`) and the event files on
+disk, so it is not a service you can move to another machine. That is a
+property of the API, not of this change, and it is why "one binary on the NVR"
+is the right shape.
+
+**Migration.** Nothing here forces Apache off the box. Legacy ZoneMinder keeps
+answering on `/zm` while `zm_api` answers on its own port, so an operator can
+run both, compare, and switch when they are ready — then remove PHP.
+
+**Not done yet.** `zm_api` has no static route today (no `ServeDir` anywhere in
+`src/`), so this option does not exist to install. Everything above is the
+spec for making it exist.
 
 ## Runtime configuration
 
