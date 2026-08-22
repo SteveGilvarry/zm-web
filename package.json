@@ -20,6 +20,7 @@
     "i18n:extract": "i18next --config i18next-parser.config.mjs && node scripts/i18n-plurals.mjs",
     "i18n:check": "i18next --config i18next-parser.config.mjs --fail-on-update && node scripts/i18n-plurals.mjs && git diff --quiet -- src/locales/en/translation.json",
     "i18n:seed": "node scripts/i18n-from-zm.mjs",
+    "screenshots": "node scripts/screenshots.mjs",
     "css:logical": "node scripts/codemod-logical-css.mjs",
     "test:coverage": "vitest run --coverage && node scripts/coverage-floor.mjs",
     "test:e2e:seeded": "E2E_MODE=seeded playwright test",
