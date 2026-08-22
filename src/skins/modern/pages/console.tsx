@@ -17,7 +17,13 @@ import { lookupSummary, type ConsoleData } from '@/features/console/useConsoleDa
 import { packWall } from '@/features/console/layout';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
-/** Console — Mission Control: stat cards + justified thumbnail grid + sidebar. */
+/**
+ * Console — the camera wall.
+ *
+ * One status line of chrome, then every camera in the fleet packed into the
+ * space that is left. System detail and the filter chips are disclosures on
+ * the line; recent events are a rail that collapses. See docs/DESIGN.md.
+ */
 // The wall reads the filter store directly (useConsolePage), so the bar's
 // change callback has nothing left to do here.
 const noop = () => {};
@@ -234,7 +240,12 @@ function JustifiedMonitorGrid({
   );
 }
 
-/** Height of the name + activity ribbon under each tile's video. */
-const RIBBON_HEIGHT = 58;
+/**
+ * Height of the name + activity ribbon under each tile's video: one text
+ * row, the 24h spark, the counters, and the padding around them. Measured
+ * rather than guessed — the packer subtracts it per row, so an estimate
+ * that is too small pushes the bottom row off the frame.
+ */
+const RIBBON_HEIGHT = 64;
 const GAP = 16;
 

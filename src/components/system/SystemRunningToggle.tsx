@@ -50,10 +50,10 @@ export function SystemRunningToggle({
           onClick={() => setChooserOpen(true)}
           disabled={busy}
           className={clsx(
-            'flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-xs uppercase tracking-wider border-2 transition-all',
+            'flex items-center gap-2 px-3 py-1.5 rounded text-sm border transition-colors',
             running
-              ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-              : 'border-crimson/50 bg-crimson/10 text-crimson hover:bg-crimson/20',
+              ? 'border-ok/40 bg-ok/10 text-ok hover:bg-ok/20'
+              : 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20',
             busy && 'opacity-70 cursor-wait',
           )}
           aria-label={ariaLabel}
@@ -82,7 +82,7 @@ export function SystemRunningToggle({
         onClick={() => setChooserOpen(true)}
         disabled={busy}
         className={clsx(
-          'inline-flex items-center gap-1.5 px-2 py-1 rounded font-mono text-label uppercase tracking-wider transition-all',
+          'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors',
           baseCls,
           busy && 'opacity-70 cursor-wait',
         )}
