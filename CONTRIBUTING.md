@@ -95,12 +95,7 @@ relevant logs, console output, or screenshots (with any footage/credentials reda
 
 ## Merging
 
-Required status checks need GitHub Pro on a private repo, so nothing on the
-server stops a merge while CI is red or still running — and `gh pr merge
---auto` merges immediately rather than queueing. Use:
-
-```bash
-scripts/merge-when-green.sh <pr-number>
-```
-
-It waits for every check to conclude and refuses if any of them did not pass.
+`main` requires five checks to pass — `typecheck · unit tests · build`,
+`lint`, `e2e (seeded)`, `container image` and `cla` — so a red or unfinished
+PR cannot be merged. `gh pr merge <n> --auto --merge` queues the merge behind
+them; do that rather than watching and clicking.
