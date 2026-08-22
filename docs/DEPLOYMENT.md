@@ -165,12 +165,16 @@ and the `ZM_API_BASE` cross-origin case.
 
 | | |
 |---|---|
-| `zm-api` | the binary, the systemd unit, JWT keys generated on first run |
-| `zm-web` | `dist/` into `/usr/share/zm_web/`, nothing else |
+| `zm_api` | the binary, `packaging/systemd/zm_api.service`, JWT keys generated on first run — all of this exists today (deb/rpm/arch via `scripts/package.sh`) |
+| `zm-web` | `dist/` into `/usr/share/zm_web/`, nothing else — does not exist yet |
 
-`apt install zm-api zm-web`, point it at the ZoneMinder database, done. The
-web package is architecture-independent and has no runtime dependencies —
-it is a directory of files.
+Install both, point `zm_api` at the ZoneMinder database, done. The web package
+is architecture-independent and has no runtime dependencies: it is a directory
+of files, read by the `zoneminder` user the unit already runs as.
+
+`zm_api` installs in *passive* mode (REST only, ZoneMinder keeps supervising
+its own daemons) and takes over daemon supervision on `zm_api-takeover`. That
+suits this plan: the UI can be swapped long before the supervisor is.
 
 **Where it has to run.** On the ZoneMinder host. `zm_api` reads the capture
 daemons' shared memory under `/dev/shm` (`src/zm_shm.rs`) and the event files on
