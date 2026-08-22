@@ -116,7 +116,7 @@ export async function gotoSkin(
 /**
  * Sign in once per worker and hand every test in it the saved storage state,
  * rather than driving the login form ~100 times. Two reasons: it takes about
- * a second off every test, and zm_api throttles `/auth/*` per IP, so a suite
+ * a second off every test, and zm-api throttles `/auth/*` per IP, so a suite
  * this size otherwise starts failing on rate-limited logins.
  *
  * The state lives in `e2e/.auth/` (gitignored) and is rebuilt per run — the

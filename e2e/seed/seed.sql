@@ -1,7 +1,7 @@
 -- zm-web e2e seed.
 --
 -- Loads deterministic fixture data into a ZoneMinder schema created by
--- zm_api's `scripts/db-manager.sh` (zm_create.sql.in + db/*.sql). Safe to
+-- zm-api's `scripts/db-manager.sh` (zm_create.sql.in + db/*.sql). Safe to
 -- re-run: every block deletes its own rows first. All seeded rows use ids in
 -- the 9000-range and names prefixed `e2e-`, so they never collide with the
 -- rows the schema ships (admin user = 1, PurgeWhenFull filter = 1, Default
@@ -49,9 +49,9 @@ DELETE FROM Users            WHERE Id BETWEEN 9000 AND 9999;
 DELETE FROM Config           WHERE Name LIKE 'ZM_E2E_%' OR Id BETWEEN 9000 AND 9999;
 
 -- ---------------------------------------------------------------------------
--- Users. zm_api verifies passwords with the `bcrypt` crate, which accepts the
+-- Users. zm-api verifies passwords with the `bcrypt` crate, which accepts the
 -- `$2y$` prefix ZoneMinder's PHP `password_hash()` produces. Login also
--- requires Enabled=1 and APIEnabled=1 (see zm_api src/repo/users.rs).
+-- requires Enabled=1 and APIEnabled=1 (see zm-api src/repo/users.rs).
 --
 --   e2e-admin  / e2e-admin-pass-not-secret   (full rights)
 --   e2e-viewer / e2e-viewer-pass-not-secret  (View only, no System access)

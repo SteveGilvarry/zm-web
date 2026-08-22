@@ -1,5 +1,5 @@
 /**
- * Where the zm_api backend lives, resolved at runtime rather than build time.
+ * Where the zm-api backend lives, resolved at runtime rather than build time.
  *
  * Resolution order:
  *   1. `window.__ZM_CONFIG__.apiBase` — written by `/config.js`, which the

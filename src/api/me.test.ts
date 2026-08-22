@@ -7,7 +7,7 @@ import { getMe } from './me';
 setupMockServer();
 
 /**
- * `/me` has shipped in two shapes. zm_api used to return the user object
+ * `/me` has shipped in two shapes. zm-api used to return the user object
  * itself; current builds wrap it as `{ user, issued_at, expires_at,
  * token_type }`. Reading the wrapper as a user is not a small error — the
  * permission columns vanish, `permsFromUser` reads that as None on every

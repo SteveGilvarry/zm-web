@@ -26,7 +26,7 @@ export function levelSatisfies(granted: PermLevel, required: PermLevel): boolean
 /**
  * A user's effective permission set.
  *
- * `known` is false when the token carries no `perms` claim at all (a zm_api
+ * `known` is false when the token carries no `perms` claim at all (a zm-api
  * build from before RBAC). In that case every feature reads as `Edit`: the
  * backend is still the real gate, and hiding the whole nav on an older server
  * would be a regression, not a safety gain. When the claim is present, a

@@ -40,7 +40,7 @@ signatures; it just can't block the merge button.
 ## 🛠️ Development workflow
 
 Get set up with the [Quick Start](README.md#-quick-start) (Node 20+, `npm install`, and a
-`.env` pointing `VITE_API_PROXY_TARGET` at a running [`zm_api`](https://github.com/SteveGilvarry/zm-api)
+`.env` pointing `VITE_API_PROXY_TARGET` at a running [`zm-api`](https://github.com/SteveGilvarry/zm-api)
 backend).
 
 Before opening a PR:

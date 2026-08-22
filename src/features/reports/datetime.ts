@@ -24,7 +24,7 @@ export function useDateRangeFormat(): (start?: string | null, end?: string | nul
 }
 
 /**
- * A date-time zm_api will accept. `toISOString()` includes milliseconds
+ * A date-time zm-api will accept. `toISOString()` includes milliseconds
  * (`…T10:00:00.000Z`) and the backend answers
  * `400 Invalid start_date_time format`; the same instant without the
  * fractional part is fine. Found by the seeded e2e suite against a real

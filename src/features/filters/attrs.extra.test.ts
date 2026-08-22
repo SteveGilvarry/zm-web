@@ -1,7 +1,7 @@
 /**
  * attrs — the relative-date grammar ZoneMinder inherits from strtotime.
  * Every unit the parser knows has to resolve against `now`, in UTC, because
- * zm_api stamps server-local DATETIMEs with `Z`.
+ * zm-api stamps server-local DATETIMEs with `Z`.
  */
 import { describe, expect, it } from 'vitest';
 import { resolveDateValue, toRfc3339 } from './attrs';

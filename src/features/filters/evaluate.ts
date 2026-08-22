@@ -11,7 +11,7 @@ import { buildTermTree, type TermTree } from './tree';
  * dates, date/time/weekday decompositions, Monitor/MonitorName, Tags — and
  * for the Reports chart.
  *
- * Time: zm_api stamps server-local DATETIMEs with `Z`, so every comparison
+ * Time: zm-api stamps server-local DATETIMEs with `Z`, so every comparison
  * here is done in UTC on those stamps; absolute user values are parsed the
  * same way (see `toRfc3339`). That keeps `StartDate`, `StartTime` and
  * `StartWeekday` consistent with what the daemon computes in server time.

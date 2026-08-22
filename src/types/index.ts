@@ -3,7 +3,7 @@
 // ============================================
 
 export interface ApiError {
-  /** zm_api's error envelope field ({kind, error_message, code, details}). */
+  /** zm-api's error envelope field ({kind, error_message, code, details}). */
   error_message?: string;
   error: string;
   message: string;
@@ -44,7 +44,7 @@ export type PermFeature =
   | 'snapshots'
   | 'system';
 
-/** Permission level, ordered `None < View < Edit < Create`. zm_api folds
+/** Permission level, ordered `None < View < Edit < Create`. zm-api folds
  *  ZoneMinder's `Monitors=Create` into `Edit` today; `Create` is accepted so a
  *  backend that starts emitting it needs no frontend change. `Stream` has no
  *  `Edit` level in ZoneMinder. */
@@ -59,7 +59,7 @@ export interface UserClaims {
   /** Numeric ZoneMinder user id (`uid` claim). Backend populates this on
    *  successful auth; older tokens may lack it, hence optional. */
   uid?: number;
-  /** `access` | `refresh`. Newer zm_api builds only. */
+  /** `access` | `refresh`. Newer zm-api builds only. */
   typ?: 'access' | 'refresh';
   /** RBAC snapshot taken at login. Absent on tokens from builds that predate
    *  RBAC; see `src/features/auth/perms.ts` for how that is treated. */
@@ -86,7 +86,7 @@ export type MonitorStatus =
 export interface Monitor {
   id: number;
   name: string;
-  /** Soft-delete flag. Newer zm_api builds serialise this as a JSON boolean;
+  /** Soft-delete flag. Newer zm-api builds serialise this as a JSON boolean;
    *  older ones sent 0/1 — use `isDeleted()` rather than comparing directly. */
   deleted: boolean | number;
   notes?: string | null;
@@ -116,7 +116,7 @@ export interface Monitor {
   onvif_url: string;
   onvif_events_path: string;
   onvif_username: string;
-  /** Write-only: newer zm_api builds never echo camera secrets back. */
+  /** Write-only: newer zm-api builds never echo camera secrets back. */
   onvif_password?: string;
   onvif_options: string;
   onvif_event_listener: number;
@@ -427,7 +427,7 @@ export interface PaginationParams {
   [key: string]: string | number | undefined;
 }
 
-// Paginated response structure from zm_api
+// Paginated response structure from zm-api
 export interface PaginatedResponse<T> {
   items: T[];
   total: number;

@@ -5,7 +5,7 @@ import type { Server } from '@/api/servers';
  *
  * `ServerResponse` carries the whole row since zm-api#25; `UpdateServerRequest`
  * still takes only name/hostname/port/status, so everything below is display
- * only. A zm_api older than #25 sends just those five fields and these
+ * only. A zm-api older than #25 sends just those five fields and these
  * helpers render blanks — there is deliberately no fallback for it.
  */
 

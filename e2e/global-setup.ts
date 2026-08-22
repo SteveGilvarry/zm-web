@@ -5,7 +5,7 @@ import { SEED } from './seed/seed-data';
  * Seeded-mode preflight. Runs once before any worker starts and fails fast,
  * with instructions, when the hermetic stack is not up:
  *
- *   1. zm_api answers /api/v3/server/health_check at E2E_API_URL.
+ *   1. zm-api answers /api/v3/server/health_check at E2E_API_URL.
  *   2. The seeded admin can log in (proves seed.sql is loaded and the
  *      bcrypt hash matches the backend's verifier).
  *   3. The dev server has compiled the login page. Vite transforms modules on
@@ -34,11 +34,11 @@ async function waitForHealth(base: string, timeoutMs: number): Promise<void> {
   }
   throw new Error(
     [
-      `zm_api is not answering at ${base}${HEALTH_PATH} (${lastError}).`,
+      `zm-api is not answering at ${base}${HEALTH_PATH} (${lastError}).`,
       'Seeded e2e needs the hermetic stack running:',
       '  e2e/seed/up.sh      # MariaDB + schema + seed',
-      '  e2e/seed/api.sh     # zm_api against it (foreground)',
-      'Point E2E_API_URL at zm_api if it is not on http://127.0.0.1:8089.',
+      '  e2e/seed/api.sh     # zm-api against it (foreground)',
+      'Point E2E_API_URL at zm-api if it is not on http://127.0.0.1:8089.',
     ].join('\n'),
   );
 }
@@ -55,9 +55,9 @@ async function checkSeededLogin(base: string): Promise<void> {
   throw new Error(
     [
       `Seeded admin '${SEED.admin.username}' cannot log in at ${base}${LOGIN_PATH} (HTTP ${res.status}${body ? `: ${body.slice(0, 200)}` : ''}).`,
-      'Either seed.sql is not loaded into the database zm_api is using, or zm_api points at a different database.',
+      'Either seed.sql is not loaded into the database zm-api is using, or zm-api points at a different database.',
       '  e2e/seed/reset.sh   # reload the seed',
-      '  e2e/seed/api.sh     # restart zm_api with the e2e DB settings',
+      '  e2e/seed/api.sh     # restart zm-api with the e2e DB settings',
     ].join('\n'),
   );
 }
@@ -79,5 +79,5 @@ export default async function globalSetup(config: FullConfig): Promise<void> {
   await checkSeededLogin(base);
   const baseURL = config.projects[0]?.use.baseURL;
   if (baseURL) await warmDevServer(baseURL);
-  console.log(`[e2e] seeded mode: zm_api healthy at ${base}, seeded admin login OK, dev server warm`);
+  console.log(`[e2e] seeded mode: zm-api healthy at ${base}, seeded admin login OK, dev server warm`);
 }

@@ -54,7 +54,7 @@ describe('usePerms', () => {
     await waitFor(() => expect(result.current.can('system', 'Edit')).toBe(true));
   });
 
-  it('keeps the claim when /me is missing (zm_api without the route)', async () => {
+  it('keeps the claim when /me is missing (zm-api without the route)', async () => {
     signIn({ perms: { system: 'Edit' } });
     server.use(http.get('/api/v3/me', () =>
       HttpResponse.json({ kind: 'NOT_FOUND_ERROR' }, { status: 404 })));

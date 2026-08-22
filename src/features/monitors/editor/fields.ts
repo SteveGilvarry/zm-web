@@ -812,7 +812,7 @@ export function validateDraft(
 }
 
 /**
- * zm_api's 422 envelope carries `details` as `[[field, message], …]`;
+ * zm-api's 422 envelope carries `details` as `[[field, message], …]`;
  * older builds used `[{ field: message }]` or `[{ field, message }]`. Map
  * any of those to `{ field: message }` so the editor can mark the inputs.
  */

@@ -5,7 +5,7 @@ import { createUser, updateUser } from '@/api/users';
 import { useToast } from '@/components/common/toastStore';
 import type { User } from '@/types';
 
-/** zm_api issue tracking the missing `UpdateUserRequest` fields. */
+/** zm-api issue tracking the missing `UpdateUserRequest` fields. */
 export const USER_FIELDS_ISSUE_URL = 'https://github.com/SteveGilvarry/zm-api/issues/23';
 
 /**

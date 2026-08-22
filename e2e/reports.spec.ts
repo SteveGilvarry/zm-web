@@ -38,7 +38,7 @@ test.describe('Reports', () => {
     });
 
     // Regression: report creation used to send `toISOString()` with
-    // milliseconds, which zm_api rejects with 400 "Invalid start_date_time
+    // milliseconds, which zm-api rejects with 400 "Invalid start_date_time
     // format". `toApiDateTime()` trims the fractional part. Only a real
     // backend catches this — the MSW mocks accept anything.
     test(`${skin}: creating a report from the form @route:reports.list`, async ({

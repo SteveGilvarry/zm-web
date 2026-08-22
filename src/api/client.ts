@@ -109,7 +109,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
     try {
       const errorData: ApiError = await response.json();
-      // zm_api's envelope is {kind, error_message, code, details}; older shapes used message/error.
+      // zm-api's envelope is {kind, error_message, code, details}; older shapes used message/error.
       errorMessage = errorData.error_message || errorData.message || errorData.error || errorMessage;
       details = errorData.details;
     } catch {

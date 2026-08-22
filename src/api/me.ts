@@ -10,7 +10,7 @@ import type { User } from '@/types';
  * their next sign-in. `GET /me` is live, and its 8 permission columns are
  * top-level strings on the user.
  *
- * Two response shapes in the wild. zm_api used to return `UserResponse`, the
+ * Two response shapes in the wild. zm-api used to return `UserResponse`, the
  * same object `/users/{id}` returns; current builds return `MeResponse`, which
  * wraps it as `{ user, issued_at, expires_at, token_type }`. Reading the
  * wrapper as a user yields no permission columns at all, which is not a
@@ -18,7 +18,7 @@ import type { User } from '@/types';
  * the UI hides the live wall and every edit control. So unwrap, and keep
  * accepting the flat shape for older backends.
  *
- * Needs a zm_api that serves `/me`; older builds 404 and callers fall back to
+ * Needs a zm-api that serves `/me`; older builds 404 and callers fall back to
  * the claim.
  */
 export async function getMe(): Promise<User> {

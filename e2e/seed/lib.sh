@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Shared settings + helpers for the seeded-e2e scripts. Source, don't run.
 #
-# The database is zm_api's own MariaDB test container recipe
+# The database is zm-api's own MariaDB test container recipe
 # (scripts/db-manager.sh), started under a different container name and host
-# port so it can sit next to zm_api's integration-test DB (zm-api-mysql:3307)
+# port so it can sit next to zm-api's integration-test DB (zm-api-mysql:3307)
 # without the two suites seeing each other's rows.
 
 set -euo pipefail
@@ -11,7 +11,7 @@ set -euo pipefail
 SEED_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DASHBOARD_DIR="$(cd "$SEED_DIR/../.." && pwd)"
 
-# Sibling checkout of zm_api. Override with ZM_API_DIR=/path/to/zm_api.
+# Sibling checkout of zm-api. Override with ZM_API_DIR=/path/to/zm_api.
 ZM_API_DIR="${ZM_API_DIR:-$DASHBOARD_DIR/../zm_api}"
 if [ -d "$ZM_API_DIR" ]; then
   ZM_API_DIR="$(cd "$ZM_API_DIR" && pwd)"
@@ -32,9 +32,9 @@ info() { printf '\033[0;32m[e2e-seed]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[e2e-seed]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[0;31m[e2e-seed]\033[0m %s\n' "$*" >&2; exit 1; }
 
-require_zm_api() {
+require_zm-api() {
   [ -x "$ZM_API_DIR/scripts/db-manager.sh" ] \
-    || die "zm_api checkout not found at '$ZM_API_DIR' (expected scripts/db-manager.sh). Set ZM_API_DIR."
+    || die "zm-api checkout not found at '$ZM_API_DIR' (expected scripts/db-manager.sh). Set ZM_API_DIR."
 }
 
 # Container runtime: docker (default) or podman, matching db-manager.sh's
@@ -87,9 +87,9 @@ print_connection() {
 
   DATABASE_URL=$DATABASE_URL
   container:    $E2E_DB_CONTAINER ($CONTAINER_CMD)
-  zm_api dir:   $ZM_API_DIR
+  zm-api dir:   $ZM_API_DIR
 
-  Next: start zm_api against it and run the suite
+  Next: start zm-api against it and run the suite
     e2e/seed/api.sh                      # foreground; Ctrl-C to stop
     E2E_MODE=seeded npx playwright test  # in another shell
 

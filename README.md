@@ -6,7 +6,7 @@
 
 *ZoneMinder's web interface, rewritten: no PHP, one codebase, two skins —
 a modern content-first console and a familiar classic layout — talking to
-the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
+the [`zm-api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-7-646cff?logo=vite&logoColor=white)
@@ -36,7 +36,7 @@ the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 ## ✨ Why zm-web?
 
 ZoneMinder is a rock-solid surveillance platform, but its web UI is two decades of
-Perl and PHP. **zm-web** is a clean React front end for the [`zm_api`](https://github.com/SteveGilvarry/zm-api)
+Perl and PHP. **zm-web** is a clean React front end for the [`zm-api`](https://github.com/SteveGilvarry/zm-api)
 REST backend — and it doesn't force a redesign on operators who don't want one:
 
 - 🎨 **Two skins, one codebase** — switch between a modern dashboard and a classic ZoneMinder look at runtime.
@@ -94,7 +94,7 @@ or classic tables, both fed by the same skin-agnostic feature hooks.
 
 ```mermaid
 flowchart TD
-    API[("🦀 zm_api REST backend")] -->|/api proxy · JWT| Client
+    API[("🦀 zm-api REST backend")] -->|/api proxy · JWT| Client
 
     subgraph Client["React app"]
         direction TB
@@ -139,7 +139,7 @@ flowchart TD
 ### Prerequisites
 
 - **Node.js 20+** (developed on Node 24) — install via [nvm](https://github.com/nvm-sh/nvm) or [the installer](https://nodejs.org)
-- A running [`zm_api`](https://github.com/SteveGilvarry/zm-api) backend reachable from your machine
+- A running [`zm-api`](https://github.com/SteveGilvarry/zm-api) backend reachable from your machine
 
 ```bash
 # 1. Clone
@@ -181,7 +181,7 @@ defaulting to `http://localhost:8080` when unset.
 
 `npm run build` writes a static site to `dist/`. Serving it needs an SPA fallback
 (deep links such as `/events/123` must return `index.html`), a reverse proxy from
-`/api/` to `zm_api` that forwards WebSocket upgrades (WebRTC signaling lives on
+`/api/` to `zm-api` that forwards WebSocket upgrades (WebRTC signaling lives on
 `/api/v3/live/{id}/webrtc/ws` and the socket stays open while you watch), and TLS,
 because browsers refuse WebRTC on plain `http://` away from `localhost`.
 Full detail, including the CSP, is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
@@ -196,8 +196,8 @@ docker run -d -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-web
 
 | Variable | When | Default | What it does |
 |---|---|---|---|
-| `ZM_API_URL` | run | required | Upstream `zm_api` the container proxies `/api/` to. |
-| `ZM_API_BASE` | run | `/api/v3` | Prefix the browser calls; written to `/config.js`. Set to an absolute URL only if the API is on another origin (CORS on `zm_api` required). |
+| `ZM_API_URL` | run | required | Upstream `zm-api` the container proxies `/api/` to. |
+| `ZM_API_BASE` | run | `/api/v3` | Prefix the browser calls; written to `/config.js`. Set to an absolute URL only if the API is on another origin (CORS on `zm-api` required). |
 | `VITE_BASE` | build | `/` | Sub-path to serve from, e.g. `/zm/`. |
 
 **Bare nginx or Caddy.** Copy `dist/` to the server and use
@@ -236,7 +236,7 @@ API response conventions, and streaming internals.
 
 ## 🔌 API conventions
 
-A few `zm_api` quirks worth knowing (full details in [`CLAUDE.md`](./CLAUDE.md)):
+A few `zm-api` quirks worth knowing (full details in [`CLAUDE.md`](./CLAUDE.md)):
 
 - 📄 **Paginated** responses use `{ items, total, per_page, current_page, last_page }`.
 - 🔢 **Booleans** come back as integers (`0 | 1`) — use the `toBool()` helper.
@@ -248,7 +248,7 @@ A few `zm_api` quirks worth knowing (full details in [`CLAUDE.md`](./CLAUDE.md))
 
 ## 🔗 Related projects
 
-- 🦀 **[zm_api](https://github.com/SteveGilvarry/zm-api)** — the Rust REST API backend this dashboard consumes.
+- 🦀 **[zm-api](https://github.com/SteveGilvarry/zm-api)** — the Rust REST API backend this dashboard consumes.
 
 ---
 
@@ -272,7 +272,7 @@ zm-web is **dual-licensed**:
 
 - 🆓 **Open source — [AGPL-3.0](LICENSE).** Free to use, modify, and self-host. If you
   run a modified version as a network service, the AGPL requires you to publish your
-  changes — the same license as the [`zm_api`](https://github.com/SteveGilvarry/zm-api) backend.
+  changes — the same license as the [`zm-api`](https://github.com/SteveGilvarry/zm-api) backend.
 - 💼 **Commercial license.** For embedding zm-web in a closed-source product, or running a
   modified version as a hosted service without the AGPL's source-sharing obligation, a
   commercial license is available. Contact the maintainer to enquire.

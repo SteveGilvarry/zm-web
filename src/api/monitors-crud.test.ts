@@ -150,7 +150,7 @@ describe('MONITOR_CREATE_DEFAULTS', () => {
   });
 
   it("are ZoneMinder's own new-monitor values, so a dashboard row matches a legacy one", () => {
-    // -1 = "leave it to the camera"; probed live against zm_api 2026-08-22,
+    // -1 = "leave it to the camera"; probed live against zm-api 2026-08-22,
     // which accepts all four (the older build's >= 0 floor is gone).
     for (const k of ['brightness', 'contrast', 'hue', 'colour'] as const) {
       expect(MONITOR_CREATE_DEFAULTS[k]).toBe(-1);

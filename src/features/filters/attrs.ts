@@ -147,7 +147,7 @@ const ABSOLUTE_DATETIME =
 /**
  * Normalise a ZoneMinder datetime value to RFC-3339 for the backend.
  * Accepts `YYYY-MM-DD`, `YYYY-MM-DD HH:MM[:SS]`, the datetime-local form
- * with `T`, and an optional zone. A zoneless value is stamped `Z` — zm_api
+ * with `T`, and an optional zone. A zoneless value is stamped `Z` — zm-api
  * labels server-local `DATETIME`s with `Z` too, so this keeps the compare
  * consistent with what the events endpoint returns. Returns null for
  * anything else (relative expressions such as `-1 day`).

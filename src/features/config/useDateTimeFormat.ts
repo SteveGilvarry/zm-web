@@ -13,7 +13,7 @@ import { makeDateTimeFormatters, type DateTimeFormatters } from '@/lib/datetime'
  *
  * Source is `GET /api/v3/system/locale` (zm-api#33) — one request that also
  * resolves `ZM_TIMEZONE` against the host clock, which reading the raw
- * `ZM_*` config rows could not do. A zm_api without that route 404s and the
+ * `ZM_*` config rows could not do. A zm-api without that route 404s and the
  * formatters stay on locale defaults.
  *
  * Pages should use this instead of calling `toLocaleString()` directly so an

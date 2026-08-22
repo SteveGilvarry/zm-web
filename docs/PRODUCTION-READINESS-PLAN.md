@@ -2,7 +2,7 @@
 
 _Review date: 2026-08-21; decisions recorded the same day (Section 11)._
 
-_Review date: 2026-08-21. Reference: ZoneMinder **1.39.16** on the dev box (the legacy UI the classic skin must match), zm_api `3.0.0-alpha.1` (146 paths / 243 operations). Detailed evidence for every claim below lives in `legacy-requirements/review-2026-08-21/` (local, gitignored): nine reports, ≈2,500 lines, every finding cited to `file:line` or a live probe._
+_Review date: 2026-08-21. Reference: ZoneMinder **1.39.16** on the dev box (the legacy UI the classic skin must match), zm-api `3.0.0-alpha.1` (146 paths / 243 operations). Detailed evidence for every claim below lives in `legacy-requirements/review-2026-08-21/` (local, gitignored): nine reports, ≈2,500 lines, every finding cited to `file:line` or a live probe._
 
 ## 1. Verdict
 
@@ -12,7 +12,7 @@ What is genuinely good: the streaming stack (WebRTC/HLS, Safari paths, rotation)
 
 What is not: no deployment story, no CI, lint red on `main`, real test coverage 54% with routes at 18%, no error boundary, no permission model, classic skin is a white repaint on 17 of 22 routes, and a handful of wrappers that never matched the API spec (PUT vs PATCH, wrong paths, wrong field names) shipped because nothing checks wrappers against the OpenAPI document.
 
-Estimated effort to a production 1.0 (both skins, full parity on everything the backend supports, release-grade tests): **≈150–170 engineer-days**, of which ≈110 is frontend feature/quality work and the rest test infrastructure. Backend-blocked items (Section 7) land as 1.1 as zm_api ships them. Calendar time depends on how much of it runs in parallel.
+Estimated effort to a production 1.0 (both skins, full parity on everything the backend supports, release-grade tests): **≈150–170 engineer-days**, of which ≈110 is frontend feature/quality work and the rest test infrastructure. Backend-blocked items (Section 7) land as 1.1 as zm-api ships them. Calendar time depends on how much of it runs in parallel.
 
 ## 2. How this was measured
 
@@ -63,7 +63,7 @@ These are verified live, not inferred. Order within the list is severity.
 
 | # | Problem | Where | Fix | Effort |
 |---|---|---|---|---|
-| F-1 ✅ | **Filters: edits never persist and the format is incompatible with ZoneMinder.** _Fixed 2026-08-21 (commit `fix(filters)`): legacy `terms` format round-trips byte-for-byte, actions are first-class columns, preview via `/filters/preview` where the AST allows, unreadable queries are read-only._ `updateFilter` sends `{name, query}`; the field is `query_json`. The dashboard writes `{rules:[…]}`; ZM and zm_api use `{terms:[{attr,op,val,obr,cbr,cnj}],sort_field,sort_asc,limit,skip_locked}`. Both real filters on the dev box (`PurgeWhenFull`, `Update DiskSpace`) load as "no rules". If the PUT bug is fixed naively, saving `PurgeWhenFull` writes an empty rule set with `auto_delete=1, background=1` and `zmfilter.pl` deletes every event. | `src/api/filters.ts:157-175, 206-211`; `src/routes/filters/index.tsx:64-126` | Rebuild the filter model on the backend's first-class columns (`auto_*`, `background`, `concurrent`, `lock_rows`, `execute_interval`, `user_id`) and the legacy `terms` shape for `query_json` (lossless round-trip). Delete the dashboard-private `{rules}` format and the `contains/starts/ends` operators. Until then, disable Save on any filter loaded from the backend. | M |
+| F-1 ✅ | **Filters: edits never persist and the format is incompatible with ZoneMinder.** _Fixed 2026-08-21 (commit `fix(filters)`): legacy `terms` format round-trips byte-for-byte, actions are first-class columns, preview via `/filters/preview` where the AST allows, unreadable queries are read-only._ `updateFilter` sends `{name, query}`; the field is `query_json`. The dashboard writes `{rules:[…]}`; ZM and zm-api use `{terms:[{attr,op,val,obr,cbr,cnj}],sort_field,sort_asc,limit,skip_locked}`. Both real filters on the dev box (`PurgeWhenFull`, `Update DiskSpace`) load as "no rules". If the PUT bug is fixed naively, saving `PurgeWhenFull` writes an empty rule set with `auto_delete=1, background=1` and `zmfilter.pl` deletes every event. | `src/api/filters.ts:157-175, 206-211`; `src/routes/filters/index.tsx:64-126` | Rebuild the filter model on the backend's first-class columns (`auto_*`, `background`, `concurrent`, `lock_rows`, `execute_interval`, `user_id`) and the legacy `terms` shape for `query_json` (lossless round-trip). Delete the dashboard-private `{rules}` format and the `contains/starts/ends` operators. Until then, disable Save on any filter loaded from the backend. | M |
 | F-2 ✅ | **Add Monitor and Clone return 422.** _Fixed 2026-08-21: `normalizeMonitor()` + `toCreatePayload()`; create → clone → delete verified live. Backend side: zm-api#18, #19._ Defaults send `orientation: ROTATE_0` (schema `Rotate0`), `rtsp2_web_type: mse` (`Mse`), omit required `restream`, include unknown keys; Clone re-POSTs the GET body (`deleted: 0` where a boolean is required, raw enum casing). After those, the backend rejects ZoneMinder's own defaults (`brightness=-1`, `storage_id=0`, `max_image_buffer_count=0`). | `src/api/monitors-crud.ts:14-153, 190-200` | Add a `normalizeMonitor()` response→request mapper (also fixes the editor's Orientation / Event Close Mode selects showing the wrong value on every monitor); fix defaults; coerce on clone. Backend ticket BT-02 for canonical casing and BT-20 for the default-value validation. | S (FE) |
 | F-3 | **Zone units toggle corrupts geometry.** `convertUnits` rescales the polygon to 0–100 and saves it as `coords`; ZoneMinder stores coords in pixels regardless of `Units`. Monitor 1's only zone on the dev box is now a 0% sliver (motion detection effectively off). The editor also uses un-rotated width/height for ROTATE_90/270 cameras, so vertices get clamped and the overlay is wrong. `PUT /zones/{id}` accepts only `name`,`polygon`, so Type/Units changes are silently dropped while the form shows them editable. | `src/features/zones/ZoneEditor.tsx:110-149`; `src/routes/monitors/$monitorId_.zones.tsx:46-47` | Keep coords in pixel space always; use rotated dimensions; disable Type/Units on edit until BT-05 lands. **Done 2026-08-21:** all four dev-box zones (monitors 1–4 were all affected) rewritten to full-frame pixels in view dimensions via the API; `Units` stays `Percent` (ZoneMinder's default for the "All" zone; the API cannot change it). Code fix + test fix land with the skin migration. | S + data repair |
 | F-4 ✅ | **Storage edit / Enabled toggle fail with 405.** _Fixed 2026-08-21: PATCH, errors surfaced, contract test guards the verb._ Wrapper issues PUT; the route is PATCH-only. No `onError`, so the modal just stays open. The unit test asserts the wrong verb. | `src/api/storage.ts:20-25`; `src/api/storage.test.ts:60` | PATCH; add `onError`. | S |
@@ -76,7 +76,7 @@ These are verified live, not inferred. Order within the list is severity.
 
 | # | Problem | Where | Effort |
 |---|---|---|---|
-| F-9 | **Event timestamps display ≈10 h ahead** (zm_api stamps server-local `DATETIME` values with `Z`; logs and monitor-status are correct UTC). Knock-ons: Montage Review shows "NO EVENT" in every cell, the Events "last hour" bound disagrees with the console, the date picker defaults to the UTC date. Backend root cause (**BT-00**); FE workaround is to treat event times as server-local using a server-TZ value (BT-23) or an offset probe. | `src/routes/events/index.tsx:78-80, 667, 779-784`; `src/features/montagereview/useReviewEvents.ts` | S (FE) |
+| F-9 | **Event timestamps display ≈10 h ahead** (zm-api stamps server-local `DATETIME` values with `Z`; logs and monitor-status are correct UTC). Knock-ons: Montage Review shows "NO EVENT" in every cell, the Events "last hour" bound disagrees with the console, the date picker defaults to the UTC date. Backend root cause (**BT-00**); FE workaround is to treat event times as server-local using a server-TZ value (BT-23) or an offset probe. | `src/routes/events/index.tsx:78-80, 667, 779-784`; `src/features/montagereview/useReviewEvents.ts` | S (FE) |
 | F-10 ✅ | _Fixed (ZoneMinder scale end to end; server `>=` semantics labelled honestly; zm-api#21 for the rest)._ Logs severity labels off by one (live: `0=INF, -1=WAR, -2=ERR`; UI says `-1=ERROR, 0=WARNING, 1=INFO`) and the "Errors only / Info+ / Debug+" tiers return the wrong rows because the backend `level` is a numeric `>=` bound. Two tests enshrine the wrong map. | `src/api/logs.ts:45-64`; `src/features/logs/filter.ts:68-80`; `src/routes/logs/index.tsx:73-79` | S (+BT-04) |
 | F-11 ✅ | _Fixed: time-bounded neighbour queries, verified live._ Event detail Prev/Next only works for the oldest 100 events of a monitor (page 1, id asc, no page targeting). | `src/routes/events/$eventId.tsx:136-156` | S |
 | F-12 ✅ | _Fixed._ Reports chart sums to zero: `length` arrives as a decimal string and `Number.isFinite` rejects it. Same stale `ZmEvent.length: number` type hides it elsewhere. | `src/features/reports/bucketEventsByHour.ts:41`; `src/types/index.ts:214` | S |
@@ -153,7 +153,7 @@ Route-level lazy loading (`*.lazy.tsx`), dynamic `import('hls.js')` (532 kB curr
 
 ### W6 — Security & deployment
 
-F-5, F-7, F-23 above; `<meta name="referrer" content="no-referrer">`; self-host fonts (air-gapped CCTV LANs; also needed for any CSP); CSP sample in the nginx config; remove `motion`; devtools to `devDependencies`; `npm audit fix`; Dependabot; `engines` + `.nvmrc`; document the TURN/STUN story; `beforeLoad` auth guard; consider sessionStorage for the refresh token now and an httpOnly cookie mode when zm_api offers one.
+F-5, F-7, F-23 above; `<meta name="referrer" content="no-referrer">`; self-host fonts (air-gapped CCTV LANs; also needed for any CSP); CSP sample in the nginx config; remove `motion`; devtools to `devDependencies`; `npm audit fix`; Dependabot; `engines` + `.nvmrc`; document the TURN/STUN story; `beforeLoad` auth guard; consider sessionStorage for the refresh token now and an httpOnly cookie mode when zm-api offers one.
 
 ### W7 — Time, locale, config consumption
 
@@ -193,10 +193,10 @@ Ordered by daily use. Effort is per area, after W1–W3 are in place.
 
 Deliberately out of scope: bandwidth profiles (the stub "High" chip is gone from the classic stat bar), **X10 devices (dropped 2026-08-21)**, donate modal, 1.39-only Roles / Menu / Encoder Templates (backend has none of them).
 
-## 7. Backend tickets for zm_api
+## 7. Backend tickets for zm-api
 
 - **#62 — `GET /me` changed shape (`UserResponse` → `MeResponse`) with no changelog entry** (filed 2026-08-22). Reading the wrapper as a user left every permission column absent, which fails closed to `None`: the camera wall and every edit control vanished. Fixed our side in `8ed9c69`; the ask upstream is the changelog entry and a CI guard that fails when an existing `responses.200` `$ref` changes.
-- **#58 — docs and config still say `zm-dash`/`zm-dashboard`** (filed 2026-08-22). Five references, two of them in `settings/base.toml`'s CORS comments where an operator reads them while debugging. Comments only; nothing breaks. The issue also carries the Option D spec, since `docs/architecture.md`'s nginx example is the thing that changes if `zm_api` starts serving `dist/`.
+- **#58 — docs and config still say `zm-dash`/`zm-dashboard`** (filed 2026-08-22). Five references, two of them in `settings/base.toml`'s CORS comments where an operator reads them while debugging. Comments only; nothing breaks. The issue also carries the Option D spec, since `docs/architecture.md`'s nginx example is the thing that changes if `zm-api` starts serving `dist/`.
 - **#52 — `POST /reports` 500s on a name longer than 30 characters** (filed 2026-08-22). `Reports.Name` is `varchar(30)`; the truncation surfaces as `DATABASE_ERROR` instead of a 400 naming the field. Both skins cap the input at 30 as a workaround; the same class of bug likely affects every fixed-width ZoneMinder column the API writes.
 Filed 2026-08-21 as issues #16–#39 on `SteveGilvarry/zm-api`. **The dev box was updated 2026-08-22 (766c1a7..1a13ff0) and most of them shipped.** Verified live and closed:
 
@@ -267,7 +267,7 @@ script was verified to fail on a file that is genuinely under.
   messages (offer → answer → ICE → connected, ICE failure → reconnect,
   accept-then-close → bounded backoff, keepalive without pong), and the HLS
   paths including token rotation.
-- **Tier 4** — seeded stack: zm_api's own MariaDB recipe on :3308 plus
+- **Tier 4** — seeded stack: zm-api's own MariaDB recipe on :3308 plus
   `e2e/seed/seed.sql`. The suite no longer needs, or mutates, the dev box.
 - **Tier 5** — a spec per route in both skins, plus failure paths (500,
   expired refresh, 403, stream failure). `route-coverage.spec.ts` reads
@@ -282,7 +282,7 @@ script was verified to fail on a file that is genuinely under.
 ### What the tests caught that review did not
 
 Every one of these was found by a test running against real code or a real
-backend, and each is fixed: report creation rejected by zm_api over
+backend, and each is fixed: report creation rejected by zm-api over
 millisecond precision; classic Logs, classic Reports, classic Report detail
 and classic Options all reading a dead backend as "no rows"; dead sparkline
 tooltips (React 19 hoists a bare `<title>` into `<head>`); the classic
@@ -298,7 +298,7 @@ editor having an accessible name; the coverage floor that enforced nothing.
 | **2 — Design system & classic foundation** | Section 5 tokens + primitives + classic primitives + Material icons + mobile drawer + dialog a11y; classic `OptionsLayout`; W7 formatter + `ZM_WEB_*` consumption; W8 URL shims + shortcuts | 14–17 d | Light + dark themes; no inline button/input recipes; classic nav reaches every admin page; legacy bookmarks resolve |
 | **3 — Parity build-out** | W9 by area in the listed order; classic rebuild of the six core pages; Test Tiers 4–7 running alongside | 75–85 d | Every FE-possible row in Section 6/W9 closed; classic fidelity ≥ 85 on the six core pages; every route has both-skin e2e |
 | **4 — Release** | Versioning + CHANGELOG + release workflow; browser matrix; docs; tag **v1.0.0** | 3–4 d | Section 10 checklist all green |
-| **5 — Backend-dependent (1.1+)** | Items gated on BT-03…BT-26 as zm_api ships them; translations | per ticket | — |
+| **5 — Backend-dependent (1.1+)** | Items gated on BT-03…BT-26 as zm-api ships them; translations | per ticket | — |
 
 Milestones: **v0.9 beta** at the end of Phase 2 (correct, deployable, secure, both skins usable, parity still partial); **v1.0** at the end of Phase 4; **v1.1** as backend tickets land.
 
@@ -321,7 +321,7 @@ Milestones: **v0.9 beta** at the end of Phase 2 (correct, deployable, secure, bo
 3. **i18n string extraction in 1.0**, RTL via logical CSS + `dir`, vertical writing modes a stated non-goal (W7, `docs/I18N.md`).
 4. **Sessions page removed** — the REST API is sessionless.
 5. **Dev-box zones repaired** (all four monitors); code fix lands with the migration.
-6. **Seeded e2e reuses zm_api's docker test DB** (Test Tier 4); nightly live tests stay on a real box.
+6. **Seeded e2e reuses zm-api's docker test DB** (Test Tier 4); nightly live tests stay on a real box.
 7. **Console thumbnails stay live by default**, gated on viewport visibility with a concurrency cap (PERF-2 becomes "gate, don't default off").
 
 ## 12. Done on 2026-08-21
@@ -336,7 +336,7 @@ Decisions pass (same day, after Section 11 was settled):
 - **Removed:** Sessions page + wrapper + nav entry; X10 from scope; `motion` dependency; devtools moved to devDependencies; `npm audit` 0 (was 1 critical / 5 high); stray `events-cleared.yaml`.
 - **Fixed:** all four dev-box zones repaired via the API and the units-toggle corruption removed from `ZoneEditor` (coords stay in pixels; rotated cameras use view dimensions); logout now calls `GET /auth/logout`; `Modal` is a real dialog (role, label, focus trap, restore, no per-keystroke refocus); classic nav uses monochrome icons and shows Swap (fake bandwidth chip gone); `ZM_AUTH_HASH_SECRET` and other `private` configs are masked; empty clone/delete buttons in the monitors list render their icons.
 - **Quality gates:** `.github/workflows/ci.yml` (typecheck, tests + coverage thresholds, i18n check, build, audit; lint job now green and can be made blocking); lint 34 errors/24 warnings → **0/0** with root-cause fixes; unit tests 725 → **794** (100 files); real coverage 54% → **66% statements / 59% branches**; live e2e smoke 18/18 after the migration.
-- **Seeded e2e:** `e2e/seed/` (MariaDB from zm_api's recipe on :3308, `seed.sql`, `up/reset/down/api.sh`, `global-setup.ts`), `E2E_MODE=seeded` in `playwright.config.ts`, committed fallback password removed, `npm run e2e:seed:*` / `test:e2e:seeded`; verified 15/18 against a real zm_api (two known gaps: header daemon stats, one flaky montage check). Finding for zm_api: its env loader only honours `APP__DB__HOST` (double underscore), not the documented `APP_DB__HOST`.
+- **Seeded e2e:** `e2e/seed/` (MariaDB from zm-api's recipe on :3308, `seed.sql`, `up/reset/down/api.sh`, `global-setup.ts`), `E2E_MODE=seeded` in `playwright.config.ts`, committed fallback password removed, `npm run e2e:seed:*` / `test:e2e:seeded`; verified 15/18 against a real zm-api (two known gaps: header daemon stats, one flaky montage check). Finding for zm-api: its env loader only honours `APP__DB__HOST` (double underscore), not the documented `APP_DB__HOST`.
 
 P0 pass (same evening): F-1, F-2, F-4, F-5, F-7, F-8 closed (see ✅ in Section 4); 24 backend tickets filed on `SteveGilvarry/zm-api` (#16–#39) and linked from Section 7; `src/api/contract.test.ts` (175 cases) keeps wrappers, editor enums and create defaults aligned with the OpenAPI snapshot; `.gitignore` no longer swallows `src/features/logs`. Tests 1,002 / 103 files; lint 0/0; build 129 chunks.
 

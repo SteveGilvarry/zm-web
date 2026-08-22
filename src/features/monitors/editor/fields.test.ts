@@ -108,7 +108,7 @@ describe('validateDraft', () => {
 });
 
 describe('fieldErrorsFromDetails', () => {
-  it('maps zm_api [[field, message]] pairs', () => {
+  it('maps zm-api [[field, message]] pairs', () => {
     expect(fieldErrorsFromDetails([['name', 'taken'], ['width', 'lower than 1']])).toEqual({ name: 'taken', width: 'lower than 1' });
   });
   it('maps {field, message} objects and {field: message} records', () => {

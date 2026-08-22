@@ -27,7 +27,7 @@ export interface LogsSearchParams {
 // to it as a discovered value.
 const COMMON_COMPONENTS = [
   'zmc', 'zma', 'zmaudit', 'zmfilter', 'zmtrigger', 'zmwatch',
-  'zm_api', 'zmpkg', 'zmupdate', 'web',
+  'zm-api', 'zmpkg', 'zmupdate', 'web',
 ];
 
 /**

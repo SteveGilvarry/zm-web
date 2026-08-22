@@ -178,7 +178,7 @@ describe('UserEditor — edit (admin)', () => {
     expect(field('user@example.com')).toBeEnabled();
     expect(field('Not editable yet')).toHaveAttribute(
       'title',
-      'Not editable on this zm_api build — see zm-api#23',
+      'Not editable on this zm-api build — see zm-api#23',
     );
     expect(screen.getByRole('link', { name: 'zm-api#23' })).toHaveAttribute(
       'href',

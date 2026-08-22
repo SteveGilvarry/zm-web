@@ -100,7 +100,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-4 text-center text-xs text-fg-faint">
-          {t('zm-web • powered by zm_api')}
+          {t('zm-web • powered by zm-api')}
           {' · '}
           <span className="font-mono tabular-nums">v{appVersion}</span>
         </p>

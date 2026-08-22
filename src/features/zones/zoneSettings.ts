@@ -60,11 +60,11 @@ export interface ZoneSettingRow {
 
 /**
  * The legacy zone editor's right-hand settings panel, in legacy's own order
- * and wording (`web/skins/classic/views/zone.php`). Read-only: zm_api's
+ * and wording (`web/skins/classic/views/zone.php`). Read-only: zm-api's
  * `UpdateZoneRequest` still takes nothing but `name` and `polygon`, so there
  * is deliberately no writable counterpart to this list.
  *
- * Needs zm_api ≥ the zone-detail work (zm-api#22) — an older build omits
+ * Needs zm-api ≥ the zone-detail work (zm-api#22) — an older build omits
  * every field below and each row would read as an em dash.
  */
 export function zoneSettingRows(zone: Zone, t: TFunction): ZoneSettingRow[] {
