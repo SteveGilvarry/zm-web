@@ -96,6 +96,30 @@ test.describe('Watch', () => {
       await expect(page.getByRole('alert').filter({ hasText: /alarm/i }).first()).toBeVisible();
     });
 
+
+    test(`${skin}: a portrait camera's stage fits the frame @route:monitors.watch`, async ({
+    loggedInPage: page,
+  }) => {
+    // 9002 is ROTATE_90: 1280×720 stored, 720×1280 displayed. Sized by width
+    // it would be roughly a frame and a half tall, and the app frame does not
+    // scroll — you could not see the bottom of the picture. It must be sized
+    // by height instead, which is what a measured fit buys.
+    await gotoSkin(page, `/monitors/${SEED.monitors.driveway}`, skin);
+
+    const video = page.locator('video').first();
+    await expect(video).toBeAttached();
+    const viewport = page.viewportSize()!;
+    await expect
+      .poll(async () => {
+        const b = await video.boundingBox();
+        if (!b) return 'no box';
+        const insideY = b.y >= -1 && b.y + b.height <= viewport.height + 1;
+        const insideX = b.x >= -1 && b.x + b.width <= viewport.width + 1;
+        // Portrait: taller than wide, and inside the frame on both axes.
+        return insideX && insideY && b.height > b.width ? 'fits' : `${Math.round(b.width)}x${Math.round(b.height)}@${Math.round(b.y)}`;
+      }, { timeout: 15_000 })
+      .toBe('fits');
+  });
     test(`${skin}: the stills view stops asking for a live stream @route:monitors.watch`, async ({
       loggedInPage: page,
     }) => {
