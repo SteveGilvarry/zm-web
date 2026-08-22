@@ -7,20 +7,19 @@ This file is high-signal context for coding agents (Claude Code) working in this
 `zm-dashboard` is a React-based web dashboard for ZoneMinder surveillance systems, designed to eventually replace the native ZoneMinder UI.
 
 - **Framework**: React 19 + Vite
-- **Styling**: Tailwind CSS v4 with custom "Mission Control" dark theme
+- **Styling**: Tailwind CSS v4, semantic tokens per skin and colour scheme (see `docs/DESIGN.md`)
 - **Routing**: TanStack Router (file-based routing)
 - **Data Fetching**: TanStack Query
 - **State Management**: Zustand (auth store)
 - **Backend**: Consumes `zm_api` REST API (address configured via `VITE_API_PROXY_TARGET`, see `.env.example`)
 
-## Design Aesthetic
+## Design
 
-"Mission Control" - dark, cyberpunk command center theme:
-- Primary background: `#0a0a0f` (void)
-- Accent color: `#00d4ff` (cyan)
-- Alert colors: amber, crimson, emerald
-- Monospace fonts for data, clean sans-serif for UI
-- Subtle glow effects, grid backgrounds, smooth animations
+**`docs/DESIGN.md` is the standard for the modern skin — read it before changing any modern page.** In short: a content-first ops console. Video is the only saturated thing on screen; colour means state, never decoration; tables beat cards; system UI at 13–14 px with monospace reserved for data that lines up; dark and light both designed.
+
+Structurally: the shell is a fixed frame (`h-screen`, pages scroll inside their own region), chrome is one 44 px line with occasional controls behind a `ToolbarDisclosure`, and the content owns everything else. Forbidden in pages: raw colour classes (`cyan-*`, `emerald-*`…), gradients, glow shadows, `text-[10px]`, uppercase tracking on data labels, decorative animation.
+
+Classic is out of scope for all of that — it is a faithful reproduction of ZoneMinder 1.39, quirks included.
 
 ## Project Structure
 
@@ -138,7 +137,7 @@ const color = functionColors[monitorFn];
 
 `zm-dashboard` ships **two skins on one codebase**, and skins are real packages, not a theme toggle (contract: `src/skins/README.md`):
 
-- **Mission Control** (`src/skins/modern/`) — modern dashboard; also the *fallback* skin.
+- **Modern** (`src/skins/modern/`) — the content-first ops console (`docs/DESIGN.md`); also the *fallback* skin. Still named "Mission Control" in the registry and Settings.
 - **Classic ZoneMinder** (`src/skins/classic/`) — legacy layout for operators migrating from the PHP UI; fidelity target is ZM 1.39 on the dev box.
 
 Each skin exports a `SkinDefinition` (`id`, `Shell`, `rootClass` for its tokens, `pages`) and is registered in `src/skins/registry.ts`. Pages are auto-discovered from `src/skins/<id>/pages/<pageKey>.tsx` (default export, lazy — one chunk each). **Routes are thin**: `src/routes/**` only parses params and renders `<SkinPage page="events.list" />`. **All data, state and handlers live in `src/features/<feature>/use<Page>Page.ts` hooks** shared by every skin. Never branch on `useUiStore(s => s.skin)` inside pages/features — a skin *is* the branch. A page a skin lacks renders the fallback skin's page wrapped in `data-skin-fallback` (dev warning); `src/skins/registry.test.ts` keeps the explicit allow-list of borrowed classic pages — shrink it, never grow it silently.
