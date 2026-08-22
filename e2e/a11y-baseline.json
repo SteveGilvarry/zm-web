@@ -1,0 +1,100 @@
+{
+  "classic/audit": [
+    "color-contrast"
+  ],
+  "classic/console": [
+    "color-contrast"
+  ],
+  "classic/cycle": [
+    "color-contrast"
+  ],
+  "classic/events.detail": [
+    "color-contrast"
+  ],
+  "classic/events.frames": [
+    "color-contrast"
+  ],
+  "classic/events.list": [
+    "color-contrast",
+    "link-name"
+  ],
+  "classic/logs": [
+    "color-contrast"
+  ],
+  "classic/monitors.list": [
+    "color-contrast"
+  ],
+  "classic/monitors.watch": [
+    "color-contrast",
+    "link-name"
+  ],
+  "classic/montage": [
+    "color-contrast"
+  ],
+  "classic/montagereview": [
+    "color-contrast"
+  ],
+  "classic/reports.list": [
+    "color-contrast"
+  ],
+  "classic/settings.ptzControls": [
+    "color-contrast"
+  ],
+  "classic/settings.servers": [
+    "color-contrast"
+  ],
+  "classic/settings.state": [
+    "color-contrast"
+  ],
+  "classic/settings.storage": [
+    "color-contrast"
+  ],
+  "classic/settings.users": [
+    "color-contrast"
+  ],
+  "modern/console": [
+    "color-contrast"
+  ],
+  "modern/cycle": [
+    "color-contrast"
+  ],
+  "modern/events.detail": [
+    "button-name",
+    "label"
+  ],
+  "modern/events.list": [
+    "color-contrast"
+  ],
+  "modern/groups": [
+    "color-contrast"
+  ],
+  "modern/logs": [
+    "color-contrast"
+  ],
+  "modern/monitors.list": [
+    "color-contrast"
+  ],
+  "modern/monitors.watch": [
+    "color-contrast"
+  ],
+  "modern/montage": [
+    "aria-prohibited-attr",
+    "color-contrast"
+  ],
+  "modern/montagereview": [
+    "color-contrast"
+  ],
+  "modern/reports.detail": [
+    "label",
+    "select-name"
+  ],
+  "modern/settings.servers": [
+    "color-contrast"
+  ],
+  "modern/settings.state": [
+    "color-contrast"
+  ],
+  "modern/settings.users": [
+    "color-contrast"
+  ]
+}

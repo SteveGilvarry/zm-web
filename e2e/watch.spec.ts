@@ -1,0 +1,110 @@
+import type { Page } from '@playwright/test';
+import { test, expect, gotoSkin, SKINS, seededOnly, type Skin } from './fixtures';
+import { SEED } from './seed/seed-data';
+
+/**
+ * Watch (`/monitors/$id`) in both skins.
+ *
+ * The seeded backend has no zmc, so `/live/{id}/start` answers 404 ("stream
+ * socket not available") and `/monitors/{id}/alarm` answers 503 ("shared
+ * memory not found"). That is on purpose: these specs assert the control
+ * surface and the requests it sends — the shapes that broke silently in the
+ * past — while the live suite asserts that pixels actually move.
+ */
+
+const MON = SEED.monitors.frontDoor;
+
+const UI = {
+  modern: {
+    selectHls: (p: Page) => p.getByRole('button', { name: /^hls$/i }).first().click(),
+    selectWebRtc: (p: Page) => p.getByRole('button', { name: /^webrtc$/i }).first().click(),
+    stills: (p: Page) => p.getByRole('button', { name: /^stills$/i }).first().click(),
+  },
+  classic: {
+    // The <label> wraps the <select>, so its accessible name carries the
+    // option text too; match on the caption prefix.
+    selectHls: (p: Page) => p.getByLabel(/^player/i).selectOption('hls'),
+    selectWebRtc: (p: Page) => p.getByLabel(/^player/i).selectOption('webrtc'),
+    stills: (p: Page) => p.getByRole('button', { name: /^stills$/i }).first().click(),
+  },
+} satisfies Record<Skin, unknown>;
+
+function liveStart(p: Page, monitorId: number) {
+  return p.waitForResponse(
+    (r) => r.url().includes(`/api/v3/live/${monitorId}/start`) && r.request().method() === 'POST',
+    { timeout: 20_000 },
+  );
+}
+
+test.describe('Watch', () => {
+  test.skip(seededOnly.condition, seededOnly.reason);
+
+  for (const skin of SKINS) {
+    test(`${skin}: shows the camera's runtime status and controls @route:monitors.watch`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, `/monitors/${MON}`, skin);
+
+      // Runtime strip carries the capture/analysis FPS from Monitor_Status.
+      await expect(page.getByTestId('watch-runtime')).toContainText('15.0');
+      await expect(page.locator('video')).toHaveCount(1);
+      // Both skins expose the legacy alarm controls and a scale picker.
+      await expect(page.getByRole('button', { name: /^force alarm$/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^cancel alarm$/i })).toBeVisible();
+      await expect(page.getByLabel(/^scale/i).first()).toBeVisible();
+      // …and a way back to the monitor's events.
+      await expect(page.locator(`a[href*="/events?monitor_id=${MON}"]`).first()).toBeVisible();
+    });
+
+    test(`${skin}: switching the protocol re-starts the stream over HLS @route:monitors.watch`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, `/monitors/${MON}`, skin);
+
+      const hls = liveStart(page, MON);
+      await UI[skin].selectHls(page);
+      const hlsReq = (await hls).request().postDataJSON();
+      expect(hlsReq, 'HLS must be asked for explicitly').toMatchObject({ enable_hls: true });
+
+      const rtc = liveStart(page, MON);
+      await UI[skin].selectWebRtc(page);
+      const rtcReq = (await rtc).request().postDataJSON();
+      expect(rtcReq, 'WebRTC must be asked for explicitly').toMatchObject({ enable_webrtc: true });
+    });
+
+    test(`${skin}: Force Alarm sends the legacy alarm action @route:monitors.watch`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, `/monitors/${MON}`, skin);
+
+      const pending = page.waitForResponse(
+        (r) =>
+          r.url().endsWith(`/api/v3/monitors/${MON}/alarm`) &&
+          r.request().method() === 'PATCH' &&
+          r.request().postDataJSON()?.action === 'on',
+        { timeout: 15_000 },
+      );
+      // Forcing an alarm writes an event, so both skins confirm first.
+      page.once('dialog', (d) => void d.accept());
+      await page.getByRole('button', { name: /^force alarm$/i }).click();
+      const resp = await pending;
+
+      // No zmc on the hermetic stack, so the trigger cannot succeed. What
+      // matters here is that the page says so instead of pretending: the
+      // backend's reason is surfaced in an alert, not swallowed.
+      expect(resp.status()).toBe(503);
+      await expect(page.getByRole('alert').filter({ hasText: /alarm/i }).first()).toBeVisible();
+    });
+
+    test(`${skin}: the stills view stops asking for a live stream @route:monitors.watch`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, `/monitors/${MON}`, skin);
+      await UI[skin].stills(page);
+
+      // Snapshot mode swaps the <video> for a refreshing <img>.
+      await expect(page.locator('img[src*="/snapshot"], img[alt*="e2e-Front Door"]').first())
+        .toBeVisible({ timeout: 15_000 });
+    });
+  }
+});

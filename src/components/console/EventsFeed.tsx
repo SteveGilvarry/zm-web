@@ -1,16 +1,20 @@
 import { clsx } from 'clsx';
+import type { CSSProperties } from 'react';
 import { Link } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Video, Clock, AlertTriangle } from 'lucide-react';
 import { getEventThumbnailUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
 import type { ZmEvent } from '@/types';
+import { eventDurationSeconds } from '@/features/events/duration';
 
 interface EventsFeedProps {
   events: ZmEvent[];
   isLoading?: boolean;
 }
 
-function formatTimeAgo(dateString: string): string {
+function formatTimeAgo(dateString: string, t: TFunction): string {
   const date = new Date(dateString);
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
@@ -18,13 +22,14 @@ function formatTimeAgo(dateString: string): string {
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return 'just now';
-  if (diffMins < 60) return `${diffMins}m ago`;
-  if (diffHours < 24) return `${diffHours}h ago`;
-  return `${diffDays}d ago`;
+  if (diffMins < 1) return t('just now');
+  if (diffMins < 60) return t('{{count}}m ago', { count: diffMins });
+  if (diffHours < 24) return t('{{count}}h ago', { count: diffHours });
+  return t('{{count}}d ago', { count: diffDays });
 }
 
-function formatDuration(seconds?: number): string {
+function formatDuration(length: number | string | null | undefined): string {
+  const seconds = eventDurationSeconds(length);
   if (!seconds) return '--:--';
   const mins = Math.floor(seconds / 60);
   const secs = Math.floor(seconds % 60);
@@ -32,18 +37,17 @@ function formatDuration(seconds?: number): string {
 }
 
 export function EventsFeed({ events, isLoading }: EventsFeedProps) {
+  const { t } = useTranslation();
+
   if (isLoading) {
     return (
-      <div className="space-y-3">
+      <div className="space-y-1">
         {[...Array(5)].map((_, i) => (
-          <div
-            key={i}
-            className="animate-pulse flex items-center gap-3 p-3 rounded-lg bg-panel/50"
-          >
-            <div className="w-16 h-10 bg-border/30 rounded" />
+          <div key={i} className="animate-pulse flex items-center gap-2 p-2 rounded bg-surface-2">
+            <div className="w-12 h-12 bg-surface-3 rounded" />
             <div className="flex-1 space-y-2">
-              <div className="h-3 w-24 bg-border/30 rounded" />
-              <div className="h-2 w-16 bg-border/30 rounded" />
+              <div className="h-3 w-24 bg-surface-3 rounded" />
+              <div className="h-2 w-16 bg-surface-3 rounded" />
             </div>
           </div>
         ))}
@@ -53,39 +57,36 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
 
   if (events.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-8 text-text-muted">
-        <Video size={32} className="mb-2 opacity-50" />
-        <p className="text-sm">No recent events</p>
+      <div className="flex flex-col items-center justify-center py-8 text-fg-dim">
+        <Video size={28} className="mb-2" aria-hidden />
+        <p className="text-sm">{t('No recent events')}</p>
       </div>
     );
   }
 
   return (
-    <div className="space-y-2">
-      {events.map((event, index) => (
+    <div className="space-y-0.5">
+      {events.map((event) => (
         <Link
           key={event.id}
           to="/events/$eventId"
           params={{ eventId: String(event.id) }}
-          className={clsx(
-            'flex items-center gap-3 p-3 rounded-lg',
-            'bg-panel/50 border border-transparent',
-            'transition-all duration-fast',
-            'hover:bg-panel hover:border-border-subtle',
-            'animate-fade-in'
-          )}
-          style={{ animationDelay: `${index * 50}ms` }}
+          className="flex items-center gap-2 p-1.5 rounded hover:bg-surface-2 transition-colors"
         >
-          {/* Thumbnail */}
-          <div className="relative w-16 h-10 rounded bg-abyss overflow-hidden flex-shrink-0">
+          {/* Thumbnail. The stored JPEG is never rotated, so a camera mounted
+              sideways needs the transform here — and a square box, because
+              the same rail carries portrait and landscape cameras. */}
+          <div className="relative w-12 h-12 rounded bg-bg-sunken overflow-hidden flex-shrink-0">
             {/* Fallback icon — shown if the thumbnail fails to load */}
             <div className="absolute inset-0 flex items-center justify-center">
-              <Video size={16} className="text-text-dim" />
+              <Video size={16} className="text-fg-faint" aria-hidden />
             </div>
             <img
               src={getEventThumbnailUrl(event.id, getAuthToken() ?? undefined)}
-              alt={event.name}
-              className="absolute inset-0 w-full h-full object-cover"
+              alt=""
+              data-testid="feed-thumb"
+              className="absolute inset-0 w-full h-full object-contain"
+              style={squareRotation(event.orientation)}
               loading="lazy"
               onLoad={(e) => {
                 (e.target as HTMLImageElement).style.visibility = 'visible';
@@ -94,10 +95,11 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
                 (e.target as HTMLImageElement).style.visibility = 'hidden';
               }}
             />
-            {/* Score indicator */}
-            {event.max_score && event.max_score > 50 && (
-              <div className="absolute top-0.5 right-0.5">
-                <AlertTriangle size={10} className="text-amber" />
+            {/* A score past the alarm threshold is state, so it takes colour.
+                Compared explicitly: `0 &&` renders a stray "0". */}
+            {(event.max_score ?? 0) > 50 && (
+              <div className="absolute top-0.5 end-0.5">
+                <AlertTriangle size={10} className="text-warn" aria-hidden />
               </div>
             )}
           </div>
@@ -105,14 +107,16 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
           {/* Event info */}
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-text-primary truncate">
-                {event.name}
-              </span>
+              <span className="text-sm text-fg truncate">{event.name}</span>
               {event.cause && (
                 <span
                   className={clsx(
-                    'text-[10px] font-mono px-1.5 py-0.5 rounded',
-                    event.cause === 'Alarm' ? 'bg-crimson/20 text-crimson' : 'bg-amber/20 text-amber'
+                    'text-xs px-1.5 py-0.5 rounded whitespace-nowrap',
+                    // "Alarm" is the only cause that is a state; the rest
+                    // (Continuous, Forced Web…) are just labels.
+                    event.cause === 'Alarm'
+                      ? 'bg-danger/15 text-danger'
+                      : 'bg-surface-2 text-fg-dim',
                   )}
                 >
                   {event.cause}
@@ -120,18 +124,22 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
               )}
             </div>
             <div className="flex items-center gap-3 mt-0.5">
-              <span className="text-xs text-text-muted flex items-center gap-1">
-                <Clock size={10} />
-                {event.start_date_time ? formatTimeAgo(event.start_date_time) : 'Unknown'}
+              <span className="text-xs text-fg-dim flex items-center gap-1">
+                <Clock size={10} aria-hidden />
+                {event.start_date_time ? formatTimeAgo(event.start_date_time, t) : t('Unknown')}
               </span>
-              <span className="text-xs text-text-muted">
+              <span className="text-xs font-mono tabular-nums text-fg-dim">
                 {formatDuration(event.length)}
               </span>
               {event.max_score != null && (
                 <span
                   className={clsx(
-                    'text-xs font-mono',
-                    event.max_score > 100 ? 'text-crimson' : event.max_score > 50 ? 'text-amber' : 'text-text-muted'
+                    'text-xs font-mono tabular-nums',
+                    event.max_score > 100
+                      ? 'text-danger'
+                      : event.max_score > 50
+                        ? 'text-warn'
+                        : 'text-fg-dim',
                   )}
                 >
                   {event.max_score}
@@ -141,11 +149,34 @@ export function EventsFeed({ events, isLoading }: EventsFeedProps) {
           </div>
 
           {/* Monitor indicator */}
-          <div className="text-xs font-mono text-text-dim">
-            M{event.monitor_id}
+          <div className="text-xs font-mono text-fg-faint">
+            {t('M{{id}}', { id: event.monitor_id })}
           </div>
         </Link>
       ))}
     </div>
   );
+}
+
+/**
+ * Rotation for a thumbnail in a square box.
+ *
+ * `getOrientationStyle` scales a rotated frame by 9/16 so it survives a
+ * landscape container; in a square one that just shrinks it to a stamp. A
+ * contained image is at most as wide as the box, so a bare rotation lands
+ * inside it.
+ */
+function squareRotation(orientation?: string | null): CSSProperties | undefined {
+  if (!orientation) return undefined;
+  const norm = orientation.replace(/[_\s]/g, '').toLowerCase();
+  switch (norm) {
+    case 'rotate90':  return { transform: 'rotate(90deg)' };
+    case 'rotate180': return { transform: 'rotate(180deg)' };
+    case 'rotate270': return { transform: 'rotate(270deg)' };
+    case 'fliphori':
+    case 'fliphorizontal': return { transform: 'scaleX(-1)' };
+    case 'flipvert':
+    case 'flipvertical':   return { transform: 'scaleY(-1)' };
+    default: return undefined;
+  }
 }

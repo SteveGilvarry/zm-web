@@ -1,6 +1,8 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { clsx } from 'clsx';
+import { Trans, useTranslation } from 'react-i18next';
+import type { TFunction } from 'i18next';
 import { Plus, Save, Trash2, X, Square } from 'lucide-react';
 import {
   listZonesForMonitor, createZone, updateZone, deleteZone,
@@ -8,32 +10,95 @@ import {
   parseCoords, serializeCoords, insertMidpoint,
   type Zone, type ZoneType, type Point,
 } from '@/api/zones';
+import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { useRefreshingSnapshot } from '@/hooks/useRefreshingSnapshot';
+import { zoneArea } from './zoneArea';
 
 interface ZoneEditorProps {
   monitorId: number;
   width: number;
   height: number;
+  /**
+   * Zone the parent wants open — the classic list's row click, or `'new'`
+   * for its Add New Zone. Omit to leave the editor uncontrolled.
+   */
+  openZoneId?: number | 'new' | null;
+  /** Fires when the selection changes, so the parent can mirror it. */
+  onSelectionChange?: (id: ZoneSelection) => void;
 }
 
-const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string; label: string }> = {
-  Active:     { stroke: '#00d4ff', fill: 'rgba(0,212,255,0.18)',  label: 'Active' },
-  Inclusive:  { stroke: '#00ff9d', fill: 'rgba(0,255,157,0.18)',  label: 'Inclusive' },
-  Exclusive:  { stroke: '#ffb000', fill: 'rgba(255,176,0,0.18)',  label: 'Exclusive' },
-  Preclusive: { stroke: '#a855f7', fill: 'rgba(168,85,247,0.18)', label: 'Preclusive' },
-  Inactive:   { stroke: '#566b85', fill: 'rgba(86,107,133,0.15)', label: 'Inactive' },
-  Privacy:    { stroke: '#ff3366', fill: 'rgba(255,51,102,0.22)', label: 'Privacy' },
+/** The zone the editor has open: an id, a not-yet-created zone, or nothing. */
+export type ZoneSelection = number | 'new' | null;
+
+interface ZoneDraft {
+  id: number | null;
+  name: string;
+  type: string;
+  units: 'Pixels' | 'Percent';
+  points: Point[];
+}
+
+function draftFromZone(z: Zone): ZoneDraft {
+  return {
+    id: z.id,
+    name: z.name,
+    type: z.type,
+    units: z.units === 'Percent' ? 'Percent' : 'Pixels',
+    points: parseCoords(z.coords),
+  };
+}
+
+/** A fresh zone starts as the middle 60% of the frame, like legacy's default. */
+function newZoneDraft(width: number, height: number, name: string): ZoneDraft {
+  const m = 0.2;
+  return {
+    id: null,
+    name,
+    type: 'Active',
+    units: 'Pixels',
+    points: [
+      { x: width * m,       y: height * m       },
+      { x: width * (1 - m), y: height * m       },
+      { x: width * (1 - m), y: height * (1 - m) },
+      { x: width * m,       y: height * (1 - m) },
+    ],
+  };
+}
+
+const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string }> = {
+  Active:     { stroke: '#00d4ff', fill: 'rgba(0,212,255,0.18)'  },
+  Inclusive:  { stroke: '#00ff9d', fill: 'rgba(0,255,157,0.18)'  },
+  Exclusive:  { stroke: '#ffb000', fill: 'rgba(255,176,0,0.18)'  },
+  Preclusive: { stroke: '#a855f7', fill: 'rgba(168,85,247,0.18)' },
+  Inactive:   { stroke: '#566b85', fill: 'rgba(86,107,133,0.15)' },
+  Privacy:    { stroke: '#ff3366', fill: 'rgba(255,51,102,0.22)' },
 };
 const ZONE_TYPE_ORDER: ZoneType[] = ['Active', 'Inclusive', 'Exclusive', 'Preclusive', 'Inactive', 'Privacy'];
 
-const ZONE_TYPE_HINTS: Record<string, string> = {
-  Active:     'Triggers alarms on motion inside this region.',
-  Inclusive:  'Motion only counts if it also overlaps an Active zone.',
-  Exclusive:  'Motion in this region is ignored.',
-  Preclusive: 'If motion fills this region, the whole frame is rejected (camera shake).',
-  Inactive:   'Disabled — no detection here. Useful for parking it.',
-  Privacy:    'Region is blacked out in recordings and live view.',
-};
+/** Display label for a zone type (wire value stays as-is). Unknown types echo back. */
+function zoneTypeLabel(type: string, t: TFunction): string {
+  switch (type) {
+    case 'Active':     return t('Active');
+    case 'Inclusive':  return t('Inclusive');
+    case 'Exclusive':  return t('Exclusive');
+    case 'Preclusive': return t('Preclusive');
+    case 'Inactive':   return t('Inactive');
+    case 'Privacy':    return t('Privacy');
+    default:           return type;
+  }
+}
+
+function zoneTypeHint(type: string, t: TFunction): string {
+  switch (type) {
+    case 'Active':     return t('Triggers alarms on motion inside this region.');
+    case 'Inclusive':  return t('Motion only counts if it also overlaps an Active zone.');
+    case 'Exclusive':  return t('Motion in this region is ignored.');
+    case 'Preclusive': return t('If motion fills this region, the whole frame is rejected (camera shake).');
+    case 'Inactive':   return t('Disabled — no detection here. Useful for parking it.');
+    case 'Privacy':    return t('Region is blacked out in recordings and live view.');
+    default:           return '';
+  }
+}
 
 /**
  * SVG-overlay polygon editor over a refreshing camera snapshot. Each vertex
@@ -45,14 +110,15 @@ const ZONE_TYPE_HINTS: Record<string, string> = {
  * Edits stay in local state until the operator clicks Save; the form on the
  * right edits name + type while the canvas edits geometry.
  */
-export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
+export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange }: ZoneEditorProps) {
+  const { t } = useTranslation();
   const qc = useQueryClient();
 
   const zonesQ = useQuery({
     queryKey: ['zones', monitorId],
     queryFn: () => listZonesForMonitor(monitorId, { page: 1, page_size: 50 }),
   });
-  const zones: Zone[] = zonesQ.data?.items ?? [];
+  const zones: Zone[] = useMemo(() => zonesQ.data?.items ?? [], [zonesQ.data]);
 
   // Drives the snapshot below the polygon — keeps the editor visually live.
   const snapshotUrl = useRefreshingSnapshot(monitorId, true);
@@ -66,56 +132,56 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
   });
   const presets = presetsQ.data?.items ?? [];
 
-  const [selectedId, setSelectedId] = useState<number | 'new' | null>(null);
-  const [draft, setDraft] = useState<{
-    id: number | null;
-    name: string;
-    type: string;
-    units: 'Pixels' | 'Percent';
-    points: Point[];
-  } | null>(null);
+  // Selection is controlled when the parent passes `openZoneId` (both skins
+  // do, so their list rows and settings panel stay in step) and owned here
+  // otherwise. No effect syncs the two — that only ever fights the parent.
+  const controlled = openZoneId !== undefined;
+  const [internalId, setInternalId] = useState<ZoneSelection>(null);
+  const selectedId: ZoneSelection = controlled ? openZoneId : internalId;
 
-  // When the user picks a zone from the list, hydrate the local draft.
-  const loadZone = (z: Zone) => {
-    setSelectedId(z.id);
-    setDraft({
-      id: z.id,
-      name: z.name,
-      type: z.type,
-      units: (z.units === 'Percent' ? 'Percent' : 'Pixels') as 'Pixels' | 'Percent',
-      points: parseCoords(z.coords),
-    });
+  const select = (id: ZoneSelection) => {
+    if (!controlled) setInternalId(id);
+    onSelectionChange?.(id);
   };
-  const startNewZone = () => {
-    setSelectedId('new');
-    // Default rectangle: middle 60% of the frame.
-    const m = 0.2;
-    setDraft({
-      id: null,
-      name: 'New zone',
-      type: 'Active',
-      units: 'Pixels',
-      points: [
-        { x: width * m,         y: height * m         },
-        { x: width * (1 - m),   y: height * m         },
-        { x: width * (1 - m),   y: height * (1 - m)   },
-        { x: width * m,         y: height * (1 - m)   },
-      ],
-    });
+
+  // The draft the form starts from, rebuilt whenever the selection moves.
+  const baseDraft = useMemo<ZoneDraft | null>(() => {
+    if (selectedId == null) return null;
+    if (selectedId === 'new') return newZoneDraft(width, height, t('New zone'));
+    const z = zones.find((x) => x.id === selectedId);
+    return z ? draftFromZone(z) : null; // null while the list is still loading
+  }, [selectedId, zones, width, height, t]);
+
+  // Unsaved edits, tagged with the zone they belong to. A refetch of the
+  // list lands underneath without wiping what the operator typed, and
+  // selecting another zone shows that zone's stored values again — no effect
+  // resetting state, which is what the React Compiler rules forbid anyway.
+  const [edited, setEdited] = useState<{ for: number | 'new'; draft: ZoneDraft } | null>(null);
+  const draft = edited && edited.for === selectedId ? edited.draft : baseDraft;
+  const setDraft = (next: ZoneDraft) => {
+    if (selectedId != null) setEdited({ for: selectedId, draft: next });
   };
-  // Switch units, converting the polygon's coords so it covers the same
-  // physical region. Pixels are absolute (0..width × 0..height); Percent
-  // is 0..100 of each axis so the same polygon would fit a different
-  // resolution monitor.
-  const convertUnits = (target: 'Pixels' | 'Percent') => {
-    if (!draft || draft.units === target) return;
-    const converted = draft.points.map((p) => {
-      if (target === 'Percent') {
-        return { x: (p.x / width) * 100, y: (p.y / height) * 100 };
-      }
-      return { x: (p.x / 100) * width, y: (p.y / 100) * height };
-    });
-    setDraft({ ...draft, units: target, points: converted });
+
+  const loadZone = (z: Zone) => select(z.id);
+  const startNewZone = () => select('new');
+  const clearSelection = () => {
+    setEdited(null);
+    select(null);
+  };
+
+  // Live area of the polygon being dragged; a draft has no stored area yet.
+  const draftArea = draft
+    ? zoneArea(
+        { coords: serializeCoords(draft.points), units: draft.units },
+        { width, height },
+      )
+    : null;
+  // Units only change how ZoneMinder interprets the threshold fields
+  // (min/max area etc.). Coords are always stored in pixels, so switching
+  // units must leave the polygon alone.
+  const setUnits = (units: 'Pixels' | 'Percent') => {
+    if (!draft || draft.units === units) return;
+    setDraft({ ...draft, units });
   };
   // Apply a preset's name/type/units to the current draft (preserves
   // whatever polygon the operator has drawn).
@@ -150,16 +216,14 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
     },
     onSuccess: () => {
       invalidate();
-      setSelectedId(null);
-      setDraft(null);
+      clearSelection();
     },
   });
   const deleteMutation = useMutation({
     mutationFn: (id: number) => deleteZone(id),
     onSuccess: () => {
       invalidate();
-      setSelectedId(null);
-      setDraft(null);
+      clearSelection();
     },
   });
 
@@ -172,31 +236,29 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
         snapshotUrl={snapshotUrl}
         otherZones={zones.filter((z) => draft?.id !== z.id)}
         draft={draft}
-        onDraftPointsChange={(points) =>
-          setDraft((d) => (d ? { ...d, points } : d))
-        }
+        onDraftPointsChange={(points) => { if (draft) setDraft({ ...draft, points }); }}
       />
 
       {/* Sidebar — zone list + form */}
       <div className="space-y-3">
-        <div className="rounded-lg border border-border-subtle bg-surface/40 overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle">
-            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-              Zones
+        <div className="rounded border border-border-subtle bg-surface overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
+            <span className="text-label text-fg-dim">
+              {t('Zones')}
             </span>
             <button
               onClick={startNewZone}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded border border-cyan/40 text-cyan hover:bg-cyan/15 transition-colors"
+              className={buttonClasses('secondary', 'sm')}
             >
               <Plus size={10} />
-              New
+              {t('New')}
             </button>
           </div>
           {zonesQ.isLoading ? (
-            <div className="p-4 text-center text-xs text-text-muted">Loading…</div>
+            <div className="p-4 text-center text-xs text-fg-dim">{t('Loading…')}</div>
           ) : zones.length === 0 ? (
-            <div className="p-4 text-center text-xs text-text-muted italic">
-              No zones yet. Click <strong>New</strong> to draw one.
+            <div className="p-4 text-center text-xs text-fg-dim italic">
+              <Trans>No zones yet. Click <strong>New</strong> to draw one.</Trans>
             </div>
           ) : (
             <ul>
@@ -207,16 +269,16 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                     <button
                       onClick={() => loadZone(z)}
                       className={clsx(
-                        'w-full flex items-center gap-2 px-3 py-1.5 text-left text-xs border-l-2 transition-colors',
+                        'w-full flex items-center gap-2 px-3 py-1.5 text-start text-xs border-s-2 transition-colors',
                         selectedId === z.id
-                          ? 'bg-cyan/10'
-                          : 'hover:bg-surface/80',
+                          ? 'bg-accent/10'
+                          : 'hover:bg-surface-2',
                       )}
-                      style={{ borderLeftColor: c.stroke }}
+                      style={{ borderInlineStartColor: c.stroke }}
                     >
                       <Square size={10} style={{ color: c.stroke }} fill={c.fill} />
-                      <span className="text-text-primary truncate flex-1">{z.name}</span>
-                      <span className="text-[10px] font-mono uppercase text-text-muted">{z.type}</span>
+                      <span className="text-fg truncate flex-1">{z.name}</span>
+                      <span className="text-xs text-fg-dim">{zoneTypeLabel(z.type, t)}</span>
                     </button>
                   </li>
                 );
@@ -227,75 +289,84 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
 
         {/* Editor form */}
         {draft && (
-          <div className="rounded-lg border border-cyan/40 bg-panel/50 p-3 space-y-3">
+          <div className="rounded border border-border bg-surface p-3 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan">
-                {draft.id == null ? 'New zone' : `Editing #${draft.id}`}
+              <span className="text-label text-fg">
+                {draft.id == null ? t('New zone') : t('Editing #{{id}}', { id: draft.id })}
               </span>
               <button
-                onClick={() => { setSelectedId(null); setDraft(null); }}
-                aria-label="Cancel edit"
-                className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+                onClick={clearSelection}
+                aria-label={t('Cancel edit')}
+                className="p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
               >
                 <X size={11} />
               </button>
             </div>
 
-            <Field label="Name">
+            <Field label={t('Name')}>
               <input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                className={clsx('flex-1', fieldClasses('sm'))}
               />
             </Field>
-            <Field label="Type">
+            <Field label={t('Type')}>
               <select
                 value={draft.type}
                 onChange={(e) => setDraft({ ...draft, type: e.target.value })}
-                className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                className={clsx('flex-1', fieldClasses('sm'))}
               >
-                {ZONE_TYPE_ORDER.map((t) => (
-                  <option key={t} value={t}>{t}</option>
+                {ZONE_TYPE_ORDER.map((type) => (
+                  <option key={type} value={type}>{zoneTypeLabel(type, t)}</option>
                 ))}
               </select>
             </Field>
-            <div className="text-[10px] text-text-muted italic px-1">
-              {ZONE_TYPE_HINTS[draft.type] ?? ''}
+            <div className="text-xs text-fg-dim italic px-1">
+              {zoneTypeHint(draft.type, t)}
             </div>
-            <Field label="Units">
-              <div className="flex items-center gap-1 text-[11px]">
+            <Field label={t('Units')}>
+              <div className="flex items-center gap-1 text-xs">
                 <UnitToggleBtn
                   active={draft.units === 'Pixels'}
-                  onClick={() => convertUnits('Pixels')}
-                  label="Pixels"
+                  onClick={() => setUnits('Pixels')}
+                  label={t('Pixels')}
                 />
                 <UnitToggleBtn
                   active={draft.units === 'Percent'}
-                  onClick={() => convertUnits('Percent')}
-                  label="Percent"
+                  onClick={() => setUnits('Percent')}
+                  label={t('Percent')}
                 />
               </div>
             </Field>
             {presets.length > 0 && (
-              <Field label="Preset">
+              <Field label={t('Preset')}>
                 <select
                   defaultValue=""
                   onChange={(e) => {
                     if (e.target.value) applyPreset(Number(e.target.value));
                     e.target.value = '';
                   }}
-                  className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                  className={clsx('flex-1', fieldClasses('sm'))}
                 >
-                  <option value="" disabled>Apply preset…</option>
+                  <option value="" disabled>{t('Apply preset…')}</option>
                   {presets.map((p) => (
                     <option key={p.id} value={p.id}>{p.name}</option>
                   ))}
                 </select>
               </Field>
             )}
-            <div className="text-[10px] text-text-muted">
-              {draft.points.length} vertices · click an edge dot to insert ·
-              Alt-click a vertex to remove
+            {draftArea && (
+              <div className="text-xs font-mono text-fg-dim">
+                {/* "Draft", not "Zone Area": the settings panel shows the
+                    stored Zones.Area, and the two disagree while you drag. */}
+                {t('Draft area {{px}} px ({{pct}}%)', {
+                  px: draftArea.px.toLocaleString(),
+                  pct: draftArea.pct.toFixed(2),
+                })}
+              </div>
+            )}
+            <div className="text-xs text-fg-dim">
+              {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}
             </div>
 
             <div className="flex items-center justify-end gap-2 pt-1">
@@ -303,23 +374,23 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
                 <button
                   type="button"
                   onClick={() => {
-                    if (confirm(`Delete zone "${draft.name}"?`)) deleteMutation.mutate(draft.id!);
+                    if (confirm(t('Delete zone "{{name}}"?', { name: draft.name }))) deleteMutation.mutate(draft.id!);
                   }}
                   disabled={deleteMutation.isPending}
-                  className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-crimson/40 text-crimson hover:bg-crimson/15 transition-colors disabled:opacity-50"
+                  className={clsx(buttonClasses('secondary', 'sm'), 'text-danger hover:text-danger hover:border-danger/50')}
                 >
                   <Trash2 size={10} />
-                  Delete
+                  {t('Delete')}
                 </button>
               )}
               <button
                 type="button"
                 onClick={() => saveMutation.mutate()}
                 disabled={saveMutation.isPending || draft.points.length < 3 || !draft.name.trim()}
-                className="flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded border border-cyan/50 bg-cyan/15 text-cyan hover:bg-cyan/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={buttonClasses('primary', 'sm')}
               >
                 <Save size={10} />
-                Save
+                {t('Save')}
               </button>
             </div>
           </div>
@@ -332,7 +403,7 @@ export function ZoneEditor({ monitorId, width, height }: ZoneEditorProps) {
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <label className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-12">
+      <label className="text-label text-fg-dim w-14 flex-shrink-0">
         {label}
       </label>
       {children}
@@ -346,12 +417,13 @@ function UnitToggleBtn({ active, onClick, label }: {
   return (
     <button
       type="button"
+      aria-pressed={active}
       onClick={onClick}
       className={clsx(
         'px-2 py-0.5 rounded border transition-colors',
         active
-          ? 'border-cyan/50 bg-cyan/15 text-cyan'
-          : 'border-border-subtle text-text-muted hover:bg-surface',
+          ? 'border-accent/30 bg-accent/12 text-accent'
+          : 'border-border-subtle text-fg-dim hover:text-fg hover:bg-surface-2',
       )}
     >
       {label}
@@ -376,6 +448,7 @@ interface ZoneCanvasProps {
 function ZoneCanvas({
   monitorWidth, monitorHeight, snapshotUrl, otherZones, draft, onDraftPointsChange,
 }: ZoneCanvasProps) {
+  const { t } = useTranslation();
   const svgRef = useRef<SVGSVGElement | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
 
@@ -422,13 +495,13 @@ function ZoneCanvas({
   );
 
   return (
-    <div className="relative w-full rounded-lg overflow-hidden border border-border-subtle bg-abyss">
+    <div dir="ltr" className="relative w-full rounded overflow-hidden border border-border-subtle bg-bg-sunken">
       {/* Snapshot — sized via aspect-ratio to the camera resolution */}
       <div className="relative" style={{ aspectRatio: `${monitorWidth} / ${monitorHeight}` }}>
         {snapshotUrl && (
           <img
             src={snapshotUrl}
-            alt="Monitor snapshot"
+            alt={t('Monitor snapshot')}
             className="absolute inset-0 w-full h-full object-contain pointer-events-none"
           />
         )}

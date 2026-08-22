@@ -3,6 +3,8 @@
 // ============================================
 
 export interface ApiError {
+  /** zm_api's error envelope field ({kind, error_message, code, details}). */
+  error_message?: string;
   error: string;
   message: string;
   details?: Record<string, string>[];
@@ -30,6 +32,26 @@ export interface TokenResponse {
 /** @deprecated Use {@link TokenResponse}. Kept as an alias for back-compat. */
 export type LoginResponse = TokenResponse;
 
+/** Per-feature permission columns on ZoneMinder's `Users` table, as the
+ *  JWT `perms` claim spells them (lower-case keys). */
+export type PermFeature =
+  | 'stream'
+  | 'events'
+  | 'control'
+  | 'monitors'
+  | 'groups'
+  | 'devices'
+  | 'snapshots'
+  | 'system';
+
+/** Permission level, ordered `None < View < Edit < Create`. zm_api folds
+ *  ZoneMinder's `Monitors=Create` into `Edit` today; `Create` is accepted so a
+ *  backend that starts emitting it needs no frontend change. `Stream` has no
+ *  `Edit` level in ZoneMinder. */
+export type PermLevel = 'None' | 'View' | 'Edit' | 'Create';
+
+export type UserPerms = Record<PermFeature, PermLevel>;
+
 export interface UserClaims {
   iat: number;
   exp: number;
@@ -37,6 +59,11 @@ export interface UserClaims {
   /** Numeric ZoneMinder user id (`uid` claim). Backend populates this on
    *  successful auth; older tokens may lack it, hence optional. */
   uid?: number;
+  /** `access` | `refresh`. Newer zm_api builds only. */
+  typ?: 'access' | 'refresh';
+  /** RBAC snapshot taken at login. Absent on tokens from builds that predate
+   *  RBAC; see `src/features/auth/perms.ts` for how that is treated. */
+  perms?: Partial<UserPerms>;
 }
 
 // ============================================
@@ -59,7 +86,9 @@ export type MonitorStatus =
 export interface Monitor {
   id: number;
   name: string;
-  deleted: number;
+  /** Soft-delete flag. Newer zm_api builds serialise this as a JSON boolean;
+   *  older ones sent 0/1 — use `isDeleted()` rather than comparing directly. */
+  deleted: boolean | number;
   notes?: string | null;
   server_id?: number | null;
   storage_id: number;
@@ -68,7 +97,6 @@ export interface Monitor {
   type: string;
   function: string; // API returns string, cast to MonitorFunction for display
   capturing: string;
-  enabled: number; // 0 or 1
   decoding_enabled: number; // 0 or 1
   decoding: string;
   rtsp2_web_enabled: number;
@@ -76,8 +104,10 @@ export interface Monitor {
   janus_enabled: number;
   janus_audio_enabled: number;
   janus_profile_override?: string | null;
-  janus_use_rtsp_restream: number;
-  janus_rtsp_user?: number | null;
+  /** Janus pulls from the RTSP restream instead of the camera (ZM `Janus_Use_RTSP_Restream`). 0/1. */
+  restream: number;
+  /** User id Janus authenticates to the RTSP server as (ZM `Janus_RTSP_User`). */
+  rtsp_user?: number | null;
   janus_rtsp_session_timeout?: number | null;
   linked_monitors?: string | null;
   triggers: string;
@@ -86,7 +116,8 @@ export interface Monitor {
   onvif_url: string;
   onvif_events_path: string;
   onvif_username: string;
-  onvif_password: string;
+  /** Write-only: newer zm_api builds never echo camera secrets back. */
+  onvif_password?: string;
   onvif_options: string;
   onvif_event_listener: number;
   onvif_alarm_text?: string | null;
@@ -211,7 +242,8 @@ export interface ZmEvent {
   end_date_time?: string | null; // ISO8601 datetime
   width: number;
   height: number;
-  length: number; // Duration in seconds (decimal)
+  /** Duration in seconds. The API serialises the DECIMAL column as a string ("579.93"); use `eventDurationSeconds()`. */
+  length: string | number;
   frames: number;
   alarm_frames: number;
   default_video: string;
@@ -389,6 +421,11 @@ export interface PaginatedResponse<T> {
 // ============================================
 
 // Convert API integer (0/1) to boolean
+/** True when a monitor row is soft-deleted, whatever shape the API used. */
+export function isDeleted(monitor: { deleted?: boolean | number | null }): boolean {
+  return monitor.deleted === true || monitor.deleted === 1;
+}
+
 export function toBool(value: number | undefined | null): boolean {
   return value === 1;
 }
@@ -411,6 +448,10 @@ export interface ZmConfig {
   help?: string | null;
   hint?: string | null;
   prompt?: string | null;
+  /** Perl `qr//` as a string, e.g. `(?^i:^([yn]))`. See `perlPatternToRegExp`. */
+  pattern?: string | null;
+  /** Perl snippet that normalises the value (`($1 =~ /^y/) ? 'yes' : 'no'`); display only. */
+  format?: string | null;
 }
 
 // ============================================
@@ -423,6 +464,18 @@ export interface ZmStorage {
   path: string;
   type: string;
   enabled: number;
+
+  /* Full row since zm-api#24. */
+  /** Directory scheme: `Deep` | `Medium` | `Shallow`. */
+  scheme?: string;
+  /** Owning server; `0` on a single-node install. */
+  server_id?: number | null;
+  /** s3fs / remote URL, null for local storage. */
+  url?: string | null;
+  /** Bytes used by events on this store. */
+  disk_space?: number | null;
+  /** 0/1 — whether ZoneMinder may delete from this store. */
+  do_delete?: number;
 }
 
 // ============================================

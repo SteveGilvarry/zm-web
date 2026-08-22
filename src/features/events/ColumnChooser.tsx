@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { Columns3, Check } from 'lucide-react';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import {
   EVENTS_COLUMNS,
   useEventsColumnsStore,
   type EventsColumnKey,
 } from '@/stores/eventsColumns';
+import { useEventsColumnLabels } from './columnLabels';
 
 interface ColumnChooserProps {
   /** Style hint — `classic` renders an outlined zinc button to match the
@@ -19,6 +21,8 @@ interface ColumnChooserProps {
  * lives in `useEventsColumnsStore` (localStorage) so choices survive reloads.
  */
 export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
+  const { t } = useTranslation();
+  const labels = useEventsColumnLabels();
   const [open, setOpen] = useState(false);
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const hidden = useEventsColumnsStore((s) => s.hidden);
@@ -40,15 +44,15 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
 
   const buttonCls = variant === 'classic'
     ? 'px-3 py-1.5 rounded border border-zinc-300 bg-white text-sm text-zinc-700 hover:bg-zinc-50 inline-flex items-center gap-1.5'
-    : 'px-3 py-2 rounded-lg border border-border-subtle bg-surface text-sm text-text-secondary hover:text-text-primary hover:border-cyan/50 inline-flex items-center gap-1.5 transition-colors';
+    : 'px-2 py-1.5 rounded border border-border-subtle bg-surface text-xs text-fg-muted hover:text-fg hover:border-border inline-flex items-center gap-1.5 transition-colors';
 
   const panelCls = variant === 'classic'
     ? 'absolute right-0 top-full mt-1 z-20 w-56 bg-white border border-zinc-300 rounded shadow-lg py-1 text-sm text-zinc-800'
-    : 'absolute right-0 top-full mt-1 z-20 w-56 bg-panel border border-border-subtle rounded-lg shadow-xl py-1 text-sm text-text-primary';
+    : 'absolute end-0 top-full mt-1 z-20 w-56 bg-surface border border-border rounded shadow-[var(--elevation-2)] py-1 text-sm text-fg';
 
   const itemCls = variant === 'classic'
     ? 'flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-zinc-50 cursor-pointer'
-    : 'flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer';
+    : 'flex items-center justify-between gap-2 px-3 py-1 hover:bg-surface-2 cursor-pointer';
 
   return (
     <div ref={wrapRef} className="relative">
@@ -59,9 +63,9 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
         aria-expanded={open}
         className={buttonCls}
       >
-        <Columns3 size={14} />
-        Columns
-        <span className={clsx('font-mono text-xs', variant === 'classic' ? 'text-zinc-500' : 'text-text-muted')}>
+        <Columns3 size={12} />
+        {t('Columns')}
+        <span className={clsx('font-mono tabular-nums text-xs', variant === 'classic' ? 'text-zinc-500' : 'text-fg-dim')}>
           ({visibleCount})
         </span>
       </button>
@@ -71,13 +75,13 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
             const visible = !isHidden(col.key);
             return (
               <label key={col.key} className={itemCls}>
-                <span>{col.label}</span>
+                <span>{labels[col.key]}</span>
                 <span
                   className={clsx(
                     'inline-flex items-center justify-center w-4 h-4 rounded border',
                     visible
-                      ? (variant === 'classic' ? 'bg-cyan-600 border-cyan-600 text-white' : 'bg-cyan border-cyan text-void')
-                      : (variant === 'classic' ? 'border-zinc-300 bg-white' : 'border-border-subtle bg-surface'),
+                      ? 'bg-accent border-accent text-accent-fg'
+                      : 'border-border bg-surface',
                   )}
                 >
                   {visible && <Check size={11} strokeWidth={3} />}
@@ -87,7 +91,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
                   className="sr-only"
                   checked={visible}
                   onChange={() => toggle(col.key)}
-                  aria-label={`Toggle column ${col.label}`}
+                  aria-label={t('Toggle column {{column}}', { column: labels[col.key] })}
                 />
               </label>
             );
@@ -95,7 +99,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
           <div
             className={clsx(
               'border-t mt-1 pt-1 px-3 flex items-center justify-between gap-2 text-xs',
-              variant === 'classic' ? 'border-zinc-200 text-zinc-500' : 'border-border-subtle text-text-muted',
+              variant === 'classic' ? 'border-zinc-200 text-zinc-500' : 'border-border-subtle text-fg-dim',
             )}
           >
             <button
@@ -103,20 +107,20 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
               onClick={showAll}
               className={clsx(
                 'py-1 hover:underline',
-                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-cyan',
+                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-fg',
               )}
             >
-              Show all
+              {t('Show all')}
             </button>
             <button
               type="button"
               onClick={resetDefaults}
               className={clsx(
                 'py-1 hover:underline',
-                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-cyan',
+                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-fg',
               )}
             >
-              Defaults
+              {t('Defaults')}
             </button>
           </div>
         </div>

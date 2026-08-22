@@ -20,7 +20,8 @@ export interface DailyBucket {
  * length for events that started in that hour on that date.
  *
  * - Skips events with no parseable `start_date_time`.
- * - Treats `length` as 0 if null/undefined/NaN.
+ * - `length` is a DECIMAL column the API serialises as a string
+ *   ("579.93"); it is parsed, and null/undefined/NaN count as 0.
  * - Uses the host's local timezone for hour-of-day + date bucketing,
  *   matching how the legacy PHP chart renders against the server clock.
  * - Returned buckets are sorted by `date` ascending.
@@ -38,7 +39,7 @@ export function bucketEventsByHour(events: ZmEvent[] | undefined): DailyBucket[]
 
     const dateKey = localDateKey(d);
     const hour = d.getHours();
-    const len = Number.isFinite(e.length) ? Number(e.length) : 0;
+    const len = eventLengthSeconds(e.length);
 
     let row = byDate.get(dateKey);
     if (!row) {
@@ -51,6 +52,18 @@ export function bucketEventsByHour(events: ZmEvent[] | undefined): DailyBucket[]
   return Array.from(byDate.entries())
     .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
     .map(([date, seconds]) => ({ date, seconds }));
+}
+
+/**
+ * `ZmEvent.length` as a non-negative number of seconds. The API sends the
+ * DECIMAL column as a string; older fixtures and some builds send a number.
+ * Anything unparseable (or negative) contributes nothing to the bucket.
+ */
+export function eventLengthSeconds(length: ZmEvent['length'] | null | undefined): number {
+  if (length == null) return 0;
+  const n = typeof length === 'string' ? Number(length.trim()) : length;
+  if (!Number.isFinite(n) || n < 0) return 0;
+  return n;
 }
 
 /** `YYYY-MM-DD` in the host's local timezone. */

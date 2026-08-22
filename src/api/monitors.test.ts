@@ -12,8 +12,11 @@ import {
   getLiveSessions,
   getMonitorSnapshotUrl,
   getHlsPlaylistUrl,
+  canonicalEnum,
+  MONITOR_ENUMS,
 } from './monitors';
 import { useAuthStore } from '@/stores/auth';
+import { isDeleted } from '@/types';
 
 const server = setupServer();
 beforeAll(() => {
@@ -39,6 +42,39 @@ describe('getMonitors', () => {
     const out = await getMonitors({ page: 1, page_size: 20 });
     expect(out.items).toHaveLength(1);
     expect(out.total).toBe(1);
+  });
+});
+
+describe('monitor enums come back ready to write (zm-api#18)', () => {
+  // Values exactly as the dev box returns them: the request spelling, and
+  // `deleted` as a JSON boolean. No client-side normalisation left.
+  const raw = {
+    id: 1, name: 'HIKVISION', orientation: 'Rotate90', event_close_mode: 'System',
+    default_codec: 'Auto', rtsp2_web_type: 'WebRtc', output_container: null,
+    capturing: 'Always', decoding: 'Ondemand', analysing: 'None', recording: 'Always',
+    type: 'Ffmpeg', function: 'Monitor', importance: 'Normal', deleted: false,
+  };
+
+  it('passes reads through untouched', async () => {
+    server.use(
+      http.get('/api/v3/monitors', () => HttpResponse.json({
+        items: [raw, { ...raw, id: 2, orientation: 'Rotate270' }],
+        total: 2, per_page: 20, current_page: 1, last_page: 1,
+      })),
+      http.get('/api/v3/monitors/1', () => HttpResponse.json(raw)),
+    );
+    const page = await getMonitors();
+    expect(page.items.map((m) => m.orientation)).toEqual(['Rotate90', 'Rotate270']);
+    const one = await getMonitor(1);
+    expect(one.rtsp2_web_type).toBe('WebRtc');
+    expect(one.event_close_mode).toBe('System');
+    expect(isDeleted(one)).toBe(false);
+  });
+
+  it('canonicalEnum still folds the loose spellings the camera presets use', () => {
+    expect(canonicalEnum('FLIP_HORI', ['FlipHori'])).toBe('FlipHori');
+    expect(canonicalEnum('WebRTC', MONITOR_ENUMS.rtsp2_web_type)).toBe('WebRtc');
+    expect(canonicalEnum('Sideways', ['Rotate0'])).toBe('Sideways');
   });
 });
 
@@ -97,13 +133,45 @@ describe('startLiveStream / stopLiveStream', () => {
       http.post('/api/v3/live/5/start', async ({ request }) => {
         authHeader = request.headers.get('authorization');
         body = await request.json();
-        return HttpResponse.json({ session_id: 'abc' });
+        return HttpResponse.json({ monitor_id: 5, status: 'started' });
       }),
     );
     const out = await startLiveStream(5, { enable_hls: true });
     expect(authHeader).toMatch(/^Bearer /);
     expect(body).toEqual({ enable_hls: true });
-    expect(out.session_id).toBe('abc');
+    expect(out.status).toBe('started');
+  });
+
+  it('startLiveStream maps 409 (already running) to a successful already_running response', async () => {
+    server.use(
+      http.post('/api/v3/live/5/start', () =>
+        HttpResponse.json({ error_message: 'Live stream already exists for monitor 5' }, { status: 409 }),
+      ),
+    );
+    const out = await startLiveStream(5, { enable_webrtc: true });
+    expect(out).toEqual({ monitor_id: 5, status: 'already_running' });
+  });
+
+  it('startLiveStream refreshes the token on 401 and retries like every other call', async () => {
+    const seen: string[] = [];
+    server.use(
+      http.post('/api/v3/live/5/start', ({ request }) => {
+        const auth = request.headers.get('authorization') ?? '';
+        seen.push(auth);
+        if (auth !== 'Bearer fresh') {
+          return HttpResponse.json({ error_message: 'expired' }, { status: 401 });
+        }
+        return HttpResponse.json({ monitor_id: 5, status: 'started' });
+      }),
+      http.post('/api/v3/auth/refresh', () =>
+        HttpResponse.json({ access_token: 'fresh', refresh_token: 'fresh-r', expire_in: 3600, token_type: 'Bearer' }),
+      ),
+    );
+    const out = await startLiveStream(5, { enable_webrtc: true });
+    expect(out.status).toBe('started');
+    expect(seen).toEqual(['Bearer test', 'Bearer fresh']);
+    // Put the store back the way the suite expects it.
+    useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', isAuthenticated: true });
   });
 
   it('stopLiveStream tolerates 404 (already stopped) without throwing', async () => {

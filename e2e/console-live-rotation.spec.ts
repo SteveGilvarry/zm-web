@@ -21,7 +21,7 @@ import { test, expect } from './fixtures';
  * is skipped. If it has no monitors at all the whole test skips.
  */
 test.describe('Console live rotation', () => {
-  test('rotated monitor renders with rotation transform; Rotate0 stays unrotated', async ({
+  test('rotated monitor renders with rotation transform; Rotate0 stays unrotated @route:monitors.watch', async ({
     loggedInPage: page,
     browserName,
   }) => {

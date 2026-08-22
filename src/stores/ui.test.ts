@@ -24,6 +24,25 @@ describe('UI store — skin', () => {
   });
 });
 
+describe('UI store — live tile cap', () => {
+  beforeEach(() => {
+    useUiStore.setState({ maxLiveTiles: 12 });
+  });
+
+  it('defaults to 12 simultaneous live tiles', () => {
+    expect(useUiStore.getState().maxLiveTiles).toBe(12);
+  });
+
+  it('setMaxLiveTiles stores a positive integer and rejects junk', () => {
+    useUiStore.getState().setMaxLiveTiles(24);
+    expect(useUiStore.getState().maxLiveTiles).toBe(24);
+    useUiStore.getState().setMaxLiveTiles(0);
+    expect(useUiStore.getState().maxLiveTiles).toBe(12);
+    useUiStore.getState().setMaxLiveTiles(Number.NaN);
+    expect(useUiStore.getState().maxLiveTiles).toBe(12);
+  });
+});
+
 describe('UI store — sidebar', () => {
   beforeEach(() => {
     useUiStore.setState({ skin: 'modern', sidebarCollapsed: false });

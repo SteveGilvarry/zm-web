@@ -75,11 +75,15 @@ export async function applyState(stateName: string): Promise<DaemonActionRespons
 }
 
 /**
- * Toggle the ZoneMinder daemon supervisor (`zmpkg.pl`) without changing
- * per-monitor configuration. Use for plain start / stop / restart.
+ * Start / stop / restart the ZoneMinder system without changing per-monitor
+ * configuration. This is not run-state application — that is
+ * `POST /system/state` (see `applyState`).
+ *
+ * The route was `POST /server/control/{action}` until zm_api moved it to
+ * `POST /server/control/{action}`; older builds are not supported.
  */
 export async function changeDaemonState(action: DaemonAction): Promise<MessageResponse> {
-  return apiPost<undefined, MessageResponse>(`/states/change/${action}`);
+  return apiPost<undefined, MessageResponse>(`/server/control/${action}`);
 }
 
 /**

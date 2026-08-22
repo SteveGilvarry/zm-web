@@ -1,3 +1,5 @@
+// i18n: tests run with English keys and no catalogue (t(key) === key).
+import './src/i18n';
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
 import { cleanup } from '@testing-library/react';

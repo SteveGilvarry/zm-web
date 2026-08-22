@@ -1,7 +1,6 @@
 import type { ReactNode } from 'react';
-import { useUiStore } from '@/stores/ui';
-import { ModernShell } from './modern/Shell';
-import { ClassicShell } from './classic/Shell';
+import { useSkin } from './registry';
+import { useSkinRootClass } from './useSkinRootClass';
 
 interface AppShellProps {
   title?: string;
@@ -9,15 +8,15 @@ interface AppShellProps {
 }
 
 /**
- * Selects the visual shell — Mission Control (modern) or Classic ZM — based
- * on the persisted user preference in `useUiStore.skin`.
+ * Wraps page content in the active skin's shell and binds the skin's design
+ * tokens by putting its `rootClass` on <html>.
  *
- * Routes wrap their main content in <AppShell title="…">. The data layer and
- * inner page components are skin-agnostic; only the surrounding chrome
- * (sidebar / topnav / stat strip / theme tokens) differs between skins.
+ * Pages are skin-specific components (see `SkinPage`); the shell is the
+ * chrome around them. Both come from the same `SkinDefinition`.
  */
 export function AppShell({ title, children }: AppShellProps) {
-  const skin = useUiStore((s) => s.skin);
-  const Shell = skin === 'classic' ? ClassicShell : ModernShell;
+  const skin = useSkin();
+  useSkinRootClass(skin.rootClass);
+  const Shell = skin.Shell;
   return <Shell title={title}>{children}</Shell>;
 }

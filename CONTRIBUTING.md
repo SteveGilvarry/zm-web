@@ -1,11 +1,11 @@
-# Contributing to zm-dashboard
+# Contributing to zm-web
 
-Thanks for your interest in improving zm-dashboard! This guide covers how to get a change
+Thanks for your interest in improving zm-web! This guide covers how to get a change
 merged.
 
 ## 📜 Contributor License Agreement
 
-zm-dashboard is **dual-licensed** — open source under [AGPL-3.0](LICENSE), and available
+zm-web is **dual-licensed** — open source under [AGPL-3.0](LICENSE), and available
 under a separate commercial license. For the project to be offered under both, every
 contribution must be covered by the [Contributor License Agreement](CLA.md).
 
@@ -66,7 +66,7 @@ Before opening a PR:
 
 ## 🧭 Conventions
 
-- **Dual-skin first.** Every feature must work in both the **Mission Control** and
+- **Dual-skin first.** Every feature must work in both the **Modern** and
   **Classic** skins. Put shared data/logic in `src/features/<feature>/` (skin-agnostic
   hooks); route bodies dispatch on `useUiStore.skin` and render either the modern panel
   layout or the classic table. See [`CLAUDE.md`](CLAUDE.md) for the architecture.
@@ -90,5 +90,5 @@ relevant logs, console output, or screenshots (with any footage/credentials reda
 - [ ] I agree to the [CLA](CLA.md).
 - [ ] Tests added/updated and passing.
 - [ ] `npm run lint`, `npm test`, and `npm run build` all pass.
-- [ ] The change works in both skins (Mission Control and Classic) where applicable.
+- [ ] The change works in both skins (Modern and Classic) where applicable.
 - [ ] The change is focused and documented where it isn't self-evident.

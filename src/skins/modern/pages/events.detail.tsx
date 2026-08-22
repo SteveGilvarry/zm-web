@@ -1,0 +1,839 @@
+import { Link } from '@tanstack/react-router';
+import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
+import {
+  ArrowLeft,
+  Play,
+  Pause,
+  Video,
+  Monitor,
+  ChevronRight,
+  Maximize2,
+  Volume2,
+  VolumeX,
+  Trash2,
+  Download,
+  AlertTriangle,
+  Activity,
+  SkipBack,
+  SkipForward,
+  Tag as TagIcon,
+  Layers,
+  BarChart3,
+  ChevronLeft as ChevronLeftIcon,
+  ChevronRight as ChevronRightIcon,
+  FileVideo,
+  Archive,
+  ArchiveRestore,
+  Pencil,
+  Gauge,
+  Database,
+  HardDrive,
+  Film,
+  LayoutGrid,
+} from 'lucide-react';
+
+import { AppShell } from '@/skins/AppShell';
+import { Panel } from '@/components/common/Panel';
+import { FitBox } from '@/components/common/FitBox';
+import { usePinchZoom } from '@/features/events/usePinchZoom';
+import { getOrientationStyle, getOrientationFillStyle, isOrientationRotated } from '@/types';
+import { QueryState } from '@/components/common/QueryState';
+import { RequirePerm } from '@/features/auth/RequirePerm';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { EventEditForm } from '@/features/events/EventEditForm';
+import { useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
+import { useDocumentTitle } from '../layouts/useDocumentTitle';
+import { TagChips } from '@/features/events/TagChips';
+import { FrameScrubber } from '@/features/events/FrameScrubber';
+import { ZonesOverlay } from '@/features/events/ZonesOverlay';
+import { formatBytes } from '@/lib/format';
+import { useEventDetailPage, formatTime } from '@/features/events/useEventDetailPage';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import { eventDurationSeconds } from '@/features/events/duration';
+
+/**
+ * Event detail — the modern skin. A control line that stays put, the player
+ * and sidebar scrolling below it, and the counts in a status bar.
+ */
+export default function EventDetailPage({ eventId }: { eventId: number }) {
+  const { t } = useTranslation();
+  const replayModeOptions = useReplayModeOptions();
+  const scaleOptions = useScaleOptions();
+  // Event stamps render through ZoneMinder's own patterns / server zone.
+  const { formatDateTime } = useDateTimeFormat();
+  const s = useEventDetailPage(eventId);
+  // Pinch / trackpad-pinch / drag to inspect a detail in the frame.
+  const { ref: zoomRef, style: zoomStyle } = usePinchZoom<HTMLDivElement>();
+  const {
+    event, monitor, eventLoading,
+    videoRef, playbackMode, playbackError,
+    isPlaying, isMuted, currentTime, duration,
+    replayMode, setReplayMode, scale, setScale,
+    showZones, setShowZones, showStats, setShowStats,
+    prevEventId, nextEventId, navMonitorId,
+    startTime, endTime, downloadUrl, thumbnailUrl, codecHint,
+    videoContainerW, videoContainerH, useSwappedRotation, videoElementStyle,
+    playerRef, playerMaxWidthPx, rate, setRate, rateOptions,
+    storageName, eventData,
+  } = s;
+
+  useDocumentTitle(event ? t('Event {{id}}', { id: event.id }) : t('Events'));
+
+  // Wire values stay as-is; only the display label is translated.
+
+  if (!s.isAuthenticated) return null;
+
+  if (eventLoading || s.eventError) {
+    return (
+      <AppShell title={t('Event')}>
+        <main className="flex-1 min-h-0 overflow-auto p-3">
+          <QueryState isLoading={eventLoading} isError={!!s.eventError} error={s.eventError} />
+        </main>
+      </AppShell>
+    );
+  }
+
+  if (!event) {
+    return (
+      <AppShell title={t('Event Not Found')}>
+        <main className="flex-1 min-h-0 flex items-center justify-center">
+          <div className="text-center">
+            <Video size={40} className="mx-auto mb-4 text-fg-dim" aria-hidden />
+            <h2 className="text-lg font-medium text-fg mb-2">{t('Event Not Found')}</h2>
+            <p className="text-sm text-fg-muted mb-6">
+              {t('The requested event could not be found.')}
+            </p>
+            <Link
+              to="/events"
+              className="px-3 py-1.5 rounded bg-accent text-accent-fg text-sm font-medium hover:bg-accent-dim transition-colors"
+            >
+              {t('Back to Events')}
+            </Link>
+          </div>
+        </main>
+      </AppShell>
+    );
+  }
+
+  return (
+    <AppShell title={event.name}>
+      <main className="flex-1 min-h-0 flex flex-col">
+          {/* One control line: where you are, and everything you change while
+              watching. It stays put; the body below it scrolls. */}
+          <div
+            data-testid="event-playback-toolbar"
+            className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface overflow-x-auto"
+          >
+            <Link
+              to="/events"
+              className="shrink-0 flex items-center gap-1.5 text-xs text-fg-dim hover:text-fg transition-colors"
+            >
+              <ArrowLeft size={14} className="rtl:-scale-x-100" aria-hidden />
+              {t('Events')}
+            </Link>
+            <ChevronRight size={12} className="shrink-0 text-fg-faint rtl:-scale-x-100" aria-hidden />
+            <span className="shrink-0 text-sm text-fg truncate max-w-[14rem]">{event.name}</span>
+
+            <span className="h-5 w-px bg-border-subtle shrink-0" />
+
+            <div
+              className="flex items-center gap-1"
+              title={navMonitorId == null
+                ? t('Prev / Next walk every monitor (← →)')
+                : t('Prev / Next stay on {{monitor}} (← →)', { monitor: monitor?.name ?? t('Monitor {{id}}', { id: navMonitorId }) })}
+            >
+              <button
+                type="button"
+                onClick={s.navPrev}
+                disabled={prevEventId == null}
+                aria-label={t('Previous event')}
+                aria-keyshortcuts="ArrowLeft"
+                className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <ChevronLeftIcon size={14} className="rtl:-scale-x-100" aria-hidden />
+                {t('Prev')}
+              </button>
+              <button
+                type="button"
+                onClick={s.navNext}
+                disabled={nextEventId == null}
+                aria-label={t('Next event')}
+                aria-keyshortcuts="ArrowRight"
+                className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                {t('Next')}
+                <ChevronRightIcon size={14} className="rtl:-scale-x-100" aria-hidden />
+              </button>
+            </div>
+
+            <span className="h-5 w-px bg-border-subtle shrink-0" />
+
+            <label className="shrink-0 flex items-center gap-1.5 text-xs text-fg-dim">
+              {t('Replay')}
+              <select
+                aria-label={t('Replay mode')}
+                value={replayMode}
+                onChange={(e) => setReplayMode(e.target.value as typeof replayMode)}
+                className="px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors cursor-pointer"
+              >
+                {replayModeOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="shrink-0 flex items-center gap-1.5 text-xs text-fg-dim">
+              {t('Scale')}
+              <select
+                aria-label={t('Scale')}
+                value={scale}
+                onChange={(e) => setScale(e.target.value as typeof scale)}
+                className="px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors cursor-pointer"
+              >
+                {scaleOptions.map((opt) => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </label>
+
+            <label className="shrink-0 flex items-center gap-1.5 text-xs text-fg-dim">
+              <Gauge size={12} aria-hidden />
+              {t('Speed')}
+              <select
+                aria-label={t('Playback speed')}
+                value={rate}
+                onChange={(e) => setRate(Number(e.target.value))}
+                className="px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors cursor-pointer"
+              >
+                {rateOptions.map((r) => (
+                  <option key={r} value={r}>{r}×</option>
+                ))}
+              </select>
+            </label>
+
+            <span className="ms-auto" />
+
+            <button
+              type="button"
+              onClick={() => setShowZones(!showZones)}
+              aria-pressed={showZones}
+              className={clsx(
+                'shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                showZones ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+              )}
+            >
+              <Layers size={14} aria-hidden />
+              {showZones ? t('Hide Zones') : t('Show Zones')}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setShowStats(!showStats)}
+              aria-pressed={showStats}
+              className={clsx(
+                'shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                showStats ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+              )}
+            >
+              <BarChart3 size={14} aria-hidden />
+              {showStats ? t('Hide Stats') : t('Stats')}
+            </button>
+          </div>
+
+          <div className="flex-1 min-h-0 overflow-auto p-3 grid grid-cols-12 gap-3 items-start">
+            {/* Video Player - 8 columns */}
+            <div className="col-span-8 space-y-3">
+              {/* The player fits the frame in both directions: a portrait
+                  camera used to run off the bottom of the page because only
+                  the width was constrained. */}
+              <FitBox
+                aspect={videoContainerW / videoContainerH}
+                maxWidth={playerMaxWidthPx}
+                className="h-[calc(100vh-14rem)] min-h-64"
+              >
+                <div
+                  ref={playerRef}
+                  dir="ltr"
+                  className="relative w-full h-full bg-black overflow-hidden"
+                >
+                  {/* Gesture surface: pinch, trackpad-pinch and drag-to-pan
+                      transform the picture — video, still and zone overlay
+                      together — while the controls over it stay put. It sits
+                      inside the fullscreen element, so zoom works there too. */}
+                  <div ref={zoomRef} style={zoomStyle} className="absolute inset-0">
+                  {/* Video element — a camera the decoder does not rotate for
+                      us needs a swap-dimensions + rotate trick so the
+                      portrait content fills the portrait container instead of
+                      pillarboxing at center. */}
+                  <video
+                    ref={videoRef}
+                    className={useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
+                    style={videoElementStyle}
+                    onTimeUpdate={(e) => s.setCurrentTime(e.currentTarget.currentTime)}
+                    onLoadedMetadata={(e) => {
+                      const d = e.currentTarget.duration;
+                      if (Number.isFinite(d) && d > 0) s.setDuration(d);
+                    }}
+                    onPlay={() => s.setIsPlaying(true)}
+                    onPause={() => s.setIsPlaying(false)}
+                    onEnded={s.handleVideoEnded}
+                  />
+
+                  {/* Poster. Not the <video>'s own `poster`, because the
+                      stored thumbnail is never rotated and the attribute
+                      cannot be transformed apart from the video — a portrait
+                      camera showed a sideways still until playback began. */}
+                  {currentTime === 0 && !isPlaying && playbackMode !== 'unsupported' && (
+                    <img
+                      src={thumbnailUrl}
+                      alt=""
+                      data-testid="event-poster"
+                      className={isOrientationRotated(event.orientation)
+                        ? 'object-contain pointer-events-none'
+                        : 'absolute inset-0 w-full h-full object-contain pointer-events-none'}
+                      // The still always needs rotating (the JPEG is stored
+                      // as the sensor saw it), and in a portrait frame that
+                      // means the same swap-dimensions fill the video uses
+                      // when the decoder has not already done it.
+                      style={isOrientationRotated(event.orientation)
+                        ? getOrientationFillStyle(event.orientation)
+                        : getOrientationStyle(event.orientation)}
+                    />
+                  )}
+
+                  {/* Zones overlay — only mounted when toggle is on so we
+                      don't fetch the monitor's zone list otherwise. */}
+                  {showZones && event.monitor_id > 0 && (
+                    <ZonesOverlay
+                      monitorId={event.monitor_id}
+                      monitorWidth={event.width || 1920}
+                      monitorHeight={event.height || 1080}
+                    />
+                  )}
+                  </div>
+
+                  {/* Unsupported-codec fallback — HEVC in a browser whose MSE
+                      can't decode it. Offer the download instead of a black
+                      frame. Takes precedence over the play overlay. */}
+                  {playbackMode === 'unsupported' && (
+                    <div
+                      data-testid="event-unsupported-overlay"
+                      className="absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 bg-black/80 p-6 text-center"
+                    >
+                      <AlertTriangle size={40} className="text-warn" />
+                      <p className="text-sm font-medium text-fg">
+                        {playbackError ?? t('This video codec is not supported in this browser.')}
+                      </p>
+                      <p className="text-xs text-fg-dim">
+                        {t('{{codec}} playback needs Safari or a browser with hardware HEVC support. You can still download the recording.', { codec: codecHint })}
+                      </p>
+                      <a
+                        href={downloadUrl}
+                        download
+                        className="mt-1 flex items-center gap-2 px-3 py-1.5 rounded bg-accent text-accent-fg text-sm font-medium hover:bg-accent-dim transition-colors"
+                      >
+                        <Download size={16} />
+                        {t('Download Video')}
+                      </a>
+                    </div>
+                  )}
+
+                  {/* Play overlay when paused */}
+                  {!isPlaying && playbackMode !== 'unsupported' && (
+                    <button
+                      onClick={s.handlePlayPause}
+                      // A mouse affordance duplicating the transport bar's
+                      // Play button, so it stays out of the a11y tree rather
+                      // than announcing a second, identical control.
+                      aria-hidden
+                      tabIndex={-1}
+                      // Pointer-events only on the disc, so a two-finger
+                      // pinch over a paused frame still reaches the picture.
+                      className="absolute inset-0 flex items-center justify-center pointer-events-none"
+                    >
+                      <div className="pointer-events-auto w-14 h-14 rounded-full bg-black/60 flex items-center justify-center">
+                        <Play size={26} className="text-white ms-1" aria-hidden />
+                      </div>
+                    </button>
+                  )}
+
+                  {/* Controls overlay */}
+                  <div className="absolute inset-x-0 bottom-0 p-3 bg-black/70">
+                    {/* Progress bar */}
+                    <div className="mb-3">
+                      <input
+                        type="range"
+                        min={0}
+                        max={duration || 100}
+                        value={currentTime}
+                        onChange={s.handleSeek}
+                        className="w-full h-1 bg-white/30 rounded-full appearance-none cursor-pointer
+                          [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3
+                          [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-white"
+                      />
+                    </div>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        {/* Play/Pause */}
+                        <button
+                          onClick={s.handlePlayPause}
+                          aria-label={isPlaying ? t('Pause') : t('Play')}
+                          aria-keyshortcuts="Space"
+                          className="p-2 rounded bg-white/10 text-white hover:bg-white/20 transition-colors"
+                        >
+                          {isPlaying ? <Pause size={18} /> : <Play size={18} />}
+                        </button>
+
+                        {/* Skip buttons */}
+                        <button
+                          onClick={() => s.handleSkip(-10)}
+                          aria-label={t('Back 10 seconds')}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors"
+                        >
+                          <SkipBack size={16} />
+                        </button>
+                        <button
+                          onClick={() => s.handleSkip(10)}
+                          aria-label={t('Forward 10 seconds')}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors"
+                        >
+                          <SkipForward size={16} />
+                        </button>
+
+                        {/* Time */}
+                        <span className="text-sm font-mono text-white">
+                          {formatTime(currentTime)} / {formatTime(duration)}
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        {/* Volume */}
+                        <button
+                          onClick={s.handleToggleMute}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors"
+                        >
+                          {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
+                        </button>
+
+                        {/* Fullscreen */}
+                        <button
+                          onClick={s.handleToggleFullscreen}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors"
+                        >
+                          <Maximize2 size={18} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </FitBox>
+
+              {/* Stats panel — collapsible per-event diagnostics. Pulled
+                  from the existing event payload, no extra fetch. */}
+              {showStats && (
+                <Panel title={t('Event Stats')} icon={<BarChart3 size={16} />}>
+                  <div
+                    data-testid="event-stats-panel"
+                    className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm"
+                  >
+                    <StatRow label={t('Alarm Frames')} value={event.alarm_frames ?? 0} />
+                    <StatRow label={t('Total Frames')} value={event.frames ?? 0} />
+                    <StatRow label={t('Tot Score')} value={event.tot_score ?? 0} />
+                    <StatRow label={t('Avg Score')} value={event.avg_score ?? 0} />
+                    <StatRow label={t('Max Score')} value={event.max_score ?? 0} />
+                    <StatRow
+                      label={t('Duration')}
+                      value={t('{{seconds}}s', { seconds: eventDurationSeconds(event.length) })}
+                    />
+                    <StatRow
+                      label={t('Disk Space')}
+                      value={formatBytes(event.disk_space ?? 0)}
+                    />
+                    <StatRow
+                      label={t('Start')}
+                      value={startTime ? formatDateTime(startTime) : '—'}
+                    />
+                    <StatRow
+                      label={t('End')}
+                      value={endTime ? formatDateTime(endTime) : '—'}
+                    />
+                    <StatRow
+                      label={t('Resolution')}
+                      value={`${event.width}x${event.height}`}
+                    />
+                    <StatRow label={t('Codec')} value={codecHint} />
+                    <StatRow
+                      label={t('Archived')}
+                      value={event.archived === 1 ? t('Yes') : t('No')}
+                    />
+                  </div>
+                </Panel>
+              )}
+
+              {/* Frame Scrubber — per-frame stepper, score-graded ticks */}
+              <div dir="ltr">
+                <Panel>
+                  <FrameScrubber
+                    eventId={event.id}
+                    durationSec={duration || Number(event.length) || 0}
+                    currentTimeSec={currentTime}
+                    onSeek={s.seekTo}
+                  />
+                </Panel>
+              </div>
+
+              {/* Event_Data rows — only when a detector / trigger wrote some. */}
+              {eventData.length > 0 && (
+                <Panel title={t('Event Data')} icon={<Database size={16} />} noPadding>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs" data-testid="event-data-table">
+                      <thead className="border-b border-border-subtle text-xs font-medium text-fg-dim">
+                        <tr>
+                          <th scope="col" className="px-3 py-2 text-start">{t('Frame')}</th>
+                          <th scope="col" className="px-3 py-2 text-start">{t('Timestamp')}</th>
+                          <th scope="col" className="px-3 py-2 text-start">{t('Data')}</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {eventData.map((row) => (
+                          <tr key={row.id} className="border-b border-border-subtle last:border-0">
+                            <td className="px-3 py-1.5 font-mono text-fg-dim">
+                              {row.frame_id != null ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    // Frame n at the event's average rate.
+                                    const fps = event.frames && duration ? event.frames / duration : 0;
+                                    if (fps > 0 && row.frame_id != null) s.seekTo(row.frame_id / fps);
+                                  }}
+                                  className="hover:text-accent transition-colors"
+                                >
+                                  #{row.frame_id}
+                                </button>
+                              ) : '—'}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-fg-muted whitespace-nowrap">
+                              {row.timestamp ? formatDateTime(row.timestamp) : '—'}
+                            </td>
+                            <td className="px-3 py-1.5 font-mono text-fg whitespace-pre-wrap break-words">
+                              {row.data ?? '—'}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </Panel>
+              )}
+            </div>
+
+            {/* Sidebar - 4 columns */}
+            <div className="col-span-4 space-y-3">
+              {/* Event Details */}
+              <Panel title={t('Event Details')} icon={<Video size={16} />}>
+                <div className="space-y-4">
+                  {/* Monitor */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-fg-muted">{t('Monitor')}</span>
+                    <Link
+                      to="/monitors/$monitorId"
+                      params={{ monitorId: String(event.monitor_id) }}
+                      className="flex items-center gap-1.5 text-sm text-accent hover:text-accent-dim transition-colors"
+                    >
+                      <Monitor size={14} />
+                      {monitor?.name || t('Monitor {{id}}', { id: event.monitor_id })}
+                    </Link>
+                  </div>
+
+                  {/* Cause */}
+                  {event.cause && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-fg-muted">{t('Cause')}</span>
+                      <span className="px-2 py-0.5 rounded bg-surface-2 text-xs text-fg">
+                        {event.cause}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Start Time */}
+                  {startTime && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-fg-muted">{t('Start')}</span>
+                      <span className="text-sm font-mono text-fg">
+                        {formatDateTime(startTime)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* End Time */}
+                  {endTime && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-fg-muted">{t('End')}</span>
+                      <span className="text-sm font-mono text-fg">
+                        {formatDateTime(endTime)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Duration */}
+                  {eventDurationSeconds(event.length) > 0 && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-fg-muted">{t('Duration')}</span>
+                      <span className="text-sm font-mono text-fg">
+                        {t('{{seconds}}s', { seconds: eventDurationSeconds(event.length) })}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Archived */}
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-fg-muted">{t('Archived')}</span>
+                    <span
+                      className={clsx(
+                        'text-sm',
+                        event.archived === 1 ? 'text-warn' : 'text-fg-dim'
+                      )}
+                    >
+                      {event.archived === 1 ? t('Yes') : t('No')}
+                    </span>
+                  </div>
+                </div>
+              </Panel>
+
+              {/* Technical Details */}
+              <Panel title={t('Technical')} icon={<Activity size={16} />}>
+                <div className="space-y-3 text-sm">
+                  <div className="flex items-center justify-between">
+                    <span className="text-fg-muted">{t('Resolution')}</span>
+                    <span className="font-mono text-fg">
+                      {event.width}x{event.height}
+                    </span>
+                  </div>
+
+                  <div className="flex items-center justify-between">
+                    <span className="text-fg-muted flex items-center gap-1.5"><HardDrive size={12} />{t('Storage')}</span>
+                    <span className="font-mono text-fg" data-testid="event-storage">
+                      {storageName ?? t('ID: {{id}}', { id: event.storage_id })}
+                    </span>
+                  </div>
+
+                  {event.disk_space && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-fg-muted">{t('Disk Space')}</span>
+                      <span className="font-mono text-fg">
+                        {t('{{size}} MB', { size: (event.disk_space / 1024 / 1024).toFixed(2) })}
+                      </span>
+                    </div>
+                  )}
+
+                  {event.scheme && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-fg-muted">{t('Scheme')}</span>
+                      <span className="font-mono text-fg">{event.scheme}</span>
+                    </div>
+                  )}
+                </div>
+              </Panel>
+
+              {/* Tags — chips + inline editor (read-only without Events Edit) */}
+              <Panel title={t('Tags')} icon={<TagIcon size={16} />}>
+                <RequirePerm
+                  feature="events"
+                  level="Edit"
+                  fallback={(
+                    <p className="text-sm text-fg-muted">
+                      {(event.tags ?? []).map((tag) => tag.name).join(', ') || t('No tags')}
+                    </p>
+                  )}
+                >
+                  <TagChips eventId={event.id} currentTags={event.tags ?? []} />
+                </RequirePerm>
+              </Panel>
+
+              {/* Notes */}
+              {event.notes && (
+                <Panel title={t('Notes')} icon={<AlertTriangle size={16} />}>
+                  <p className="text-sm text-fg-muted whitespace-pre-wrap">
+                    {event.notes}
+                  </p>
+                </Panel>
+              )}
+
+              {/* Actions */}
+              <Panel title={t('Actions')}>
+                <div className="space-y-2">
+                  <Link
+                    to="/events/$eventId/frames"
+                    params={{ eventId: String(event.id) }}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                    )}
+                  >
+                    <Film size={14} aria-hidden />
+                    {t('Frames')}
+                  </Link>
+
+                  {s.reviewSearch && (
+                    <Link
+                      to="/montagereview"
+                      search={s.reviewSearch}
+                      className={clsx(
+                        'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                        'bg-surface border border-border-subtle',
+                        'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                      )}
+                    >
+                      <LayoutGrid size={14} aria-hidden />
+                      {t('Montage Review')}
+                    </Link>
+                  )}
+
+                  <RequirePerm feature="events" level="Edit">
+                  <button
+                    type="button"
+                    onClick={s.toggleArchived}
+                    disabled={s.archivePending}
+                    aria-pressed={event.archived === 1}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors',
+                      'disabled:opacity-50 disabled:cursor-not-allowed'
+                    )}
+                  >
+                    {event.archived === 1 ? <ArchiveRestore size={14} aria-hidden /> : <Archive size={14} aria-hidden />}
+                    {event.archived === 1 ? t('Unarchive') : t('Archive')}
+                  </button>
+                  {s.archiveError && (
+                    <p role="alert" className="text-xs text-danger">{s.archiveError}</p>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={s.openEdit}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                    )}
+                  >
+                    <Pencil size={14} aria-hidden />
+                    {t('Edit')}
+                  </button>
+                  </RequirePerm>
+
+                  <a
+                    href={downloadUrl}
+                    download
+                    title={t('Backend generates the MP4 on demand (Range-supported) and streams it as a download.')}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                    )}
+                  >
+                    <Download size={14} aria-hidden />
+                    {t('Download Video')}
+                  </a>
+
+                  <RequirePerm feature="events" level="Edit">
+                    <button
+                      onClick={s.requestDelete}
+                      disabled={s.deletePending}
+                      aria-keyshortcuts="Delete"
+                      className={clsx(
+                        'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                        'border border-danger/40 text-danger hover:bg-danger/10 transition-colors',
+                        'disabled:opacity-50 disabled:cursor-not-allowed'
+                      )}
+                    >
+                      <Trash2 size={14} aria-hidden />
+                      {t('Delete Event')}
+                    </button>
+                  </RequirePerm>
+                  <p className="text-xs text-fg-dim text-center">
+                    {t('Keys: ← → prev/next · Space play/pause · Delete')}
+                  </p>
+                </div>
+              </Panel>
+            </div>
+          </div>
+
+          {/* Status bar: the counts an operator reads off this event, plus
+              what the recording actually is. */}
+          <div className="flex items-center gap-4 px-3 py-2 shrink-0 border-t border-border-subtle bg-surface text-xs text-fg-dim">
+            <Readout label={t('Total Frames')} value={event.frames ?? 0} />
+            <Readout label={t('Alarm Frames')} value={event.alarm_frames ?? 0} tone="alarm" />
+            <Readout label={t('Tot Score')} value={event.tot_score ?? 0} />
+            <Readout label={t('Avg Score')} value={event.avg_score ?? 0} />
+            <Readout label={t('Max Score')} value={event.max_score ?? 0} />
+            <span
+              data-testid="codec-hint"
+              title={t('Source codec: {{codec}}', { codec: codecHint })}
+              className="ms-auto flex items-center gap-1.5 min-w-0"
+            >
+              <FileVideo size={12} aria-hidden />
+              {t('Codec')}
+              <span className="font-mono text-fg-muted truncate">{codecHint}</span>
+            </span>
+          </div>
+
+          <ConfirmDialog
+            isOpen={s.deleteOpen}
+            onClose={s.cancelDelete}
+            onConfirm={s.confirmDelete}
+            title={t('Delete Event')}
+            message={s.deleteError
+              ? t('Delete failed: {{message}}', { message: s.deleteError })
+              : t('Delete event #{{id}} and its recording? This cannot be undone.', { id: event.id })}
+            confirmText={t('Delete')}
+            isLoading={s.deletePending}
+          />
+
+          {s.editOpen && (
+            <EventEditForm
+              isOpen
+              title={t('Edit event #{{id}}', { id: event.id })}
+              initial={{ name: event.name, cause: event.cause ?? '', notes: event.notes ?? '' }}
+              onClose={s.closeEdit}
+              onSubmit={(v) => s.saveEdit({ name: v.name, cause: v.cause, notes: v.notes })}
+              pending={s.savePending}
+              error={s.saveError}
+            />
+          )}
+      </main>
+    </AppShell>
+  );
+}
+
+/** Two-cell label/value row used inside the stats panel. */
+function StatRow({ label, value }: { label: string; value: number | string }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1">
+      <span className="text-fg-dim text-xs">{label}</span>
+      <span className="font-mono text-fg tabular-nums">{value}</span>
+    </div>
+  );
+}
+
+/**
+ * One status-bar readout. Only the alarm-frame count is coloured — it is the
+ * one number here that reports a state (docs/DESIGN.md).
+ */
+function Readout({ label, value, tone }: { label: string; value: number; tone?: 'alarm' }) {
+  return (
+    <span className="flex items-center gap-1.5 whitespace-nowrap">
+      {label}
+      <span className={clsx(
+        'font-mono tabular-nums',
+        tone === 'alarm' && value > 0 ? 'text-danger' : 'text-fg',
+      )}>
+        {value}
+      </span>
+    </span>
+  );
+}

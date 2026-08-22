@@ -1,5 +1,6 @@
-import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
+import { Button } from './Button';
 import { Modal } from './Modal';
 
 interface ConfirmDialogProps {
@@ -19,42 +20,29 @@ export function ConfirmDialog({
   onConfirm,
   title,
   message,
-  confirmText = 'Confirm',
+  confirmText,
   variant = 'danger',
   isLoading = false,
 }: ConfirmDialogProps) {
+  const { t } = useTranslation();
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
-      <p className="text-sm text-text-secondary mb-6">{message}</p>
+      <p className="text-sm text-fg-muted mb-6">{message}</p>
       <div className="flex items-center justify-end gap-3">
-        <button
-          onClick={onClose}
-          disabled={isLoading}
-          className={clsx(
-            'px-4 py-2 rounded-lg text-sm font-medium',
-            'bg-panel border border-border-subtle',
-            'text-text-secondary hover:text-text-primary',
-            'transition-colors',
-            isLoading && 'opacity-50 cursor-not-allowed'
-          )}
-        >
-          Cancel
-        </button>
-        <button
+        <Button onClick={onClose} disabled={isLoading}>
+          {t('Cancel')}
+        </Button>
+        {/* Warning keeps the amber fill; `--warn-fg` is the AA-checked
+            foreground for it, which `text-white` was not. */}
+        <Button
+          variant={variant === 'danger' ? 'danger' : 'secondary'}
           onClick={onConfirm}
           disabled={isLoading}
-          className={clsx(
-            'px-4 py-2 rounded-lg text-sm font-medium',
-            'transition-colors flex items-center gap-2',
-            variant === 'danger'
-              ? 'bg-crimson hover:bg-crimson/80 text-white'
-              : 'bg-amber hover:bg-amber/80 text-void',
-            isLoading && 'opacity-50 cursor-not-allowed'
-          )}
+          className={variant === 'warning' ? 'bg-warn text-warn-fg border-warn hover:bg-warn-dim' : undefined}
         >
           {isLoading && <Loader2 size={14} className="animate-spin" />}
-          {confirmText}
-        </button>
+          {confirmText ?? t('Confirm')}
+        </Button>
       </div>
     </Modal>
   );

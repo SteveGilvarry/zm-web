@@ -36,9 +36,11 @@ function installIOMock(): { instances: MockInstance[] } {
         options,
       };
       instances.push(instance);
-      this.observe = instance.observe;
-      this.unobserve = instance.unobserve;
-      this.disconnect = instance.disconnect;
+      // vi.fn() is typed as a generic Mock, not the specific IO method
+      // signature these fields declare — cast through unknown.
+      this.observe = instance.observe as unknown as (el: Element) => void;
+      this.unobserve = instance.unobserve as unknown as (el: Element) => void;
+      this.disconnect = instance.disconnect as unknown as () => void;
     }
     observe: (el: Element) => void;
     unobserve: (el: Element) => void;

@@ -37,8 +37,7 @@ describe('eventsColumns store', () => {
     useEventsColumnsStore.getState().showAll();
     useEventsColumnsStore.getState().resetDefaults();
     const hidden = useEventsColumnsStore.getState().hidden;
-    // disk_space + archived ship hidden by default; both should be back.
-    expect(hidden).toContain('disk_space');
-    expect(hidden).toContain('archived');
+    // Only Emailed ships hidden (legacy default column set).
+    expect(hidden).toEqual(['emailed']);
   });
 });

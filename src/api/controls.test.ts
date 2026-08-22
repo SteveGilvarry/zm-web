@@ -66,7 +66,8 @@ describe('createControl', () => {
       return HttpResponse.json({ ...sample, id: 42 });
     }));
     // Strip id (CreateControlPayload is Omit<Control, 'id'>)
-    const { id: _, ...payload } = sample;
+    const { id, ...payload } = sample;
+    void id;
     const out = await createControl(payload);
     expect(body.name).toBe('Hikvision PTZ');
     expect(out.id).toBe(42);

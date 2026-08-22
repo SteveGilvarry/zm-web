@@ -7,7 +7,14 @@ export interface StreamHookResult {
   state: StreamConnectionState;
   error: string | null;
   start: () => void;
+  /** Hard stop: for WebRTC this tears the shared session down for every consumer. */
   stop: () => void;
+  /**
+   * Soft stop: this consumer steps away (tile scrolled out, tab hidden)
+   * without killing the stream under other consumers. Shared sessions
+   * linger through the manager's grace period, so a quick return is free.
+   */
+  pause: () => void;
   hasAudio: boolean;
 }
 
@@ -53,7 +60,10 @@ export function useWebRtcStream(monitorId: number): StreamHookResult {
   });
 
   const start = useCallback(() => {
-    if (acquiredRef.current) return;
+    // A reference we hold can go stale: another consumer's hard stop (or
+    // logout) tears the session down underneath us. If no session exists,
+    // acquire again even though we think we already did.
+    if (acquiredRef.current && webrtcManager.hasSession(monitorId)) return;
     acquiredRef.current = true;
     webrtcManager.acquire(monitorId);
   }, [monitorId]);
@@ -61,6 +71,12 @@ export function useWebRtcStream(monitorId: number): StreamHookResult {
   const stop = useCallback(() => {
     acquiredRef.current = false;
     webrtcManager.stopHard(monitorId);
+  }, [monitorId]);
+
+  const pause = useCallback(() => {
+    if (!acquiredRef.current) return;
+    acquiredRef.current = false;
+    webrtcManager.release(monitorId);
   }, [monitorId]);
 
   // Release this hook's reference on unmount. The manager keeps the connection
@@ -82,5 +98,6 @@ export function useWebRtcStream(monitorId: number): StreamHookResult {
     hasAudio: snapshot.hasAudio,
     start,
     stop,
+    pause,
   };
 }

@@ -1,7 +1,14 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { getEventCounts, getEventCountsByMonitor, getEvents } from './events';
+import {
+  EVENT_SORT_FIELDS,
+  getEventCounts,
+  getEventCountsByMonitor,
+  getEvents,
+  isEventSortField,
+  legacySortFieldToApi,
+} from './events';
 import { useAuthStore } from '@/stores/auth';
 
 /**
@@ -51,6 +58,57 @@ describe('getEvents', () => {
     );
     await getEvents({ start_time: '2026-05-01T00:00:00Z' });
     expect(capturedUrl).toContain('start_time=2026-05-01T00');
+  });
+
+  it('sends the substring and tag filters zm-api#20 added', async () => {
+    let params = new URLSearchParams();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        params = new URL(request.url).searchParams;
+        return HttpResponse.json({ items: [], total: 0, per_page: 20, current_page: 1, last_page: 1 });
+      }),
+    );
+    await getEvents({
+      name: 'Front', cause: 'Motion', notes: 'parcel', tag_id: '1,4',
+      sort: 'cause', direction: 'desc',
+    });
+    expect(params.get('name')).toBe('Front');
+    expect(params.get('cause')).toBe('Motion');
+    expect(params.get('notes')).toBe('parcel');
+    expect(params.get('tag_id')).toBe('1,4');
+    expect(params.get('sort')).toBe('cause');
+    expect(params.get('direction')).toBe('desc');
+  });
+
+  it('omits filters the caller left undefined', async () => {
+    let params = new URLSearchParams();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        params = new URL(request.url).searchParams;
+        return HttpResponse.json({ items: [], total: 0, per_page: 20, current_page: 1, last_page: 1 });
+      }),
+    );
+    await getEvents({ monitor_id: 2 });
+    expect([...params.keys()]).toEqual(['monitor_id']);
+  });
+});
+
+describe('EventSortField', () => {
+  it('accepts the five columns zm-api#20 added', () => {
+    for (const f of ['name', 'cause', 'monitor_id', 'notes', 'frames']) {
+      expect(isEventSortField(f)).toBe(true);
+      expect(EVENT_SORT_FIELDS).toContain(f);
+    }
+    expect(isEventSortField('disk_space')).toBe(false);
+  });
+
+  it('maps the legacy sort-field names onto them', () => {
+    expect(legacySortFieldToApi('Name')).toBe('name');
+    expect(legacySortFieldToApi('Cause')).toBe('cause');
+    expect(legacySortFieldToApi('Frames')).toBe('frames');
+    expect(legacySortFieldToApi('MonitorName')).toBe('monitor_id');
+    // Still no backend column for these two.
+    expect(legacySortFieldToApi('DiskSpace')).toBe('start_time');
   });
 });
 

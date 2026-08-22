@@ -1,8 +1,11 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import { Power, Loader2 } from 'lucide-react';
-import { getSystemStatus, systemStartup, systemShutdown } from '@/api/system';
+import { getSystemStatus } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
+import { RunStateChooser } from '@/features/state/RunStateChooser';
 
 interface SystemRunningToggleProps {
   /** 'compact' (default) for header strips, 'banner' for full-row buttons. */
@@ -12,17 +15,17 @@ interface SystemRunningToggleProps {
 }
 
 /**
- * Interactive RUNNING / STOPPED toggle that hits /api/v3/system/startup or
- * /api/v3/system/shutdown and refreshes the cached status. Stops always
- * confirm first — bringing down the recording stack is the most disruptive
- * action an operator can take from the dashboard.
+ * RUNNING / STOPPED badge in the header. Clicking it opens the run-state
+ * chooser (Start / Stop / Restart / saved states), as the legacy badge
+ * opened `?view=state`; every action confirms before it runs.
  */
 export function SystemRunningToggle({
   variant = 'compact',
   tone = 'dark',
 }: SystemRunningToggleProps) {
+  const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
-  const qc = useQueryClient();
+  const [chooserOpen, setChooserOpen] = useState(false);
 
   const statusQ = useQuery({
     queryKey: ['systemStatus'],
@@ -32,71 +35,66 @@ export function SystemRunningToggle({
   });
 
   const running = statusQ.data?.running ?? null;
+  const busy = statusQ.isLoading;
+  const label = running === null ? '…' : running ? t('Running') : t('Stopped');
+  const ariaLabel = t('Run state: {{state}}. Change run state', { state: label });
 
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['systemStatus'] });
-
-  const startMutation = useMutation({ mutationFn: systemStartup, onSuccess: invalidate });
-  const stopMutation = useMutation({ mutationFn: systemShutdown, onSuccess: invalidate });
-
-  const busy = startMutation.isPending || stopMutation.isPending || statusQ.isLoading;
-
-  const handleClick = () => {
-    if (busy) return;
-    if (running) {
-      if (confirm('Stop ZoneMinder? Recording will halt across every monitor.')) {
-        stopMutation.mutate();
-      }
-    } else {
-      startMutation.mutate();
-    }
-  };
-
-  const label = running === null ? '…' : running ? 'RUNNING' : 'STOPPED';
+  const chooser = (
+    <RunStateChooser isOpen={chooserOpen} onClose={() => setChooserOpen(false)} running={running} />
+  );
 
   if (variant === 'banner') {
     return (
-      <button
-        onClick={handleClick}
-        disabled={busy}
-        className={clsx(
-          'flex items-center gap-2 px-3 py-1.5 rounded-md font-mono text-xs uppercase tracking-wider border-2 transition-all',
-          running
-            ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20'
-            : 'border-crimson/50 bg-crimson/10 text-crimson hover:bg-crimson/20',
-          busy && 'opacity-70 cursor-wait',
-        )}
-        aria-label={running ? 'Stop ZoneMinder' : 'Start ZoneMinder'}
-      >
-        {busy ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
-        {label}
-      </button>
+      <>
+        <button
+          onClick={() => setChooserOpen(true)}
+          disabled={busy}
+          className={clsx(
+            'flex items-center gap-2 px-3 py-1.5 rounded text-sm border transition-colors',
+            running
+              ? 'border-ok/40 bg-ok/10 text-ok hover:bg-ok/20'
+              : 'border-danger/40 bg-danger/10 text-danger hover:bg-danger/20',
+            busy && 'opacity-70 cursor-wait',
+          )}
+          aria-label={ariaLabel}
+          aria-haspopup="dialog"
+        >
+          {busy ? <Loader2 size={12} className="animate-spin" /> : <Power size={12} />}
+          {label}
+        </button>
+        {chooser}
+      </>
     );
   }
 
   // compact — tone-aware so classic and modern skins each look at home
   const baseCls = tone === 'light'
     ? running
-      ? 'bg-emerald-600 hover:bg-emerald-500 text-white'
-      : 'bg-red-600 hover:bg-red-500 text-white'
+      ? 'bg-ok hover:bg-ok-dim text-ok-fg'
+      : 'bg-danger hover:bg-danger-dim text-danger-fg'
     : running
-      ? 'border border-emerald-500/40 bg-emerald-500/15 text-emerald-300 hover:bg-emerald-500/25'
-      : 'border border-crimson/40 bg-crimson/15 text-crimson hover:bg-crimson/25';
+      ? 'border border-ok/40 bg-ok/15 text-ok hover:bg-ok/25'
+      : 'border border-danger/40 bg-danger/15 text-danger hover:bg-danger/25';
 
   return (
-    <button
-      onClick={handleClick}
-      disabled={busy}
-      className={clsx(
-        'inline-flex items-center gap-1.5 px-2 py-1 rounded font-mono text-[11px] uppercase tracking-wider transition-all',
-        baseCls,
-        busy && 'opacity-70 cursor-wait',
-      )}
-      aria-label={running ? 'Stop ZoneMinder' : 'Start ZoneMinder'}
-    >
-      {busy
-        ? <Loader2 size={11} className="animate-spin" />
-        : <Power size={11} />}
-      {label}
-    </button>
+    <>
+      <button
+        onClick={() => setChooserOpen(true)}
+        disabled={busy}
+        className={clsx(
+          'inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors',
+          baseCls,
+          busy && 'opacity-70 cursor-wait',
+        )}
+        aria-label={ariaLabel}
+        aria-haspopup="dialog"
+      >
+        {busy
+          ? <Loader2 size={11} className="animate-spin" />
+          : <Power size={11} />}
+        {label}
+      </button>
+      {chooser}
+    </>
   );
 }

@@ -5,11 +5,8 @@ import { http, HttpResponse } from 'msw';
 import { renderWithProviders } from '@/test/render';
 import { server, setupMockServer } from '@/test/msw/server';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
-import {
-  MonitorFilterBar,
-  filterMonitors,
-  type MonitorFilterSelections,
-} from './MonitorFilterBar';
+import { MonitorFilterBar } from './MonitorFilterBar';
+import { filterMonitors, type MonitorFilterSelections } from './filterMonitors';
 import { useAuthStore } from '@/stores/auth';
 import type { Monitor } from '@/types';
 

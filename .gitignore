@@ -4,7 +4,7 @@
 .env.*.local
 
 # Logs
-logs
+/logs/
 *.log
 npm-debug.log*
 yarn-debug.log*
@@ -50,3 +50,9 @@ test-results/
 playwright-report/
 .playwright/
 coverage/
+
+# Playwright storage state minted per run by e2e/fixtures.ts
+e2e/.auth/
+
+# show-me-your-work decision logs: local working artifacts, not history.
+/.audit/

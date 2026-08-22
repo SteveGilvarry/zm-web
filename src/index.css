@@ -1,62 +1,331 @@
 @import "tailwindcss";
 
-/* ============================================
-   ZM Dashboard - Mission Control Theme
-   ============================================ */
+/* ============================================================
+   ZM Dashboard — design tokens
+   ============================================================
+
+   Three layers, in this order:
+
+   1. **Semantic tokens** (`--bg`, `--surface`, `--fg`, `--accent`, …) hold
+      every colour decision. They are bound per skin AND per colour scheme by
+      the rules below, so a component never asks "which skin am I in?".
+   2. **`@theme` aliases** map the historical Tailwind colour names
+      (`--color-void`, `--color-cyan`, `--color-text-dim`, …) onto the
+      semantic tokens. Existing pages keep working unchanged; new code should
+      reach for the semantic names.
+   3. **Base rules** — focus ring, reduced motion, scrollbars, effects.
+
+   Colour-scheme matrix:
+     modern  — light (default) + dark (system preference or an explicit pick)
+     classic — light only, on purpose. The legacy ZoneMinder UI it mirrors has
+               no dark mode; a dark "classic" would be a third visual language
+               to maintain and match nothing operators recognise. The
+               `:not(.skin-classic)` guards on the dark rules below are what
+               keep classic light under a dark OS.
+
+   Every foreground/background pair used for text is checked against WCAG AA
+   by `src/lib/contrast.test.ts`, which parses the `@tokens` blocks in this
+   file. Edit a hex here and that test is the thing that catches you.
+   ============================================================ */
+
+/* ---------- Modern skin — light (also the pre-hydration default) ---------- */
+:root {
+  color-scheme: light;
+
+  /* @tokens modern-light */
+  --bg: #f4f6f8;
+  --bg-sunken: #e8ecf0;
+  --surface: #ffffff;
+  --surface-2: #f2f5f7;
+  --surface-3: #e6ebef;
+  --border: #c6cfd6;
+  --border-subtle: #dfe5ea;
+
+  --fg: #101820;
+  --fg-muted: #3b4650;
+  --fg-dim: #4d5964;
+  --fg-faint: #5b6773;
+
+  --accent: #2b5f87;
+  --accent-dim: #204a6b;
+  --accent-fg: #ffffff;
+
+  --ok: #16703f;
+  --ok-dim: #10552f;
+  --ok-fg: #ffffff;
+
+  --warn: #7f4e00;
+  --warn-dim: #653e00;
+  --warn-fg: #ffffff;
+
+  --danger: #ad2a24;
+  --danger-dim: #8c211c;
+  --danger-fg: #ffffff;
+
+  --info: #45566a;
+  /* end @tokens */
+
+  --elevation-1: 0 1px 2px rgb(15 23 32 / 0.06), 0 0 0 1px rgb(15 23 32 / 0.04);
+  --elevation-2: 0 8px 24px rgb(15 23 32 / 0.12);
+}
+
+/* ---------- Modern skin — dark, following the operating system ---------- */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]):not(.skin-classic) {
+    color-scheme: dark;
+
+    /* @tokens modern-dark */
+    --bg: #0e1216;
+    --bg-sunken: #090c0f;
+    --surface: #151a20;
+    --surface-2: #1c2228;
+    --surface-3: #252d35;
+    --border: #303a43;
+    --border-subtle: #212930;
+
+    --fg: #e7ecf0;
+    --fg-muted: #bcc6cf;
+    --fg-dim: #98a4ae;
+    --fg-faint: #8a97a1;
+
+    --accent: #7fa8cf;
+    --accent-dim: #6690b8;
+    --accent-fg: #0e1216;
+
+    --ok: #5cb37c;
+    --ok-dim: #4a9a62;
+    --ok-fg: #0e1216;
+
+    --warn: #dda54a;
+    --warn-dim: #b9862f;
+    --warn-fg: #0e1216;
+
+    --danger: #e8737c;
+    --danger-dim: #dd636e;
+    --danger-fg: #0e1216;
+
+    --info: #9aa9b8;
+    /* end @tokens */
+
+    --elevation-1: 0 4px 24px rgb(0 0 0 / 0.4);
+    --elevation-2: 0 8px 32px rgb(0 0 0 / 0.5);
+  }
+}
+
+/* ---------- Modern skin — dark, pinned by the operator ----------
+   Byte-identical to the block above; `contrast.test.ts` asserts the two
+   never drift. CSS has no way to share one declaration list between a media
+   query and a plain selector. */
+:root[data-theme="dark"]:not(.skin-classic) {
+  color-scheme: dark;
+
+  /* @tokens modern-dark-pinned */
+  --bg: #0e1216;
+  --bg-sunken: #090c0f;
+  --surface: #151a20;
+  --surface-2: #1c2228;
+  --surface-3: #252d35;
+  --border: #303a43;
+  --border-subtle: #212930;
+
+  --fg: #e7ecf0;
+  --fg-muted: #bcc6cf;
+  --fg-dim: #98a4ae;
+  --fg-faint: #8a97a1;
+
+  --accent: #7fa8cf;
+  --accent-dim: #6690b8;
+  --accent-fg: #0e1216;
+
+  --ok: #5cb37c;
+  --ok-dim: #4a9a62;
+  --ok-fg: #0e1216;
+
+  --warn: #dda54a;
+  --warn-dim: #b9862f;
+  --warn-fg: #0e1216;
+
+  --danger: #e8737c;
+  --danger-dim: #dd636e;
+  --danger-fg: #0e1216;
+
+  --info: #9aa9b8;
+  /* end @tokens */
+
+  --elevation-1: 0 4px 24px rgb(0 0 0 / 0.4);
+  --elevation-2: 0 8px 32px rgb(0 0 0 / 0.5);
+}
+
+/* ---------- Classic ZoneMinder skin — light only ----------
+   Flat white tables, Bootstrap-ish blue links. `#337ab7`, the legacy link
+   colour, is 3.68:1 on white and fails AA, so links use Bootstrap's own
+   hover blue instead — same family, 6.2:1. */
+.skin-classic,
+.classic-theme {
+  color-scheme: light;
+
+  /* @tokens classic-light */
+  --bg: #ffffff;
+  --bg-sunken: #f4f5f7;
+  --surface: #ffffff;
+  --surface-2: #fafafa;
+  --surface-3: #f4f4f5;
+  --border: #d4d4d8;
+  --border-subtle: #e4e4e7;
+
+  --fg: #18181b;
+  --fg-muted: #3f3f46;
+  --fg-dim: #52525b;
+  --fg-faint: #61616b;
+
+  --accent: #2a6496;
+  --accent-dim: #1f4d75;
+  --accent-fg: #ffffff;
+
+  --ok: #047857;
+  --ok-dim: #065f46;
+  --ok-fg: #ffffff;
+
+  --warn: #b45309;
+  --warn-dim: #92400e;
+  --warn-fg: #ffffff;
+
+  --danger: #dc2626;
+  --danger-dim: #b91c1c;
+  --danger-fg: #ffffff;
+
+  --info: #6b21a8;
+  /* end @tokens */
+
+  --elevation-1: 0 1px 2px rgb(0 0 0 / 0.06), 0 0 0 1px rgb(0 0 0 / 0.04);
+  --elevation-2: 0 4px 12px rgb(0 0 0 / 0.08);
+}
+
+/* ---------- Derived tokens (same in every skin) ---------- */
+:root,
+.skin-classic,
+.classic-theme {
+  /* ZoneMinder monitor states map onto the semantic intent scale — one
+     colour vocabulary, so a green tile always means the same thing (M-4). */
+  --status-online: var(--ok);
+  --status-offline: var(--fg-dim);
+  --status-recording: var(--danger);
+  --status-motion: var(--warn);
+  --status-alarm: var(--danger);
+
+  /* Glow colours live outside @theme so the plain `.glow-*` rules below can
+     use them; Tailwind only emits @theme variables its utilities reference. */
+  --glow-accent: color-mix(in srgb, var(--accent) 20%, transparent);
+  --glow-warn: color-mix(in srgb, var(--warn) 20%, transparent);
+  --glow-danger: color-mix(in srgb, var(--danger) 20%, transparent);
+  --glow-ok: color-mix(in srgb, var(--ok) 20%, transparent);
+  --glow-info: color-mix(in srgb, var(--info) 20%, transparent);
+
+  /* Legacy ZoneMinder navbar chrome. Constant across skins because it is a
+     reproduction of a specific UI, not a themed surface — the classic shell
+     is the only thing that uses it. Checked for AA in contrast.test.ts. */
+  /* @tokens classic-nav */
+  --classic-nav: #3c4956;
+  --classic-nav-deep: #2b343d;
+  --classic-nav-fg: #ffffff;
+  --classic-nav-link: #a5f3fc;
+  --classic-nav-brand: #fbbf24;
+  /* end @tokens */
+
+  /* Focus ring; also used by the primitives in src/components/common. */
+  --focus: var(--accent);
+  --focus-width: 2px;
+  --focus-offset: 2px;
+}
 
 @theme {
-  /* Typography - JetBrains Mono + Geist */
+  /* Typography — JetBrains Mono + Geist */
   --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   --font-sans: 'Geist', system-ui, sans-serif;
 
-  /* Core Palette - Deep Space Command Center */
-  --color-void: #050810;
-  --color-abyss: #0a0e14;
-  --color-surface: #141b24;
-  --color-panel: #1a2332;
-  --color-elevated: #232d3f;
-  --color-border: #2a3a4d;
-  --color-border-subtle: #1e2a3a;
+  /* Data-label type ramp (M-5). The old 10px uppercase mono labels are
+     hard to read at arm's length; `text-label` is 12px, normal case, with
+     just enough tracking to hold its own against the 14px body. */
+  --text-label: 12px;
+  --text-label--line-height: 1.35;
+  --text-label--letter-spacing: 0.02em;
 
-  /* Text Hierarchy */
-  --color-text-primary: #e8edf5;
-  --color-text-secondary: #8a9bb3;
-  --color-text-muted: #566b85;
-  --color-text-dim: #3d5066;
+  /* --- Semantic colour aliases, exposed as Tailwind utilities --- */
+  --color-bg: var(--bg);
+  --color-bg-sunken: var(--bg-sunken);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-dim: var(--fg-dim);
+  --color-fg-faint: var(--fg-faint);
+  --color-accent: var(--accent);
+  --color-accent-dim: var(--accent-dim);
+  --color-accent-fg: var(--accent-fg);
+  --color-ok: var(--ok);
+  --color-ok-dim: var(--ok-dim);
+  --color-ok-fg: var(--ok-fg);
+  --color-warn: var(--warn);
+  --color-warn-dim: var(--warn-dim);
+  --color-warn-fg: var(--warn-fg);
+  --color-danger: var(--danger);
+  --color-danger-dim: var(--danger-dim);
+  --color-danger-fg: var(--danger-fg);
+  --color-info: var(--info);
+  --color-focus: var(--focus);
+  --color-classic-nav: var(--classic-nav);
+  --color-classic-nav-deep: var(--classic-nav-deep);
+  --color-classic-nav-fg: var(--classic-nav-fg);
+  --color-classic-nav-link: var(--classic-nav-link);
+  --color-classic-nav-brand: var(--classic-nav-brand);
 
-  /* Accent Colors - Cyberpunk Neon */
-  --color-cyan: #00d4ff;
-  --color-cyan-glow: #00d4ff33;
-  --color-cyan-dim: #0099bb;
+  /* --- Historical names, kept so no page has to change in this pass ---
+     `bg-void`, `text-text-dim`, `text-cyan` and friends now resolve through
+     the semantic layer, so they follow the skin and the colour scheme. */
+  --color-void: var(--bg);
+  --color-abyss: var(--bg-sunken);
+  --color-surface: var(--surface);
+  --color-panel: var(--surface-2);
+  --color-elevated: var(--surface-3);
+  --color-border: var(--border);
+  --color-border-subtle: var(--border-subtle);
 
-  --color-amber: #ffb000;
-  --color-amber-glow: #ffb00033;
-  --color-amber-dim: #cc8c00;
+  --color-text-primary: var(--fg);
+  --color-text-secondary: var(--fg-muted);
+  --color-text-muted: var(--fg-dim);
+  --color-text-dim: var(--fg-faint);
 
-  --color-crimson: #ff3366;
-  --color-crimson-glow: #ff336633;
-  --color-crimson-dim: #cc2952;
+  --color-cyan: var(--accent);
+  --color-cyan-dim: var(--accent-dim);
+  --color-cyan-glow: var(--glow-accent);
 
-  --color-emerald: #00ff9d;
-  --color-emerald-glow: #00ff9d33;
-  --color-emerald-dim: #00cc7d;
+  --color-amber: var(--warn);
+  --color-amber-dim: var(--warn-dim);
+  --color-amber-glow: var(--glow-warn);
 
-  --color-purple: #a855f7;
-  --color-purple-glow: #a855f733;
+  --color-crimson: var(--danger);
+  --color-crimson-dim: var(--danger-dim);
+  --color-crimson-glow: var(--glow-danger);
 
-  /* Status Colors */
-  --color-online: var(--color-emerald);
-  --color-offline: var(--color-text-muted);
-  --color-recording: var(--color-crimson);
-  --color-motion: var(--color-amber);
-  --color-alarm: var(--color-crimson);
+  --color-emerald: var(--ok);
+  --color-emerald-dim: var(--ok-dim);
+  --color-emerald-glow: var(--glow-ok);
 
-  /* Shadows & Glows */
-  --shadow-glow-cyan: 0 0 20px var(--color-cyan-glow), 0 0 40px var(--color-cyan-glow);
-  --shadow-glow-amber: 0 0 20px var(--color-amber-glow), 0 0 40px var(--color-amber-glow);
-  --shadow-glow-crimson: 0 0 20px var(--color-crimson-glow), 0 0 40px var(--color-crimson-glow);
-  --shadow-panel: 0 4px 24px rgba(0, 0, 0, 0.4);
-  --shadow-elevated: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --color-purple: var(--info);
+  --color-purple-glow: var(--glow-info);
+
+  --color-online: var(--status-online);
+  --color-offline: var(--status-offline);
+  --color-recording: var(--status-recording);
+  --color-motion: var(--status-motion);
+  --color-alarm: var(--status-alarm);
+
+  /* Shadows & glows */
+  --shadow-glow-cyan: 0 0 20px var(--glow-accent), 0 0 40px var(--glow-accent);
+  --shadow-glow-amber: 0 0 20px var(--glow-warn), 0 0 40px var(--glow-warn);
+  --shadow-glow-crimson: 0 0 20px var(--glow-danger), 0 0 40px var(--glow-danger);
+  --shadow-panel: var(--elevation-1);
+  --shadow-elevated: var(--elevation-2);
 
   /* Spacing Scale */
   --spacing-panel: 1.25rem;
@@ -78,43 +347,11 @@
   --ease-in-out-expo: cubic-bezier(0.87, 0, 0.13, 1);
 }
 
-/* ============================================
-   Classic ZoneMinder skin — palette override
-   ============================================
-   Re-binds the same custom-property names to light values so every
-   existing component that uses `bg-surface`, `text-text-primary`, etc.
-   automatically renders in classic mode without any per-component
-   branching. Applied to the ClassicShell root.                       */
-.classic-theme {
-  --color-void:           #ffffff;
-  --color-abyss:          #f4f5f7;
-  --color-surface:        #ffffff;
-  --color-panel:          #ffffff;
-  --color-elevated:       #fafafa;
-  --color-border:         #d4d4d8;        /* zinc-300 */
-  --color-border-subtle:  #e4e4e7;        /* zinc-200 */
-
-  --color-text-primary:   #18181b;        /* zinc-900 */
-  --color-text-secondary: #3f3f46;        /* zinc-700 */
-  --color-text-muted:     #71717a;        /* zinc-500 */
-  --color-text-dim:       #a1a1aa;        /* zinc-400 */
-
-  /* Keep accent hues but bring them in a touch so they read on white. */
-  --color-cyan:           #0891b2;        /* cyan-700 */
-  --color-cyan-dim:       #0e7490;        /* cyan-800 */
-  --color-amber:          #b45309;        /* amber-700 */
-  --color-amber-dim:      #92400e;        /* amber-800 */
-  --color-crimson:        #dc2626;        /* red-600 */
-  --color-crimson-dim:    #b91c1c;        /* red-700 */
-  --color-emerald:        #047857;        /* emerald-700 */
-  --color-emerald-dim:    #065f46;        /* emerald-800 */
-
-  --shadow-panel:    0 1px 2px rgba(0, 0, 0, 0.06), 0 0 0 1px rgba(0, 0, 0, 0.04);
-  --shadow-elevated: 0 4px 12px rgba(0, 0, 0, 0.08);
-}
-
 /* Glow effects are pure decoration on dark backgrounds — kill them in
-   classic so panels don't look like neon signs on a beige page. */
+   classic so panels don't look like neon signs on a white page. */
+.skin-classic .shadow-glow-cyan,
+.skin-classic [class*="shadow-[0_0"],
+.skin-classic [class*="drop-shadow-glow"],
 .classic-theme .shadow-glow-cyan,
 .classic-theme [class*="shadow-[0_0"],
 .classic-theme [class*="drop-shadow-glow"] {
@@ -122,6 +359,7 @@
 }
 
 /* Suppress the dark-skin's grid background overlay inside classic. */
+.skin-classic .bg-grid,
 .classic-theme .bg-grid {
   background-image: none;
 }
@@ -131,7 +369,7 @@
    ============================================ */
 @font-face {
   font-family: 'Geist';
-  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/Geist-Regular.woff2') format('woff2');
+  src: url('/fonts/Geist-Regular.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -139,7 +377,7 @@
 
 @font-face {
   font-family: 'Geist';
-  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/Geist-Medium.woff2') format('woff2');
+  src: url('/fonts/Geist-Medium.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -147,7 +385,7 @@
 
 @font-face {
   font-family: 'Geist';
-  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/Geist-SemiBold.woff2') format('woff2');
+  src: url('/fonts/Geist-SemiBold.woff2') format('woff2');
   font-weight: 600;
   font-style: normal;
   font-display: swap;
@@ -155,7 +393,7 @@
 
 @font-face {
   font-family: 'Geist';
-  src: url('https://cdn.jsdelivr.net/npm/geist@1.3.0/dist/fonts/geist-sans/Geist-Bold.woff2') format('woff2');
+  src: url('/fonts/Geist-Bold.woff2') format('woff2');
   font-weight: 700;
   font-style: normal;
   font-display: swap;
@@ -163,7 +401,7 @@
 
 @font-face {
   font-family: 'JetBrains Mono';
-  src: url('https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@2.304/fonts/webfonts/JetBrainsMono-Regular.woff2') format('woff2');
+  src: url('/fonts/JetBrainsMono-Regular.woff2') format('woff2');
   font-weight: 400;
   font-style: normal;
   font-display: swap;
@@ -171,7 +409,7 @@
 
 @font-face {
   font-family: 'JetBrains Mono';
-  src: url('https://cdn.jsdelivr.net/gh/JetBrains/JetBrainsMono@2.304/fonts/webfonts/JetBrainsMono-Medium.woff2') format('woff2');
+  src: url('/fonts/JetBrainsMono-Medium.woff2') format('woff2');
   font-weight: 500;
   font-style: normal;
   font-display: swap;
@@ -195,8 +433,8 @@ html {
 body {
   margin: 0;
   padding: 0;
-  background: var(--color-void);
-  color: var(--color-text-primary);
+  background: var(--bg);
+  color: var(--fg);
   min-height: 100vh;
 }
 
@@ -204,6 +442,20 @@ body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
+}
+
+/* ============================================
+   Focus ring — one recipe, everywhere
+   ============================================
+   Unlayered, so it beats the `focus:outline-none` utilities scattered through
+   the pages; `:where()` keeps specificity at zero so a component that really
+   wants its own ring can still say so with a plain class. Primitives apply
+   `.focus-ring` for the same look on wrappers that are not themselves
+   focusable elements. */
+:where(a[href], area, button, input, select, textarea, summary, [tabindex]:not([tabindex="-1"])):focus-visible,
+.focus-ring:focus-visible {
+  outline: var(--focus-width) solid var(--focus);
+  outline-offset: var(--focus-offset);
 }
 
 /* ============================================
@@ -215,16 +467,16 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: var(--color-abyss);
+  background: var(--bg-sunken);
 }
 
 ::-webkit-scrollbar-thumb {
-  background: var(--color-border);
+  background: var(--border);
   border-radius: 4px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--color-text-muted);
+  background: var(--fg-dim);
 }
 
 /* ============================================
@@ -235,45 +487,29 @@ body {
 }
 
 .text-gradient-cyan {
-  background: linear-gradient(135deg, var(--color-cyan) 0%, var(--color-cyan-dim) 100%);
+  background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dim) 100%);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
 .glow-cyan {
-  box-shadow: var(--shadow-glow-cyan);
+  box-shadow: 0 0 20px var(--glow-accent), 0 0 40px var(--glow-accent);
 }
 
 .glow-amber {
-  box-shadow: var(--shadow-glow-amber);
+  box-shadow: 0 0 20px var(--glow-warn), 0 0 40px var(--glow-warn);
 }
 
 .glow-crimson {
-  box-shadow: var(--shadow-glow-crimson);
-}
-
-/* Scanline effect for video feeds */
-.scanlines::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: repeating-linear-gradient(
-    0deg,
-    transparent,
-    transparent 2px,
-    rgba(0, 0, 0, 0.1) 2px,
-    rgba(0, 0, 0, 0.1) 4px
-  );
-  pointer-events: none;
-  opacity: 0.3;
+  box-shadow: 0 0 20px var(--glow-danger), 0 0 40px var(--glow-danger);
 }
 
 /* Grid pattern background */
 .bg-grid {
   background-image:
-    linear-gradient(var(--color-border-subtle) 1px, transparent 1px),
-    linear-gradient(90deg, var(--color-border-subtle) 1px, transparent 1px);
+    linear-gradient(var(--border-subtle) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border-subtle) 1px, transparent 1px);
   background-size: 24px 24px;
 }
 
@@ -333,3 +569,33 @@ body {
 .stagger-children > *:nth-child(6) { animation-delay: 250ms; }
 .stagger-children > *:nth-child(7) { animation-delay: 300ms; }
 .stagger-children > *:nth-child(8) { animation-delay: 350ms; }
+
+/* ============================================
+   Reduced motion
+   ============================================
+   Decorative motion only. The loading spinner (`animate-spin`) survives —
+   it is the only thing on screen saying "still working", and WCAG 2.3.3
+   is about non-essential animation. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-pulse-live,
+  .animate-fade-in,
+  .animate-pulse,
+  .animate-ping,
+  .animate-bounce,
+  .stagger-children > * {
+    animation: none !important;
+  }
+
+  .animate-fade-in,
+  .stagger-children > * {
+    opacity: 1 !important;
+    transform: none !important;
+  }
+
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

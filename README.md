@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🎛️ zm-dashboard
+# 🎛️ zm-web
 
 ### A modern, two-skin web UI for [ZoneMinder](https://zoneminder.com) surveillance systems
 
-*Replacing ZoneMinder's aging PHP web interface with a fast React dashboard —
-one codebase that ships both an opinionated "Mission Control" theme and a
-familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
+*ZoneMinder's web interface, rewritten: no PHP, one codebase, two skins —
+a modern content-first console and a familiar classic layout — talking to
+the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-7-646cff?logo=vite&logoColor=white)
@@ -20,11 +20,11 @@ familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarr
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/modern.png" alt="Mission Control skin — dark dashboard with stat cards and live monitor thumbnails" /></td>
+<td width="50%"><img src="docs/screenshots/modern.png" alt="Modern skin — a camera wall filling the frame under a single status line" /></td>
 <td width="50%"><img src="docs/screenshots/classic.png" alt="Classic ZoneMinder skin — legacy top nav and dense console table" /></td>
 </tr>
 <tr>
-<td align="center"><strong>🎛️ Mission Control</strong> — modern dark dashboard</td>
+<td align="center"><strong>🎛️ Modern</strong> — content-first ops console</td>
 <td align="center"><strong>🗂️ Classic</strong> — legacy ZoneMinder look</td>
 </tr>
 </table>
@@ -33,15 +33,15 @@ familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarr
 
 ---
 
-## ✨ Why zm-dashboard?
+## ✨ Why zm-web?
 
 ZoneMinder is a rock-solid surveillance platform, but its web UI is two decades of
-Perl and PHP. **zm-dashboard** is a clean React front end for the [`zm_api`](https://github.com/SteveGilvarry/zm-api)
+Perl and PHP. **zm-web** is a clean React front end for the [`zm_api`](https://github.com/SteveGilvarry/zm-api)
 REST backend — and it doesn't force a redesign on operators who don't want one:
 
 - 🎨 **Two skins, one codebase** — switch between a modern dashboard and a classic ZoneMinder look at runtime.
 - ⚡ **Fast & live** — WebRTC and HLS streaming, live thumbnails, snappy navigation.
-- 🧩 **Feature-complete** — full parity with the legacy UI: events, montage, filters, logs, reports, audit, settings.
+- 🧩 **Heading for full parity** — every legacy page has a home (events, montage, filters, logs, reports, audit, settings), measured at ≈42% functional parity on 2026-08-21. The plan to 1.0 is in [`docs/PRODUCTION-READINESS-PLAN.md`](docs/PRODUCTION-READINESS-PLAN.md).
 - 🔒 **Auth-aware** — JWT auth, token-scoped media, capability-gated controls (PTZ, system start/stop).
 - 🧪 **Tested** — Vitest unit suite + Playwright e2e across Chromium and WebKit.
 
@@ -49,7 +49,7 @@ REST backend — and it doesn't force a redesign on operators who don't want one
 
 ## 🖥️ The two skins
 
-| | **Mission Control** | **Classic ZoneMinder** |
+| | **Modern** | **Classic ZoneMinder** |
 |---|---|---|
 | **Feel** | Dark "command center" — cyan accents, panels, glow | Legacy-style top nav + dense white tables |
 | **For** | New users, wall displays, adaptive layouts | Operators migrating from the PHP UI |
@@ -101,7 +101,7 @@ flowchart TD
         Q["🔁 TanStack Query · API client (src/api)"] --> Hooks["🧩 Feature hooks (src/features)"]
         Hooks --> Routes["🧭 TanStack Router routes"]
         Routes -->|useUiStore.skin| Shell{"AppShell"}
-        Shell -->|modern| MC["🎛️ Mission Control chrome"]
+        Shell -->|modern| MC["🎛️ Modern chrome"]
         Shell -->|classic| CL["🗂️ Classic chrome"]
     end
 
@@ -143,8 +143,8 @@ flowchart TD
 
 ```bash
 # 1. Clone
-git clone https://github.com/SteveGilvarry/zm-dashboard.git
-cd zm-dashboard
+git clone https://github.com/SteveGilvarry/zm-web.git
+cd zm-web
 
 # 2. Install
 npm install
@@ -174,6 +174,43 @@ defaulting to `http://localhost:8080` when unset.
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run test:ui` | Vitest interactive UI |
 | `npm run test:e2e` | Run Playwright e2e tests (`:webkit` / `:chromium` for one browser) |
+
+---
+
+## 📦 Production deployment
+
+`npm run build` writes a static site to `dist/`. Serving it needs an SPA fallback
+(deep links such as `/events/123` must return `index.html`), a reverse proxy from
+`/api/` to `zm_api` that forwards WebSocket upgrades (WebRTC signaling lives on
+`/api/v3/live/{id}/webrtc/ws` and the socket stays open while you watch), and TLS,
+because browsers refuse WebRTC on plain `http://` away from `localhost`.
+Full detail, including the CSP, is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+
+**Container** (nginx, multi-stage build, renders its config from env on start):
+
+```bash
+docker build -t zm-web .
+docker run -d -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-web
+# or: ZM_API_URL=http://zm-api-host:8080 docker compose up -d   (add --profile tls for https on :8443)
+```
+
+| Variable | When | Default | What it does |
+|---|---|---|---|
+| `ZM_API_URL` | run | required | Upstream `zm_api` the container proxies `/api/` to. |
+| `ZM_API_BASE` | run | `/api/v3` | Prefix the browser calls; written to `/config.js`. Set to an absolute URL only if the API is on another origin (CORS on `zm_api` required). |
+| `VITE_BASE` | build | `/` | Sub-path to serve from, e.g. `/zm/`. |
+
+**Bare nginx or Caddy.** Copy `dist/` to the server and use
+[`docker/nginx.conf.template`](docker/nginx.conf.template) (with `proxy.conf` and
+`headers.conf`) or [`docker/Caddyfile`](docker/Caddyfile). Caddy handles certificates
+itself; for nginx bring your own or put the container behind a TLS terminator you
+already run.
+
+**WebRTC across NAT.** The client offers Google's public STUN servers
+(`src/streaming/webrtcManager.ts`). On a LAN they are never used. For remote
+operators behind NAT run your own TURN (coturn) and edit that list; HLS remains
+available as the fallback. **Air-gapped:** fonts are bundled (`public/fonts/`), the
+app makes no other off-origin request, and unreachable STUN hosts only delay ICE.
 
 ---
 
@@ -231,12 +268,12 @@ covered by the [CLA](CLA.md).
 
 ## 📄 License
 
-zm-dashboard is **dual-licensed**:
+zm-web is **dual-licensed**:
 
 - 🆓 **Open source — [AGPL-3.0](LICENSE).** Free to use, modify, and self-host. If you
   run a modified version as a network service, the AGPL requires you to publish your
   changes — the same license as the [`zm_api`](https://github.com/SteveGilvarry/zm-api) backend.
-- 💼 **Commercial license.** For embedding zm-dashboard in a closed-source product, or running a
+- 💼 **Commercial license.** For embedding zm-web in a closed-source product, or running a
   modified version as a hosted service without the AGPL's source-sharing obligation, a
   commercial license is available. Contact the maintainer to enquire.
 

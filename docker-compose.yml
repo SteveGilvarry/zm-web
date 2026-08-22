@@ -1,0 +1,39 @@
+# Example: zm-web in front of an existing zm_api.
+#
+#   ZM_API_URL=http://192.168.0.45:8080 docker compose up -d          # http://host:8080
+#   ZM_PUBLIC_HOST=zm.example.net docker compose --profile tls up -d  # + https://zm.example.net:8443
+#
+# The `tls` profile adds a Caddy that terminates HTTPS on :8443 and forwards to
+# the dashboard. With a public DNS name Caddy fetches a Let's Encrypt cert
+# (port 80 must reach it for the ACME challenge); on a LAN set
+# ZM_PUBLIC_HOST=<lan-name> and add --internal-certs to the command for a
+# self-signed cert. Browsers only allow WebRTC and getUserMedia-free playback
+# on https:// or http://localhost, so plain :8080 is for the LAN/dev only.
+services:
+  dashboard:
+    build: .
+    image: zm-web:local
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Upstream zm_api the container proxies /api/ to (required).
+      ZM_API_URL: ${ZM_API_URL:-http://192.168.0.45:8080}
+      # Uncomment to have browsers call the API on another origin instead of
+      # the same-origin proxy (zm_api must then answer CORS preflights).
+      # ZM_API_BASE: https://api.example.net/api/v3
+
+  tls:
+    image: caddy:2-alpine
+    profiles: ["tls"]
+    restart: unless-stopped
+    depends_on: [dashboard]
+    ports:
+      - "80:80"
+      - "8443:8443"
+    command: caddy reverse-proxy --from ${ZM_PUBLIC_HOST:-localhost}:8443 --to dashboard:8080
+    volumes:
+      - caddy_data:/data
+
+volumes:
+  caddy_data:

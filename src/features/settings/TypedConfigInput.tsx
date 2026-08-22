@@ -1,16 +1,7 @@
 import { clsx } from 'clsx';
+import { useTranslation } from 'react-i18next';
 import type { ZmConfig } from '@/types';
-
-// Backend Config rows carry a `type` discriminator and a `hint` field.
-// For string configs whose hint contains pipe-separated tokens
-// (e.g. "hashed|plain|none"), the hint IS the enum option list.
-
-const ENUM_HINT_RE = /^[A-Za-z0-9_-]+(\|[A-Za-z0-9_-]+)+$/;
-
-export function enumOptionsFromHint(hint?: string | null): string[] | null {
-  if (!hint) return null;
-  return ENUM_HINT_RE.test(hint) ? hint.split('|') : null;
-}
+import { enumOptionsFromHint, humanizeIdent } from './configFormat';
 
 interface Props {
   config: ZmConfig;
@@ -22,8 +13,11 @@ interface Props {
 }
 
 export function TypedConfigInput({ config, value, onChange, onCommit, onCancel, autoFocus }: Props) {
+  const { t } = useTranslation();
+  // The accent border is the only colour here: it marks the row currently
+  // being edited, which is a state, not decoration.
   const baseInput =
-    'px-2 py-1 text-xs font-mono bg-panel border border-cyan/50 rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-cyan/30';
+    'px-2 py-1 text-xs font-mono bg-surface border border-accent rounded text-fg focus:outline-none';
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && onCommit && !(e.target instanceof HTMLTextAreaElement)) onCommit();
@@ -41,7 +35,7 @@ export function TypedConfigInput({ config, value, onChange, onCommit, onCancel, 
         onKeyDown={onKeyDown}
         className={clsx(baseInput, 'flex-1')}
       >
-        {!options.includes(value) && <option value={value}>{value || '(unset)'}</option>}
+        {!options.includes(value) && <option value={value}>{value || t('(unset)')}</option>}
         {options.map((o) => (
           <option key={o} value={o}>{humanizeIdent(o)}</option>
         ))}
@@ -49,7 +43,7 @@ export function TypedConfigInput({ config, value, onChange, onCommit, onCancel, 
     );
   }
 
-  switch (config.type) {
+  switch (config.private === 1 ? 'password' : config.type) {
     case 'boolean':
       return (
         <label className="flex items-center gap-2 cursor-pointer">
@@ -58,10 +52,10 @@ export function TypedConfigInput({ config, value, onChange, onCommit, onCancel, 
             checked={value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'}
             onChange={(e) => onChange(e.target.checked ? '1' : '0')}
             autoFocus={autoFocus}
-            className="w-4 h-4 rounded border-cyan/50 bg-panel text-cyan focus:ring-1 focus:ring-cyan/30"
+            className="w-4 h-4 accent-accent"
           />
-          <span className="text-xs font-mono text-text-secondary">
-            {value === '1' ? 'enabled' : 'disabled'}
+          <span className="text-xs text-fg-muted">
+            {value === '1' ? t('enabled') : t('disabled')}
           </span>
         </label>
       );
@@ -147,38 +141,3 @@ export function TypedConfigInput({ config, value, onChange, onCommit, onCancel, 
   }
 }
 
-// Display helper for the read-only value cell — booleans render as
-// enabled/disabled badges, passwords as "•••" so the secret doesn't leak.
-export function formatConfigValue(config: ZmConfig): string {
-  if (config.type === 'boolean') return config.value === '1' ? 'enabled' : 'disabled';
-  if (config.type === 'password' && config.value) return '•'.repeat(Math.min(config.value.length, 8));
-  return config.value;
-}
-
-// Acronyms that should stay all-caps when humanising a lowercase identifier.
-const ACRONYMS = new Set([
-  'api', 'cgi', 'cpu', 'css', 'csp', 'csrf', 'db', 'dns', 'eap', 'ffmpeg',
-  'gpu', 'hls', 'http', 'https', 'id', 'ip', 'jpeg', 'json', 'jwt', 'ldap',
-  'lts', 'mp4', 'mqtt', 'nfs', 'onvif', 'os', 'pid', 'png', 'ptz', 'rest',
-  'rtsp', 'rtmp', 'sdp', 'shm', 'smtp', 'snmp', 'sql', 'ssh', 'ssl', 'tcp',
-  'tls', 'ttl', 'udp', 'url', 'uri', 'usb', 'uuid', 'vnc', 'vpn', 'wifi',
-  'ws', 'wss', 'x10', 'xml', 'zm',
-]);
-
-/**
- * Turn a backend identifier (snake_case / lowercase token / dash-separated)
- * into a human-readable Title Case label. Acronyms stay uppercase; other
- * tokens get their initial letter capitalised. Used for Settings category
- * names and string-enum option labels.
- */
-export function humanizeIdent(s: string): string {
-  return s
-    .replace(/[_-]+/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim()
-    .split(' ')
-    .map((tok) => ACRONYMS.has(tok.toLowerCase())
-      ? tok.toUpperCase()
-      : tok.charAt(0).toUpperCase() + tok.slice(1))
-    .join(' ');
-}

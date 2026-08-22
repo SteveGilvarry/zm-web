@@ -1,10 +1,12 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { render, screen, within } from '@testing-library/react';
+import { screen, within } from '@testing-library/react';
+import { renderWithProviders as render } from '@/test/render';
 import userEvent from '@testing-library/user-event';
 import type { ZmEvent } from '@/types';
 
 // Replace the router Link with a plain anchor so the table renders without
-// a Router context.
+// a Router context. The QueryClientProvider comes from `renderWithProviders`
+// — the table reads ZoneMinder's date/time settings through `useZmConfig`.
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string }) => (
     <a href={to ?? '#'} {...rest}>
@@ -85,8 +87,73 @@ describe('ClassicEventsTable — header', () => {
     );
     const header = screen.getAllByRole('rowgroup')[0]; // <thead>
     const headerScope = within(header);
-    ['ID', 'Monitor', 'Name', 'Cause', 'Time', 'Duration', 'Frames', 'Alarm', 'Tot', 'Avg', 'Max', 'Tags']
-      .forEach((label) => expect(headerScope.getByText(label)).toBeInTheDocument());
+    // Legacy column order after the checkbox column.
+    const labels = within(header).getAllByRole('columnheader').map((th) => th.textContent?.replace(/[▲▼⇵]/g, '').trim());
+    expect(labels.slice(1)).toEqual([
+      'Id', 'Name', 'Archived', 'Monitor', 'Cause', 'Tags', 'Start Time', 'End Time', 'Duration',
+      'Frames', 'Alarm Frames', 'Total Score', 'Avg. Score', 'Max. Score', 'Storage', 'DiskSpace',
+    ]);
+    expect(headerScope.queryByText('Emailed')).toBeNull();
+  });
+
+  it('makes Name / Cause / Monitor / Frames sortable now the backend can order by them', async () => {
+    const user = userEvent.setup();
+    const onSort = vi.fn();
+    render(
+      <ClassicEventsTable
+        events={[makeEvent()]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        sortField="cause"
+        sortDir="desc"
+        onSort={onSort}
+      />,
+    );
+    for (const [label, field] of [
+      ['Name', 'name'], ['Cause', 'cause'], ['Monitor', 'monitor_id'], ['Frames', 'frames'],
+    ] as const) {
+      await user.click(screen.getByRole('button', { name: new RegExp(`^${label}`) }));
+      expect(onSort).toHaveBeenLastCalledWith(field);
+    }
+    // The active column carries the direction for assistive tech.
+    const cause = screen.getByRole('button', { name: /^Cause/ }).closest('th')!;
+    expect(cause).toHaveAttribute('aria-sort', 'descending');
+    // Tags and DiskSpace still have no backend column, so they stay inert.
+    expect(screen.queryByRole('button', { name: /^Tags/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^DiskSpace/ })).toBeNull();
+  });
+
+  it('links Frames / Alarm Frames / Max Score cells to the frames view', () => {
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 5, frames: 321, alarm_frames: 17, max_score: 99 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+      />,
+    );
+    for (const text of ['321', '17', '99']) {
+      expect(screen.getByRole('link', { name: text }).getAttribute('href')).toBe('/events/$eventId/frames');
+    }
+    expect(screen.getByRole('link', { name: 'Event-0001' }).getAttribute('href')).toBe('/events/$eventId');
+  });
+
+  it('shows the storage name and HH:MM:SS duration with a totals footer', () => {
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 1, length: 65, disk_space: 2048, storage_id: 0 }), makeEvent({ id: 2, length: 5, disk_space: 1024, storage_id: 3 })]}
+        monitorLookup={noopMonitorLookup}
+        storageName={(id) => (id === 0 ? 'Default' : `Store ${id}`)}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+      />,
+    );
+    expect(screen.getByText('Default')).toBeInTheDocument();
+    expect(screen.getByText('Store 3')).toBeInTheDocument();
+    expect(screen.getByText('00:01:05')).toBeInTheDocument();
+    expect(screen.getByTestId('events-total-duration').textContent).toBe('00:01:10');
+    expect(screen.getByTestId('events-total-disk-space').textContent).toBe('3.0 KB');
   });
 });
 
@@ -105,9 +172,9 @@ describe('ClassicEventsTable — rows', () => {
     );
     expect(screen.getByText('Front Door')).toBeInTheDocument();
     expect(screen.getByText('Driveway')).toBeInTheDocument();
-    // Each event row links via "#{id}"
-    expect(screen.getByText('#1')).toBeInTheDocument();
-    expect(screen.getByText('#2')).toBeInTheDocument();
+    // Each event row links via its id
+    expect(screen.getByRole('link', { name: '1' })).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: '2' })).toBeInTheDocument();
     // Unique scores from row 2
     expect(screen.getByText('555')).toBeInTheDocument();
     expect(screen.getByText('77')).toBeInTheDocument();
@@ -185,18 +252,20 @@ describe('ClassicEventsTable — selection', () => {
   });
 });
 
-describe('ClassicEventsTable — archived events', () => {
-  it('renders the "Arch" badge for archived events when the Archived column is on', () => {
-    // Archived column is off-by-default; toggle it on so the badge renders.
-    useEventsColumnsStore.getState().toggle('archived');
+describe('ClassicEventsTable — archived / emailed', () => {
+  it('renders Yes/No like legacy and shows Emailed once the column is on', () => {
+    useEventsColumnsStore.getState().toggle('emailed');
     render(
       <ClassicEventsTable
-        events={[makeEvent({ id: 1, archived: 1 })]}
+        events={[makeEvent({ id: 1, archived: 1, emailed: 0 })]}
         monitorLookup={noopMonitorLookup}
         selectedIds={new Set()}
         onToggleSelected={() => {}}
       />,
     );
-    expect(screen.getByText('Arch')).toBeInTheDocument();
+    expect(screen.getByText('Emailed')).toBeInTheDocument();
+    const row = screen.getAllByRole('row')[1];
+    const cells = within(row).getAllByRole('cell').map((td) => td.textContent);
+    expect(cells.slice(1, 5)).toEqual(['1', 'Event-0001', 'Yes', 'No']);
   });
 });

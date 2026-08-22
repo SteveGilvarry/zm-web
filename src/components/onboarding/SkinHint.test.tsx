@@ -16,7 +16,7 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
-const ACK_KEY = 'zmdash:skinHintDismissed';
+const ACK_KEY = 'zm-web:skinHintDismissed';
 const { SkinHint } = await import('./SkinHint');
 
 beforeEach(() => {

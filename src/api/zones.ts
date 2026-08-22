@@ -15,9 +15,34 @@ export interface Zone {
   name: string;
   type: ZoneType | string;
   units: 'Pixels' | 'Percent' | string;
-  /** Space-separated "x,y" pairs — the polygon's vertex list. */
+  /** Space-separated "x,y" pairs — the polygon's vertex list, in pixels. */
   coords: string;
   num_coords: number;
+
+  /* Motion-detection settings. `ZoneResponse` marks the four below as
+   * required, so they are typed as such — a zm_api older than the
+   * zone-detail work (zm-api#22) omits them and this typing would lie.
+   * `UpdateZoneRequest` still accepts only `name` + `polygon`, so every
+   * field from here down is read-only in the UI. */
+  /** ZoneMinder's stored `Zones.Area` — square pixels, recomputed on save. */
+  area: number;
+  check_method: string;
+  min_pixel_threshold?: number | null;
+  max_pixel_threshold?: number | null;
+  min_alarm_pixels?: number | null;
+  max_alarm_pixels?: number | null;
+  filter_x?: number | null;
+  filter_y?: number | null;
+  min_filter_pixels?: number | null;
+  max_filter_pixels?: number | null;
+  min_blob_pixels?: number | null;
+  max_blob_pixels?: number | null;
+  min_blobs?: number | null;
+  max_blobs?: number | null;
+  overload_frames: number;
+  extend_alarm_frames: number;
+  /** Packed RGB of the zone's alarm colour. */
+  alarm_rgb?: number | null;
 }
 
 export async function listZonesForMonitor(
@@ -46,6 +71,10 @@ export async function createZone(
   return apiPost<CreateZonePayload, Zone>(`/monitors/${monitorId}/zones`, payload);
 }
 
+/**
+ * `UpdateZoneRequest` is `{name?, polygon?}` and nothing else — every motion
+ * setting on `Zone` is read-only until the backend grows those fields.
+ */
 export async function updateZone(
   id: number,
   payload: { name?: string; polygon?: string },

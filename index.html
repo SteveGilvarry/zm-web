@@ -5,7 +5,30 @@
     <link rel="icon" type="image/x-icon" href="/favicon.ico" />
     <link rel="icon" type="image/png" sizes="64x64" href="/favicon-64.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>ZM Dashboard</title>
+    <!-- Media URLs carry a token in the query string; never leak them to third-party hosts. -->
+    <meta name="referrer" content="no-referrer" />
+    <title>ZoneMinder</title>
+    <!-- Runtime config (API base). Rewritten by the container entrypoint; must load before the app. -->
+    <script src="/config.js"></script>
+    <!--
+      Paint in the operator's skin and colour scheme, not in the default one.
+      React only stamps these once it mounts (src/skins/useSkinRootClass.ts),
+      which is a whole bundle-load of white flash for anyone on dark. Reads
+      the same persisted `zm-ui` store; any failure just falls through to the
+      CSS defaults (modern skin, system colour scheme).
+    -->
+    <script>
+      (function () {
+        try {
+          var s = JSON.parse(localStorage.getItem('zm-ui') || '{}').state || {};
+          var root = document.documentElement;
+          root.classList.add('skin-' + (s.skin === 'classic' ? 'classic' : 'modern'));
+          if (s.theme === 'light' || s.theme === 'dark') root.dataset.theme = s.theme;
+        } catch (e) {
+          document.documentElement.classList.add('skin-modern');
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

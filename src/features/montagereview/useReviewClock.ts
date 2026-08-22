@@ -11,7 +11,14 @@ export interface ReviewClock {
   speed: number;
 
   setCurrentTime: (t: Date) => void;
-  setRange: (start: Date, end: Date) => void;
+  /**
+   * Move the window. Pass `playhead` to place the playhead in the same call —
+   * it is clamped against the range being set, which a following
+   * `setCurrentTime` could not do (see the implementation). Without it the
+   * playhead keeps its position, pulled to the nearest edge if the new window
+   * has left it behind.
+   */
+  setRange: (start: Date, end: Date, playhead?: Date) => void;
   play: () => void;
   pause: () => void;
   togglePlay: () => void;
@@ -42,15 +49,20 @@ export function useReviewClock(initialStart: Date, initialEnd: Date): ReviewCloc
     setCurrentTimeState(clamp(t));
   }, [clamp]);
 
-  const setRange = useCallback((start: Date, end: Date) => {
+  const setRange = useCallback((start: Date, end: Date, playhead?: Date) => {
     setRangeStart(start);
     setRangeEnd(end);
-    // Re-clamp the playhead if it now sits outside the new range.
+    // Clamp against the bounds being set, not the ones in state. A caller
+    // that did `setRange(a, b)` then `setCurrentTime(a)` would have the second
+    // call clamp against the *old* range — React has not committed the new one
+    // yet — so jumping to a window that does not overlap the current one
+    // pinned the playhead to the old range's edge.
     setCurrentTimeState((prev) => {
-      const ts = prev.getTime();
+      const t = playhead ?? prev;
+      const ts = t.getTime();
       if (ts < start.getTime()) return start;
       if (ts > end.getTime()) return end;
-      return prev;
+      return t;
     });
   }, []);
 

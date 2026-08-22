@@ -1,6 +1,8 @@
 import type { LoginRequest, TokenResponse } from '@/types';
+import { useAuthStore } from '@/stores/auth';
+import i18next from '@/i18n';
 
-const API_BASE = '/api/v3';
+import { API_BASE } from '@/api/base';
 
 export async function login(credentials: LoginRequest): Promise<TokenResponse> {
   const response = await fetch(`${API_BASE}/auth/login`, {
@@ -12,20 +14,23 @@ export async function login(credentials: LoginRequest): Promise<TokenResponse> {
   });
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: 'Login failed' }));
-    throw new Error(error.message || 'Login failed');
+    const error = await response.json().catch(() => ({ message: '' }));
+    throw new Error(error.message || i18next.t('Login failed'));
   }
 
   return response.json();
 }
 
-export async function logout(token: string): Promise<void> {
+/**
+ * Server-side logout. The OpenAPI route is `GET /auth/logout` (POST → 405).
+ * Takes the token from the store; callers still clear local auth themselves.
+ */
+export async function logout(token?: string): Promise<void> {
+  const bearer = token ?? useAuthStore.getState().accessToken;
+  if (!bearer) return;
   await fetch(`${API_BASE}/auth/logout`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      Authorization: `Bearer ${token}`,
-    },
+    method: 'GET',
+    headers: { Authorization: `Bearer ${bearer}` },
   });
 }
 
@@ -41,7 +46,7 @@ export async function refreshToken(refreshToken: string): Promise<TokenResponse>
   });
 
   if (!response.ok) {
-    throw new Error('Token refresh failed');
+    throw new Error(i18next.t('Token refresh failed'));
   }
 
   return response.json();

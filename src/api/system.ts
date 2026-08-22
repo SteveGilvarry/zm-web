@@ -1,5 +1,5 @@
 import { apiGet, apiPost } from './client';
-import type { DaemonStatus } from '@/types';
+import type { DaemonStatus, PaginatedResponse } from '@/types';
 
 export interface VersionResponse {
   version: string;
@@ -70,25 +70,37 @@ export async function systemRestart(): Promise<void> {
   return apiPost('/system/restart');
 }
 
-// Server stats
-export interface ServerStats {
+// Server stats — one row per sample of `zmstats.pl`, per server (`server_id`
+// 0 / null on a single-node install). Percentages and load are strings in
+// `ServerStatResponse`; use `statNumber()` to read them.
+export interface ServerStat {
   id: number;
-  server_id?: number;
-  timestamp: string;
-  cpu_user?: number;
-  cpu_nice?: number;
-  cpu_sys?: number;
-  cpu_idle?: number;
-  cpu_iowait?: number;
-  mem_total?: number;
-  mem_used?: number;
-  mem_buffers?: number;
-  swap_total?: number;
-  swap_used?: number;
+  server_id?: number | null;
+  time_stamp: string;
+  cpu_load?: string | null;
+  cpu_user_percent?: string | null;
+  cpu_nice_percent?: string | null;
+  cpu_system_percent?: string | null;
+  cpu_idle_percent?: string | null;
+  cpu_usage_percent?: string | null;
+  total_mem?: number | null;
+  free_mem?: number | null;
+  total_swap?: number | null;
+  free_swap?: number | null;
 }
 
-export async function getServerStats(): Promise<ServerStats[]> {
-  return apiGet('/server-stats');
+/** Rows come back oldest first; the newest sample is on the last page. */
+export async function getServerStats(
+  params?: { page?: number; page_size?: number },
+): Promise<PaginatedResponse<ServerStat>> {
+  return apiGet<PaginatedResponse<ServerStat>>('/server-stats', params);
+}
+
+/** `"40.2"` → 40.2; null/garbage → null. */
+export function statNumber(raw: string | number | null | undefined): number | null {
+  if (raw == null || raw === '') return null;
+  const n = typeof raw === 'number' ? raw : Number(raw);
+  return Number.isFinite(n) ? n : null;
 }
 
 export async function getHealthCheck(): Promise<{ status: string }> {
@@ -96,5 +108,5 @@ export async function getHealthCheck(): Promise<{ status: string }> {
 }
 
 export async function systemLogRotate(): Promise<void> {
-  return apiPost('/system/log_rotate');
+  return apiPost('/system/logrot');
 }

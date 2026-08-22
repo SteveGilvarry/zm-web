@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { bucketEventsByHour, formatDateLabel } from './bucketEventsByHour';
+import { bucketEventsByHour, eventLengthSeconds, formatDateLabel } from './bucketEventsByHour';
 import type { ZmEvent } from '@/types';
 
 /**
  * Construct a partial ZmEvent for testing. The bucketing function only
  * touches `start_date_time` and `length`; the rest is shape-padding.
  */
-function ev(start: string | null | undefined, length: number, id = 1): ZmEvent {
+function ev(start: string | null | undefined, length: number | string, id = 1): ZmEvent {
   return {
     id,
     start_date_time: start,
@@ -75,12 +75,37 @@ describe('bucketEventsByHour', () => {
     expect(out[0].seconds[10]).toBe(12);
   });
 
+  it('parses the string `length` the API actually sends (DECIMAL column)', () => {
+    // Live shape: {"length":"600.00"}. Before this was explicit the chart
+    // summed to zero because Number.isFinite('600.00') is false.
+    const out = bucketEventsByHour([
+      ev('2026-06-03T10:00:00', '600.00'),
+      ev('2026-06-03T10:20:00', '12.50'),
+      ev('2026-06-03T10:40:00', ''),
+      ev('2026-06-03T10:50:00', 'abc'),
+    ]);
+    expect(out[0].seconds[10]).toBeCloseTo(612.5, 5);
+  });
+
   it('accumulates fractional event lengths in the same bucket', () => {
     const out = bucketEventsByHour([
       ev('2026-06-03T09:01:00', 12.5),
       ev('2026-06-03T09:30:00', 7.25),
     ]);
     expect(out[0].seconds[9]).toBeCloseTo(19.75, 5);
+  });
+});
+
+describe('eventLengthSeconds', () => {
+  it('accepts numbers and numeric strings, rejects the rest', () => {
+    expect(eventLengthSeconds(30)).toBe(30);
+    expect(eventLengthSeconds('579.93')).toBeCloseTo(579.93, 5);
+    expect(eventLengthSeconds(' 4 ')).toBe(4);
+    expect(eventLengthSeconds(null)).toBe(0);
+    expect(eventLengthSeconds(undefined)).toBe(0);
+    expect(eventLengthSeconds('')).toBe(0);
+    expect(eventLengthSeconds(-5)).toBe(0);
+    expect(eventLengthSeconds(NaN)).toBe(0);
   });
 });
 

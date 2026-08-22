@@ -1,0 +1,69 @@
+import { useEffect } from 'react';
+import { useTranslation } from 'react-i18next';
+import { clsx } from 'clsx';
+import { AlertCircle, CheckCircle2, Info, X } from 'lucide-react';
+import { useToastStore, type Toast } from './toastStore';
+import { Button } from './Button';
+
+/**
+ * Renders queued toasts bottom-end of the viewport. Mount once per shell.
+ * Errors are announced assertively, the rest politely.
+ */
+export function ToastViewport() {
+  const toasts = useToastStore((s) => s.toasts);
+  if (toasts.length === 0) return null;
+  return (
+    <div className="fixed bottom-4 end-4 z-[60] flex flex-col gap-2 w-[min(24rem,calc(100vw-2rem))] pointer-events-none">
+      {toasts.map((t) => (
+        <ToastItem key={t.id} toast={t} />
+      ))}
+    </div>
+  );
+}
+
+function ToastItem({ toast }: { toast: Toast }) {
+  const { t } = useTranslation();
+  const dismiss = useToastStore((s) => s.dismiss);
+
+  useEffect(() => {
+    if (toast.duration <= 0) return;
+    const timer = setTimeout(() => dismiss(toast.id), toast.duration);
+    return () => clearTimeout(timer);
+  }, [toast.id, toast.duration, dismiss]);
+
+  const Icon = toast.tone === 'error' ? AlertCircle : toast.tone === 'success' ? CheckCircle2 : Info;
+  return (
+    <div
+      role={toast.tone === 'error' ? 'alert' : 'status'}
+      className={clsx(
+        'pointer-events-auto flex items-start gap-3 px-4 py-3 rounded border shadow-elevated text-sm',
+        'bg-surface text-fg',
+        toast.tone === 'error' && 'border-danger/50',
+        toast.tone === 'success' && 'border-ok/50',
+        toast.tone === 'info' && 'border-border-subtle',
+      )}
+    >
+      <Icon
+        size={16}
+        aria-hidden
+        className={clsx(
+          'mt-0.5 shrink-0',
+          toast.tone === 'error' && 'text-danger',
+          toast.tone === 'success' && 'text-ok',
+          toast.tone === 'info' && 'text-accent',
+        )}
+      />
+      <p className="flex-1 min-w-0 break-words">{toast.message}</p>
+      <Button
+        variant="ghost"
+        size="sm"
+        icon
+        onClick={() => dismiss(toast.id)}
+        aria-label={t('Dismiss')}
+        className="p-0.5"
+      >
+        <X size={14} aria-hidden />
+      </Button>
+    </div>
+  );
+}

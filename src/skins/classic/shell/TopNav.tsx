@@ -1,53 +1,85 @@
-import { Link, useLocation } from '@tanstack/react-router';
+import { useState } from 'react';
+import { Link, useLocation, useNavigate } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
+import {
+  LayoutDashboard, RefreshCcw, LayoutGrid, Film, Video, Settings, ScrollText,
+  UsersRound, Filter as FilterIcon, FileText, ShieldCheck, UserRound, KeyRound, LogOut,
+} from 'lucide-react';
+import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { logout as apiLogout } from '@/api/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
+import { usePerms } from '@/features/auth/usePerms';
+import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
+import { useCurrentUsername } from '@/features/auth/useMe';
+import { canSeeNav } from '@/features/nav/navPerms';
+import { Button } from '@/components/common/Button';
 
-// Mirrors the legacy ZoneMinder top navigation. Items map to either existing
-// routes or future ones (some 404 until later phases land them).
-const NAV_ITEMS: Array<{ icon: string; label: string; to: string }> = [
-  { icon: 'dashboard', label: 'Console', to: '/' },
-  { icon: 'menu', label: 'Cycle', to: '/cycle' },
-  { icon: 'live_tv', label: 'Montage', to: '/montage' },
-  { icon: 'movie', label: 'Montage Review', to: '/montagereview' },
-  { icon: 'event', label: 'Events', to: '/events' },
-  { icon: 'settings', label: 'Options', to: '/settings' },
-  { icon: 'notification_important', label: 'Log', to: '/logs' },
-  { icon: 'group', label: 'Groups', to: '/groups' },
-  { icon: 'filter_alt', label: 'Filters', to: '/filters' },
-  { icon: 'report', label: 'Reports', to: '/reports' },
-  { icon: 'shield', label: 'Audit', to: '/audit' },
-];
+/**
+ * Classic ZoneMinder top navigation. Same items, order and labels as the
+ * legacy navbar (`getNavBarHTML`), monochrome icons in place of Material
+ * Icons.
+ */
+function useNavItems(): Array<{ icon: ReactNode; label: string; to: string }> {
+  const { t } = useTranslation();
+  const s = 15;
+  return [
+    { icon: <LayoutDashboard size={s} />, label: t('Console'), to: '/' },
+    { icon: <RefreshCcw size={s} />, label: t('Cycle'), to: '/cycle' },
+    { icon: <LayoutGrid size={s} />, label: t('Montage'), to: '/montage' },
+    { icon: <Film size={s} />, label: t('Montage Review'), to: '/montagereview' },
+    { icon: <Video size={s} />, label: t('Events'), to: '/events' },
+    { icon: <Settings size={s} />, label: t('Options'), to: '/settings' },
+    { icon: <ScrollText size={s} />, label: t('Log'), to: '/logs' },
+    { icon: <UsersRound size={s} />, label: t('Groups'), to: '/groups' },
+    { icon: <FilterIcon size={s} />, label: t('Filters'), to: '/filters' },
+    { icon: <FileText size={s} />, label: t('Reports'), to: '/reports' },
+    { icon: <ShieldCheck size={s} />, label: t('Audit Events Report'), to: '/audit' },
+  ];
+}
 
 export function ClassicTopNav() {
+  const { t } = useTranslation();
   const location = useLocation();
-  const { user, clearAuth } = useAuthStore();
+  const navigate = useNavigate();
+  const { clearAuth } = useAuthStore();
+  const username = useCurrentUsername();
+  const { perms, can } = usePerms();
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  // Same canView() gating as the legacy navbar.
+  const items = useNavItems().filter((i) => canSeeNav(perms, i.to));
 
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
 
+  const handleLogout = async () => {
+    await apiLogout().catch(() => undefined);
+    clearAuth();
+    void navigate({ to: '/login' });
+  };
+
   return (
-    <header className="bg-[#3c4956] text-white border-b border-black/40 sticky top-0 z-30">
+    <header className="bg-classic-nav text-classic-nav-fg border-b border-black/40 sticky top-0 z-30">
       <div className="px-4 py-2 flex items-center gap-6 flex-wrap">
-        <div className="text-2xl font-semibold tracking-tight text-amber-400">
+        <div className="text-2xl font-semibold tracking-tight text-classic-nav-brand">
           ZoneMinder
         </div>
-        <nav className="flex-1">
+        <nav aria-label={t('Main')} className="flex-1">
           <ul className="flex items-center gap-1 flex-wrap">
-            {NAV_ITEMS.map((item) => (
+            {items.map((item) => (
               <li key={item.to}>
                 <Link
                   to={item.to}
+                  aria-current={isActive(item.to) ? 'page' : undefined}
                   className={clsx(
-                    'flex items-center gap-1 px-3 py-1.5 rounded text-sm transition-colors',
+                    'flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors',
                     'hover:bg-white/10',
-                    isActive(item.to) && 'bg-white/15 text-cyan-300',
-                    !isActive(item.to) && 'text-cyan-200',
+                    isActive(item.to) && 'bg-white/15 text-classic-nav-fg',
+                    !isActive(item.to) && 'text-classic-nav-link',
                   )}
                 >
-                  <span aria-hidden className="text-base leading-none">
-                    {symbol(item.icon)}
-                  </span>
+                  <span aria-hidden className="leading-none">{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
               </li>
@@ -55,39 +87,39 @@ export function ClassicTopNav() {
           </ul>
         </nav>
         <div className="flex items-center gap-3 text-sm">
-          {user?.user && (
-            <button
-              type="button"
-              onClick={clearAuth}
-              className="flex items-center gap-1 hover:underline"
-              title="Logout"
-            >
-              <span aria-hidden>👤</span>
-              <span>{user.user}</span>
-            </button>
+          {username && (
+            <span className="flex items-center gap-1.5 text-classic-nav-link">
+              <UserRound size={15} aria-hidden />
+              <span>{username}</span>
+            </span>
           )}
-          <SystemRunningToggle tone="light" />
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            onClick={() => setPasswordOpen(true)}
+            className="text-classic-nav-link hover:text-classic-nav-fg hover:bg-white/10"
+            title={t('Change password')}
+            aria-label={t('Change password')}
+          >
+            <KeyRound size={15} aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            onClick={handleLogout}
+            className="text-classic-nav-link hover:text-classic-nav-fg hover:bg-white/10"
+            title={t('Log out')}
+            aria-label={t('Log out')}
+          >
+            <LogOut size={15} className="rtl:-scale-x-100" aria-hidden />
+          </Button>
+          {can('system', 'Edit') && <SystemRunningToggle tone="light" />}
         </div>
       </div>
+
+      <ChangePasswordDialog isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </header>
   );
-}
-
-// Tiny unicode placeholder for Material Icons until Phase 8 wires in the
-// real icon font (legacy ZM uses Material Icons).
-function symbol(name: string): string {
-  switch (name) {
-    case 'dashboard': return '▦';
-    case 'menu': return '☰';
-    case 'live_tv': return '▶';
-    case 'movie': return '🎬';
-    case 'event': return '📅';
-    case 'settings': return '⚙';
-    case 'notification_important': return '🔔';
-    case 'group': return '👥';
-    case 'filter_alt': return '⛛';
-    case 'report': return '📊';
-    case 'shield': return '🛡';
-    default: return '•';
-  }
 }

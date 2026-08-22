@@ -1,338 +1,212 @@
 import { Link } from '@tanstack/react-router';
-import { Archive, Download, Tag as TagIcon } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import type { ZmEvent } from '@/types';
-import { useEventsColumnsStore, type EventsColumnKey } from '@/stores/eventsColumns';
-import { getEventVideoUrl } from '@/api/events';
+import { useEventsColumnsStore, EVENTS_COLUMNS, type EventsColumnKey } from '@/stores/eventsColumns';
+import {
+  getEventThumbnailUrl,
+  type EventSortField,
+  type SortDirection,
+} from '@/api/events';
 import { formatBytes } from '@/lib/format';
-import { eventDurationSeconds, formatDuration, sumEventDurations, sumEventDiskSpace } from './duration';
+import { ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead } from '@/skins/classic/components/events/primitives';
+import { classicLink } from '@/skins/classic/components/events/styles';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import { formatDurationHms, sumEventDurations, sumEventDiskSpace } from './duration';
+import { useEventsColumnLabels } from './columnLabels';
+import { COLUMN_SORT_FIELD } from './sortColumns';
 
 interface ClassicEventsTableProps {
   events: ZmEvent[];
   monitorLookup: Record<number, string>;
+  /** `/storage` name for an event's `storage_id` (0 → Default). */
+  storageName?: (storageId: number) => string;
   selectedIds: Set<number>;
   onToggleSelected: (id: number) => void;
-  /** Auth token threaded through so per-row Download Video can authenticate. */
+  /** Select / deselect every row on the page (header checkbox). */
+  onSetSelected?: (ids: number[], selected: boolean) => void;
+  /** Auth token for the thumbnail column. */
   token?: string | null;
+  /** Active server-side sort; headers of sortable columns become buttons. */
+  sortField?: EventSortField;
+  sortDir?: SortDirection;
+  onSort?: (field: EventSortField) => void;
+  /** `ZM_WEB_LIST_THUMBS`: leading thumbnail column. */
+  showThumbs?: boolean;
+  /** `ZM_WEB_LIST_THUMB_WIDTH`, px. */
+  thumbWidth?: number;
 }
 
+const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
+  'duration', 'frames', 'alarm_frames', 'tot_score', 'avg_score', 'max_score', 'disk_space',
+]);
+
 /**
- * Legacy ZM-style events table. One row per event with the columns operators
- * are used to: id, monitor, name, cause, start time, duration, frames,
- * alarm frames, total/avg/max score, archived state, and tags. Column
- * visibility is driven by `useEventsColumnsStore` so operators can prune the
- * table to just what they care about (state is persisted to localStorage —
- * legacy ZM does the same with a cookie).
- *
- * A footer row sums Duration and DiskSpace across the visible page (matches
- * bootstrap-tables' `totalLengthFormatter` / `totalDiskSpaceFormatter`).
+ * Legacy `?view=events` table: the same columns in the same order as
+ * ZoneMinder 1.39 (Thumbnail, Id, Name, Archived, Emailed, Monitor, Cause, Tags,
+ * Start Time, End Time, Duration, Frames, Alarm Frames, Total/Avg/Max Score,
+ * Storage, DiskSpace), cell deep-links (Id/Name → event, Monitor → watch,
+ * Frames/Alarm Frames/Max Score → frames view), and the footer totals row.
+ * Column visibility comes from `useEventsColumnsStore` (persisted, like the
+ * legacy `zmEventsTable` cookie).
  */
 export function ClassicEventsTable({
-  events, monitorLookup, selectedIds, onToggleSelected, token,
+  events, monitorLookup, storageName, selectedIds, onToggleSelected, onSetSelected, token,
+  sortField, sortDir = 'asc', onSort, showThumbs = false, thumbWidth = 48,
 }: ClassicEventsTableProps) {
-  const isVisible = useEventsColumnsStore((s) => s.isVisible);
+  const { t } = useTranslation();
+  const labels = useEventsColumnLabels();
+  // ZoneMinder's own date/time patterns and server zone (see useDateTimeFormat).
+  const { formatDateTime } = useDateTimeFormat();
+  const fmtTime = (iso: string | null | undefined) => (iso ? formatDateTime(iso) || '—' : '—');
+  const hidden = useEventsColumnsStore((s) => s.hidden);
+  const visible: EventsColumnKey[] = EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
 
-  if (events.length === 0) {
-    return (
-      <div className="bg-white border border-zinc-300 rounded p-12 text-center text-zinc-500">
-        No events match the current filters.
-      </div>
-    );
-  }
-
-  const allSelected = events.length > 0 && events.every((e) => selectedIds.has(e.id));
+  const ids = events.map((e) => e.id);
+  const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
   const toggleAll = () => {
-    if (allSelected) {
-      events.forEach((e) => onToggleSelected(e.id));
-    } else {
-      events.filter((e) => !selectedIds.has(e.id)).forEach((e) => onToggleSelected(e.id));
-    }
+    if (onSetSelected) onSetSelected(ids, !allSelected);
+    else ids.filter((id) => allSelected || !selectedIds.has(id)).forEach(onToggleSelected);
   };
 
   const totalDurationSec = sumEventDurations(events);
   const totalDiskSpace = sumEventDiskSpace(events);
 
-  // Count visible columns (incl. checkbox + per-row download = +2) so the
-  // footer-row colspan stays accurate as columns toggle on / off.
-  const visibleKeys: EventsColumnKey[] = [
-    'id', 'monitor', 'name', 'cause', 'time',
-    'duration', 'frames', 'alarm_frames',
-    'tot_score', 'avg_score', 'max_score',
-    'tags', 'disk_space', 'archived',
-  ].filter(isVisible) as EventsColumnKey[];
+  const cell = (e: ZmEvent, key: EventsColumnKey) => {
+    const eventLink = { to: '/events/$eventId' as const, params: { eventId: String(e.id) } };
+    const framesLink = { to: '/events/$eventId/frames' as const, params: { eventId: String(e.id) } };
+    switch (key) {
+      case 'id':
+        return <Link {...eventLink} className={classicLink}>{e.id}</Link>;
+      case 'name':
+        return <Link {...eventLink} className={classicLink}>{e.name}</Link>;
+      case 'archived':
+        return e.archived === 1 ? t('Yes') : t('No');
+      case 'emailed':
+        return e.emailed === 1 ? t('Yes') : t('No');
+      case 'monitor':
+        return (
+          <Link to="/monitors/$monitorId" params={{ monitorId: String(e.monitor_id) }} className={classicLink}>
+            {monitorLookup[e.monitor_id] ?? t('Monitor {{id}}', { id: e.monitor_id })}
+          </Link>
+        );
+      case 'cause':
+        return e.cause ?? '';
+      case 'tags':
+        return (e.tags ?? []).map((tag) => tag.name).join(', ');
+      case 'time':
+        return fmtTime(e.start_date_time);
+      case 'end':
+        return fmtTime(e.end_date_time);
+      case 'duration':
+        return formatDurationHms(e.length);
+      case 'frames':
+        return <Link {...framesLink} className={classicLink}>{e.frames ?? 0}</Link>;
+      case 'alarm_frames':
+        return <Link {...framesLink} className={classicLink}>{e.alarm_frames ?? 0}</Link>;
+      case 'tot_score':
+        return e.tot_score ?? 0;
+      case 'avg_score':
+        return e.avg_score ?? 0;
+      case 'max_score':
+        return <Link {...framesLink} className={classicLink}>{e.max_score ?? 0}</Link>;
+      case 'storage':
+        return storageName ? storageName(e.storage_id) : String(e.storage_id);
+      case 'disk_space':
+        return e.disk_space != null ? formatBytes(e.disk_space) : '—';
+    }
+  };
 
-  // Footer-row label spans every column up to (but not including) Duration.
-  // If Duration itself is hidden, the label spans everything before Disk.
-  const indexOf = (k: EventsColumnKey) => visibleKeys.indexOf(k);
-  const durationCol = indexOf('duration');
-  const diskCol = indexOf('disk_space');
+  // Footer: totals under Duration and DiskSpace, blanks elsewhere.
+  const footerCell = (key: EventsColumnKey) => {
+    if (key === 'duration') {
+      return <ClassicTd key={key} numeric className="font-semibold" data-testid="events-total-duration">{formatDurationHms(totalDurationSec)}</ClassicTd>;
+    }
+    if (key === 'disk_space') {
+      return <ClassicTd key={key} numeric className="font-semibold" data-testid="events-total-disk-space">{formatBytes(totalDiskSpace)}</ClassicTd>;
+    }
+    return <ClassicTd key={key} />;
+  };
 
   return (
-    <div className="bg-white border border-zinc-300 rounded overflow-hidden">
-      <table className="w-full text-sm text-zinc-800">
-        <thead className="bg-zinc-100 border-b border-zinc-300 text-[11px] uppercase tracking-wider">
+    <ClassicTable testId="classic-events-table">
+      <ClassicThead>
+        <tr>
+          <ClassicTh center className="w-8">
+            <input
+              type="checkbox"
+              checked={allSelected}
+              onChange={toggleAll}
+              aria-label={t('Select all events')}
+            />
+          </ClassicTh>
+          {showThumbs && <ClassicTh center>{t('Thumbnail')}</ClassicTh>}
+          {visible.map((key) => {
+            const field = COLUMN_SORT_FIELD[key];
+            return (
+              <ClassicTh
+                key={key}
+                numeric={NUMERIC.has(key)}
+                sortable={!!field && !!onSort}
+                active={!!field && field === sortField}
+                dir={sortDir}
+                onSort={field && onSort ? () => onSort(field) : undefined}
+              >
+                {labels[key]}
+              </ClassicTh>
+            );
+          })}
+        </tr>
+      </ClassicThead>
+      <ClassicTbody>
+        {events.length === 0 && (
           <tr>
-            <th className="px-3 py-2 w-8 text-left">
+            <ClassicTd colSpan={visible.length + 1 + (showThumbs ? 1 : 0)} center className="py-8 text-zinc-500">
+              {t('No events match the current filters.')}
+            </ClassicTd>
+          </tr>
+        )}
+        {events.map((e) => (
+          <tr key={e.id} className={selectedIds.has(e.id) ? '!bg-[#dbeafe]' : undefined}>
+            <ClassicTd center>
               <input
                 type="checkbox"
-                checked={allSelected}
-                onChange={toggleAll}
-                aria-label="Select all events"
-                className="cursor-pointer"
+                checked={selectedIds.has(e.id)}
+                onChange={() => onToggleSelected(e.id)}
+                aria-label={t('Select event {{id}}', { id: e.id })}
               />
-            </th>
-            {isVisible('id') && <Th>ID</Th>}
-            {isVisible('monitor') && <Th>Monitor</Th>}
-            {isVisible('name') && <Th>Name</Th>}
-            {isVisible('cause') && <Th>Cause</Th>}
-            {isVisible('time') && <Th>Time</Th>}
-            {isVisible('duration') && <Th numeric>Duration</Th>}
-            {isVisible('frames') && <Th numeric>Frames</Th>}
-            {isVisible('alarm_frames') && <Th numeric>Alarm</Th>}
-            {isVisible('tot_score') && <Th numeric>Tot</Th>}
-            {isVisible('avg_score') && <Th numeric>Avg</Th>}
-            {isVisible('max_score') && <Th numeric>Max</Th>}
-            {isVisible('tags') && <Th>Tags</Th>}
-            {isVisible('disk_space') && <Th numeric>DiskSpace</Th>}
-            {isVisible('archived') && <Th>Archived</Th>}
-            <Th>{/* Download */}</Th>
+            </ClassicTd>
+            {showThumbs && (
+              <ClassicTd center>
+                <Link to="/events/$eventId" params={{ eventId: String(e.id) }}>
+                  <img
+                    src={getEventThumbnailUrl(e.id, token ?? undefined)}
+                    alt={t('Thumbnail for event {{id}}', { id: e.id })}
+                    width={thumbWidth}
+                    style={{ width: thumbWidth }}
+                    className="inline-block h-auto max-w-none"
+                    loading="lazy"
+                    onError={(ev) => { ev.currentTarget.style.visibility = 'hidden'; }}
+                  />
+                </Link>
+              </ClassicTd>
+            )}
+            {visible.map((key) => (
+              <ClassicTd key={key} numeric={NUMERIC.has(key)} className={key === 'time' || key === 'end' ? 'whitespace-nowrap' : undefined}>
+                {cell(e, key)}
+              </ClassicTd>
+            ))}
           </tr>
-        </thead>
-        <tbody>
-          {events.map((e) => (
-            <Row
-              key={e.id}
-              event={e}
-              monitorName={monitorLookup[e.monitor_id]}
-              isSelected={selectedIds.has(e.id)}
-              onToggleSelected={() => onToggleSelected(e.id)}
-              token={token}
-            />
-          ))}
-        </tbody>
-        {/*
-          Footer row aggregates Duration + DiskSpace across the visible page.
-          Skipped entirely when neither column is on screen — no need to
-          display a stray "Totals" cell with nothing to sum.
-        */}
-        {(durationCol >= 0 || diskCol >= 0) && (
-          <tfoot className="bg-zinc-50 border-t border-zinc-300 text-xs" data-testid="events-table-footer">
-            <tr>
-              {/* Leading label cell: covers the checkbox + every visible column
-                  up to (but not including) the first totalled column. */}
-              <td
-                className="px-3 py-2 font-semibold text-zinc-700 text-right"
-                colSpan={1 + (durationCol >= 0 ? durationCol : diskCol)}
-              >
-                Totals ({events.length} rows)
-              </td>
-              {durationCol >= 0 && (
-                <td
-                  className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-zinc-800"
-                  data-testid="events-total-duration"
-                >
-                  {formatDuration(totalDurationSec)}
-                </td>
-              )}
-              {/* Filler cells between Duration and DiskSpace (frames, alarm,
-                  tot/avg/max, tags, archived). */}
-              {durationCol >= 0 && diskCol >= 0 && diskCol > durationCol + 1 && (
-                <td colSpan={diskCol - durationCol - 1} />
-              )}
-              {diskCol >= 0 && (
-                <td
-                  className="px-3 py-2 text-right font-mono tabular-nums font-semibold text-zinc-800"
-                  data-testid="events-total-disk-space"
-                >
-                  {formatBytes(totalDiskSpace)}
-                </td>
-              )}
-              {/* Trailing filler: any columns after the last totalled one
-                  plus the trailing Download column. */}
-              <td
-                colSpan={
-                  visibleKeys.length
-                    - Math.max(durationCol, diskCol)
-                    - 1 /* the totalled cell itself */
-                    + 1 /* the Download column */
-                }
-              />
-            </tr>
-          </tfoot>
-        )}
-      </table>
-    </div>
-  );
-}
-
-function Th({
-  children,
-  numeric,
-}: {
-  children?: React.ReactNode;
-  numeric?: boolean;
-}) {
-  return (
-    <th
-      className={
-        'px-3 py-2 font-semibold ' +
-        (numeric ? 'text-right' : 'text-left')
-      }
-    >
-      {children}
-    </th>
-  );
-}
-
-function Row({
-  event,
-  monitorName,
-  isSelected,
-  onToggleSelected,
-  token,
-}: {
-  event: ZmEvent;
-  monitorName?: string;
-  isSelected: boolean;
-  onToggleSelected: () => void;
-  token?: string | null;
-}) {
-  const isVisible = useEventsColumnsStore((s) => s.isVisible);
-  const start = event.start_date_time ? new Date(event.start_date_time) : null;
-  const durationSec = eventDurationSeconds(event.length);
-
-  return (
-    <tr
-      className={
-        'border-b border-zinc-200 transition-colors ' +
-        (isSelected ? 'bg-cyan-50' : 'hover:bg-zinc-50')
-      }
-    >
-      <td className="px-3 py-1.5 w-8">
-        <input
-          type="checkbox"
-          checked={isSelected}
-          onChange={onToggleSelected}
-          aria-label={`Select event ${event.id}`}
-          className="cursor-pointer"
-        />
-      </td>
-      {isVisible('id') && (
-        <td className="px-3 py-1.5 font-mono text-zinc-500 whitespace-nowrap">
-          <Link
-            to="/events/$eventId"
-            params={{ eventId: String(event.id) }}
-            className="text-cyan-700 hover:underline"
-          >
-            #{event.id}
-          </Link>
-        </td>
+        ))}
+      </ClassicTbody>
+      {events.length > 0 && (visible.includes('duration') || visible.includes('disk_space')) && (
+        <tfoot className="bg-[#f8f9fa] text-zinc-800" data-testid="events-table-footer">
+          <tr>
+            <ClassicTd />
+            {showThumbs && <ClassicTd />}
+            {visible.map(footerCell)}
+          </tr>
+        </tfoot>
       )}
-      {isVisible('monitor') && (
-        <td className="px-3 py-1.5 text-zinc-700 truncate max-w-[10rem]">
-          {monitorName ?? `Monitor ${event.monitor_id}`}
-        </td>
-      )}
-      {isVisible('name') && (
-        <td className="px-3 py-1.5 text-zinc-800">
-          <Link
-            to="/events/$eventId"
-            params={{ eventId: String(event.id) }}
-            className="text-cyan-700 hover:underline inline-flex items-center gap-1"
-          >
-            {event.archived === 1 && <Archive size={11} className="text-amber-600" />}
-            {event.name}
-          </Link>
-        </td>
-      )}
-      {isVisible('cause') && (
-        <td className="px-3 py-1.5 text-zinc-700">
-          {event.cause ?? '—'}
-        </td>
-      )}
-      {isVisible('time') && (
-        <td className="px-3 py-1.5 font-mono text-zinc-700 whitespace-nowrap text-[12px]">
-          {start
-            ? start.toLocaleString([], {
-                year: '2-digit', month: '2-digit', day: '2-digit',
-                hour: '2-digit', minute: '2-digit', second: '2-digit',
-                hour12: false,
-              })
-            : '—'}
-        </td>
-      )}
-      {isVisible('duration') && (
-        <td className="px-3 py-1.5 text-right font-mono">
-          {durationSec > 0 ? formatDuration(durationSec) : '—'}
-        </td>
-      )}
-      {isVisible('frames') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums">{event.frames ?? 0}</td>
-      )}
-      {isVisible('alarm_frames') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-red-600">
-          {event.alarm_frames ?? 0}
-        </td>
-      )}
-      {isVisible('tot_score') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums">{event.tot_score ?? 0}</td>
-      )}
-      {isVisible('avg_score') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums">{event.avg_score ?? 0}</td>
-      )}
-      {isVisible('max_score') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-amber-600">
-          {event.max_score ?? 0}
-        </td>
-      )}
-      {isVisible('tags') && (
-        <td className="px-3 py-1.5">
-          {event.tags && event.tags.length > 0 ? (
-            <div className="flex flex-wrap gap-1">
-              {event.tags.map((t) => (
-                <span
-                  key={t.id}
-                  className="inline-flex items-center gap-0.5 px-1 py-0 rounded text-[10px] bg-cyan-50 border border-cyan-300 text-cyan-700"
-                >
-                  <TagIcon size={9} />
-                  {t.name}
-                </span>
-              ))}
-            </div>
-          ) : (
-            <span className="text-zinc-400">—</span>
-          )}
-        </td>
-      )}
-      {isVisible('disk_space') && (
-        <td className="px-3 py-1.5 text-right font-mono tabular-nums text-zinc-600">
-          {event.disk_space ? formatBytes(event.disk_space) : '—'}
-        </td>
-      )}
-      {isVisible('archived') && (
-        <td className="px-3 py-1.5">
-          {event.archived === 1 ? (
-            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] bg-amber-50 border border-amber-300 text-amber-700">
-              Arch
-            </span>
-          ) : (
-            <span className="text-zinc-400">—</span>
-          )}
-        </td>
-      )}
-      <td className="px-3 py-1.5 text-right">
-        <a
-          href={getEventVideoUrl(event.id, token ?? undefined)}
-          target="_blank"
-          rel="noopener noreferrer"
-          download={`event-${event.id}.mp4`}
-          aria-label={`Download video for event ${event.id}`}
-          title="Download video"
-          className="inline-flex items-center justify-center w-6 h-6 rounded text-zinc-500 hover:text-cyan-700 hover:bg-zinc-100 transition-colors"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <Download size={12} />
-        </a>
-      </td>
-    </tr>
+    </ClassicTable>
   );
 }

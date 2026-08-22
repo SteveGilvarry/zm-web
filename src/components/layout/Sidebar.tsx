@@ -1,4 +1,6 @@
-import { Link, useRouterState } from '@tanstack/react-router';
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 import {
   LayoutDashboard,
   Monitor,
@@ -15,15 +17,22 @@ import {
   Filter as FilterIcon,
   FileText,
   ShieldCheck,
-  Key,
   Power,
+  KeyRound,
   LogOut,
   ChevronLeft,
   ChevronRight,
+  X,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
+import { logout as apiLogout } from '@/api/auth';
+import { usePerms } from '@/features/auth/usePerms';
+import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
+import { useCurrentUsername } from '@/features/auth/useMe';
+import { canSeeNav } from '@/features/nav/navPerms';
+import { Button } from '@/components/common/Button';
 
 interface NavItem {
   label: string;
@@ -32,107 +41,223 @@ interface NavItem {
   badge?: number;
 }
 
-const navItems: NavItem[] = [
-  { label: 'Console', icon: <LayoutDashboard size={20} />, path: '/' },
-  { label: 'Monitors', icon: <Monitor size={20} />, path: '/monitors' },
-  { label: 'Events', icon: <Video size={20} />, path: '/events' },
-  { label: 'Montage', icon: <LayoutGrid size={20} />, path: '/montage' },
-  { label: 'Review', icon: <Film size={20} />, path: '/montagereview' },
-  { label: 'Cycle', icon: <RefreshCcw size={20} />, path: '/cycle' },
-  { label: 'Groups', icon: <UsersRound size={20} />, path: '/groups' },
-  { label: 'Filters', icon: <FilterIcon size={20} />, path: '/filters' },
-  { label: 'Reports', icon: <FileText size={20} />, path: '/reports' },
-  { label: 'Audit', icon: <ShieldCheck size={20} />, path: '/audit' },
-  { label: 'Log', icon: <ScrollText size={20} />, path: '/logs' },
-];
+interface NavSection {
+  /** Omitted for the first section, which needs no label. */
+  heading?: string;
+  items: NavItem[];
+}
 
-const settingsItems: NavItem[] = [
-  { label: 'Settings', icon: <Settings size={20} />, path: '/settings' },
-  { label: 'Storage', icon: <HardDrive size={20} />, path: '/settings/storage' },
-  { label: 'Users', icon: <Users size={20} />, path: '/settings/users' },
-  { label: 'Servers', icon: <Shield size={20} />, path: '/settings/servers' },
-  { label: 'API Tokens', icon: <Key size={20} />, path: '/settings/sessions' },
-  { label: 'Run State', icon: <Power size={20} />, path: '/settings/state' },
-];
+/**
+ * Nav labels are built inside a hook so `t()` sees literal keys.
+ *
+ * Sixteen equally-weighted links is a directory, not navigation. They are
+ * grouped by what an operator came to do — watch something live, look into
+ * something that happened, change how the system runs — with the console
+ * standing alone above them because it is where everyone starts.
+ */
+function useNavSections(): NavSection[] {
+  const { t } = useTranslation();
+  return [
+    {
+      items: [
+        { label: t('Console'), icon: <LayoutDashboard size={16} />, path: '/' },
+      ],
+    },
+    {
+      heading: t('Watch'),
+      items: [
+        { label: t('Monitors'), icon: <Monitor size={16} />, path: '/monitors' },
+        { label: t('Montage'), icon: <LayoutGrid size={16} />, path: '/montage' },
+        { label: t('Review'), icon: <Film size={16} />, path: '/montagereview' },
+        { label: t('Cycle'), icon: <RefreshCcw size={16} />, path: '/cycle' },
+      ],
+    },
+    {
+      heading: t('Investigate'),
+      items: [
+        { label: t('Events'), icon: <Video size={16} />, path: '/events' },
+        { label: t('Reports'), icon: <FileText size={16} />, path: '/reports' },
+        { label: t('Audit'), icon: <ShieldCheck size={16} />, path: '/audit' },
+        { label: t('Log'), icon: <ScrollText size={16} />, path: '/logs' },
+      ],
+    },
+    {
+      heading: t('Configure'),
+      items: [
+        { label: t('Groups'), icon: <UsersRound size={16} />, path: '/groups' },
+        { label: t('Filters'), icon: <FilterIcon size={16} />, path: '/filters' },
+        { label: t('Settings'), icon: <Settings size={16} />, path: '/settings' },
+        { label: t('Storage'), icon: <HardDrive size={16} />, path: '/settings/storage' },
+        { label: t('Users'), icon: <Users size={16} />, path: '/settings/users' },
+        { label: t('Servers'), icon: <Shield size={16} />, path: '/settings/servers' },
+        { label: t('Run State'), icon: <Power size={16} />, path: '/settings/state' },
+      ],
+    },
+  ];
+}
 
-export function Sidebar() {
-  const { sidebarCollapsed: collapsed, toggleSidebar } = useUiStore();
+/** Settings paths are prefix-matched; everything else is exact. */
+function isActivePath(itemPath: string, currentPath: string): boolean {
+  if (itemPath === '/settings') {
+    return currentPath === '/settings' || currentPath === '/settings/';
+  }
+  if (itemPath.startsWith('/settings/')) return currentPath.startsWith(itemPath);
+  return currentPath === itemPath;
+}
+
+const DESKTOP_QUERY = '(min-width: 1024px)';
+
+/** Tailwind's `lg` breakpoint, as state: the drawer only exists below it. */
+function useIsDesktop(): boolean {
+  return useSyncExternalStore(
+    (cb) => {
+      const mq = window.matchMedia(DESKTOP_QUERY);
+      mq.addEventListener('change', cb);
+      return () => mq.removeEventListener('change', cb);
+    },
+    () => window.matchMedia(DESKTOP_QUERY).matches,
+    () => true,
+  );
+}
+
+interface SidebarProps {
+  /** Drawer state below `lg`; ignored on desktop. */
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}
+
+export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
+  const { t } = useTranslation();
+  const { sidebarCollapsed, toggleSidebar } = useUiStore();
+  const isDesktop = useIsDesktop();
+  // The drawer always shows labels; collapse is a desktop-only state.
+  const collapsed = isDesktop && sidebarCollapsed;
   const router = useRouterState();
+  const navigate = useNavigate();
   const currentPath = router.location.pathname;
-  const { user, clearAuth } = useAuthStore();
+  const { clearAuth } = useAuthStore();
+  const username = useCurrentUsername();
+  const { perms } = usePerms();
+  const [passwordOpen, setPasswordOpen] = useState(false);
+  const sections = useNavSections();
+  const asideRef = useRef<HTMLElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
-  const handleLogout = () => {
+  // Drawer a11y: Escape closes; focus moves in on open and back out on close.
+  const drawerActive = mobileOpen && !isDesktop;
+  useEffect(() => {
+    if (!drawerActive) return;
+    const opener = document.activeElement as HTMLElement | null;
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation();
+        onMobileClose?.();
+      }
+    };
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('keydown', onKey);
+      opener?.focus?.();
+    };
+  }, [drawerActive, onMobileClose]);
+  // Legacy canView() rules: hide what the user cannot open. A section with
+  // nothing left in it disappears, heading and all.
+  const visibleSections = sections
+    .map((section) => ({ ...section, items: section.items.filter((i) => canSeeNav(perms, i.path)) }))
+    .filter((section) => section.items.length > 0);
+
+  const handleLogout = async () => {
+    // Tell the backend first (best effort — a dead backend must not trap
+    // the operator in a logged-in UI), then drop local state and navigate.
+    await apiLogout().catch(() => undefined);
     clearAuth();
-    window.location.href = '/login';
+    void navigate({ to: '/login' });
   };
 
   return (
     <aside
+      id="app-sidebar"
+      ref={asideRef}
+      aria-label={t('Sidebar')}
+      aria-hidden={!isDesktop && !mobileOpen ? true : undefined}
       className={clsx(
-        'fixed left-0 top-0 z-40 h-screen flex flex-col',
-        'bg-surface border-r border-border-subtle',
-        'transition-all duration-300 ease-out-expo',
-        collapsed ? 'w-16' : 'w-56'
+        'fixed start-0 top-0 z-40 h-screen flex flex-col',
+        'bg-surface border-e border-border-subtle',
+        'transition-[transform,width] duration-300 ease-out-expo',
+        collapsed ? 'w-16' : 'w-56',
+        // Off-canvas below lg; always in place from lg up.
+        mobileOpen ? 'translate-x-0' : '-translate-x-full rtl:translate-x-full',
+        'lg:translate-x-0 lg:rtl:translate-x-0',
       )}
     >
       {/* Logo */}
-      <div className="h-14 flex items-center justify-between px-4 border-b border-border-subtle">
+      <div className="h-12 flex items-center justify-between px-4 border-b border-border-subtle">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Shield className="text-cyan" size={24} />
-            <span className="font-mono font-semibold text-cyan tracking-tight">
-              ZM<span className="text-text-secondary">dash</span>
-            </span>
+            <Shield className="text-fg-dim" size={20} aria-hidden />
+            {/* The operator's system is ZoneMinder; the project's own name
+                (zm-web) belongs in the login footer, not in their chrome. */}
+            <span className="font-semibold text-fg tracking-tight">ZoneMinder</span>
           </div>
         )}
-        {collapsed && <Shield className="text-cyan mx-auto" size={24} />}
+        {collapsed && <Shield className="text-fg-dim mx-auto" size={20} aria-hidden />}
+        {onMobileClose && (
+          <Button
+            ref={closeRef}
+            variant="ghost"
+            size="sm"
+            icon
+            onClick={onMobileClose}
+            aria-label={t('Close menu')}
+            className="lg:hidden"
+          >
+            <X size={18} aria-hidden />
+          </Button>
+        )}
       </div>
 
-      {/* Collapse toggle */}
-      <button
+      {/* Collapse toggle (desktop only) */}
+      <Button
+        variant="secondary"
+        size="sm"
+        icon
         onClick={toggleSidebar}
+        aria-label={collapsed ? t('Expand sidebar') : t('Collapse sidebar')}
+        aria-expanded={!collapsed}
         className={clsx(
-          'absolute -right-3 top-20 z-50',
-          'w-6 h-6 rounded-full',
-          'bg-panel border border-border',
-          'flex items-center justify-center',
-          'text-text-muted hover:text-text-primary',
-          'transition-colors duration-fast',
-          'hover:bg-elevated'
+          'absolute -end-3 top-20 z-50 hidden lg:flex',
+          'w-6 h-6 p-0 rounded-full border-border hover:bg-surface-3',
         )}
       >
-        {collapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-      </button>
+        {collapsed
+          ? <ChevronRight size={14} className="rtl:-scale-x-100" aria-hidden />
+          : <ChevronLeft size={14} className="rtl:-scale-x-100" aria-hidden />}
+      </Button>
 
       {/* Main navigation */}
-      <nav className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-        <div className="space-y-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              item={item}
-              isActive={currentPath === item.path}
-              collapsed={collapsed}
-            />
-          ))}
-        </div>
-
-        <div className="my-4 mx-2 border-t border-border-subtle" />
-
-        <div className="space-y-1">
-          {settingsItems.map((item) => (
-            <NavLink
-              key={item.path}
-              item={item}
-              isActive={
-                item.path === '/settings'
-                  ? currentPath === '/settings' || currentPath === '/settings/'
-                  : currentPath.startsWith(item.path)
-              }
-              collapsed={collapsed}
-            />
-          ))}
-        </div>
+      <nav aria-label={t('Main')} className="flex-1 px-2 py-3 overflow-y-auto">
+        {visibleSections.map((section, i) => (
+          <div key={section.heading ?? 'primary'} className={clsx(i > 0 && 'mt-4')}>
+            {section.heading && !collapsed && (
+              <h2 className="px-3 pb-1 text-xs text-fg-faint">{section.heading}</h2>
+            )}
+            {section.heading && collapsed && (
+              <div className="mx-2 mb-2 border-t border-border-subtle" aria-hidden />
+            )}
+            <ul className="space-y-0.5">
+              {section.items.map((item) => (
+                <li key={item.path}>
+                  <NavLink
+                    item={item}
+                    isActive={isActivePath(item.path, currentPath)}
+                    collapsed={collapsed}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* User section */}
@@ -140,30 +265,47 @@ export function Sidebar() {
         <div
           className={clsx(
             'flex items-center gap-3 px-3 py-2 rounded-lg',
-            'bg-panel/50'
+            'bg-surface-2/50'
           )}
         >
-          <div className="w-8 h-8 rounded-full bg-cyan/20 flex items-center justify-center">
-            <span className="text-cyan font-medium text-sm">
-              {user?.user?.charAt(0).toUpperCase() || '?'}
+          <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
+            <span className="text-accent font-medium text-sm">
+              {username?.charAt(0).toUpperCase() || '?'}
             </span>
           </div>
           {!collapsed && (
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-text-primary truncate">
-                {user?.user || 'Unknown'}
+              <p className="text-sm font-medium text-fg truncate">
+                {username || t('Unknown')}
               </p>
             </div>
           )}
-          <button
-            onClick={handleLogout}
-            className="p-1.5 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
-            title="Logout"
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            onClick={() => setPasswordOpen(true)}
+            className="hover:text-accent hover:bg-accent/10"
+            title={t('Change password')}
+            aria-label={t('Change password')}
           >
-            <LogOut size={16} />
-          </button>
+            <KeyRound size={16} aria-hidden />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            icon
+            onClick={handleLogout}
+            className="hover:text-danger hover:bg-danger/10"
+            title={t('Log out')}
+            aria-label={t('Log out')}
+          >
+            <LogOut size={16} className="rtl:-scale-x-100" aria-hidden />
+          </Button>
         </div>
       </div>
+
+      <ChangePasswordDialog isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
     </aside>
   );
 }
@@ -180,35 +322,36 @@ function NavLink({
   return (
     <Link
       to={item.path}
+      aria-current={isActive ? 'page' : undefined}
       className={clsx(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg',
-        'transition-all duration-fast',
+        'flex items-center gap-2.5 px-3 py-1.5 rounded',
+        'transition-colors duration-fast',
         'group relative',
         isActive
-          ? 'bg-cyan/10 text-cyan'
-          : 'text-text-secondary hover:text-text-primary hover:bg-panel'
+          ? 'bg-accent/10 text-accent'
+          : 'text-fg-muted hover:text-fg hover:bg-surface-2'
       )}
     >
       {/* Active indicator */}
       {isActive && (
-        <div className="absolute left-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-cyan rounded-r" />
+        <div className="absolute start-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-e" />
       )}
 
       <span
         className={clsx(
           'flex-shrink-0',
-          isActive ? 'text-cyan' : 'text-text-muted group-hover:text-text-secondary'
+          isActive ? 'text-accent' : 'text-fg-dim group-hover:text-fg-muted'
         )}
       >
         {item.icon}
       </span>
 
       {!collapsed && (
-        <span className="font-medium text-sm">{item.label}</span>
+        <span className="text-sm">{item.label}</span>
       )}
 
       {!collapsed && item.badge !== undefined && item.badge > 0 && (
-        <span className="ml-auto px-2 py-0.5 text-xs font-mono bg-crimson/20 text-crimson rounded">
+        <span className="ms-auto px-2 py-0.5 text-label font-mono bg-danger/20 text-danger rounded">
           {item.badge}
         </span>
       )}
@@ -216,9 +359,10 @@ function NavLink({
       {/* Tooltip for collapsed state */}
       {collapsed && (
         <div
+          role="tooltip"
           className={clsx(
-            'absolute left-full ml-2 px-2 py-1 rounded',
-            'bg-elevated text-text-primary text-sm font-medium',
+            'absolute start-full ms-2 px-2 py-1 rounded',
+            'bg-surface-3 text-fg text-sm font-medium',
             'opacity-0 invisible group-hover:opacity-100 group-hover:visible',
             'transition-all duration-fast',
             'whitespace-nowrap z-50',

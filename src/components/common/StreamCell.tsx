@@ -1,9 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useEffectEvent, useId, useRef, useState, useSyncExternalStore } from 'react';
 import { clsx } from 'clsx';
 import type { CSSProperties } from 'react';
-import { Loader2, AlertTriangle, RefreshCw } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
+import { Loader2, AlertTriangle, RefreshCw, PauseCircle } from 'lucide-react';
 import { useWebRtcStream } from '@/hooks/useWebRtcStream';
 import { useHlsStream } from '@/hooks/useHlsStream';
+import { useInViewport } from '@/hooks/useInViewport';
+import { useDocumentVisible } from '@/hooks/useDocumentVisible';
+import { liveTileBudget } from '@/streaming/liveTileBudget';
+import { useUiStore } from '@/stores/ui';
 import type { StreamProtocol } from '@/types';
 import { getOrientationStyle, isOrientationRotated } from '@/types';
 import type { StreamHookResult } from '@/hooks/useWebRtcStream';
@@ -54,8 +59,20 @@ interface StreamCellProps {
   protocol: StreamProtocol;
   monitorId: number;
   monitorName?: string;
+  /** Runtime caption shown beside the name, e.g. `Connected · 10.9 fps`. */
+  statusText?: string;
+  /** Force the name overlay on/off; defaults to on for non-compact cells. */
+  showName?: boolean;
   orientation?: string | null;
   autoStart?: boolean;
+  /**
+   * Wall mode: the tile only runs while it is in (or near) the viewport, the
+   * tab is in the foreground and the live-tile budget (`useUiStore.
+   * maxLiveTiles`) has a slot for it. Off for a single stage (Watch, Cycle).
+   */
+  gated?: boolean;
+  /** Drop to HLS when WebRTC gives up (no TURN story yet). Default on. */
+  hlsFallback?: boolean;
   compact?: boolean;
   showControls?: boolean;
   onClick?: () => void;
@@ -81,61 +98,82 @@ export function StreamCell({
   protocol,
   monitorId,
   monitorName,
+  statusText,
+  showName,
   orientation,
   autoStart = false,
+  gated = false,
+  hlsFallback = true,
   compact = false,
   showControls = false,
   onClick,
   onDoubleClick,
   rotationFit = 'auto',
 }: StreamCellProps) {
+  // WebRTC that ends in `failed` (ICE never completed, retries exhausted)
+  // falls back to HLS for this cell. A new `protocol` prop clears it.
+  const [fallback, setFallback] = useState(false);
+  const [seenProtocol, setSeenProtocol] = useState(protocol);
+  if (seenProtocol !== protocol) {
+    setSeenProtocol(protocol);
+    setFallback(false);
+  }
+  const effective: StreamProtocol = fallback ? 'hls' : protocol;
+
+  const inner: StreamInnerProps = {
+    monitorId,
+    monitorName,
+    statusText,
+    showName,
+    orientation,
+    autoStart,
+    gated,
+    compact,
+    showControls,
+    onClick,
+    onDoubleClick,
+    rotationFit,
+    fallback,
+  };
+
   // Conditionally render inner component based on protocol.
   // When protocol changes, React unmounts the old and mounts the new,
   // triggering hook cleanup (closing connections).
-  if (protocol === 'webrtc') {
+  if (effective === 'webrtc') {
     return (
       <WebRtcStreamInner
-        monitorId={monitorId}
-        monitorName={monitorName}
-        orientation={orientation}
-        autoStart={autoStart}
-        compact={compact}
-        showControls={showControls}
-        onClick={onClick}
-        onDoubleClick={onDoubleClick}
-        rotationFit={rotationFit}
+        {...inner}
+        onFailed={hlsFallback ? () => setFallback(true) : undefined}
       />
     );
   }
-  return (
-    <HlsStreamInner
-      monitorId={monitorId}
-      monitorName={monitorName}
-      orientation={orientation}
-      autoStart={autoStart}
-      compact={compact}
-      showControls={showControls}
-      onClick={onClick}
-      onDoubleClick={onDoubleClick}
-      rotationFit={rotationFit}
-    />
-  );
+  return <HlsStreamInner {...inner} />;
 }
 
 interface StreamInnerProps {
   monitorId: number;
   monitorName?: string;
+  statusText?: string;
+  showName?: boolean;
   orientation?: string | null;
   autoStart: boolean;
+  gated: boolean;
   compact: boolean;
   showControls: boolean;
   onClick?: () => void;
   onDoubleClick?: () => void;
   rotationFit: 'auto' | 'fill' | 'fit';
+  /** This cell is on HLS because WebRTC failed. */
+  fallback: boolean;
 }
 
-function WebRtcStreamInner(props: StreamInnerProps) {
+function WebRtcStreamInner({ onFailed, ...props }: StreamInnerProps & { onFailed?: () => void }) {
   const stream = useWebRtcStream(props.monitorId);
+  const failed = stream.state === 'failed';
+  const notifyFailed = useEffectEvent(() => onFailed?.());
+  useEffect(() => {
+    if (failed) notifyFailed();
+  }, [failed]);
   return <StreamVideo stream={stream} protocol="webrtc" {...props} />;
 }
 
@@ -149,44 +187,88 @@ interface StreamVideoProps extends StreamInnerProps {
   protocol: StreamProtocol;
 }
 
+const NO_GATE = { inView: true, tabVisible: true } as const;
+
 function StreamVideo({
   stream,
   protocol,
+  monitorId,
   monitorName,
+  statusText,
+  showName,
   orientation,
   autoStart,
+  gated,
   compact,
   showControls,
   onClick,
   onDoubleClick,
   rotationFit,
+  fallback,
 }: StreamVideoProps) {
-  const isConnecting = stream.state === 'connecting' || stream.state === 'signaling';
-  const isConnected = stream.state === 'connected';
-  const isFailed = stream.state === 'failed';
-  const isIdle = stream.state === 'idle';
+  const { t } = useTranslation();
+  // Pull the ref out of the hook result up front. Reading `stream.videoRef`
+  // inline taints the whole `stream` object as a ref for the React Compiler,
+  // which then rejects every later `stream.state` / `stream.error` read.
+  const { videoRef, state, error, start, stop, pause } = stream;
+  const isConnecting = state === 'connecting' || state === 'signaling';
+  const isConnected = state === 'connected';
+  const isFailed = state === 'failed';
+  const isIdle = state === 'idle';
 
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  /* ----- Wall gating: viewport × tab visibility × live-tile budget ----- */
+  const inViewRaw = useInViewport(containerRef, '200px');
+  const tabVisibleRaw = useDocumentVisible();
+  const { inView, tabVisible } = gated ? { inView: inViewRaw, tabVisible: tabVisibleRaw } : NO_GATE;
+  const instanceId = useId();
+  const budgetKey = `${monitorId}:${instanceId}`;
+  // Re-render on every budget change so a refused tile can ask again.
+  const budgetVersion = useSyncExternalStore(liveTileBudget.subscribe, liveTileBudget.getVersion);
+  const maxLiveTiles = useUiStore((s) => s.maxLiveTiles);
+  useEffect(() => {
+    liveTileBudget.setLiveTileLimit(maxLiveTiles);
+  }, [maxLiveTiles]);
+
+  const wantLive = autoStart && inView && tabVisible;
+  useEffect(() => {
+    if (!gated) return;
+    if (wantLive) liveTileBudget.request(budgetKey);
+    else liveTileBudget.release(budgetKey);
+    // budgetVersion: a freed slot is the cue for a refused tile to retry.
+  }, [gated, wantLive, budgetKey, budgetVersion]);
+  useEffect(() => () => liveTileBudget.release(budgetKey), [budgetKey]);
+  const hasSlot = !gated || liveTileBudget.hasSlot(budgetKey);
+  const shouldRun = wantLive && hasSlot;
+  const overBudget = gated && wantLive && !hasSlot;
+
+  // Effect Events: the autostart timer must only re-arm when the gate
+  // decision flips, never when `start`/`pause` change identity.
+  const startStream = useEffectEvent(() => start());
+  const pauseStream = useEffectEvent(() => pause());
   useEffect(() => {
     if (!autoStart) return;
+    if (!shouldRun) {
+      if (gated) pauseStream();
+      return;
+    }
     // Small delay to stagger many simultaneous connections (console/montage).
     // start() is reference-counted and idempotent per hook instance, so it is
     // safe to call even when the shared stream is already running.
-    const timer = setTimeout(() => {
-      stream.start();
-    }, 100 + Math.random() * 500);
+    const timer = setTimeout(startStream, 100 + Math.random() * 500);
     return () => clearTimeout(timer);
-  }, [autoStart]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [autoStart, shouldRun, gated]);
 
   const handleRetry = (e: React.MouseEvent) => {
     e.stopPropagation();
-    stream.stop();
-    setTimeout(() => stream.start(), 200);
+    stop();
+    setTimeout(() => start(), 200);
   };
 
   // Auto-resolve fit/fill from the container's actual aspect.
   // Cell aspect < 1 (portrait) → camera's post-rotation matches → fill.
   // Cell aspect >= 1 (landscape/square) → letterbox via 'fit'.
-  const containerRef = useRef<HTMLDivElement>(null);
   const [containerIsPortrait, setContainerIsPortrait] = useState(false);
   useEffect(() => {
     if (rotationFit !== 'auto') return;
@@ -205,10 +287,14 @@ function StreamVideo({
   const effectiveFit: 'fill' | 'fit' =
     rotationFit === 'auto' ? (containerIsPortrait ? 'fill' : 'fit') : rotationFit;
 
+  const nameVisible = !!monitorName && (showName ?? !compact);
+  const protocolLabel = protocol === 'webrtc' ? 'WebRTC' : fallback ? t('HLS · fallback') : 'HLS';
+
   return (
     <div
       ref={containerRef}
-      className="relative w-full h-full bg-abyss overflow-hidden"
+      dir="ltr"
+      className="relative w-full h-full bg-bg-sunken overflow-hidden"
       onClick={onClick}
       onDoubleClick={onDoubleClick}
     >
@@ -223,7 +309,7 @@ function StreamVideo({
               Avoids the cropping we got from swap-dimensions in a
               non-matching container. */}
       <video
-        ref={stream.videoRef}
+        ref={videoRef}
         className={clsx(
           isOrientationRotated(orientation) && effectiveFit === 'fill'
             ? 'object-contain bg-black'
@@ -247,7 +333,22 @@ function StreamVideo({
       {/* Idle state */}
       {isIdle && !autoStart && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-text-dim text-xs font-mono">OFFLINE</div>
+          <div className="text-fg-faint text-xs">{t('Offline')}</div>
+        </div>
+      )}
+
+      {/* Over the live-tile budget: in view, wants to run, no slot. */}
+      {overBudget && !isConnected && (
+        <div
+          className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-fg-faint"
+          data-testid="stream-over-budget"
+        >
+          <PauseCircle size={compact ? 16 : 24} />
+          {!compact && (
+            <span className="text-xs">
+              {t('Live tile limit ({{count}}) reached', { count: maxLiveTiles })}
+            </span>
+          )}
         </div>
       )}
 
@@ -257,11 +358,11 @@ function StreamVideo({
           <div className="text-center">
             <Loader2
               size={compact ? 20 : 32}
-              className="mx-auto text-cyan animate-spin"
+              className="mx-auto text-fg-dim animate-spin"
             />
             {!compact && (
-              <p className="text-xs text-text-muted mt-2">
-                {stream.state === 'signaling' ? 'Negotiating...' : 'Connecting...'}
+              <p className="text-xs text-white/80 mt-2">
+                {state === 'signaling' ? t('Negotiating...') : t('Connecting...')}
               </p>
             )}
           </div>
@@ -272,86 +373,98 @@ function StreamVideo({
       {isFailed && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70">
           <div className="text-center">
-            <AlertTriangle size={compact ? 16 : 24} className="mx-auto text-amber mb-1" />
+            <AlertTriangle size={compact ? 16 : 24} className="mx-auto text-warn mb-1" aria-hidden />
             {!compact && (
-              <p className="text-xs text-text-muted mb-2 max-w-[200px] mx-auto">
-                {stream.error || 'Stream failed'}
+              <p className="text-xs text-white/80 mb-2 max-w-[200px] mx-auto">
+                {error || t('Stream failed')}
               </p>
             )}
             <button
+              type="button"
               onClick={handleRetry}
+              aria-label={t('Retry stream for {{name}}', { name: monitorName ?? String(monitorId) })}
               className={clsx(
                 'flex items-center gap-1 mx-auto rounded',
-                'text-xs font-medium text-cyan hover:text-cyan-dim transition-colors',
-                compact ? 'px-2 py-1' : 'px-3 py-1.5 bg-surface/50',
+                'text-xs font-medium text-white hover:text-white/80 transition-colors',
+                compact ? 'px-2 py-1' : 'px-3 py-1.5 bg-white/10',
               )}
             >
               <RefreshCw size={12} />
-              Retry
+              {t('Retry')}
             </button>
           </div>
         </div>
       )}
 
-      {/* LIVE badge */}
+      {/* Live mark. On a wall where every tile is live, a pulsing badge on
+          each one is sixteen animations competing with the video, so the
+          compact form is a single dot with the label in its tooltip. */}
       {isConnected && (
         <div
           className={clsx(
-            'absolute top-1.5 left-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60',
-            compact && 'top-1 left-1',
+            'absolute flex items-center gap-1 rounded',
+            compact
+              ? 'top-1 start-1'
+              : 'top-1.5 start-1.5 px-1.5 py-0.5 bg-black/60',
           )}
+          title={compact ? `${t('LIVE')} · ${protocolLabel}` : undefined}
         >
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-crimson" />
-          </span>
-          <span className="text-[10px] font-mono font-bold text-white">
-            LIVE
-          </span>
+          <span
+            className="inline-flex rounded-full h-1.5 w-1.5 bg-danger"
+            aria-label={compact ? t('LIVE') : undefined}
+          />
           {!compact && (
-            <span className="text-[10px] font-mono text-text-muted">
-              &middot; {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}
+            <>
+              <span className="text-xs font-mono text-white">{t('LIVE')}</span>
+              <span className="text-xs font-mono text-white/70">
+                &middot; {protocolLabel}
+              </span>
+            </>
+          )}
+        </div>
+      )}
+
+      {/* Monitor name + status overlay */}
+      {nameVisible && (
+        <div className="absolute inset-x-0 bottom-0 px-2 py-1 bg-black/55 flex items-baseline gap-2 min-w-0">
+          <span className="text-xs text-white truncate">
+            {monitorName}
+          </span>
+          {statusText && (
+            <span className="ms-auto text-xs font-mono tabular-nums text-white/70 whitespace-nowrap" data-testid="stream-status">
+              {statusText}
             </span>
           )}
         </div>
       )}
 
-      {/* Monitor name overlay */}
-      {monitorName && !compact && (
-        <div className="absolute inset-x-0 bottom-0 px-2 py-1.5 bg-gradient-to-t from-black/80 to-transparent">
-          <span className="text-xs font-medium text-white truncate block">
-            {monitorName}
-          </span>
-        </div>
-      )}
-
       {/* Controls overlay */}
       {showControls && isConnected && (
-        <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+        <div className="absolute top-1.5 end-1.5 flex items-center gap-1">
           <button
+            type="button"
             onClick={(e) => {
               e.stopPropagation();
-              stream.stop();
+              stop();
             }}
-            className="p-1 rounded bg-black/60 text-text-muted hover:text-crimson transition-colors"
+            aria-label={t('Stop stream for {{name}}', { name: monitorName ?? String(monitorId) })}
+            className="p-1 rounded bg-black/60 text-white/80 hover:text-danger transition-colors"
           >
-            <span className="text-[10px] font-mono font-bold">STOP</span>
+            <span className="text-xs font-mono" aria-hidden>{t('Stop')}</span>
           </button>
         </div>
       )}
 
       {/* Non-fatal error toast */}
-      {stream.error && !isFailed && (
+      {error && !isFailed && (
         <div className="absolute top-1.5 left-1/2 -translate-x-1/2">
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber/90 text-void text-[10px] font-medium">
-            <AlertTriangle size={10} />
-            {stream.error}
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-warn text-accent-fg text-xs">
+            <AlertTriangle size={10} aria-hidden />
+            {error}
           </div>
         </div>
       )}
 
-      {/* Scanlines */}
-      <div className="absolute inset-0 scanlines pointer-events-none" />
     </div>
   );
 }

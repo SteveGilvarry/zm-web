@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { listZonesForMonitor, parseCoords } from '@/api/zones';
 
 interface ZonesOverlayProps {
@@ -28,6 +29,7 @@ const ZONE_COLORS: Record<string, { stroke: string; fill: string }> = {
 };
 
 export function ZonesOverlay({ monitorId, monitorWidth, monitorHeight }: ZonesOverlayProps) {
+  const { t } = useTranslation();
   const { data, isLoading } = useQuery({
     queryKey: ['zones', monitorId],
     queryFn: () => listZonesForMonitor(monitorId, { page: 1, page_size: 50 }),
@@ -45,7 +47,7 @@ export function ZonesOverlay({ monitorId, monitorWidth, monitorHeight }: ZonesOv
       viewBox={`0 0 ${w} ${h}`}
       preserveAspectRatio="none"
       className="absolute inset-0 w-full h-full pointer-events-none"
-      aria-label="Monitor zones"
+      aria-label={t('Monitor zones')}
     >
       {data.items.map((zone) => {
         const c = ZONE_COLORS[zone.type] ?? ZONE_COLORS.Active;

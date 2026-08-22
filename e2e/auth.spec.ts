@@ -1,7 +1,14 @@
-import { test, expect, login } from './fixtures';
+import { test, expect, login, ANONYMOUS } from './fixtures';
 
+/**
+ * The session lifecycle, driven through the real form. These specs start
+ * signed out — the rest of the suite inherits a worker-wide storage state,
+ * which would make `login()` bounce straight back off /login.
+ */
 test.describe('authentication', () => {
-  test('login → redirect to console; refresh keeps you logged in', async ({ page }) => {
+  test.use({ storageState: ANONYMOUS });
+
+  test('login → redirect to console; refresh keeps you logged in @route:login', async ({ page }) => {
     await login(page);
     // After login we land on the Console (not /login).
     await expect(page).not.toHaveURL(/\/login$/);
@@ -56,5 +63,16 @@ test.describe('authentication', () => {
       .not.toBe(corruptedToken);
     // Still on /events, not bounced to /login.
     await expect(page).toHaveURL(/\/events/);
+  });
+
+  test('bad credentials keep you on the form with an error @route:login', async ({ page }) => {
+    await page.goto('/login');
+    await page.getByRole('textbox', { name: /username/i }).fill('e2e-nobody');
+    await page.getByRole('textbox', { name: /password/i }).fill('not-the-password');
+    const resp = page.waitForResponse((r) => r.url().includes('/api/v3/auth/login'));
+    await page.getByRole('button', { name: /^(sign in|login)$/i }).click();
+    expect((await resp).ok()).toBe(false);
+    await expect(page).toHaveURL(/\/login/);
+    await expect(page.getByText(/login failed|invalid|unauthor/i).first()).toBeVisible();
   });
 });

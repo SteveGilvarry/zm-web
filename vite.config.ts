@@ -10,8 +10,12 @@ export default defineConfig(({ mode }) => {
   // Backend zm_api address for the dev proxy. Set VITE_API_PROXY_TARGET in a
   // local (gitignored) .env file — see .env.example.
   const apiTarget = env.VITE_API_PROXY_TARGET || 'http://localhost:8080'
+  // Public path the built app is served from. Leave as '/' unless the
+  // dashboard lives under a sub-path (e.g. VITE_BASE=/zm/). Must end in '/'.
+  const base = env.VITE_BASE || '/'
 
   return {
+  base,
   plugins: [
     TanStackRouterVite({
       quoteStyle: 'single',

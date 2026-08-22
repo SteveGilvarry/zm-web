@@ -1,4 +1,5 @@
 import { apiGet, apiDelete, apiPatch } from './client';
+import { API_BASE } from '@/api/base';
 import type { ZmEvent, PaginatedResponse } from '@/types';
 
 export interface EventUpdatePayload {
@@ -13,19 +14,70 @@ export async function updateEvent(id: number, payload: EventUpdatePayload): Prom
   return apiPatch<EventUpdatePayload, ZmEvent>(`/events/${id}`, payload);
 }
 
+/** `EventSortField` in the OpenAPI spec — anything else answers 400. */
+export const EVENT_SORT_FIELDS = [
+  'start_time', 'end_time', 'alarm_frames', 'max_score',
+  'avg_score', 'tot_score', 'length', 'id',
+  // zm-api#20 widened the enum; a backend older than that answers 400 for
+  // these five.
+  'name', 'cause', 'monitor_id', 'notes', 'frames',
+] as const;
+export type EventSortField = (typeof EVENT_SORT_FIELDS)[number];
+export type SortDirection = 'asc' | 'desc';
+
+export function isEventSortField(v: unknown): v is EventSortField {
+  return typeof v === 'string' && (EVENT_SORT_FIELDS as readonly string[]).includes(v);
+}
+
+/**
+ * Map a legacy `ZM_WEB_EVENT_SORT_FIELD` value (the PHP UI's column names)
+ * onto the backend's sort enum. The only legacy columns left without a
+ * backend equivalent are `DiskSpace` and `Tags`; they fall back to
+ * `start_time`, which is the legacy default anyway.
+ */
+export function legacySortFieldToApi(legacy: string): EventSortField {
+  switch (legacy.trim()) {
+    case 'Id': return 'id';
+    case 'StartDateTime': case 'StartTime': return 'start_time';
+    case 'EndDateTime': case 'EndTime': return 'end_time';
+    case 'Length': return 'length';
+    case 'AlarmFrames': return 'alarm_frames';
+    case 'TotScore': return 'tot_score';
+    case 'AvgScore': return 'avg_score';
+    case 'MaxScore': return 'max_score';
+    case 'Name': return 'name';
+    case 'Cause': return 'cause';
+    case 'Notes': return 'notes';
+    case 'Frames': return 'frames';
+    case 'Monitor': case 'MonitorId': case 'MonitorName': return 'monitor_id';
+    default: return isEventSortField(legacy) ? legacy : 'start_time';
+  }
+}
+
 export interface EventQueryParams {
   page?: number;
   page_size?: number;
   monitor_id?: number;
   /** ISO timestamp; events with start_date_time >= this. */
   start_time?: string;
-  /** ISO timestamp; events with start_date_time <= this. */
+  /**
+   * ISO timestamp; events with **end_date_time** <= this (not start — see
+   * zm_api `repo/events.rs`). An event still running at this instant is
+   * excluded.
+   */
   end_time?: string;
-  cause?: string;
   archived?: boolean;
   alarm_frames_min?: number;
-  sort?: 'id' | 'start_date_time' | 'max_score' | 'frames';
-  direction?: 'asc' | 'desc';
+  /** Case-insensitive substring match on `Events.Cause` (zm-api#20). */
+  cause?: string;
+  /** Case-insensitive substring match on `Events.Name` (zm-api#20). */
+  name?: string;
+  /** Case-insensitive substring match on `Events.Notes` (zm-api#20). */
+  notes?: string;
+  /** Comma-separated tag ids; an event matching **any** of them is kept. */
+  tag_id?: string;
+  sort?: EventSortField;
+  direction?: SortDirection;
 }
 
 export async function getEvents(params?: EventQueryParams): Promise<PaginatedResponse<ZmEvent>> {
@@ -109,21 +161,21 @@ export async function getEventInfo(id: number): Promise<EventVideoInfo> {
 
 // Event playback URLs - token param for media elements that can't send headers
 export function getEventVideoUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/video`;
+  const base = `${API_BASE}/events/${eventId}/video`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export function getEventThumbnailUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/thumbnail`;
+  const base = `${API_BASE}/events/${eventId}/thumbnail`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export function getEventStreamUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/stream/video.mp4`;
+  const base = `${API_BASE}/events/${eventId}/stream/video.mp4`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }
 
 export function getEventPlaylistUrl(eventId: number, token?: string): string {
-  const base = `/api/v3/events/${eventId}/stream/playlist.m3u8`;
+  const base = `${API_BASE}/events/${eventId}/stream/playlist.m3u8`;
   return token ? `${base}?token=${encodeURIComponent(token)}` : base;
 }

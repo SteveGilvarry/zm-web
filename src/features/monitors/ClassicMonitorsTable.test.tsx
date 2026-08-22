@@ -159,3 +159,19 @@ describe('ClassicMonitorsTable — actions', () => {
     expect(screen.getByRole('button', { name: /delete front door/i })).toBeDisabled();
   });
 });
+
+describe('ClassicMonitorsTable — runtime status badge', () => {
+  it('shows the capture-process state and fps when the status poll has answered', () => {
+    render(
+      <ClassicMonitorsTable
+        monitors={[makeMonitor({ id: 1, capturing: 'Always' })]}
+        liveSessionIds={new Set()}
+        runtimeById={{ 1: { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, bandwidth: 0, updatedOn: '' } }}
+      />,
+    );
+    const badge = screen.getByTestId('monitor-status-1');
+    expect(badge).toHaveTextContent('NotRunning');
+    expect(badge).toHaveTextContent('0.0 fps');
+    expect(badge.className).toContain('text-red-700');
+  });
+});

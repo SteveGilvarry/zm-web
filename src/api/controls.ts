@@ -1,4 +1,5 @@
 import { apiGet, apiPost, apiPatch, apiDelete } from './client';
+import i18next from '@/i18n';
 import type { PaginatedResponse } from '@/types';
 
 /**
@@ -76,10 +77,58 @@ export interface Control {
   can_reboot: number;
   can_auto_scan: number;
   num_scan_paths: number;
+
+  // Per-axis ranges, steps and speeds (`ControlResponse`; all nullable).
+  min_pan_range?: number | null;
+  max_pan_range?: number | null;
+  min_pan_step?: number | null;
+  max_pan_step?: number | null;
+  min_pan_speed?: number | null;
+  max_pan_speed?: number | null;
+  turbo_pan_speed?: number | null;
+  min_tilt_range?: number | null;
+  max_tilt_range?: number | null;
+  min_tilt_step?: number | null;
+  max_tilt_step?: number | null;
+  min_tilt_speed?: number | null;
+  max_tilt_speed?: number | null;
+  turbo_tilt_speed?: number | null;
+  min_zoom_range?: number | null;
+  max_zoom_range?: number | null;
+  min_zoom_step?: number | null;
+  max_zoom_step?: number | null;
+  min_zoom_speed?: number | null;
+  max_zoom_speed?: number | null;
+  min_focus_range?: number | null;
+  max_focus_range?: number | null;
+  min_focus_step?: number | null;
+  max_focus_step?: number | null;
+  min_focus_speed?: number | null;
+  max_focus_speed?: number | null;
+  min_gain_range?: number | null;
+  max_gain_range?: number | null;
+  min_gain_step?: number | null;
+  max_gain_step?: number | null;
+  min_gain_speed?: number | null;
+  max_gain_speed?: number | null;
+  min_white_range?: number | null;
+  max_white_range?: number | null;
+  min_white_step?: number | null;
+  max_white_step?: number | null;
+  min_white_speed?: number | null;
+  max_white_speed?: number | null;
+  min_iris_range?: number | null;
+  max_iris_range?: number | null;
+  min_iris_step?: number | null;
+  max_iris_step?: number | null;
+  min_iris_speed?: number | null;
+  max_iris_speed?: number | null;
 }
 
-export type CreateControlPayload = Omit<Control, 'id'>;
-export type UpdateControlPayload = Partial<CreateControlPayload>;
+/** `CreateControlRequest`: only `name` and `type` are required; the rest default server-side. */
+export type CreateControlPayload = Pick<Control, 'name' | 'type'> & Partial<Omit<Control, 'id' | 'name' | 'type'>>;
+/** `UpdateControlRequest`: every field optional. */
+export type UpdateControlPayload = Partial<Omit<Control, 'id'>>;
 
 export async function listControls(params?: {
   page?: number; page_size?: number;
@@ -111,12 +160,13 @@ export async function deleteControl(id: number): Promise<void> {
 
 /** Compact capability summary for the list view. */
 export function summarizeCapabilities(c: Control): string {
+  const t = i18next.t.bind(i18next);
   const tags: string[] = [];
-  if (c.can_pan && c.can_tilt) tags.push('Pan/Tilt');
-  else if (c.can_pan) tags.push('Pan');
-  else if (c.can_tilt) tags.push('Tilt');
-  if (c.can_zoom) tags.push('Zoom');
-  if (c.can_focus) tags.push('Focus');
-  if (c.has_presets) tags.push(`Presets (${c.num_presets})`);
-  return tags.length ? tags.join(' · ') : 'View only';
+  if (c.can_pan && c.can_tilt) tags.push(t('Pan/Tilt'));
+  else if (c.can_pan) tags.push(t('Pan'));
+  else if (c.can_tilt) tags.push(t('Tilt'));
+  if (c.can_zoom) tags.push(t('Zoom'));
+  if (c.can_focus) tags.push(t('Focus'));
+  if (c.has_presets) tags.push(t('Presets ({{count}})', { count: c.num_presets }));
+  return tags.length ? tags.join(' · ') : t('View only');
 }

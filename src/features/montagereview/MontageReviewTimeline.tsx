@@ -1,6 +1,7 @@
 import { useRef, useMemo, type PointerEvent as ReactPointerEvent } from 'react';
 import { clsx } from 'clsx';
-import { useReviewEvents } from './useReviewEvents';
+import { useTranslation } from 'react-i18next';
+import { eventEndMs, useReviewEvents } from './useReviewEvents';
 import type { Monitor, ZmEvent } from '@/types';
 
 interface MontageReviewTimelineProps {
@@ -13,7 +14,7 @@ interface MontageReviewTimelineProps {
 
 /**
  * Horizontal timeline showing each selected monitor as a track. Recorded
- * events appear as cyan bars; a draggable vertical playhead spans all tracks.
+ * events appear as accent bars; a draggable vertical playhead spans all tracks.
  * Click anywhere on a track to jump the playhead to that moment; drag the
  * playhead to scrub through the range.
  */
@@ -24,6 +25,7 @@ export function MontageReviewTimeline({
   currentTime,
   onSeek,
 }: MontageReviewTimelineProps) {
+  const { t } = useTranslation();
   const bodyRef = useRef<HTMLDivElement | null>(null);
   const durationMs = rangeEnd.getTime() - rangeStart.getTime();
 
@@ -63,12 +65,12 @@ export function MontageReviewTimeline({
   }, [rangeStart, durationMs]);
 
   return (
-    <div className="bg-surface rounded-xl border border-border-subtle overflow-hidden">
-      <div className="flex items-center justify-between px-4 py-2 border-b border-border-subtle">
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-          Timeline
+    <div dir="ltr" className="bg-surface rounded border border-border-subtle overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
+        <span className="text-label text-fg-dim">
+          {t('Timeline')}
         </span>
-        <span className="text-xs font-mono tabular-nums text-cyan">
+        <span className="text-xs font-mono tabular-nums text-fg">
           {currentTime.toLocaleTimeString([], { hour12: false })}
         </span>
       </div>
@@ -78,7 +80,7 @@ export function MontageReviewTimeline({
         {ticks.map((tick, i) => (
           <span
             key={i}
-            className="absolute top-1 text-[9px] font-mono text-text-dim tabular-nums -translate-x-1/2"
+            className="absolute top-1 text-xs font-mono text-fg-faint tabular-nums -translate-x-1/2"
             style={{ left: `${tick.pct}%` }}
           >
             {formatTick(tick.t, durationMs)}
@@ -108,8 +110,8 @@ export function MontageReviewTimeline({
           className="absolute top-0 bottom-0 pointer-events-none"
           style={{ left: `${playheadPct}%` }}
         >
-          <div className="w-px h-full bg-cyan shadow-[0_0_6px_rgba(0,212,255,0.6)]" />
-          <div className="absolute -top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-cyan shadow-[0_0_8px_rgba(0,212,255,0.8)]" />
+          <div className="w-px h-full bg-accent" />
+          <div className="absolute -top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-accent" />
         </div>
       </div>
     </div>
@@ -128,12 +130,12 @@ function Track({ monitor, rangeStart, rangeEnd }: TrackProps) {
 
   return (
     <div className="relative h-8 flex items-center border-b border-border-subtle/30 last:border-b-0">
-      <div className="absolute left-0 top-0 bottom-0 w-32 px-3 flex items-center bg-surface/80 backdrop-blur-sm border-r border-border-subtle z-10">
-        <span className="text-[11px] text-text-secondary truncate font-medium">
+      <div className="absolute start-0 top-0 bottom-0 w-32 px-3 flex items-center bg-surface border-e border-border-subtle z-10">
+        <span className="text-xs text-fg-muted truncate font-medium">
           {monitor.name}
         </span>
       </div>
-      <div className="absolute left-32 right-0 top-0 bottom-0">
+      <div className="absolute start-32 end-0 top-0 bottom-0">
         {events.map((event) => (
           <EventBar
             key={event.id}
@@ -157,7 +159,8 @@ function EventBar({ event, rangeStart, durationMs }: EventBarProps) {
   if (!event.start_date_time || durationMs <= 0) return null;
   const start = Date.parse(event.start_date_time);
   if (isNaN(start)) return null;
-  const end = event.end_date_time ? Date.parse(event.end_date_time) : start + 60_000;
+  // Same rule as the cell lookup: an in-progress event runs up to now.
+  const end = eventEndMs(event) ?? start;
   const leftPct = ((start - rangeStart.getTime()) / durationMs) * 100;
   const widthPct = Math.max(0.2, ((end - start) / durationMs) * 100);
 
@@ -168,10 +171,12 @@ function EventBar({ event, rangeStart, durationMs }: EventBarProps) {
   return (
     <div
       className={clsx(
-        'absolute top-1/2 -translate-y-1/2 h-3 rounded-sm pointer-events-none',
+        'absolute top-1/2 -translate-y-1/2 h-3 rounded pointer-events-none',
+        // Only a high-scoring event earns colour; ordinary footage is grey so
+        // the eye lands on the one bar that matters (docs/DESIGN.md).
         highScore
-          ? 'bg-amber/50 border border-amber/80'
-          : 'bg-cyan/30 border border-cyan/60',
+          ? 'bg-motion/50 border border-motion/80'
+          : 'bg-fg-dim/40 border border-fg-dim/60',
       )}
       style={{
         left: `${Math.max(0, leftPct)}%`,

@@ -175,3 +175,126 @@ function buildRow<T>(
     })),
   };
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Wall packing                                                              */
+/* -------------------------------------------------------------------------- */
+
+export interface WallOptions {
+  /** Inter-tile gap, horizontal and vertical. */
+  gap?: number;
+  /** Fixed chrome under each tile (the name + activity ribbon). */
+  ribbon?: number;
+  /** Most rows to consider; a wall past this is a list, not a wall. */
+  maxRows?: number;
+}
+
+/**
+ * Pack tiles into a wall that fills a fixed area.
+ *
+ * `justifyRows` answers "what shape are the rows at roughly this height",
+ * which is the right question for a scrolling gallery and the wrong one for
+ * a console: an operator's cameras should fill the screen and stop, not
+ * trail off below the fold. So the row count is the variable here. For each
+ * candidate the tiles are split into contiguous groups of roughly equal
+ * total aspect, each row is set to the height that exactly fills the width,
+ * and the whole thing is scaled down if it is still too tall. The winner is
+ * whichever row count leaves the smallest tile largest — which is what
+ * "the cameras are as big as they can be" means.
+ */
+export function packWall<T>(
+  tiles: JustifyInputTile<T>[],
+  width: number,
+  availableHeight: number,
+  options: WallOptions = {},
+): JustifiedRow<T>[] {
+  const gap = options.gap ?? 16;
+  const ribbon = options.ribbon ?? 0;
+  const maxRows = options.maxRows ?? 12;
+  if (tiles.length === 0 || width <= 0) return [];
+
+  let best: { rows: JustifiedRow<T>[]; score: number } | null = null;
+
+  for (let R = 1; R <= Math.min(tiles.length, maxRows); R++) {
+    const groups = balancedGroups(tiles, R);
+    const heights = groups.map((g) => {
+      const sumAspect = g.reduce((s, t) => s + t.aspect, 0);
+      const avail = Math.max(0, width - gap * (g.length - 1));
+      return sumAspect > 0 ? avail / sumAspect : 0;
+    });
+    const overhead = R * ribbon + gap * (R - 1);
+    const sumHeights = heights.reduce((s, h) => s + h, 0);
+    if (sumHeights <= 0) continue;
+    // The ribbons alone already fill the screen at this row count: there is
+    // no video left to show, so this candidate is out. (Skipping the check
+    // when the height is unknown keeps server-side/first-paint sane.)
+    if (availableHeight > 0 && overhead >= availableHeight) continue;
+    // Too tall to fit: shrink every row by the same factor, which keeps the
+    // rows' relative proportions and simply centres them within the width.
+    const scale = availableHeight > 0
+      ? Math.min(1, (availableHeight - overhead) / sumHeights)
+      : 1;
+    const scaled = heights.map((h) => h * scale);
+    const score = Math.min(...scaled);
+    if (!best || score > best.score) {
+      best = {
+        score,
+        rows: groups.map((g, i) => buildRow(g, scaled[i])),
+      };
+    }
+  }
+
+  // Nothing fits — not even one row of ribbons. Show the single row anyway;
+  // a clipped wall beats a blank page.
+  if (!best) return [buildRow(tiles, Math.max(1, availableHeight - ribbon))];
+  return best.rows;
+}
+
+/**
+ * Split tiles into `count` contiguous groups of roughly equal total aspect,
+ * so no row ends up with visibly smaller tiles than its neighbours.
+ *
+ * Two rules, in order: never strand a group with no tiles, and otherwise
+ * close the current group when adding the next tile would carry it further
+ * past its share than stopping short of it.
+ */
+function balancedGroups<T>(
+  tiles: JustifyInputTile<T>[],
+  count: number,
+): JustifyInputTile<T>[][] {
+  if (count <= 1) return [tiles];
+  if (count >= tiles.length) return tiles.map((t) => [t]);
+
+  const total = tiles.reduce((s, t) => s + t.aspect, 0);
+  const target = total / count;
+  const groups: JustifyInputTile<T>[][] = [];
+  let current: JustifyInputTile<T>[] = [];
+  let running = 0;
+
+  tiles.forEach((tile, i) => {
+    const tilesLeft = tiles.length - i;        // including this one
+    const groupsLeft = count - groups.length;  // including the open one
+    const isLastGroup = groups.length === count - 1;
+
+    if (current.length > 0 && !isLastGroup) {
+      // Keeping this tile would leave a later group with nothing.
+      const mustClose = tilesLeft < groupsLeft;
+      // Or it simply belongs to the next row: stopping here is closer to an
+      // even split than carrying on.
+      const closerToStop =
+        Math.abs(target - running) < Math.abs(running + tile.aspect - target) &&
+        tilesLeft >= groupsLeft - 1;
+      if (mustClose || closerToStop) {
+        groups.push(current);
+        current = [];
+        running = 0;
+      }
+    }
+
+    current.push(tile);
+    running += tile.aspect;
+  });
+
+  if (current.length > 0) groups.push(current);
+  return groups;
+}

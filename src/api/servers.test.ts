@@ -7,6 +7,7 @@ import {
   updateServer,
   deleteServer,
 } from './servers';
+import { makeServer } from '@/test/fixtures/admin';
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
@@ -32,6 +33,22 @@ describe('listServers', () => {
     );
     const out = await listServers();
     expect(out.items[0].name).toBe('primary');
+  });
+
+  // zm-api#25 widened ServerResponse to the whole `Servers` row; a build older
+  // than that sends only id/name/hostname/port/status and the rest stay absent.
+  it('surfaces the full row, protocol and paths and daemon flags included', async () => {
+    const row = makeServer({
+      id: 7, protocol: 'https', port: 8443, path_to_api: '/zm/api',
+      zmtrigger: 1, state_id: 2, latitude: -37.81, longitude: 144.96,
+    });
+    server.use(
+      http.get('/api/v3/servers', () => HttpResponse.json({
+        items: [row], total: 1, per_page: 20, current_page: 1, last_page: 1,
+      })),
+    );
+    const out = await listServers();
+    expect(out.items[0]).toEqual(row);
   });
 });
 

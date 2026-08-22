@@ -66,10 +66,10 @@ describe('login', () => {
 });
 
 describe('logout', () => {
-  it('POSTs to /auth/logout with a Bearer header', async () => {
+  it('GETs /auth/logout with a Bearer header (the route is GET, POST is 405)', async () => {
     let authHeader: string | null = null;
     server.use(
-      http.post('/api/v3/auth/logout', ({ request }) => {
+      http.get('/api/v3/auth/logout', ({ request }) => {
         authHeader = request.headers.get('authorization');
         return HttpResponse.json({});
       }),

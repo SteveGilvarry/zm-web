@@ -12,10 +12,12 @@ beforeAll(() => {
   // The Control tab fetches /api/v3/controls behind authedFetch, which reads
   // the access token from useAuthStore — provide a fake one so the request
   // gets through with an Authorization header attached.
+  // A token without a `perms` claim reads as Edit everywhere, so the Save
+  // buttons (behind <RequirePerm monitors Edit>) render.
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 0, user: 'admin' }, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledRequest: 'bypass' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -153,7 +155,7 @@ describe('MonitorEditor — Timestamp tab', () => {
 /* ============================================================ */
 
 describe('MonitorEditor — ONVIF tab', () => {
-  it('renders ONVIF URL, credentials, options, and the two toggles', async () => {
+  it('renders ONVIF URL, credentials, options, and the event-listener toggle', async () => {
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
     await user.click(screen.getByRole('button', { name: /^onvif$/i }));
@@ -164,7 +166,8 @@ describe('MonitorEditor — ONVIF tab', () => {
     expect(screen.getByText(/^password$/i)).toBeInTheDocument();
     expect(screen.getByText(/onvif options/i)).toBeInTheDocument();
     expect(screen.getByText(/onvif event listener/i)).toBeInTheDocument();
-    expect(screen.getByText(/use onvif/i)).toBeInTheDocument();
+    // `use_onvif` is not a Monitor field (PATCH ignored it); it must not render.
+    expect(screen.queryByText(/use onvif/i)).not.toBeInTheDocument();
   });
 
   it('password field is rendered as type="password"', async () => {
@@ -190,20 +193,42 @@ describe('MonitorEditor — ONVIF tab', () => {
     expect(screen.getByDisplayValue('secret')).toBeInTheDocument();
   });
 
-  it('toggling Use ONVIF on flips the switch state and registers a diff', async () => {
+  it('toggling the event listener flips the switch state and registers a diff', async () => {
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
     await user.click(screen.getByRole('button', { name: /^onvif$/i }));
 
-    // Field rows on this tab: ONVIF URL (text), Username (text), Password
-    // (password), ONVIF options (text), ONVIF event listener (switch),
-    // Use ONVIF (switch). So "Use ONVIF" is the *second* switch on the tab.
+    // Event listener + SOAP WS-Addressing compliance.
     const switches = screen.getAllByRole('switch');
     expect(switches).toHaveLength(2);
-    const useOnvifSwitch = switches[1];
-    await user.click(useOnvifSwitch);
-    expect(useOnvifSwitch).toHaveAttribute('aria-checked', 'true');
+    await user.click(switches[0]);
+    expect(switches[0]).toHaveAttribute('aria-checked', 'true');
     expect(screen.getByText(/unsaved change/i)).toBeInTheDocument();
+  });
+});
+
+/* ============================================================ */
+/*  Viewing tab                                                 */
+/* ============================================================ */
+
+describe('MonitorEditor — Viewing tab', () => {
+  it('binds the Janus RTSP restream toggle to `restream` and PATCHes that key', async () => {
+    let patched: Record<string, unknown> = {};
+    server.use(http.patch('/api/v3/monitors/1', async ({ request }) => {
+      patched = await request.json() as Record<string, unknown>;
+      return HttpResponse.json({ ...monitor, ...patched });
+    }));
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, restream: 0 }} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^viewing$/i }));
+
+    // Switch order follows the field list: RTSP server, Janus WebRTC, Janus
+    // audio, Janus RTSP restream, RTSP-to-Web.
+    expect(screen.getByText('Janus RTSP restream')).toBeInTheDocument();
+    await user.click(screen.getAllByRole('switch')[3]);
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+
+    await waitFor(() => expect(patched).toEqual({ restream: 1 }));
   });
 });
 

@@ -1,5 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { Link } from '@tanstack/react-router';
+import { useTranslation } from 'react-i18next';
 import { Download, Video } from 'lucide-react';
 import { useReviewEvents, findEventAt } from './useReviewEvents';
 import { getEventVideoUrl } from '@/api/events';
@@ -34,6 +35,7 @@ export function MontageReviewCell({
   isPlaying,
   speed,
 }: MontageReviewCellProps) {
+  const { t } = useTranslation();
   const { events, isLoading } = useReviewEvents(monitor.id, rangeStart, rangeEnd);
   const currentEvent = findEventAt(events, currentTime);
 
@@ -69,9 +71,9 @@ export function MontageReviewCell({
     : null;
 
   return (
-    <div className="relative bg-abyss rounded-lg overflow-hidden border border-border-subtle aspect-video">
+    <div dir="ltr" className="relative bg-bg-sunken rounded overflow-hidden border border-border-subtle aspect-video">
       {/* Monitor name overlay */}
-      <div className="absolute top-2 left-2 z-10 px-2 py-1 rounded bg-black/60 backdrop-blur-sm">
+      <div className="absolute top-1.5 start-1.5 z-10 px-1.5 py-0.5 rounded bg-black/60">
         <span className="text-xs font-medium text-white">{monitor.name}</span>
       </div>
 
@@ -88,12 +90,12 @@ export function MontageReviewCell({
             preload="auto"
           />
           {/* Download + event info */}
-          <div className="absolute top-2 right-2 z-10 flex items-center gap-1.5">
+          <div className="absolute top-1.5 end-1.5 z-10 flex items-center gap-1">
             <Link
               to="/events/$eventId"
               params={{ eventId: String(currentEvent.id) }}
-              className="px-2 py-1 rounded bg-black/60 text-cyan text-[10px] font-mono hover:bg-black/80 transition-colors"
-              title="Open event detail"
+              className="px-1.5 py-0.5 rounded bg-black/60 text-white text-xs font-mono tabular-nums hover:bg-black/80 transition-colors"
+              title={t('Open event detail')}
             >
               #{currentEvent.id}
             </Link>
@@ -101,8 +103,8 @@ export function MontageReviewCell({
               <a
                 href={downloadHref}
                 download
-                className="p-1.5 rounded bg-black/60 text-cyan hover:bg-black/80 transition-colors"
-                title="Download this event's video"
+                className="p-1 rounded bg-black/60 text-white hover:bg-black/80 transition-colors"
+                title={t("Download this event's video")}
               >
                 <Download size={12} />
               </a>
@@ -110,21 +112,19 @@ export function MontageReviewCell({
           </div>
         </>
       ) : (
-        <div className="absolute inset-0 flex items-center justify-center text-text-dim">
+        <div className="absolute inset-0 flex items-center justify-center text-fg-faint">
           {isLoading ? (
-            <span className="text-xs font-mono uppercase tracking-wider">Loading…</span>
+            <span className="text-xs">{t('Loading…')}</span>
           ) : (
             <div className="flex flex-col items-center gap-1">
               <Video size={28} className="opacity-50" />
-              <span className="text-[10px] font-mono uppercase tracking-[0.18em]">
-                No Event
+              <span className="text-xs">
+                {t('No Event')}
               </span>
             </div>
           )}
         </div>
       )}
-
-      <div className="absolute inset-0 scanlines pointer-events-none" />
     </div>
   );
 }

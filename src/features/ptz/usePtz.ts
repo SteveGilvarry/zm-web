@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { useTranslation } from 'react-i18next';
 import { ptz, type PtzCapabilities } from '@/api/ptz';
 import { ApiClientError } from '@/api/client';
 
@@ -18,6 +19,7 @@ export type PtzState =
  * the dedicated `no-ptz` state.
  */
 export function usePtzCapabilities(monitorId: number, enabled = true): PtzState {
+  const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['ptz', 'capabilities', monitorId],
     queryFn: () => ptz.getCapabilities(monitorId),
@@ -35,7 +37,7 @@ export function usePtzCapabilities(monitorId: number, enabled = true): PtzState 
     }
     return {
       status: 'error',
-      message: err instanceof Error ? err.message : 'Failed to load PTZ capabilities',
+      message: err instanceof Error ? err.message : t('Failed to load PTZ capabilities'),
     };
   }
 

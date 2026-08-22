@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import Hls from 'hls.js';
 import { getAuthToken } from '@/api/client';
 import {
@@ -20,6 +21,28 @@ export interface EventVideoResult {
   error: string | null;
 }
 
+let nativeHlsCache: boolean | null = null;
+/** Safari-style native HLS (`canPlayType` on a detached element), cached. */
+function nativeHlsSupported(): boolean {
+  if (nativeHlsCache == null) {
+    nativeHlsCache =
+      typeof document !== 'undefined' &&
+      document.createElement('video').canPlayType('application/vnd.apple.mpegurl') !== '';
+  }
+  return nativeHlsCache;
+}
+
+/**
+ * Pick the playback mode from the backend's recommendation and the browser's
+ * capabilities. Pure, so the hook can derive it during render instead of
+ * setting state from its effect.
+ */
+function resolvePlaybackMode(info: EventVideoInfo | undefined): EventPlaybackMode {
+  if (!info || info.recommended_mode !== 'hls') return 'direct';
+  if (Hls.isSupported() || nativeHlsSupported()) return 'hls';
+  return 'unsupported';
+}
+
 /**
  * Wires the correct playback source onto a shared <video> element, branching on
  * the backend's `recommended_mode`. The element keeps driving its own controls
@@ -36,9 +59,18 @@ export function useEventVideo(
   eventId: number,
   info: EventVideoInfo | undefined,
 ): EventVideoResult {
+  const { t } = useTranslation();
   const hlsRef = useRef<Hls | null>(null);
-  const [mode, setMode] = useState<EventPlaybackMode>('direct');
-  const [error, setError] = useState<string | null>(null);
+  // Event id whose HLS session hit a fatal (almost always undecodable-codec)
+  // error. Keyed by event so a new event starts clean without an effect
+  // having to reset it.
+  const [fatalEventId, setFatalEventId] = useState<number | null>(null);
+
+  const baseMode = useMemo(() => resolvePlaybackMode(info), [info]);
+  const mode: EventPlaybackMode = fatalEventId === eventId ? 'unsupported' : baseMode;
+  const error = mode === 'unsupported'
+    ? t('This video codec is not supported in this browser.')
+    : null;
 
   useEffect(() => {
     const video = videoRef.current;
@@ -58,12 +90,11 @@ export function useEventVideo(
     const token = getAuthToken() ?? undefined;
 
     // Direct progressive MP4 — native seeking works out of the box via Range.
-    if (info.recommended_mode !== 'hls') {
-      setMode('direct');
-      setError(null);
+    if (baseMode === 'direct') {
       video.src = getEventStreamUrl(eventId, token);
       return destroy;
     }
+    if (baseMode === 'unsupported') return destroy;
 
     // HLS branch (HEVC). hls.js handles it wherever the browser's MSE can
     // decode the codec; otherwise fall back to Safari's native HLS player.
@@ -72,21 +103,18 @@ export function useEventVideo(
     if (Hls.isSupported()) {
       const hls = new Hls({
         xhrSetup: (xhr) => {
-          const t = getAuthToken();
-          if (t) xhr.setRequestHeader('Authorization', `Bearer ${t}`);
+          const tok = getAuthToken();
+          if (tok) xhr.setRequestHeader('Authorization', `Bearer ${tok}`);
         },
       });
       hlsRef.current = hls;
-      setMode('hls');
-      setError(null);
       hls.attachMedia(video);
       hls.on(Hls.Events.ERROR, (_event, data) => {
         // A fatal error here is almost always "MSE can't decode this codec"
         // (HEVC in a software-only Chrome) — present it as unsupported rather
         // than a transient stream error.
         if (data.fatal) {
-          setMode('unsupported');
-          setError('This video codec is not supported in this browser.');
+          setFatalEventId(eventId);
           destroy();
         }
       });
@@ -94,20 +122,12 @@ export function useEventVideo(
       return destroy;
     }
 
-    if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Safari native HLS. <video> can't send headers, so auth rides on
-      // ?token=; relative segment URIs are resolved by the player against the
-      // playlist URL and left as the backend wrote them.
-      setMode('hls');
-      setError(null);
-      video.src = playlistUrl;
-      return destroy;
-    }
-
-    setMode('unsupported');
-    setError('This video codec is not supported in this browser.');
+    // Safari native HLS. <video> can't send headers, so auth rides on
+    // ?token=; relative segment URIs are resolved by the player against the
+    // playlist URL and left as the backend wrote them.
+    video.src = playlistUrl;
     return destroy;
-  }, [videoRef, eventId, info]);
+  }, [videoRef, eventId, info, baseMode]);
 
   return { mode, error };
 }

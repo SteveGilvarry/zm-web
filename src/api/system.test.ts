@@ -13,6 +13,7 @@ import {
   systemShutdown,
   systemRestart,
   getServerStats,
+  statNumber,
   getHealthCheck,
   systemLogRotate,
 } from './system';
@@ -60,12 +61,12 @@ describe('getDaemons / getDaemon', () => {
     server.use(
       http.get('/api/v3/daemons/:name', ({ params }) => {
         receivedName = params.name as string;
-        return HttpResponse.json({ name: 'zmc', running: true });
+        return HttpResponse.json({ id: 'zmc', name: 'zmc', state: 'running' });
       }),
     );
     const out = await getDaemon('zmc');
     expect(receivedName).toBe('zmc');
-    expect(out.running).toBe(true);
+    expect(out.state).toBe('running');
   });
 });
 
@@ -133,26 +134,40 @@ describe('getSystemStatus / systemStartup / systemShutdown / systemRestart / sys
       http.post('/api/v3/system/startup', () => { hits.push('startup'); return HttpResponse.json({}); }),
       http.post('/api/v3/system/shutdown', () => { hits.push('shutdown'); return HttpResponse.json({}); }),
       http.post('/api/v3/system/restart', () => { hits.push('restart'); return HttpResponse.json({}); }),
-      http.post('/api/v3/system/log_rotate', () => { hits.push('log_rotate'); return HttpResponse.json({}); }),
+      http.post('/api/v3/system/logrot', () => { hits.push('logrot'); return HttpResponse.json({}); }),
     );
     await systemStartup();
     await systemShutdown();
     await systemRestart();
     await systemLogRotate();
-    expect(hits).toEqual(['startup', 'shutdown', 'restart', 'log_rotate']);
+    expect(hits).toEqual(['startup', 'shutdown', 'restart', 'logrot']);
   });
 });
 
 describe('getServerStats / getHealthCheck', () => {
-  it('getServerStats returns the raw array', async () => {
+  it('getServerStats returns the paginated page and forwards paging params', async () => {
+    let search = '';
     server.use(
-      http.get('/api/v3/server-stats', () =>
-        HttpResponse.json([{ id: 1, timestamp: '2026-06-02T00:00:00Z' }]),
-      ),
+      http.get('/api/v3/server-stats', ({ request }) => {
+        search = new URL(request.url).search;
+        return HttpResponse.json({
+          items: [{ id: 1, server_id: 0, time_stamp: '2026-06-02T00:00:00+00:00', cpu_load: '1.7' }],
+          total: 1441, per_page: 1, current_page: 1441, last_page: 1441,
+        });
+      }),
     );
-    const out = await getServerStats();
-    expect(out).toHaveLength(1);
-    expect(out[0].id).toBe(1);
+    const out = await getServerStats({ page: 1441, page_size: 1 });
+    expect(search).toBe('?page=1441&page_size=1');
+    expect(out.total).toBe(1441);
+    expect(out.items[0].cpu_load).toBe('1.7');
+  });
+
+  it('statNumber reads the string percentages', () => {
+    expect(statNumber('40.2')).toBe(40.2);
+    expect(statNumber(3)).toBe(3);
+    expect(statNumber(null)).toBeNull();
+    expect(statNumber('')).toBeNull();
+    expect(statNumber('n/a')).toBeNull();
   });
 
   it('getHealthCheck returns {status}', async () => {
