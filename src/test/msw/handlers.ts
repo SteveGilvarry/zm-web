@@ -278,7 +278,14 @@ const auth: HttpHandler[] = [
     if (claims?.perms) {
       for (const feature of PERM_FEATURES) row[feature] = claims.perms[feature] ?? 'None';
     }
-    return HttpResponse.json(row);
+    // The wrapped `MeResponse` the current backend returns. The flat
+    // `UserResponse` older builds sent is covered in src/api/me.test.ts.
+    return HttpResponse.json({
+      user: row,
+      issued_at: '2026-08-22T00:00:00Z',
+      expires_at: '2026-08-22T00:10:00Z',
+      token_type: 'Bearer',
+    });
   }),
   http.put(`${API}/me/password`, () =>
     HttpResponse.json({ message: 'Password changed; please sign in again' })),

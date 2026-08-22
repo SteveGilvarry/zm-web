@@ -73,14 +73,21 @@ export default defineConfig({
 
   webServer: seeded
     ? {
-        // Dedicated dev server wired to the seeded zm_api. Not reused by
-        // default: a leftover server on this port could be proxying to the
-        // wrong backend. Set E2E_REUSE_SERVER=1 to opt in.
-        command: `npx vite --port ${seededPort} --strictPort`,
+        // The built app, not the dev server, wired to the seeded zm_api.
+        // `vite dev` compiles on demand: the first page load pulls a 191-chunk
+        // app through the transform pipeline, which on a two-core CI runner
+        // took long enough that the first fifteen tests timed out before it
+        // answered. `preview` serves the same static files the container
+        // ships, so the suite also stops testing something we never deploy.
+        //
+        // Not reused by default: a leftover server on this port could be
+        // proxying to the wrong backend. Set E2E_REUSE_SERVER=1 to opt in.
+        command: `npm run build && npx vite preview --port ${seededPort} --strictPort`,
         url: seededBaseURL,
         env: { VITE_API_PROXY_TARGET: seededApiUrl },
         reuseExistingServer: process.env.E2E_REUSE_SERVER === '1',
-        timeout: 30_000,
+        // Includes the production build on a cold runner.
+        timeout: 300_000,
       }
     : {
         // Auto-spin up the dev server if not already running.

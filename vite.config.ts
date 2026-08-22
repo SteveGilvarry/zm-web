@@ -13,6 +13,7 @@ export default defineConfig(({ mode }) => {
   // Public path the built app is served from. Leave as '/' unless the
   // dashboard lives under a sub-path (e.g. VITE_BASE=/zm/). Must end in '/'.
   const base = env.VITE_BASE || '/'
+  const proxy = { target: apiTarget, changeOrigin: true, ws: true }
 
   return {
   base,
@@ -34,11 +35,16 @@ export default defineConfig(({ mode }) => {
   },
   server: {
     proxy: {
-      '/api': {
-        target: apiTarget,
-        changeOrigin: true,
-        ws: true,
-      },
+      '/api': proxy,
+    },
+  },
+  // `vite preview` does not inherit `server.proxy`. The seeded e2e suite
+  // serves the built app rather than the dev server — same bytes CI ships,
+  // and no per-request transform on a two-core runner — so preview needs the
+  // same /api route.
+  preview: {
+    proxy: {
+      '/api': proxy,
     },
   },
   }
