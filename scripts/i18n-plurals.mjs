@@ -14,9 +14,11 @@
  * Runs after extraction (`npm run i18n:extract` calls it). Idempotent; never
  * touches values a human has already changed away from the key text.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { readdirSync, readFileSync, writeFileSync } from 'node:fs';
 
 const FILE = 'src/locales/en/translation.json';
+const DIR = 'src/locales';
+const PLURAL_SUFFIX = /_(zero|one|two|few|many|other)$/;
 
 /** singular → plural. Add here when the script reports an unknown noun. */
 const PLURALS = {
@@ -70,4 +72,85 @@ writeFileSync(FILE, JSON.stringify(cat, null, 2) + '\n');
 console.log(`i18n-plurals: ${changed} plural form(s) filled`);
 if (unknown.size) {
   console.log(`i18n-plurals: nouns not in the dictionary (add to scripts/i18n-plurals.mjs): ${[...unknown].join(', ')}`);
+}
+
+/**
+ * Give every catalogue exactly the plural categories its language has.
+ *
+ * A plural key is `<text>_<category>`, and which categories exist is a
+ * property of the language, not of English: Japanese has only `other`,
+ * Czech has `one/few/many/other`, Arabic has all six. i18next resolves the
+ * category with `Intl.PluralRules`, so a form the language does not have is
+ * never looked up — it is dead weight in the file and, worse, a string a
+ * translator is asked to translate that can never render.
+ *
+ * The catalogues were first written with English's `one`/`other` everywhere,
+ * which left Japanese and both Chinese variants carrying a `_one` nobody can
+ * use. Extraction does not correct that by itself, so this pass does: drop
+ * categories the language lacks, add ones it has (empty → untranslated).
+ * Idempotent, and it is what a translation platform reading i18next JSON v4
+ * would generate, so the files stay importable without a reformat.
+ */
+let pruned = 0;
+let added = 0;
+for (const locale of readdirSync(DIR, { withFileTypes: true })
+  .filter((e) => e.isDirectory())
+  .map((e) => e.name)
+  .sort()) {
+  const file = `${DIR}/${locale}/translation.json`;
+  const entries = JSON.parse(readFileSync(file, 'utf8'));
+  const categories = new Set(new Intl.PluralRules(locale).resolvedOptions().pluralCategories);
+
+  // Group by base text so a key is only treated as plural when it has at
+  // least one sibling form — an ordinary key that happens to end in `_one`
+  // must not be mistaken for one.
+  const forms = new Map();
+  for (const key of Object.keys(entries)) {
+    const match = PLURAL_SUFFIX.exec(key);
+    if (!match) continue;
+    const base = key.slice(0, -match[0].length);
+    if (!forms.has(base)) forms.set(base, new Set());
+    forms.get(base).add(match[1]);
+  }
+
+  const drop = new Set();
+  const insert = new Map();
+  for (const [base, present] of forms) {
+    // One lone form in a category the language does not have is far more
+    // likely an ordinary key ending in `_one` than a broken plural.
+    if (present.size < 2 && !categories.has([...present][0])) continue;
+    for (const category of present) {
+      if (!categories.has(category)) drop.add(`${base}_${category}`);
+    }
+    for (const category of categories) {
+      if (!present.has(category)) {
+        if (!insert.has(base)) insert.set(base, []);
+        insert.get(base).push(category);
+      }
+    }
+  }
+  if (!drop.size && !insert.size) continue;
+
+  // Rebuild in the order the extractor wrote, keeping new forms beside their
+  // siblings: the extractor sorts with a collator, and re-sorting here with
+  // JS default order would rewrite every catalogue line as a false diff.
+  const out = {};
+  for (const [key, value] of Object.entries(entries)) {
+    if (drop.has(key)) { pruned++; continue; }
+    out[key] = value;
+    const match = PLURAL_SUFFIX.exec(key);
+    if (!match) continue;
+    const base = key.slice(0, -match[0].length);
+    const pending = insert.get(base);
+    // Attach after the last surviving sibling, so the group stays together.
+    if (!pending || [...forms.get(base)].some((c) => categories.has(c)
+      && `${base}_${c}` !== key && !drop.has(`${base}_${c}`)
+      && Object.keys(entries).indexOf(`${base}_${c}`) > Object.keys(entries).indexOf(key))) continue;
+    for (const category of pending) { out[`${base}_${category}`] = locale === 'en' ? base : ''; added++; }
+    insert.delete(base);
+  }
+  writeFileSync(file, JSON.stringify(out, null, 2) + '\n');
+}
+if (pruned || added) {
+  console.log(`i18n-plurals: plural categories aligned to CLDR (${pruned} removed, ${added} added)`);
 }
