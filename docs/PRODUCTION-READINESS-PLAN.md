@@ -195,6 +195,7 @@ Deliberately out of scope: bandwidth profiles (the stub "High" chip is gone from
 
 ## 7. Backend tickets for zm_api
 
+- **#62 — `GET /me` changed shape (`UserResponse` → `MeResponse`) with no changelog entry** (filed 2026-08-22). Reading the wrapper as a user left every permission column absent, which fails closed to `None`: the camera wall and every edit control vanished. Fixed our side in `8ed9c69`; the ask upstream is the changelog entry and a CI guard that fails when an existing `responses.200` `$ref` changes.
 - **#58 — docs and config still say `zm-dash`/`zm-dashboard`** (filed 2026-08-22). Five references, two of them in `settings/base.toml`'s CORS comments where an operator reads them while debugging. Comments only; nothing breaks. The issue also carries the Option D spec, since `docs/architecture.md`'s nginx example is the thing that changes if `zm_api` starts serving `dist/`.
 - **#52 — `POST /reports` 500s on a name longer than 30 characters** (filed 2026-08-22). `Reports.Name` is `varchar(30)`; the truncation surfaces as `DATABASE_ERROR` instead of a 400 naming the field. Both skins cap the input at 30 as a workaround; the same class of bug likely affects every fixed-width ZoneMinder column the API writes.
 Filed 2026-08-21 as issues #16–#39 on `SteveGilvarry/zm-api`. **The dev box was updated 2026-08-22 (766c1a7..1a13ff0) and most of them shipped.** Verified live and closed:
