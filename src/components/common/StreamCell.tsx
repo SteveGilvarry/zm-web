@@ -294,7 +294,7 @@ function StreamVideo({
     <div
       ref={containerRef}
       dir="ltr"
-      className="relative w-full h-full bg-abyss overflow-hidden"
+      className="relative w-full h-full bg-bg-sunken overflow-hidden"
       onClick={onClick}
       onDoubleClick={onDoubleClick}
     >
@@ -333,19 +333,19 @@ function StreamVideo({
       {/* Idle state */}
       {isIdle && !autoStart && (
         <div className="absolute inset-0 flex items-center justify-center">
-          <div className="text-text-dim text-xs font-mono">{t('OFFLINE')}</div>
+          <div className="text-fg-faint text-xs">{t('Offline')}</div>
         </div>
       )}
 
       {/* Over the live-tile budget: in view, wants to run, no slot. */}
       {overBudget && !isConnected && (
         <div
-          className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-text-dim"
+          className="absolute inset-0 flex flex-col items-center justify-center gap-1 text-fg-faint"
           data-testid="stream-over-budget"
         >
           <PauseCircle size={compact ? 16 : 24} />
           {!compact && (
-            <span className="text-[10px] font-mono uppercase tracking-wider">
+            <span className="text-xs">
               {t('Live tile limit ({{count}}) reached', { count: maxLiveTiles })}
             </span>
           )}
@@ -358,10 +358,10 @@ function StreamVideo({
           <div className="text-center">
             <Loader2
               size={compact ? 20 : 32}
-              className="mx-auto text-cyan animate-spin"
+              className="mx-auto text-fg-dim animate-spin"
             />
             {!compact && (
-              <p className="text-xs text-text-muted mt-2">
+              <p className="text-xs text-white/80 mt-2">
                 {state === 'signaling' ? t('Negotiating...') : t('Connecting...')}
               </p>
             )}
@@ -373,9 +373,9 @@ function StreamVideo({
       {isFailed && (
         <div className="absolute inset-0 flex items-center justify-center bg-black/70">
           <div className="text-center">
-            <AlertTriangle size={compact ? 16 : 24} className="mx-auto text-amber mb-1" />
+            <AlertTriangle size={compact ? 16 : 24} className="mx-auto text-warn mb-1" aria-hidden />
             {!compact && (
-              <p className="text-xs text-text-muted mb-2 max-w-[200px] mx-auto">
+              <p className="text-xs text-white/80 mb-2 max-w-[200px] mx-auto">
                 {error || t('Stream failed')}
               </p>
             )}
@@ -385,8 +385,8 @@ function StreamVideo({
               aria-label={t('Retry stream for {{name}}', { name: monitorName ?? String(monitorId) })}
               className={clsx(
                 'flex items-center gap-1 mx-auto rounded',
-                'text-xs font-medium text-cyan hover:text-cyan-dim transition-colors',
-                compact ? 'px-2 py-1' : 'px-3 py-1.5 bg-surface/50',
+                'text-xs font-medium text-white hover:text-white/80 transition-colors',
+                compact ? 'px-2 py-1' : 'px-3 py-1.5 bg-white/10',
               )}
             >
               <RefreshCw size={12} />
@@ -426,12 +426,12 @@ function StreamVideo({
 
       {/* Monitor name + status overlay */}
       {nameVisible && (
-        <div className="absolute inset-x-0 bottom-0 px-2 py-1.5 bg-gradient-to-t from-black/80 to-transparent flex items-baseline gap-2 min-w-0">
-          <span className="text-xs font-medium text-white truncate">
+        <div className="absolute inset-x-0 bottom-0 px-2 py-1 bg-black/55 flex items-baseline gap-2 min-w-0">
+          <span className="text-xs text-white truncate">
             {monitorName}
           </span>
           {statusText && (
-            <span className="ms-auto text-[10px] font-mono text-text-muted whitespace-nowrap" data-testid="stream-status">
+            <span className="ms-auto text-xs font-mono tabular-nums text-white/70 whitespace-nowrap" data-testid="stream-status">
               {statusText}
             </span>
           )}
@@ -448,9 +448,9 @@ function StreamVideo({
               stop();
             }}
             aria-label={t('Stop stream for {{name}}', { name: monitorName ?? String(monitorId) })}
-            className="p-1 rounded bg-black/60 text-text-muted hover:text-crimson transition-colors"
+            className="p-1 rounded bg-black/60 text-white/80 hover:text-danger transition-colors"
           >
-            <span className="text-[10px] font-mono font-bold" aria-hidden>{t('STOP')}</span>
+            <span className="text-xs font-mono" aria-hidden>{t('Stop')}</span>
           </button>
         </div>
       )}
@@ -458,14 +458,13 @@ function StreamVideo({
       {/* Non-fatal error toast */}
       {error && !isFailed && (
         <div className="absolute top-1.5 left-1/2 -translate-x-1/2">
-          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber/90 text-void text-[10px] font-medium">
-            <AlertTriangle size={10} />
+          <div className="flex items-center gap-1 px-2 py-0.5 rounded bg-warn text-accent-fg text-xs">
+            <AlertTriangle size={10} aria-hidden />
             {error}
           </div>
         </div>
       )}
 
-      {/* Scanlines */}
     </div>
   );
 }

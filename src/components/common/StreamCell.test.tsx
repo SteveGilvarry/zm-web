@@ -50,10 +50,10 @@ describe('StreamCell — protocol switch', () => {
 });
 
 describe('StreamCell — connection states', () => {
-  it('shows OFFLINE when idle and autoStart is false', () => {
+  it('says the stream is offline when idle and autoStart is false', () => {
     mockHook.mockReturnValue(makeStream({ state: 'idle' }));
     render(<StreamCell protocol="hls" monitorId={1} />);
-    expect(screen.getByText('OFFLINE')).toBeInTheDocument();
+    expect(screen.getByText('Offline')).toBeInTheDocument();
   });
 
   it('shows the spinner while connecting', () => {
