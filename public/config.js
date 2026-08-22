@@ -1,4 +1,4 @@
-// Runtime configuration for zm-dashboard. Loaded by index.html before the app.
+// Runtime configuration for zm-web. Loaded by index.html before the app.
 //
 // Leave empty to call the API at /api/v3 on the same origin (reverse-proxied).
 // To point the UI elsewhere set `apiBase`, e.g.

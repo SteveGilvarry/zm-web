@@ -1,4 +1,4 @@
--- zm-dashboard e2e seed.
+-- zm-web e2e seed.
 --
 -- Loads deterministic fixture data into a ZoneMinder schema created by
 -- zm_api's `scripts/db-manager.sh` (zm_create.sql.in + db/*.sql). Safe to

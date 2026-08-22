@@ -1,4 +1,4 @@
-# Example: zm-dashboard in front of an existing zm_api.
+# Example: zm-web in front of an existing zm_api.
 #
 #   ZM_API_URL=http://192.168.0.45:8080 docker compose up -d          # http://host:8080
 #   ZM_PUBLIC_HOST=zm.example.net docker compose --profile tls up -d  # + https://zm.example.net:8443
@@ -12,7 +12,7 @@
 services:
   dashboard:
     build: .
-    image: zm-dashboard:local
+    image: zm-web:local
     restart: unless-stopped
     ports:
       - "8080:8080"

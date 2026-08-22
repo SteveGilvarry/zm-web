@@ -1,4 +1,4 @@
-# Deploying zm-dashboard
+# Deploying zm-web
 
 `npm run build` produces a static site in `dist/`. Serving it in production needs
 four things, and every option below provides all four:
@@ -22,10 +22,10 @@ The entrypoint renders the nginx config and `/config.js` from environment
 variables on every start, so one image serves every install.
 
 ```bash
-docker build -t zm-dashboard .
-docker run -d --name zm-dashboard -p 8080:8080 \
+docker build -t zm-web .
+docker run -d --name zm-web -p 8080:8080 \
   -e ZM_API_URL=http://192.168.0.45:8080 \
-  zm-dashboard
+  zm-web
 ```
 
 Or with the example `docker-compose.yml` (edit `ZM_API_URL` or export it):
@@ -92,7 +92,7 @@ Build on any machine with Node 20+ and copy `dist/` to the server:
 
 ```bash
 npm ci && npm run build
-rsync -a dist/ server:/var/www/zm-dashboard/
+rsync -a dist/ server:/var/www/zm-web/
 ```
 
 Then take `docker/nginx.conf.template`, `docker/proxy.conf` and
@@ -109,7 +109,7 @@ extra configuration:
 
 ```bash
 ZM_SITE_ADDRESS=zm.example.net ZM_API_URL=http://192.168.0.45:8080 \
-ZM_DASHBOARD_ROOT=/var/www/zm-dashboard caddy run --config docker/Caddyfile
+ZM_DASHBOARD_ROOT=/var/www/zm-web caddy run --config docker/Caddyfile
 ```
 
 For a LAN-only name add `tls internal` inside the site block.

@@ -178,7 +178,7 @@ describe('useLogsPage', () => {
 
     act(() => result.current.setPageSize(200));
     expect(result.current.pageSize).toBe(200);
-    expect(window.localStorage.getItem('zm-dashboard.logs.pageSize')).toBe('200');
+    expect(window.localStorage.getItem('zm-web.logs.pageSize')).toBe('200');
     const call = mockNavigate.mock.calls[0][0] as { search: (p: LogsSearchParams) => LogsSearchParams };
     expect(call.search({ page: 3 })).toEqual({});
 
@@ -218,7 +218,7 @@ describe('useLogsPage', () => {
     await waitFor(() => expect(result.current.isLoading).toBe(false));
 
     act(() => result.current.setVisibleColumns(['timestamp', 'message']));
-    expect(JSON.parse(window.localStorage.getItem('zm-dashboard.logs.columns') ?? '[]'))
+    expect(JSON.parse(window.localStorage.getItem('zm-web.logs.columns') ?? '[]'))
       .toEqual(['timestamp', 'message']);
   });
 });

@@ -63,12 +63,12 @@ jobs:
           context: .
           push: false
           load: true
-          tags: zm-dashboard:ci
+          tags: zm-web:ci
           cache-from: type=gha
           cache-to: type=gha,mode=max
       - name: Smoke-test the image (SPA fallback, runtime config, asset caching)
         run: |
-          docker run -d --name zm -p 8080:8080 -e ZM_API_URL=http://127.0.0.1:9 zm-dashboard:ci
+          docker run -d --name zm -p 8080:8080 -e ZM_API_URL=http://127.0.0.1:9 zm-web:ci
           sleep 2
           curl -fsS -o /dev/null http://localhost:8080/events/1
           curl -fsS http://localhost:8080/config.js | grep -q __ZM_CONFIG__
@@ -81,16 +81,16 @@ jobs:
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
-        with: { path: zm-dashboard }
+        with: { path: zm-web }
       - uses: actions/checkout@v4
         with:
           repository: SteveGilvarry/zm-api
           path: zm_api
       - uses: actions/setup-node@v4
         with:
-          node-version-file: zm-dashboard/.nvmrc
+          node-version-file: zm-web/.nvmrc
           cache: npm
-          cache-dependency-path: zm-dashboard/package-lock.json
+          cache-dependency-path: zm-web/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with: { workspaces: zm_api }
@@ -100,13 +100,13 @@ jobs:
           sudo apt-get install -y pkg-config clang libavcodec-dev libavformat-dev \
             libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev
       - run: npm ci
-        working-directory: zm-dashboard
+        working-directory: zm-web
       - run: npx playwright install --with-deps chromium
-        working-directory: zm-dashboard
+        working-directory: zm-web
 
       - name: MariaDB + schema + seed
         run: npm run e2e:seed:up
-        working-directory: zm-dashboard
+        working-directory: zm-web
         env:
           ZM_API_DIR: ${{ github.workspace }}/zm_api
 
@@ -120,7 +120,7 @@ jobs:
             sleep 2
           done
           echo "zm_api never became healthy"; tail -100 "$RUNNER_TEMP/zm_api.log"; exit 1
-        working-directory: zm-dashboard
+        working-directory: zm-web
         env:
           ZM_API_DIR: ${{ github.workspace }}/zm_api
 
@@ -128,7 +128,7 @@ jobs:
       # fails fast with instructions if the stack is not up.
       - name: Seeded e2e (chromium + 390px)
         run: npm run test:e2e:seeded:ci
-        working-directory: zm-dashboard
+        working-directory: zm-web
         env:
           E2E_MODE: seeded
           E2E_WORKERS: '2'
@@ -138,8 +138,8 @@ jobs:
         with:
           name: playwright-report-seeded
           path: |
-            zm-dashboard/playwright-report
-            zm-dashboard/test-results
+            zm-web/playwright-report
+            zm-web/test-results
           retention-days: 7
       - if: failure()
         run: tail -200 "$RUNNER_TEMP/zm_api.log"

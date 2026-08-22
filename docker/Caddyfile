@@ -1,13 +1,13 @@
-# zm-dashboard behind Caddy (bare-metal alternative to the nginx image).
+# zm-web behind Caddy (bare-metal alternative to the nginx image).
 # Caddy provisions and renews TLS for a public hostname on its own; for a LAN
 # name add `tls internal` inside the site block for a locally trusted cert.
 #
 #   ZM_API_URL=http://192.168.0.45:8080 caddy run --config docker/Caddyfile
 #
-# `npm run build` output lives in {$ZM_DASHBOARD_ROOT} (default /srv/zm-dashboard).
+# `npm run build` output lives in {$ZM_DASHBOARD_ROOT} (default /srv/zm-web).
 
 {$ZM_SITE_ADDRESS:zm.example.net} {
-	root * {$ZM_DASHBOARD_ROOT:/srv/zm-dashboard}
+	root * {$ZM_DASHBOARD_ROOT:/srv/zm-web}
 	encode zstd gzip
 
 	header {

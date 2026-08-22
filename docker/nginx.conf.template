@@ -1,4 +1,4 @@
-# zm-dashboard nginx server block. Rendered by docker/entrypoint.sh with envsubst;
+# zm-web nginx server block. Rendered by docker/entrypoint.sh with envsubst;
 # only ${ZM_API_URL}, ${ZM_LISTEN_PORT} and ${ZM_CSP_API_SRC} are substituted.
 # For a bare-metal install copy this file, replace those three by hand and drop
 # it into /etc/nginx/conf.d/ together with proxy.conf and headers.conf.

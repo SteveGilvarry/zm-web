@@ -126,7 +126,7 @@ describe('LogsPage (modern) — severity rendering', () => {
   it('labels every rung of the ZoneMinder scale and fills the sparse columns', async () => {
     // Persisted column pick — the hook restores it on mount.
     window.localStorage.setItem(
-      'zm-dashboard.logs.columns',
+      'zm-web.logs.columns',
       JSON.stringify(['timestamp', 'level', 'component', 'server', 'pid', 'file', 'line', 'message']),
     );
     db.logs = [
@@ -499,7 +499,7 @@ describe('LogsPage (modern) — columns', () => {
       ).toBeInTheDocument();
     });
     expect(
-      JSON.parse(window.localStorage.getItem('zm-dashboard.logs.columns') ?? '[]'),
+      JSON.parse(window.localStorage.getItem('zm-web.logs.columns') ?? '[]'),
     ).toContain('line');
   });
 
@@ -574,7 +574,7 @@ describe('LogsPage (modern) — pagination', () => {
       expect(router.state.location.search).not.toHaveProperty('page');
     });
     expect(await screen.findByText('Page 1 / 3 · 60 entries')).toBeInTheDocument();
-    expect(window.localStorage.getItem('zm-dashboard.logs.pageSize')).toBe('25');
+    expect(window.localStorage.getItem('zm-web.logs.pageSize')).toBe('25');
   });
 });
 

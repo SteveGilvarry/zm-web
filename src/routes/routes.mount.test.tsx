@@ -23,7 +23,7 @@ const ROUTES: Array<{ id: string; path: string; heading: RegExp; anonymous?: tru
   { id: '/', path: '/', heading: /^Console$/ },
   // Signed in, /login sends you straight back to the console, so this one
   // route is rendered anonymously.
-  { id: '/login', path: '/login', heading: /^ZM/, anonymous: true },
+  { id: '/login', path: '/login', heading: /^ZoneMinder$/, anonymous: true },
   { id: '/audit/', path: '/audit', heading: /^Audit Events Report$/ },
   { id: '/cycle/', path: '/cycle', heading: /^Cycle$/ },
   { id: '/events/', path: '/events', heading: /^Events$/ },

@@ -1,12 +1,12 @@
 <div align="center">
 
-# 🎛️ zm-dashboard
+# 🎛️ zm-web
 
 ### A modern, two-skin web UI for [ZoneMinder](https://zoneminder.com) surveillance systems
 
-*Replacing ZoneMinder's aging PHP web interface with a fast React dashboard —
-one codebase that ships both a modern, content-first console and a
-familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
+*ZoneMinder's web interface, rewritten: no PHP, one codebase, two skins —
+a modern content-first console and a familiar classic layout — talking to
+the [`zm_api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 
 ![React](https://img.shields.io/badge/React-19-61dafb?logo=react&logoColor=white)
 ![Vite](https://img.shields.io/badge/Vite-7-646cff?logo=vite&logoColor=white)
@@ -33,10 +33,10 @@ familiar classic skin, powered by the [`zm_api`](https://github.com/SteveGilvarr
 
 ---
 
-## ✨ Why zm-dashboard?
+## ✨ Why zm-web?
 
 ZoneMinder is a rock-solid surveillance platform, but its web UI is two decades of
-Perl and PHP. **zm-dashboard** is a clean React front end for the [`zm_api`](https://github.com/SteveGilvarry/zm-api)
+Perl and PHP. **zm-web** is a clean React front end for the [`zm_api`](https://github.com/SteveGilvarry/zm-api)
 REST backend — and it doesn't force a redesign on operators who don't want one:
 
 - 🎨 **Two skins, one codebase** — switch between a modern dashboard and a classic ZoneMinder look at runtime.
@@ -143,8 +143,8 @@ flowchart TD
 
 ```bash
 # 1. Clone
-git clone https://github.com/SteveGilvarry/zm-dashboard.git
-cd zm-dashboard
+git clone https://github.com/SteveGilvarry/zm-web.git
+cd zm-web
 
 # 2. Install
 npm install
@@ -189,8 +189,8 @@ Full detail, including the CSP, is in [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md)
 **Container** (nginx, multi-stage build, renders its config from env on start):
 
 ```bash
-docker build -t zm-dashboard .
-docker run -d -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-dashboard
+docker build -t zm-web .
+docker run -d -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-web
 # or: ZM_API_URL=http://zm-api-host:8080 docker compose up -d   (add --profile tls for https on :8443)
 ```
 
@@ -268,12 +268,12 @@ covered by the [CLA](CLA.md).
 
 ## 📄 License
 
-zm-dashboard is **dual-licensed**:
+zm-web is **dual-licensed**:
 
 - 🆓 **Open source — [AGPL-3.0](LICENSE).** Free to use, modify, and self-host. If you
   run a modified version as a network service, the AGPL requires you to publish your
   changes — the same license as the [`zm_api`](https://github.com/SteveGilvarry/zm-api) backend.
-- 💼 **Commercial license.** For embedding zm-dashboard in a closed-source product, or running a
+- 💼 **Commercial license.** For embedding zm-web in a closed-source product, or running a
   modified version as a hosted service without the AGPL's source-sharing obligation, a
   commercial license is available. Contact the maintainer to enquire.
 

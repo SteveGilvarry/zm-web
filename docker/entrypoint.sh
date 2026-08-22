@@ -33,8 +33,8 @@ fi
 export ZM_CSP_API_SRC
 
 # Only substitute our own variables so nginx's $uri/$host/... survive.
-envsubst '${ZM_API_URL} ${ZM_LISTEN_PORT} ${ZM_CSP_API_SRC}' < "$TEMPLATE" > /etc/nginx/conf.d/zm-dashboard.conf
+envsubst '${ZM_API_URL} ${ZM_LISTEN_PORT} ${ZM_CSP_API_SRC}' < "$TEMPLATE" > /etc/nginx/conf.d/zm-web.conf
 
-echo "zm-dashboard: listening on :${ZM_LISTEN_PORT}, proxying /api/ -> ${ZM_API_URL}, apiBase=${ZM_API_BASE:-/api/v3}"
+echo "zm-web: listening on :${ZM_LISTEN_PORT}, proxying /api/ -> ${ZM_API_URL}, apiBase=${ZM_API_BASE:-/api/v3}"
 nginx -t
 exec nginx -g 'daemon off;'

@@ -1,4 +1,4 @@
-# zm-dashboard — Production Readiness Plan
+# zm-web — Production Readiness Plan
 
 _Review date: 2026-08-21; decisions recorded the same day (Section 11)._
 

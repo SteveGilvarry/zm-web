@@ -48,8 +48,8 @@ export const LEVEL_CHIPS: ReadonlyArray<{ value: LogMinLevel | undefined; code: 
 
 export const LOGS_PAGE_SIZE_OPTIONS: readonly number[] = [25, 50, 100, 200, 500];
 
-const COLUMN_PREF_KEY = 'zm-dashboard.logs.columns';
-const PAGE_SIZE_PREF_KEY = 'zm-dashboard.logs.pageSize';
+const COLUMN_PREF_KEY = 'zm-web.logs.columns';
+const PAGE_SIZE_PREF_KEY = 'zm-web.logs.pageSize';
 
 function loadPageSizePref(): number {
   if (typeof window === 'undefined') return 50;

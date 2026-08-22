@@ -1,11 +1,11 @@
-# Contributing to zm-dashboard
+# Contributing to zm-web
 
-Thanks for your interest in improving zm-dashboard! This guide covers how to get a change
+Thanks for your interest in improving zm-web! This guide covers how to get a change
 merged.
 
 ## 📜 Contributor License Agreement
 
-zm-dashboard is **dual-licensed** — open source under [AGPL-3.0](LICENSE), and available
+zm-web is **dual-licensed** — open source under [AGPL-3.0](LICENSE), and available
 under a separate commercial license. For the project to be offered under both, every
 contribution must be covered by the [Contributor License Agreement](CLA.md).
 

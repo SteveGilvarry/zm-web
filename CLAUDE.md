@@ -4,7 +4,7 @@ This file is high-signal context for coding agents (Claude Code) working in this
 
 ## Project Summary
 
-`zm-dashboard` is a React-based web dashboard for ZoneMinder surveillance systems, designed to eventually replace the native ZoneMinder UI.
+`zm-web` is ZoneMinder's web interface rewritten in React: the replacement for the PHP UI in ZoneMinder's `web/`. It talks only to `zm_api` — there is no PHP in the stack.
 
 - **Framework**: React 19 + Vite
 - **Styling**: Tailwind CSS v4, semantic tokens per skin and colour scheme (see `docs/DESIGN.md`)
@@ -135,7 +135,7 @@ const color = functionColors[monitorFn];
 
 ## Skin architecture
 
-`zm-dashboard` ships **two skins on one codebase**, and skins are real packages, not a theme toggle (contract: `src/skins/README.md`):
+`zm-web` ships **two skins on one codebase**, and skins are real packages, not a theme toggle (contract: `src/skins/README.md`):
 
 - **Modern** (`src/skins/modern/`) — the content-first ops console (`docs/DESIGN.md`); also the *fallback* skin.
 - **Classic ZoneMinder** (`src/skins/classic/`) — legacy layout for operators migrating from the PHP UI; fidelity target is ZM 1.39 on the dev box.

@@ -5,7 +5,7 @@ import { Trans, useTranslation } from 'react-i18next';
 import { X, Sparkles } from 'lucide-react';
 import { useUiStore } from '@/stores/ui';
 
-const ACK_KEY = 'zmdash:skinHintDismissed';
+const ACK_KEY = 'zm-web:skinHintDismissed';
 
 function readDismissed(): boolean {
   if (typeof window === 'undefined') return true;

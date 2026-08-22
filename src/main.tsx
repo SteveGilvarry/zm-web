@@ -7,6 +7,7 @@ import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 import { routeTree } from './routeTree.gen';
 import { shouldRetryQuery } from '@/api/client';
 import { attachBackendStatus } from '@/components/common/backendStatus';
+import { migrateLegacyPreferences } from '@/lib/legacyPreferences';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
 import {
   AppCrashFallback,
@@ -15,6 +16,10 @@ import {
 } from '@/components/common/RouteFallbacks';
 import './i18n';
 import './index.css';
+
+// Before anything reads a preference: the project's storage keys were
+// renamed with the project (zm-dashboard → zm-web).
+migrateLegacyPreferences();
 
 const queryClient = new QueryClient({
   defaultOptions: {

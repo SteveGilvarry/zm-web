@@ -1,10 +1,10 @@
 # syntax=docker/dockerfile:1
 #
-# zm-dashboard — static React build served by nginx, with /api reverse-proxied
+# zm-web — static React build served by nginx, with /api reverse-proxied
 # to zm_api (WebSocket upgrade included). See docs/DEPLOYMENT.md.
 #
-#   docker build -t zm-dashboard .
-#   docker run -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-dashboard
+#   docker build -t zm-web .
+#   docker run -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-web
 
 FROM node:22-alpine AS build
 WORKDIR /app
@@ -20,7 +20,7 @@ ENV VITE_BASE=$VITE_BASE VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
 FROM nginx:1.27-alpine
-LABEL org.opencontainers.image.source="https://github.com/SteveGilvarry/zm-dashboard" \
+LABEL org.opencontainers.image.source="https://github.com/SteveGilvarry/zm-web" \
       org.opencontainers.image.licenses="AGPL-3.0"
 # Runtime env:
 #   ZM_API_URL           upstream zm_api for the /api/ proxy (required), e.g. http://zm-api:8080

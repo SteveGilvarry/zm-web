@@ -21,7 +21,7 @@ test.describe('Settings — options', () => {
 
       // Appearance (the skin chooser) is on this page in both skins.
       await expect(page.getByRole('heading', { name: /appearance/i })).toBeVisible();
-      await expect(page.getByRole('button', { name: /mission control/i })).toBeVisible();
+      await expect(page.getByRole('button', { name: /^Modern/ })).toBeVisible();
       await expect(page.getByRole('button', { name: /classic zoneminder/i })).toBeVisible();
 
       // The seeded ZM_E2E_* config rows are reachable from the category rail.

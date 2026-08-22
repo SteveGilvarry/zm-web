@@ -195,13 +195,13 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       <div className="h-12 flex items-center justify-between px-4 border-b border-border-subtle">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Shield className="text-accent" size={20} aria-hidden />
-            <span className="font-mono font-semibold text-accent tracking-tight">
-              ZM<span className="text-fg-muted">dash</span>
-            </span>
+            <Shield className="text-fg-dim" size={20} aria-hidden />
+            {/* The operator's system is ZoneMinder; the project's own name
+                (zm-web) belongs in the login footer, not in their chrome. */}
+            <span className="font-semibold text-fg tracking-tight">ZoneMinder</span>
           </div>
         )}
-        {collapsed && <Shield className="text-accent mx-auto" size={20} aria-hidden />}
+        {collapsed && <Shield className="text-fg-dim mx-auto" size={20} aria-hidden />}
         {onMobileClose && (
           <Button
             ref={closeRef}

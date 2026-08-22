@@ -25,9 +25,9 @@ export default function LoginPage() {
         <div className="rounded-lg border border-border-subtle bg-surface p-8">
           <div className="flex flex-col items-center mb-8">
             <Shield className="text-fg-dim mb-3" size={28} aria-hidden />
-            <h1 className="text-xl font-semibold text-fg">ZMdash</h1>
+            <h1 className="text-xl font-semibold text-fg">ZoneMinder</h1>
             <p className="mt-1 text-sm text-fg-dim">
-              {t('ZoneMinder Surveillance Dashboard')}
+              {t('Sign in to your surveillance system')}
             </p>
           </div>
 
@@ -100,7 +100,7 @@ export default function LoginPage() {
         </div>
 
         <p className="mt-4 text-center text-xs text-fg-faint">
-          {t('Secure connection • Powered by zm_api')}
+          {t('zm-web • powered by zm_api')}
           {' · '}
           <span className="font-mono tabular-nums">v{appVersion}</span>
         </p>
