@@ -75,7 +75,7 @@ ZoneMinder is a rock-solid surveillance platform, but its web UI is two decades 
 Perl and PHP. **zm-web** is a clean React front end for the [`zm-api`](https://github.com/SteveGilvarry/zm-api)
 REST backend — and it doesn't force a redesign on operators who don't want one:
 
-- 🎨 **Two skins, one codebase** — switch between a modern dashboard and a classic ZoneMinder look at runtime.
+- 🎨 **Two skins, one codebase** — switch between a content-first modern console and a classic ZoneMinder look at runtime.
 - ⚡ **Fast & live** — WebRTC and HLS streaming, live thumbnails, snappy navigation.
 - 🧩 **Heading for full parity** — every legacy page has a home (events, montage, filters, logs, reports, audit, settings), measured at ≈42% functional parity on 2026-08-21. The plan to 1.0 is in [`docs/PRODUCTION-READINESS-PLAN.md`](docs/PRODUCTION-READINESS-PLAN.md).
 - 🔒 **Auth-aware** — JWT auth, token-scoped media, capability-gated controls (PTZ, system start/stop).
@@ -87,9 +87,13 @@ REST backend — and it doesn't force a redesign on operators who don't want one
 
 | | **Modern** | **Classic ZoneMinder** |
 |---|---|---|
-| **Feel** | Dark "command center" — cyan accents, panels, glow | Legacy-style top nav + dense white tables |
-| **For** | New users, wall displays, adaptive layouts | Operators migrating from the PHP UI |
-| **Layout** | Sidebar + panel grids, live thumbnails | Top nav + tabular rows |
+| **Feel** | Near-monochrome chrome; the video is the only saturated thing on screen, and colour means state — alarm, recording, offline — never decoration | Legacy-style top nav + dense white tables |
+| **For** | Everyday operation and wall displays | Operators migrating from the PHP UI |
+| **Layout** | A fixed frame: one dense line of chrome, content owning the rest. The console *is* the camera wall | Top nav + tabular rows |
+| **Themes** | Dark and light, both designed rather than inverted | Light only, as the original is |
+
+The modern skin's standard is [`docs/DESIGN.md`](docs/DESIGN.md); the classic skin is judged
+against ZoneMinder 1.39 instead, quirks included.
 
 Selection lives in a persisted Zustand store and is honoured by `<AppShell>`. A `?skin=modern|classic`
 URL hint switches once; operators also pick in **Settings → Appearance**. Every route renders the same
@@ -102,7 +106,9 @@ data through shared hooks — only the layout primitives differ.
 ### 📹 Live View & Watch
 Per-monitor live streaming over **WebRTC** (low latency) or **HLS**, with an integrated **PTZ**
 control surface — D-pad, speed/zoom/focus rockers, presets, and AUTO state — capability-gated
-against each monitor.
+against each monitor. Pinch or drag to zoom the received picture without moving the camera, and
+a volume control for streams that carry audio. Portrait cameras are fitted to the frame, not the
+column width.
 
 ### 🎬 Events & Playback
 Browse, filter, and replay recorded events with **codec-aware playback**: progressive MP4 for
@@ -118,15 +124,16 @@ event bars on a draggable timeline. Plus a **Cycle** auto-rotating single-camera
 auto-archive / auto-delete, **Logs** (level + component filters), **Reports**, and **Audit**.
 
 ### ⚙️ Settings & System
-Config editor, API **tokens/sessions**, clustering **servers**, and a header status strip
-(LOAD/CPU/MEM/DISK with warn thresholds) plus a RUNNING toggle wired to system startup/shutdown.
+Config editor, clustering **servers**, **storage**, **users** and **run state**. Machine
+readings — load, CPU, memory, disk, per-daemon health — live on the console's status line, one
+click from the running indicator, rather than in a strip above every page.
 
 ---
 
 ## 🏗️ Architecture
 
-One data layer, two layouts — routes dispatch on the active skin and render either modern panels
-or classic tables, both fed by the same skin-agnostic feature hooks.
+One data layer, two layouts — routes are six-line lookups that render the active skin's page,
+both fed by the same skin-agnostic feature hooks.
 
 ```mermaid
 flowchart TD
@@ -209,7 +216,24 @@ defaulting to `http://localhost:8080` when unset.
 | `npm test` | Run the unit suite once (Vitest) |
 | `npm run test:watch` | Vitest in watch mode |
 | `npm run test:ui` | Vitest interactive UI |
-| `npm run test:e2e` | Run Playwright e2e tests (`:webkit` / `:chromium` for one browser) |
+| `npm run test:coverage` | Coverage, then the per-file floor (`scripts/coverage-floor.mjs`) |
+| `npm run test:e2e` | Playwright against a live backend (`:webkit` / `:chromium` for one browser) |
+| `npm run test:e2e:seeded` | Playwright against the hermetic seeded stack — see below |
+| `npm run i18n:check` | Fail if any string is missing from the catalogue (CI gate) |
+| `npm run screenshots` | Regenerate the README images from a running dev server |
+
+**The seeded suite** is the one to run before a PR: it stands up ZoneMinder's schema in Docker,
+loads fixed rows, and runs both skins against a real `zm-api` — no dev box needed.
+
+```bash
+npm run e2e:seed:up          # MariaDB + schema + seed on :3308
+npm run e2e:seed:api         # zm-api against it, on :8089 (foreground)
+npm run test:e2e:seeded      # in another shell
+npm run e2e:seed:down        # when finished
+```
+
+Node is pinned by `.nvmrc` (22). CI honours it, and a different major has
+[bitten us](https://github.com/SteveGilvarry/zm-web/pull/2) — `nvm use` before running the suite.
 
 ---
 
