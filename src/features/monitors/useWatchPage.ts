@@ -49,6 +49,8 @@ export interface WatchStageState {
   setWidth: (v: string) => void;
   setHeight: (v: string) => void;
   setScale: (v: string) => void;
+  /** Report the height left below the stage, so Auto can fit it exactly. */
+  setAvailableHeight: (px: number) => void;
   /** Inline style for the stage box (aspect ratio from the monitor). */
   style: CSSProperties;
 }
@@ -128,6 +130,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const id = monitorId;
 
   const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
+  const [availableHeight, setAvailableHeight] = useState(0);
   const [fellBackToHls, setFellBackToHls] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   // 0–1. Kept next to the mute flag rather than read off the element, so the
@@ -350,7 +353,12 @@ export function useWatchPage(monitorId: number): WatchPageState {
     setWidth: (width) => setStageSize((s) => ({ ...s, width })),
     setHeight: (height) => setStageSize((s) => ({ ...s, height })),
     setScale: (scale) => setStageSize((s) => ({ ...s, scale })),
-    style: stageStyle(stageSize, monitor ? displayDimensions(monitor) : { width: 16, height: 9 }),
+    setAvailableHeight,
+    style: stageStyle(
+      stageSize,
+      monitor ? displayDimensions(monitor) : { width: 16, height: 9 },
+      availableHeight,
+    ),
   };
 
   // The snapshot endpoint needs the bearer token, so an `<a download>` is
