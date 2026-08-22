@@ -176,6 +176,18 @@ A `view=` compatibility router in `__root.tsx` mapping `?view=watch&mid=`, `?vie
 
 Ordered by daily use. Effort is per area, after W1–W3 are in place.
 
+> **Re-verification, 2026-08-23 — this table is stale and overstates the remaining work.** Five areas were driven in a browser against the live dev box (ZM 1.39.16 / zm-api on `.45`) and each is substantially complete; the effort column still budgets 26 days for them. Static grep was tried first and gave contradictory answers in both directions, so only in-browser checks are recorded here. **Verified done:**
+>
+> | Area | Budgeted | What is actually there |
+> |---|---|---|
+> | Events list | 8 d | Bulk View / Download / Edit / Archive / Unarchive / Delete; sort on 9 fields; column chooser (16); CSV export; refresh; pager with jump-to-page; tri-state archive filter; card/table toggle |
+> | Filters | 6 d | Both real dev-box filters load **with their rules** (the F-1 symptom is gone); condition builder, first-class actions, Sort by / direction / Limit / Skip locked / Execute interval, Preview, List matches, Export matches, Save As, Reset, Debug |
+> | Montage Review | 5 d | 0.25×–16× speeds, Fit, zoom in/out, pan earlier/later, 1 h / 8 h / 24 h ranges, per-monitor filter, All events, Live |
+> | Montage | 5 d | Display, Layout, split/remove tile, Fullscreen, WebRTC/HLS switch, Restart |
+> | Cycle | 2 d | 5/10/20/30/60 s intervals, Stills toggle, prev/next monitor, pause, filter bar |
+>
+> The remaining ~15 areas below have **not** been re-verified this way and should be assumed equally stale until they are. Rows are left as written rather than guessed at — the next pass drives each one and rewrites it.
+
 | Area | Work (all FE-possible today) | Effort |
 |---|---|---|
 | Events list | Server-side sort on the 8 supported fields + headers in both skins; page-size selector (`ZM_WEB_EVENTS_PER_PAGE`); legacy filter form (Group via `/groups-monitors`, Start ≤, real datetime lower bound — today's date-only input is pinned to UTC midnight); Bulk View / Edit (name, cause, notes, archived) / Download; columns End, Emailed, Storage name, Thumbnail (classic); cell deep-links; toolbar Refresh/Timeline/fullscreen/Export-visible-CSV; term persistence; server-side Notes/Tags via `/events-tags?event_id` until BT-03 | 8 d |
@@ -305,7 +317,7 @@ editor having an accessible name; the coverage floor that enforced nothing.
 | **0 — Stop the bleeding** | F-1…F-8 (+ dev-box zone repair), Test Tier 0, README/CLAUDE.md truth, `npm audit fix`, devtools → dev deps, drop `motion`, delete stray `events-cleared.yaml` | 7–9 d | CI green on every PR; no known data-destroying path; deployable from a container | **Done.** All three criteria met; `main` gates on five required checks. |
 | **1 — Contract & platform** | W1, W2, W3, W4, W5, W6; F-9…F-24; Test Tiers 1–3 | 18–22 d | Every wrapper contract-tested; backend-down and 403 are visible; permissions gate routes/nav/edits; bundle split; streams survive ICE drops | **Mostly done.** W2/W3/W4 complete; contract test (175 cases) against a tracked OpenAPI snapshot; F-9…F-22, F-24, F-25 closed. **Open:** generated types (W1 — `src/types/index.ts` is still hand-written), `manualChunks` + a CI size budget (W5), F-23 ◐. |
 | **2 — Design system & classic foundation** | Section 5 tokens + primitives + classic primitives + Material icons + mobile drawer + dialog a11y; classic `OptionsLayout`; W7 formatter + `ZM_WEB_*` consumption; W8 URL shims + shortcuts | 14–17 d | Light + dark themes; no inline button/input recipes; classic nav reaches every admin page; legacy bookmarks resolve | **Mostly done.** All four criteria met; the modern IA rebuild (waves 7–8) went past the original scope. **Open:** the `ZM_WEB_*` rows listed in W7 are still mostly unread. |
-| **3 — Parity build-out** | W9 by area in the listed order; classic rebuild of the six core pages; Test Tiers 4–7 running alongside | 75–85 d | Every FE-possible row in Section 6/W9 closed; classic fidelity ≥ 85 on the six core pages; every route has both-skin e2e | **In progress — this is where the remaining work is.** Classic owns all 23 pages on legacy layouts (wave 4) and Tiers 4–7 are running, but most W9 rows are open and **parity has not been re-measured since 2026-08-21**. |
+| **3 — Parity build-out** | W9 by area in the listed order; classic rebuild of the six core pages; Test Tiers 4–7 running alongside | 75–85 d | Every FE-possible row in Section 6/W9 closed; classic fidelity ≥ 85 on the six core pages; every route has both-skin e2e | **In progress, and much further along than the estimate implies.** Classic owns all 23 pages on legacy layouts (wave 4) and Tiers 4–7 are running. Re-verification started 2026-08-23: 5 of ~20 W9 areas driven in a browser against the live box, all 5 substantially complete (26 of the budgeted days already spent). The other 15 are unmeasured — see the note at the head of W9. |
 | **4 — Release** | Versioning + CHANGELOG + release workflow; browser matrix; docs; tag **v1.0.0** | 3–4 d | Section 10 checklist all green | Not started. |
 | **5 — Backend-dependent (1.1+)** | Items gated on the open zm-api tickets in Section 7 as they ship; translation coverage | per ticket | — | Ongoing — 8 of 24 tickets landed and are consumed. |
 
