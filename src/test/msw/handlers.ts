@@ -297,7 +297,15 @@ const monitors: HttpHandler[] = [
     db.zones.push(zone);
     return HttpResponse.json(zone, { status: 201 });
   }),
-  http.get(`${API}/monitors/:id/snapshot`, () => new HttpResponse(new Blob(), { status: 200 })),
+  // An ArrayBuffer, not a Blob: Node 22's undici rejects jsdom's Blob when it
+  // builds the response body (`TypeError: object.stream is not a function`),
+  // so the handler 500s and the download path never runs. Node 24 accepts it,
+  // which is why this only ever failed on CI — .nvmrc pins 22.
+  http.get(`${API}/monitors/:id/snapshot`, () =>
+    HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
+      status: 200,
+      headers: { 'Content-Type': 'image/jpeg' },
+    })),
   http.get(`${API}/monitors/:id`, ({ params }) => {
     const monitor = db.monitors.find((m) => m.id === Number(params.id));
     return monitor ? HttpResponse.json(monitor) : notFound();
@@ -434,8 +442,17 @@ const events: HttpHandler[] = [
   http.get(`${API}/events/:id/info`, ({ params }) =>
     HttpResponse.json({ event_id: Number(params.id), has_video: true, duration: 600 }),
   ),
-  http.get(`${API}/events/:id/thumbnail`, () => new HttpResponse(new Blob(), { status: 200 })),
-  http.get(`${API}/events/:id/video`, () => new HttpResponse(new Blob(), { status: 200 })),
+  // ArrayBuffer bodies for the same reason as /monitors/:id/snapshot above.
+  http.get(`${API}/events/:id/thumbnail`, () =>
+    HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
+      status: 200,
+      headers: { 'Content-Type': 'image/jpeg' },
+    })),
+  http.get(`${API}/events/:id/video`, () =>
+    HttpResponse.arrayBuffer(new Uint8Array([0x00, 0x00, 0x00, 0x18]).buffer, {
+      status: 200,
+      headers: { 'Content-Type': 'video/mp4' },
+    })),
   http.get(`${API}/events/:id`, ({ params }) => {
     const event = db.events.find((e) => e.id === Number(params.id));
     return event ? HttpResponse.json(event) : notFound();

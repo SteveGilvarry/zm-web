@@ -372,13 +372,10 @@ describe('modern Watch page', () => {
 
     await findWatch('Front Door');
     await user.click(screen.getByRole('button', { name: /Download Image/ }));
-    // fetch → blob → object URL → anchor click, four awaits deep. A loaded
-    // CI runner takes longer than testing-library's 1s default; this failed
-    // there while passing locally (job 96995130483).
     await waitFor(() => {
       expect(click).toHaveBeenCalledOnce();
       expect(URL.createObjectURL).toHaveBeenCalledOnce();
-    }, { timeout: 5000 });
+    });
   });
 
   it('surfaces a failed snapshot download without breaking the page', async () => {
