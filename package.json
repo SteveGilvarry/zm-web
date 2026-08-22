@@ -25,6 +25,7 @@
     "screenshots": "node scripts/screenshots.mjs",
     "css:logical": "node scripts/codemod-logical-css.mjs",
     "test:coverage": "vitest run --coverage && node scripts/coverage-floor.mjs",
+    "test:tz": "TZ=Pacific/Kiritimati vitest run",
     "test:e2e:seeded": "E2E_MODE=seeded playwright test",
     "e2e:seed:up": "bash e2e/seed/up.sh",
     "e2e:seed:reset": "bash e2e/seed/reset.sh",

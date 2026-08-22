@@ -382,7 +382,7 @@ should be rare enough to be memorable.
 - Lint, `tsc -b`, build, `npm audit --omit=dev` clean in CI; bundle budget enforced; no credential or IP literal in tracked files.
 - Dockerfile + nginx/Caddy samples + runtime API config + TLS/WS proxy docs; a "serve `dist/` behind nginx" smoke test in CI.
 - Permission model gates routes, nav and edit affordances for all eight levels; logout revokes what the backend allows; secrets never render.
-- Times correct against a fixed server offset (test pinned with `TZ=`), honouring ZM date-format config.
+- ✅ Times correct against a fixed server offset, honouring ZM date-format config. **Done 2026-08-23** — differently from how this row was written: the suite was checked at UTC+14 and UTC−11 and is already zone-independent, so pinning it to one `TZ` would have hidden future drift rather than caught it. Instead `npm run test:tz` runs the whole suite at `Pacific/Kiritimati` (+14, the furthest a date can be pushed into tomorrow) as its own CI job, keeping the property true. It is not yet in the required-check list on `main` — that is a repo-settings change to make deliberately.
 
 ## 11. Decisions (taken 2026-08-21)
 

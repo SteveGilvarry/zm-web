@@ -53,6 +53,24 @@ jobs:
       - run: npm ci
       - run: npm run lint
 
+  timezone:
+    # Every timestamp in this UI comes from a server in one zone and is read
+    # by an operator in another, and the runners are all UTC — a suite that
+    # only ever runs at +00:00 cannot tell a correct conversion from a
+    # missing one. Kiritimati is +14, the furthest a date can be pushed into
+    # tomorrow. The point is to keep the tests zone-independent, which they
+    # are today, rather than to pin them to a zone and stop noticing.
+    name: unit tests at UTC+14
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci
+      - run: npm run test:tz
+
   docker:
     name: container image
     runs-on: ubuntu-latest
