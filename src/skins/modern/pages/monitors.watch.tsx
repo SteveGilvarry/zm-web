@@ -28,6 +28,7 @@ import {
   Pencil,
   Camera,
   Image as ImageIcon,
+  Search,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
@@ -37,6 +38,7 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { SCALE_VALUES } from '@/features/monitors/watchStage';
 import { PtzControls } from '@/features/ptz/PtzControls';
+import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { zoneViewDimensions } from '@/features/zones/useZonesPage';
 import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
@@ -72,9 +74,13 @@ const modeBtn = (active: boolean) =>
 export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
   const { t, i18n } = useTranslation();
   const page = useWatchPage(monitorId);
+  // Digital zoom on the live picture; the camera is not moved.
+  const { ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom } =
+    usePinchZoom<HTMLDivElement>();
   const {
     monitor, monitorLoading, events, liveStats, runtime, protocol, activeStream,
-    isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, isFullscreen, isWide,
+    isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, volume, setVolume,
+    isFullscreen, isWide,
     editorOpen, openEditor, closeEditor, updateModes, isUpdating,
     startStream, stopStream, changeProtocol, toggleFullscreen, toggleMute, retry,
     viewMode, setViewMode, stage, downloadImage, isDownloading,
@@ -143,15 +149,20 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     <div
       className="relative h-full w-full bg-bg-sunken rounded border border-border-subtle overflow-hidden"
     >
-      {/* Video element — always rendered so ref is available for HLS attachment */}
-      <video
-        ref={videoRef}
-        className={videoClassName}
-        style={videoElementStyle}
-        autoPlay
-        muted={isMuted}
-        playsInline
-      />
+      {/* Pinch, trackpad-pinch or drag to inspect a corner of the frame
+          without touching the camera. This is digital zoom on the received
+          picture — PTZ moves the camera itself and lives in the rail. */}
+      <div ref={zoomRef} style={zoomStyle} className="absolute inset-0">
+        {/* Video element — always rendered so ref is available for HLS attachment */}
+        <video
+          ref={videoRef}
+          className={videoClassName}
+          style={videoElementStyle}
+          autoPlay
+          muted={isMuted}
+          playsInline
+        />
+      </div>
 
       {stills && isEnabled && (
         <MonitorPreview
@@ -161,6 +172,19 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           isActive
           rotationFit="fit"
         />
+      )}
+
+      {zoomed && (
+        <button
+          type="button"
+          onClick={resetZoom}
+          aria-label={t('Reset zoom')}
+          className="absolute top-2 end-2 z-20 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 text-xs text-white hover:bg-black/80 transition-colors"
+        >
+          <Search size={12} aria-hidden />
+          <span className="font-mono tabular-nums">{zoomScale.toFixed(1)}×</span>
+          {t('Reset')}
+        </button>
       )}
 
       {/* Connecting overlay */}
@@ -212,6 +236,17 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
 
             <div className="ms-auto flex items-center gap-1 shrink-0">
               {hasAudio && (
+                <>
+                <input
+                  type="range"
+                  min={0}
+                  max={1}
+                  step={0.05}
+                  value={isMuted ? 0 : volume}
+                  onChange={(e) => setVolume(Number(e.target.value))}
+                  aria-label={t('Volume')}
+                  className="w-16 h-1 accent-white/80 cursor-pointer"
+                />
                 <button
                   onClick={toggleMute}
                   aria-label={isMuted ? t('Unmute') : t('Mute')}
@@ -219,6 +254,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                 >
                   {isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />}
                 </button>
+                </>
               )}
               <button
                 onClick={toggleFullscreen}
