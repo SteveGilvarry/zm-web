@@ -78,7 +78,10 @@ jobs:
   e2e-seeded:
     name: e2e (seeded)
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    # A cold rust-cache spends ~19 min building zm_api before a test runs.
+    # At 45 the job was cancelled mid-suite, which also meant the cache never
+    # saved — so the next run paid the same 19 min again.
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with: { path: zm-web }
@@ -149,5 +152,7 @@ jobs:
             zm-web/playwright-report
             zm-web/test-results
           retention-days: 7
-      - if: failure()
-        run: tail -200 "$RUNNER_TEMP/zm_api.log"
+      # `always()`, not `failure()`: a cancelled job (the 45-minute timeout hit
+      # once) skipped this and took the API's own log with it.
+      - if: always()
+        run: tail -200 "$RUNNER_TEMP/zm_api.log" || true
