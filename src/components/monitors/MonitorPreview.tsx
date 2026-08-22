@@ -98,19 +98,19 @@ export function MonitorPreview({
     <div
       ref={rootRef}
       dir="ltr"
-      className="absolute inset-0 bg-abyss"
+      className="absolute inset-0 bg-bg-sunken"
       onMouseEnter={beginHover}
       onMouseLeave={endHover}
     >
       {!isActive ? (
         <div className="absolute inset-0 flex items-center justify-center">
-          <VideoOff size={iconSize} className="text-text-dim" />
+          <VideoOff size={iconSize} className="text-fg-faint" aria-hidden />
         </div>
       ) : (
         <>
           {/* Fallback icon — shown until a snapshot loads */}
           <div className="absolute inset-0 flex items-center justify-center">
-            <Video size={iconSize} className="text-text-dim" />
+            <Video size={iconSize} className="text-fg-faint" aria-hidden />
           </div>
 
           {/* Refreshing snapshot — base layer. Rotated cameras switch
