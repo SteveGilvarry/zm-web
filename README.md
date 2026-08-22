@@ -248,6 +248,19 @@ operators behind NAT run your own TURN (coturn) and edit that list; HLS remains
 available as the fallback. **Air-gapped:** fonts are bundled (`public/fonts/`), the
 app makes no other off-origin request, and unreachable STUN hosts only delay ICE.
 
+### Browsers
+
+| Browser | Live view | Notes |
+|---|---|---|
+| Chrome / Edge 111+ | WebRTC, HLS via `hls.js` | Primary target; the CI e2e suite runs here |
+| Firefox 115+ | WebRTC, HLS via `hls.js` | |
+| Safari 16.4+ (macOS) | WebRTC, **native** HLS | Needs H.264 `42e01f`/`640c1f` in the offer; the suite runs on WebKit |
+| iOS Safari 16.4+ | WebRTC, native HLS | 390 px layout is asserted in CI; fullscreen uses the iOS video API |
+
+Everything below that is untested, and anything without WebRTC or MSE will not
+show live video. The UI itself needs a browser with CSS nesting and
+`:has()` — the same 2023 baseline.
+
 ---
 
 ## 📁 Project Layout

@@ -1,0 +1,34 @@
+# Dependency updates. Grouped so a week's patches are one review, not
+# fifteen: this project gates `main` on five required checks, and every
+# separate PR pays for all of them.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      # Framework upgrades change behaviour and deserve their own review.
+      react:
+        patterns: ['react', 'react-dom', '@types/react', '@types/react-dom']
+      tanstack:
+        patterns: ['@tanstack/*']
+      # Everything else, split by risk rather than by package.
+      dev-minor-patch:
+        dependency-type: development
+        update-types: ['minor', 'patch']
+      prod-minor-patch:
+        dependency-type: production
+        update-types: ['minor', 'patch']
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ['*']
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
