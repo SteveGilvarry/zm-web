@@ -74,7 +74,7 @@ describe('MonitorThumbnail — runtime status', () => {
   it('colours the lens from the capture-process state, not the config', () => {
     renderWithProviders(<MonitorThumbnail monitor={m} runtime={runtime} />);
     const lens = screen.getByLabelText('NotRunning');
-    expect(lens.className).toContain('bg-crimson');
+    expect(lens.className).toContain('bg-danger');
   });
 
   it('shows the capture fps when the status poll has answered', () => {
@@ -82,12 +82,12 @@ describe('MonitorThumbnail — runtime status', () => {
       <MonitorThumbnail monitor={m} runtime={{ ...runtime, status: 'Connected', captureFps: 10.89 }} />,
     );
     expect(screen.getByTestId('thumb-fps')).toHaveTextContent('10.9 fps');
-    expect(screen.getByLabelText('Connected').className).toContain('bg-emerald');
+    expect(screen.getByLabelText('Connected').className).toContain('bg-ok');
   });
 
   it('stays grey with no fps before the poll answers', () => {
     renderWithProviders(<MonitorThumbnail monitor={m} />);
-    expect(screen.getByLabelText('Capturing').className).toContain('bg-text-muted');
+    expect(screen.getByLabelText('Capturing').className).toContain('bg-fg-faint');
     expect(screen.queryByTestId('thumb-fps')).toBeNull();
   });
 });

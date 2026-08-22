@@ -41,31 +41,68 @@ interface NavItem {
   badge?: number;
 }
 
-/** Nav labels are built inside a hook so `t()` sees literal keys. */
-function useNavItems(): { main: NavItem[]; settings: NavItem[] } {
+interface NavSection {
+  /** Omitted for the first section, which needs no label. */
+  heading?: string;
+  items: NavItem[];
+}
+
+/**
+ * Nav labels are built inside a hook so `t()` sees literal keys.
+ *
+ * Sixteen equally-weighted links is a directory, not navigation. They are
+ * grouped by what an operator came to do — watch something live, look into
+ * something that happened, change how the system runs — with the console
+ * standing alone above them because it is where everyone starts.
+ */
+function useNavSections(): NavSection[] {
   const { t } = useTranslation();
-  return {
-    main: [
-      { label: t('Console'), icon: <LayoutDashboard size={20} />, path: '/' },
-      { label: t('Monitors'), icon: <Monitor size={20} />, path: '/monitors' },
-      { label: t('Events'), icon: <Video size={20} />, path: '/events' },
-      { label: t('Montage'), icon: <LayoutGrid size={20} />, path: '/montage' },
-      { label: t('Review'), icon: <Film size={20} />, path: '/montagereview' },
-      { label: t('Cycle'), icon: <RefreshCcw size={20} />, path: '/cycle' },
-      { label: t('Groups'), icon: <UsersRound size={20} />, path: '/groups' },
-      { label: t('Filters'), icon: <FilterIcon size={20} />, path: '/filters' },
-      { label: t('Reports'), icon: <FileText size={20} />, path: '/reports' },
-      { label: t('Audit'), icon: <ShieldCheck size={20} />, path: '/audit' },
-      { label: t('Log'), icon: <ScrollText size={20} />, path: '/logs' },
-    ],
-    settings: [
-      { label: t('Settings'), icon: <Settings size={20} />, path: '/settings' },
-      { label: t('Storage'), icon: <HardDrive size={20} />, path: '/settings/storage' },
-      { label: t('Users'), icon: <Users size={20} />, path: '/settings/users' },
-      { label: t('Servers'), icon: <Shield size={20} />, path: '/settings/servers' },
-      { label: t('Run State'), icon: <Power size={20} />, path: '/settings/state' },
-    ],
-  };
+  return [
+    {
+      items: [
+        { label: t('Console'), icon: <LayoutDashboard size={16} />, path: '/' },
+      ],
+    },
+    {
+      heading: t('Watch'),
+      items: [
+        { label: t('Monitors'), icon: <Monitor size={16} />, path: '/monitors' },
+        { label: t('Montage'), icon: <LayoutGrid size={16} />, path: '/montage' },
+        { label: t('Review'), icon: <Film size={16} />, path: '/montagereview' },
+        { label: t('Cycle'), icon: <RefreshCcw size={16} />, path: '/cycle' },
+      ],
+    },
+    {
+      heading: t('Investigate'),
+      items: [
+        { label: t('Events'), icon: <Video size={16} />, path: '/events' },
+        { label: t('Reports'), icon: <FileText size={16} />, path: '/reports' },
+        { label: t('Audit'), icon: <ShieldCheck size={16} />, path: '/audit' },
+        { label: t('Log'), icon: <ScrollText size={16} />, path: '/logs' },
+      ],
+    },
+    {
+      heading: t('Configure'),
+      items: [
+        { label: t('Groups'), icon: <UsersRound size={16} />, path: '/groups' },
+        { label: t('Filters'), icon: <FilterIcon size={16} />, path: '/filters' },
+        { label: t('Settings'), icon: <Settings size={16} />, path: '/settings' },
+        { label: t('Storage'), icon: <HardDrive size={16} />, path: '/settings/storage' },
+        { label: t('Users'), icon: <Users size={16} />, path: '/settings/users' },
+        { label: t('Servers'), icon: <Shield size={16} />, path: '/settings/servers' },
+        { label: t('Run State'), icon: <Power size={16} />, path: '/settings/state' },
+      ],
+    },
+  ];
+}
+
+/** Settings paths are prefix-matched; everything else is exact. */
+function isActivePath(itemPath: string, currentPath: string): boolean {
+  if (itemPath === '/settings') {
+    return currentPath === '/settings' || currentPath === '/settings/';
+  }
+  if (itemPath.startsWith('/settings/')) return currentPath.startsWith(itemPath);
+  return currentPath === itemPath;
 }
 
 const DESKTOP_QUERY = '(min-width: 1024px)';
@@ -102,7 +139,7 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const username = useCurrentUsername();
   const { perms } = usePerms();
   const [passwordOpen, setPasswordOpen] = useState(false);
-  const items = useNavItems();
+  const sections = useNavSections();
   const asideRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -124,9 +161,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       opener?.focus?.();
     };
   }, [drawerActive, onMobileClose]);
-  // Legacy canView() rules: hide what the user cannot open.
-  const navItems = items.main.filter((i) => canSeeNav(perms, i.path));
-  const settingsItems = items.settings.filter((i) => canSeeNav(perms, i.path));
+  // Legacy canView() rules: hide what the user cannot open. A section with
+  // nothing left in it disappears, heading and all.
+  const visibleSections = sections
+    .map((section) => ({ ...section, items: section.items.filter((i) => canSeeNav(perms, i.path)) }))
+    .filter((section) => section.items.length > 0);
 
   const handleLogout = async () => {
     // Tell the backend first (best effort — a dead backend must not trap
@@ -153,16 +192,16 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       )}
     >
       {/* Logo */}
-      <div className="h-14 flex items-center justify-between px-4 border-b border-border-subtle">
+      <div className="h-12 flex items-center justify-between px-4 border-b border-border-subtle">
         {!collapsed && (
           <div className="flex items-center gap-2">
-            <Shield className="text-accent" size={24} aria-hidden />
+            <Shield className="text-accent" size={20} aria-hidden />
             <span className="font-mono font-semibold text-accent tracking-tight">
               ZM<span className="text-fg-muted">dash</span>
             </span>
           </div>
         )}
-        {collapsed && <Shield className="text-accent mx-auto" size={24} aria-hidden />}
+        {collapsed && <Shield className="text-accent mx-auto" size={20} aria-hidden />}
         {onMobileClose && (
           <Button
             ref={closeRef}
@@ -197,34 +236,28 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </Button>
 
       {/* Main navigation */}
-      <nav aria-label={t('Main')} className="flex-1 px-2 py-4 space-y-1 overflow-y-auto">
-        <div className="space-y-1">
-          {navItems.map((item) => (
-            <NavLink
-              key={item.path}
-              item={item}
-              isActive={currentPath === item.path}
-              collapsed={collapsed}
-            />
-          ))}
-        </div>
-
-        {settingsItems.length > 0 && <div className="my-4 mx-2 border-t border-border-subtle" />}
-
-        <div className="space-y-1">
-          {settingsItems.map((item) => (
-            <NavLink
-              key={item.path}
-              item={item}
-              isActive={
-                item.path === '/settings'
-                  ? currentPath === '/settings' || currentPath === '/settings/'
-                  : currentPath.startsWith(item.path)
-              }
-              collapsed={collapsed}
-            />
-          ))}
-        </div>
+      <nav aria-label={t('Main')} className="flex-1 px-2 py-3 overflow-y-auto">
+        {visibleSections.map((section, i) => (
+          <div key={section.heading ?? 'primary'} className={clsx(i > 0 && 'mt-4')}>
+            {section.heading && !collapsed && (
+              <h2 className="px-3 pb-1 text-xs text-fg-faint">{section.heading}</h2>
+            )}
+            {section.heading && collapsed && (
+              <div className="mx-2 mb-2 border-t border-border-subtle" aria-hidden />
+            )}
+            <ul className="space-y-0.5">
+              {section.items.map((item) => (
+                <li key={item.path}>
+                  <NavLink
+                    item={item}
+                    isActive={isActivePath(item.path, currentPath)}
+                    collapsed={collapsed}
+                  />
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
       </nav>
 
       {/* User section */}
@@ -291,8 +324,8 @@ function NavLink({
       to={item.path}
       aria-current={isActive ? 'page' : undefined}
       className={clsx(
-        'flex items-center gap-3 px-3 py-2.5 rounded-lg',
-        'transition-all duration-fast',
+        'flex items-center gap-2.5 px-3 py-1.5 rounded',
+        'transition-colors duration-fast',
         'group relative',
         isActive
           ? 'bg-accent/10 text-accent'
@@ -301,7 +334,7 @@ function NavLink({
     >
       {/* Active indicator */}
       {isActive && (
-        <div className="absolute start-0 top-1/2 -translate-y-1/2 w-1 h-6 bg-accent rounded-e" />
+        <div className="absolute start-0 top-1/2 -translate-y-1/2 w-0.5 h-5 bg-accent rounded-e" />
       )}
 
       <span
@@ -314,7 +347,7 @@ function NavLink({
       </span>
 
       {!collapsed && (
-        <span className="font-medium text-sm">{item.label}</span>
+        <span className="text-sm">{item.label}</span>
       )}
 
       {!collapsed && item.badge !== undefined && item.badge > 0 && (

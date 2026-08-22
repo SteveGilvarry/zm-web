@@ -1,18 +1,10 @@
-import { useEffect, useEffectEvent, useMemo, useRef, useState } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useEffect, useEffectEvent, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { ChevronDown, Filter, X } from 'lucide-react';
-import {
-  listGroups,
-  listGroupMonitors,
-  type Group,
-  type GroupMonitor,
-} from '@/api/groups';
-import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import type { Monitor } from '@/types';
-import { filterMonitors } from './filterMonitors';
+import { useMonitorFilter } from './useMonitorFilter';
 
 /* -------------------------------------------------------------------------- */
 /*  Enum option sets                                                          */
@@ -78,7 +70,8 @@ export interface MonitorFilterBarProps {
 export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilterBarProps) {
   const { t } = useTranslation();
   const enumLabel = useEnumLabel();
-  const { isAuthenticated } = useAuthStore();
+
+  const { filtered, activeCount, groups } = useMonitorFilter(monitors);
 
   const groupIds   = useMonitorFilterStore((s) => s.groupIds);
   const capturing  = useMonitorFilterStore((s) => s.capturing);
@@ -97,38 +90,6 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
   const setMonitorIds = useMonitorFilterStore((s) => s.setMonitorIds);
   const reset         = useMonitorFilterStore((s) => s.reset);
 
-  const groupsQ = useQuery({
-    queryKey: ['groups'],
-    queryFn: () => listGroups({ page: 1, page_size: 200 }),
-    enabled: isAuthenticated,
-  });
-  const groupMonitorsQ = useQuery({
-    queryKey: ['groups-monitors'],
-    queryFn: () => listGroupMonitors({ page: 1, page_size: 1000 }),
-    enabled: isAuthenticated,
-  });
-
-  const groups: Group[] = groupsQ.data?.items ?? [];
-  const groupMonitors: GroupMonitor[] | undefined = groupMonitorsQ.data?.items;
-
-  // gid → Set<monitorId>
-  const groupMembership = useMemo(() => {
-    const map = new Map<number, Set<number>>();
-    for (const gm of groupMonitors ?? []) {
-      if (!map.has(gm.group_id)) map.set(gm.group_id, new Set<number>());
-      map.get(gm.group_id)!.add(gm.monitor_id);
-    }
-    return map;
-  }, [groupMonitors]);
-
-  // Recompute filtered list whenever selections or input list change.
-  const filtered = useMemo(
-    () => filterMonitors(monitors, {
-      groupIds, capturing, analysing, recording, status, source, monitorIds,
-    }, groupMembership),
-    [monitors, groupIds, capturing, analysing, recording, status, source, monitorIds, groupMembership],
-  );
-
   // Effect Event so the notification fires on every new `filtered` list but
   // never loops when the parent re-creates `onChange` each render.
   const emitChange = useEffectEvent((list: Monitor[]) => onChange(list));
@@ -136,9 +97,7 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
     emitChange(filtered);
   }, [filtered]);
 
-  const totalSelected =
-    groupIds.length + capturing.length + analysing.length +
-    recording.length + status.length + source.length + monitorIds.length;
+  const totalSelected = activeCount;
 
   return (
     <div

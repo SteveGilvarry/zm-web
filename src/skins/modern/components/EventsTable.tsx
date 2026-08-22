@@ -129,9 +129,10 @@ export function EventsTable({
   );
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-border-subtle bg-surface">
+    <div className="overflow-x-auto rounded border border-border-subtle bg-surface">
       <table className="w-full text-sm">
-        <thead className="border-b border-border-subtle">
+        {/* The scroll container is the page area, so the header pins to it. */}
+        <thead className="sticky top-0 z-10 bg-surface border-b border-border-subtle">
           <tr>
             <th scope="col" className="w-9 px-3 py-2">
               <input

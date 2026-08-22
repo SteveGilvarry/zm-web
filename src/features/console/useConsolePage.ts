@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { useMonitorFilter } from '@/features/monitors/useMonitorFilter';
 import type { Monitor, StreamProtocol } from '@/types';
 import { useConsoleData, type ConsoleData } from './useConsoleData';
 
@@ -8,11 +9,13 @@ export interface ConsolePageState {
   /** Everything `useConsoleData` loads: monitors, live sessions, events, system stats. */
   data: ConsoleData;
   /**
-   * Result of the shared MonitorFilterBar. Defaults to the full list so the
-   * page renders sensibly before any chip has fired.
+   * The monitor list with the shared filter chips applied. Derived from the
+   * filter store rather than from the bar's callback, so the wall is right on
+   * first paint and stays right while the bar is closed.
    */
   filteredMonitors: Monitor[];
-  setFilteredMonitors: (monitors: Monitor[]) => void;
+  /** How many chip selections are narrowing the wall; 0 means unfiltered. */
+  activeFilterCount: number;
   /** `data` with `monitors` swapped for the filtered list. */
   filteredData: ConsoleData;
   /** Filtered monitors that are capturing. */
@@ -33,7 +36,8 @@ export function useConsolePage(): ConsolePageState {
   const data = useConsoleData();
 
   const [liveProtocol, setLiveProtocol] = useState<StreamProtocol | null>('webrtc');
-  const [filteredMonitors, setFilteredMonitors] = useState<Monitor[]>(data.monitors);
+  const { filtered: filteredMonitors, activeCount: activeFilterCount } =
+    useMonitorFilter(data.monitors);
 
   const activeMonitors = filteredMonitors.filter((m) => m.capturing !== 'None');
   const recordingMonitors = filteredMonitors.filter((m) =>
@@ -44,7 +48,7 @@ export function useConsolePage(): ConsolePageState {
     isAuthenticated,
     data,
     filteredMonitors,
-    setFilteredMonitors,
+    activeFilterCount,
     filteredData: { ...data, monitors: filteredMonitors },
     activeMonitors,
     recordingMonitors,

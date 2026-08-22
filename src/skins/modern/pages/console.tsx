@@ -1,39 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from '@tanstack/react-router';
-import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import {
-  Monitor,
-  Video,
-  Activity,
-  Wifi,
-  Radio,
-  VideoOff,
-} from 'lucide-react';
 import type { StreamProtocol, Monitor as MonitorType } from '@/types';
 import { isOrientationRotated } from '@/types';
 import { AppShell } from '@/skins/AppShell';
-import { Panel } from '@/components/common/Panel';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { ConsoleSummary } from '../components/ConsoleSummary';
+import { ConsoleStatusLine } from '../components/ConsoleStatusLine';
+import { ActivityRail } from '../components/ActivityRail';
 import { MonitorThumbnail } from '@/components/console/MonitorThumbnail';
 import { EventsFeed } from '@/components/console/EventsFeed';
 import { SystemStatus } from '@/components/console/SystemStatus';
 import { SkinHint } from '@/components/onboarding/SkinHint';
 import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
-import { formatGB, useConsolePage } from '@/features/console/useConsolePage';
+import { useConsolePage } from '@/features/console/useConsolePage';
 import { lookupSummary, type ConsoleData } from '@/features/console/useConsoleData';
-import { justifyRows } from '@/features/console/layout';
+import { packWall } from '@/features/console/layout';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 /** Console — Mission Control: stat cards + justified thumbnail grid + sidebar. */
+// The wall reads the filter store directly (useConsolePage), so the bar's
+// change callback has nothing left to do here.
+const noop = () => {};
+
 export default function ConsolePage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Console'));
   const page = useConsolePage();
   const {
-    data, filteredMonitors, setFilteredMonitors, activeMonitors, recordingMonitors,
+    data, filteredMonitors, activeFilterCount, recordingMonitors,
     liveProtocol, setLiveProtocol,
   } = page;
   const {
@@ -49,47 +43,51 @@ export default function ConsolePage() {
 
   if (!page.isAuthenticated) return null;
 
+  // ZoneMinder's runtime states; Alarm/Alert are the ones an operator must
+  // see without hunting for them.
+  const alarmCount = filteredMonitors.filter((m) => {
+    const st = data.runtimeById[m.id]?.status;
+    return st === 'Alarm' || st === 'Alert';
+  }).length;
+
   return (
     <AppShell title={t('Console')}>
-      <main className="flex-1 p-4 sm:p-6 overflow-auto min-w-0">
-        {/* Filter bar — shared across Console / Montage / Montage Review. */}
-        <div className="mb-4">
-          <MonitorFilterBar monitors={monitors} onChange={setFilteredMonitors} />
-        </div>
-
-        {/* Overview — plain readings; see ConsoleSummary for why they are
-            not cards. Only disk pressure and live recording take a colour. */}
-        <ConsoleSummary
-          label={t('Overview')}
-          stats={[
+      {/* The wall is the page: no padding, no panel around the cameras, and
+          the chrome is one line above them. See docs/DESIGN.md. */}
+      <main className="flex-1 min-h-0 min-w-0 flex flex-col">
+        <ConsoleStatusLine
+          running={isSystemRunning ?? null}
+          activeFilters={activeFilterCount}
+          protocol={liveProtocol}
+          onProtocol={setLiveProtocol}
+          readings={[
             {
-              label: t('Monitors'),
-              value: filteredMonitors.length,
-              detail: t('{{count}} active', { count: activeMonitors.length }),
-            },
-            {
-              label: t('Events (24h)'),
-              value: eventCount24h,
+              label: t('Cameras'),
+              value: monitors.length === filteredMonitors.length
+                ? `${filteredMonitors.length}`
+                : `${filteredMonitors.length}/${monitors.length}`,
             },
             {
               label: t('Recording'),
-              value: recordingMonitors.length,
-              detail: t('cameras'),
-              mark: recordingMonitors.length > 0 ? (
-                <span
-                  aria-hidden
-                  className="w-2 h-2 rounded-full bg-recording self-center"
-                />
-              ) : undefined,
+              value: `${recordingMonitors.length}`,
+              mark: recordingMonitors.length > 0
+                ? <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-recording self-center" />
+                : undefined,
             },
             {
-              label: t('Storage'),
+              label: t('Alarms'),
+              value: `${alarmCount}`,
+              tone: alarmCount > 0 ? 'danger' : 'normal',
+            },
+            {
+              label: t('Events (24h)'),
+              value: `${eventCount24h}`,
+            },
+            {
+              label: t('Disk'),
               value: systemStats?.disk_usage_percent != null
                 ? `${systemStats.disk_usage_percent.toFixed(0)}%`
                 : '—',
-              detail: systemStats?.free_disk != null
-                ? t('{{size}} free', { size: formatGB(systemStats.free_disk) })
-                : undefined,
               tone: systemStats?.disk_usage_percent == null
                 ? 'normal'
                 : systemStats.disk_usage_percent > 90
@@ -99,123 +97,41 @@ export default function ConsolePage() {
                     : 'normal',
             },
           ]}
+          filterPanel={<MonitorFilterBar monitors={monitors} onChange={noop} />}
+          systemPanel={
+            <SystemStatus daemons={daemons} isRunning={isSystemRunning} stats={systemStats} />
+          }
         />
 
-        {/* Main Grid */}
-        <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
-          {/* Monitor Grid - takes 8 columns */}
-          <div className="xl:col-span-8 min-w-0">
-            <Panel
-              title={t('Monitors')}
-              icon={<Monitor size={16} />}
-              action={
-                <div role="group" aria-label={t('Thumbnail mode')} className="flex items-center gap-1 bg-surface rounded p-0.5 border border-border-subtle">
-                  <button
-                    type="button"
-                    aria-pressed={liveProtocol === 'webrtc'}
-                    aria-label={t('WebRTC live thumbnails')}
-                    onClick={() => setLiveProtocol('webrtc')}
-                    className={clsx(
-                      'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
-                      liveProtocol === 'webrtc'
-                        ? 'bg-cyan/20 text-cyan'
-                        : 'text-text-muted hover:text-text-primary',
-                    )}
-                    title={t('WebRTC live thumbnails')}
-                  >
-                    <Wifi size={10} aria-hidden />
-                    RTC
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={liveProtocol === 'hls'}
-                    aria-label={t('HLS live thumbnails')}
-                    onClick={() => setLiveProtocol('hls')}
-                    className={clsx(
-                      'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
-                      liveProtocol === 'hls'
-                        ? 'bg-cyan/20 text-cyan'
-                        : 'text-text-muted hover:text-text-primary',
-                    )}
-                    title={t('HLS live thumbnails')}
-                  >
-                    <Radio size={10} aria-hidden />
-                    HLS
-                  </button>
-                  <button
-                    type="button"
-                    aria-pressed={liveProtocol === null}
-                    aria-label={t('Static thumbnails (no streaming)')}
-                    onClick={() => setLiveProtocol(null)}
-                    className={clsx(
-                      'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium transition-colors',
-                      liveProtocol === null
-                        ? 'bg-text-muted/20 text-text-secondary'
-                        : 'text-text-muted hover:text-text-primary',
-                    )}
-                    title={t('Static thumbnails (no streaming)')}
-                  >
-                    <VideoOff size={10} aria-hidden />
-                    {t('Off')}
-                  </button>
-                </div>
-              }
+        <div className="flex-1 min-h-0 flex">
+          <section aria-label={t('Cameras')} className="flex-1 min-w-0 min-h-0 p-1">
+            <QueryState
+              isLoading={loading.monitors}
+              isError={data.isError}
+              error={data.error}
+              onRetry={data.refetch}
+              empty={filteredMonitors.length === 0}
+              emptyMessage={monitors.length === 0 ? t('No monitors configured') : t('No monitors match the current filter')}
             >
-              <QueryState
-                isLoading={loading.monitors}
-                isError={data.isError}
-                error={data.error}
-                onRetry={data.refetch}
-                empty={filteredMonitors.length === 0}
-                emptyMessage={monitors.length === 0 ? t('No monitors configured') : t('No monitors match the current filter')}
-              >
-                <RequirePerm feature="stream" level="View" fallback="message">
-                  <JustifiedMonitorGrid
-                    monitors={filteredMonitors.slice(0, 9)}
-                    liveSessions={liveSessions}
-                    liveProtocol={liveProtocol}
-                    data={data}
-                  />
-                </RequirePerm>
-              </QueryState>
+              <RequirePerm feature="stream" level="View" fallback="message">
+                <JustifiedMonitorGrid
+                  monitors={filteredMonitors}
+                  liveSessions={liveSessions}
+                  liveProtocol={liveProtocol}
+                  data={data}
+                />
+              </RequirePerm>
+            </QueryState>
+          </section>
 
-              {filteredMonitors.length > 9 && (
-                <div className="mt-4 text-center">
-                  <Link
-                    to="/monitors"
-                    className="text-sm text-cyan hover:text-cyan-dim transition-colors"
-                  >
-                    {t('View all {{count}} monitors →', { count: filteredMonitors.length })}
-                  </Link>
-                </div>
-              )}
-            </Panel>
-          </div>
-
-          {/* Right sidebar - takes 4 columns */}
-          <div className="xl:col-span-4 space-y-6 min-w-0">
-            {/* System Status */}
-            <Panel title={t('System')} icon={<Activity size={16} />}>
-              <SystemStatus
-                daemons={daemons}
-                isRunning={isSystemRunning}
-                stats={systemStats}
-              />
-            </Panel>
-
-            {/* Recent Events */}
-            <Panel
-              title={t('Recent Events')}
-              icon={<Video size={16} />}
-              action={
-                <span className="text-xs font-mono text-text-muted">
-                  {t('{{count}} total', { count: eventCount24h })}
-                </span>
-              }
-            >
-              <EventsFeed events={events} isLoading={loading.events} />
-            </Panel>
-          </div>
+          <ActivityRail
+            title={t('Recent Events')}
+            total={`${eventCount24h}`}
+            footerHref="/events"
+            footerLabel={t('All events →')}
+          >
+            <EventsFeed events={events} isLoading={loading.events} />
+          </ActivityRail>
         </div>
       </main>
       <SkinHint />
@@ -256,18 +172,27 @@ function JustifiedMonitorGrid({
   data,
 }: JustifiedMonitorGridProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const [containerWidth, setContainerWidth] = useState(0);
+  const [box, setBox] = useState({ width: 0, height: 0 });
 
+  // The shell's content column is exactly one viewport tall, so the
+  // element's own box is the space the wall has. The viewport fallback
+  // covers a shell that has not laid out yet.
   useEffect(() => {
     const el = containerRef.current;
     if (!el) return;
-    setContainerWidth(el.getBoundingClientRect().width);
-    const ro = new ResizeObserver((entries) => {
-      // Use contentRect for the inner width (excluding padding).
-      setContainerWidth(entries[0].contentRect.width);
-    });
+    const measure = () => {
+      const r = el.getBoundingClientRect();
+      const height = r.height > 0 ? r.height : Math.max(0, window.innerHeight - r.top - 8);
+      setBox({ width: r.width, height });
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
     ro.observe(el);
-    return () => ro.disconnect();
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
   }, []);
 
   // Tiles + their displayed (post-rotation) aspect.
@@ -279,20 +204,18 @@ function JustifiedMonitorGrid({
     return { data: m, aspect };
   });
 
-  // Don't compute until we know the container width — avoids a flash
-  // of mis-sized tiles before the first ResizeObserver entry lands.
-  const rows = containerWidth > 0
-    ? justifyRows(tiles, containerWidth, {
-        targetHeight: 360,
-        maxHeight: 560,
-        gap: 16,
-      })
-    : [];
+  // Don't compute until we know the container size — avoids a flash of
+  // mis-sized tiles before the first ResizeObserver entry lands.
+  //
+  // A wall you have to scroll is not a wall: `packWall` chooses the row
+  // count that makes the cameras as large as they can be inside the space
+  // that is actually on screen.
+  const rows = packWall(tiles, box.width, box.height, { gap: GAP, ribbon: RIBBON_HEIGHT });
 
   return (
-    <div ref={containerRef} className="flex flex-col gap-4">
+    <div ref={containerRef} className="h-full overflow-auto flex flex-col justify-center gap-4">
       {rows.map((row, rowIdx) => (
-        <div key={rowIdx} className="flex gap-4">
+        <div key={rowIdx} className="flex gap-4 justify-center">
           {row.tiles.map(({ data: monitor, width }) => (
             <MonitorThumbnail
               key={monitor.id}
@@ -310,3 +233,8 @@ function JustifiedMonitorGrid({
     </div>
   );
 }
+
+/** Height of the name + activity ribbon under each tile's video. */
+const RIBBON_HEIGHT = 58;
+const GAP = 16;
+

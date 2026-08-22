@@ -6,15 +6,11 @@ import {
   Search,
   Filter,
   RefreshCw,
-  Calendar,
   Clock,
-  Monitor,
   ChevronLeft,
   ChevronRight,
-  Tag as TagIcon,
   X,
   Download,
-  Layers,
   FilterX,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
@@ -28,19 +24,24 @@ import { formatDuration } from '@/features/events/duration';
 import { useEventsListPage } from '@/features/events/useEventsListPage';
 import { EventCard } from '../components/EventCard';
 import { EventsTable } from '../components/EventsTable';
+import { ToolbarDisclosure } from '../components/ToolbarDisclosure';
 import { useEventsColumnsStore } from '@/stores/eventsColumns';
 
 const field = clsx(
-  'bg-surface border border-border-subtle rounded-lg',
-  'text-text-primary placeholder:text-text-muted',
-  'focus:outline-none focus:border-cyan/50 transition-colors',
+  'bg-surface border border-border-subtle rounded',
+  'text-fg placeholder:text-fg-faint',
+  'focus:outline-none focus:border-accent transition-colors',
 );
-const toolBtn = 'p-2 rounded-lg bg-surface border border-border-subtle text-text-muted hover:text-text-primary hover:border-cyan/50 transition-colors disabled:opacity-50';
+const toolBtn = 'p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-50';
 
 /**
- * Events list — Mission Control. Filter toolbar (group, monitor, cause,
- * start ≥ / ≤, notes, tag, archived), last-hour hint, totals, card list,
- * bulk bar and pagination. Every filter lives in the URL.
+ * Events list — the modern skin.
+ *
+ * An operator arrives here to scan: the table is the page, and it starts at
+ * the top of the viewport rather than below three rows of controls. The
+ * query line above it holds the two filters used on nearly every visit
+ * (name, monitor) plus the archive switch; the other seven live behind
+ * Filters, which counts how many are narrowing the list (docs/DESIGN.md).
  */
 export default function EventsListPage() {
   const { t } = useTranslation();
@@ -71,221 +72,173 @@ export default function EventsListPage() {
 
   if (!isAuthenticated) return null;
 
+  // What is actually narrowing the list right now — the number the Filters
+  // button shows, so a filter set from a deep link is never invisible.
+  const activeFilters = [
+    groupFilter !== 'all', causeFilter !== '', dateInputValue !== '',
+    endInputValue !== '', notesQuery !== '', tagFilter !== 'all',
+  ].filter(Boolean).length;
+
   return (
     <AppShell title={t('Events')}>
-      <main className="flex-1 p-6 overflow-auto">
-        {/* Toolbar */}
-        <div className="flex items-start justify-between gap-4 mb-6">
-          <div className="flex items-center gap-3 flex-wrap">
-            <div className="relative">
-              <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-              <input
-                type="text"
-                aria-label={t('Name contains')}
-                placeholder={t('Name contains…')}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className={clsx(field, 'ps-10 pe-4 py-2 w-56')}
-              />
-            </div>
-
-            {groups.length > 0 && (
-              <div className="relative">
-                <select
-                  aria-label={t('Group')}
-                  value={groupFilter}
-                  onChange={(e) => setGroupFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                  className={clsx(field, 'ps-3 pe-8 py-2 appearance-none cursor-pointer')}
-                >
-                  <option value="all">{t('All Groups')}</option>
-                  {groups.map((g) => (
-                    <option key={g.id} value={g.id}>{g.name}</option>
-                  ))}
-                </select>
-                <Layers className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-              </div>
-            )}
-
-            <div className="relative">
-              <select
-                aria-label={t('Monitor')}
-                value={monitorFilter}
-                onChange={(e) => setMonitorFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                className={clsx(field, 'ps-3 pe-8 py-2 appearance-none cursor-pointer')}
-              >
-                <option value="all">{t('All Monitors')}</option>
-                {monitors.map((monitor) => (
-                  <option key={monitor.id} value={monitor.id}>{monitor.name}</option>
-                ))}
-              </select>
-              <Monitor className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-            </div>
-
-            {/* Substring match, server-side. The datalist only suggests the
-                causes on this page — the API has no distinct-values route. */}
-            <div className="relative">
-              <input
-                type="text"
-                list="events-cause-suggestions"
-                aria-label={t('Cause')}
-                placeholder={t('Cause contains…')}
-                value={causeFilter}
-                onChange={(e) => setCauseFilter(e.target.value)}
-                className={clsx(field, 'ps-3 pe-8 py-2 w-40')}
-              />
-              <datalist id="events-cause-suggestions">
-                {causes.map((cause) => <option key={cause} value={cause} />)}
-              </datalist>
-              <Filter className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-            </div>
-
-            {/* Start ≥ / Start ≤ — local wall-clock datetimes */}
-            <div className="relative">
-              <Calendar className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-              <input
-                type="datetime-local"
-                aria-label={t('Events starting after')}
-                value={dateInputValue}
-                onChange={(e) => setDateInput(e.target.value)}
-                className={clsx(field, 'ps-10 pe-3 py-2')}
-              />
-            </div>
-            <input
-              type="datetime-local"
-              aria-label={t('Events starting before')}
-              title={t('The API bounds the end time, so an event still running at this instant is left out.')}
-              value={endInputValue}
-              onChange={(e) => setEndInput(e.target.value)}
-              className={clsx(field, 'px-3 py-2')}
-            />
-
+      <main className="flex-1 min-h-0 flex flex-col">
+        {/* The query line: everything you change often, in one row. */}
+        <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
+          <div className="relative">
+            <Search className="absolute start-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-faint" aria-hidden />
             <input
               type="text"
-              aria-label={t('Notes contain')}
-              placeholder={t('Notes contain…')}
-              value={notesQuery}
-              onChange={(e) => setNotesQuery(e.target.value)}
-              className={clsx(field, 'px-3 py-2 w-40 text-sm')}
+              aria-label={t('Name contains')}
+              placeholder={t('Name contains…')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={clsx(field, 'ps-7 pe-2 py-1 w-44 text-sm')}
             />
-
-            <div className="relative">
-              <select
-                aria-label={t('Tag')}
-                value={tagFilter}
-                onChange={(e) => setTagFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                className={clsx(field, 'ps-3 pe-8 py-2 appearance-none cursor-pointer')}
-              >
-                <option value="all">{t('All Tags')}</option>
-                {tags.map((tag) => (
-                  <option key={tag.id} value={tag.id}>
-                    {tag.name}
-                    {tag.event_count != null ? ` (${tag.event_count})` : ''}
-                  </option>
-                ))}
-              </select>
-              <TagIcon className="absolute end-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted pointer-events-none" />
-            </div>
-
-            <div className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
-              {(['all', 'unarchived', 'archived'] as const).map((status) => (
-                <button
-                  key={status}
-                  onClick={() => setArchivedFilter(status)}
-                  className={clsx(
-                    'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                    archivedFilter === status ? 'bg-cyan/20 text-cyan' : 'text-text-muted hover:text-text-primary',
-                  )}
-                >
-                  {archivedLabel[status]}
-                </button>
-              ))}
-            </div>
-
-            <button type="button" onClick={resetFilters} className={toolBtn} aria-label={t('Reset filters')} title={t('Reset filters')}>
-              <FilterX className="w-4 h-4" />
-            </button>
           </div>
 
-          <div className="flex items-center gap-2 shrink-0">
-            <label className="flex items-center gap-1.5 text-xs text-text-muted">
-              <span className="font-mono uppercase tracking-[0.16em]">{t('Per page')}</span>
-              <select
-                aria-label={t('Events per page')}
-                value={pageSize}
-                onChange={(e) => setPageSize(Number(e.target.value))}
-                className={clsx(field, 'px-2 py-2 text-sm')}
-              >
-                {pageSizeOptions.map((n) => (
-                  <option key={n} value={n}>{n}</option>
-                ))}
-              </select>
-            </label>
-
-            <ColumnChooser variant="modern" />
-
-            {/* Legacy "Filter" — open a new saved filter seeded with these terms */}
-            <Link
-              to="/filters"
-              search={filterLinkSearch}
-              className={clsx(toolBtn, 'inline-flex items-center gap-1.5 text-sm')}
-              title={t('Save these conditions as a filter')}
-            >
-              <Filter className="w-4 h-4" />
-              {t('Filter')}
-            </Link>
-
-            <button type="button" onClick={exportCsv} disabled={events.length === 0} className={toolBtn} aria-label={t('Export visible events as CSV')} title={t('Export visible events as CSV')}>
-              <Download className="w-4 h-4" />
-            </button>
-
-            <button type="button" onClick={() => refetch()} className={toolBtn} aria-label={t('Refresh events')}>
-              <RefreshCw className="w-4 h-4" />
-            </button>
-          </div>
-        </div>
-
-        {showDefaultHourHint && (
-          <div
-            role="status"
-            data-testid="default-hour-hint"
-            className="mb-4 flex items-center justify-between gap-2 px-3 py-2 rounded-lg border border-amber/40 bg-amber/10 text-amber text-sm"
+          <select
+            aria-label={t('Monitor')}
+            value={monitorFilter}
+            onChange={(e) => setMonitorFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+            className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
           >
-            <span className="flex items-center gap-2">
-              <Clock size={14} />
-              {t('Showing events from the last hour only')}
-            </span>
-            <button
-              type="button"
-              onClick={clearDefaultDateFilter}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded text-xs hover:bg-amber/20 transition-colors"
-            >
-              <X size={12} />
-              {t('Clear')}
-            </button>
+            <option value="all">{t('All Monitors')}</option>
+            {monitors.map((monitor) => (
+              <option key={monitor.id} value={monitor.id}>{monitor.name}</option>
+            ))}
+          </select>
+
+          <div role="group" aria-label={t('Archive state')} className="shrink-0 flex items-center gap-0.5 rounded border border-border-subtle p-0.5">
+            {(['all', 'unarchived', 'archived'] as const).map((status) => (
+              <button
+                key={status}
+                type="button"
+                aria-pressed={archivedFilter === status}
+                onClick={() => setArchivedFilter(status)}
+                className={clsx(
+                  'px-2 py-0.5 rounded text-xs transition-colors',
+                  archivedFilter === status ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
+              >
+                {archivedLabel[status]}
+              </button>
+            ))}
           </div>
-        )}
 
-        <div className="mb-4 flex items-center justify-between text-sm text-text-muted">
-          <span>
-            {t('Showing {{shown}} of {{total}} events', { shown: events.length, total })}
-          </span>
-          {events.length > 0 && (
-            <span className="flex items-center gap-3 font-mono text-xs">
-              <span data-testid="modern-total-duration">
-                {t('Σ Duration {{duration}}', { duration: formatDuration(totals.duration) })}
-              </span>
-              <span data-testid="modern-total-disk">
-                {t('Σ Disk {{size}}', { size: formatBytes(totals.disk) })}
-              </span>
-            </span>
-          )}
-        </div>
+          <ToolbarDisclosure label={t('Filters')} icon={Filter} count={activeFilters}>
+            <div className="grid grid-cols-2 gap-3">
+              {groups.length > 0 && (
+                <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                  {t('Group')}
+                  <select
+                    aria-label={t('Group')}
+                    value={groupFilter}
+                    onChange={(e) => setGroupFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                    className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
+                  >
+                    <option value="all">{t('All Groups')}</option>
+                    {groups.map((g) => (
+                      <option key={g.id} value={g.id}>{g.name}</option>
+                    ))}
+                  </select>
+                </label>
+              )}
 
-        <div className="flex items-center justify-between gap-3 mb-3">
-          {view === 'cards'
-            ? <EventsSortBar sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
-            : <span />}
-          <div role="group" aria-label={t('List layout')} className="flex items-center gap-1 rounded border border-border-subtle bg-surface p-0.5">
+              {/* Substring match, server-side. The datalist only suggests the
+                  causes on this page — the API has no distinct-values route. */}
+              <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                {t('Cause')}
+                <input
+                  type="text"
+                  list="events-cause-suggestions"
+                  aria-label={t('Cause')}
+                  placeholder={t('Cause contains…')}
+                  value={causeFilter}
+                  onChange={(e) => setCauseFilter(e.target.value)}
+                  className={clsx(field, 'px-2 py-1 text-sm')}
+                />
+                <datalist id="events-cause-suggestions">
+                  {causes.map((cause) => <option key={cause} value={cause} />)}
+                </datalist>
+              </label>
+
+              <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                {t('Events starting after')}
+                <input
+                  type="datetime-local"
+                  aria-label={t('Events starting after')}
+                  value={dateInputValue}
+                  onChange={(e) => setDateInput(e.target.value)}
+                  className={clsx(field, 'px-2 py-1 text-sm')}
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                {t('Events starting before')}
+                <input
+                  type="datetime-local"
+                  aria-label={t('Events starting before')}
+                  title={t('The API bounds the end time, so an event still running at this instant is left out.')}
+                  value={endInputValue}
+                  onChange={(e) => setEndInput(e.target.value)}
+                  className={clsx(field, 'px-2 py-1 text-sm')}
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                {t('Notes contain')}
+                <input
+                  type="text"
+                  aria-label={t('Notes contain')}
+                  placeholder={t('Notes contain…')}
+                  value={notesQuery}
+                  onChange={(e) => setNotesQuery(e.target.value)}
+                  className={clsx(field, 'px-2 py-1 text-sm')}
+                />
+              </label>
+
+              <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                {t('Tag')}
+                <select
+                  aria-label={t('Tag')}
+                  value={tagFilter}
+                  onChange={(e) => setTagFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
+                  className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
+                >
+                  <option value="all">{t('All Tags')}</option>
+                  {tags.map((tag) => (
+                    <option key={tag.id} value={tag.id}>
+                      {tag.name}
+                      {tag.event_count != null ? ` (${tag.event_count})` : ''}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            </div>
+
+            <div className="mt-3 pt-3 border-t border-border-subtle flex items-center justify-between">
+              <Link
+                to="/filters"
+                search={filterLinkSearch}
+                className="text-xs text-accent hover:underline"
+                title={t('Save these conditions as a filter')}
+              >
+                {t('Save these conditions as a filter')}
+              </Link>
+              <button
+                type="button"
+                onClick={resetFilters}
+                className="inline-flex items-center gap-1 text-xs text-fg-dim hover:text-fg transition-colors"
+              >
+                <FilterX className="w-3.5 h-3.5" aria-hidden />
+                {t('Reset filters')}
+              </button>
+            </div>
+          </ToolbarDisclosure>
+
+          <span className="ms-auto" />
+
+          <div role="group" aria-label={t('List layout')} className="shrink-0 flex items-center gap-0.5 rounded border border-border-subtle p-0.5">
             {(['table', 'cards'] as const).map((mode) => (
               <button
                 key={mode}
@@ -293,7 +246,7 @@ export default function EventsListPage() {
                 aria-pressed={view === mode}
                 onClick={() => setView(mode)}
                 className={clsx(
-                  'px-2 py-1 rounded text-xs font-medium transition-colors',
+                  'px-2 py-0.5 rounded text-xs transition-colors',
                   view === mode ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
                 )}
               >
@@ -301,8 +254,61 @@ export default function EventsListPage() {
               </button>
             ))}
           </div>
+
+          <ColumnChooser variant="modern" />
+
+          <label className="shrink-0 flex items-center gap-1 text-xs text-fg-dim">
+            {t('Per page')}
+            <select
+              aria-label={t('Events per page')}
+              value={pageSize}
+              onChange={(e) => setPageSize(Number(e.target.value))}
+              className={clsx(field, 'px-1 py-0.5 text-xs cursor-pointer')}
+            >
+              {pageSizeOptions.map((n) => (
+                <option key={n} value={n}>{n}</option>
+              ))}
+            </select>
+          </label>
+
+          <button type="button" onClick={exportCsv} disabled={events.length === 0} className={toolBtn} aria-label={t('Export visible events as CSV')} title={t('Export visible events as CSV')}>
+            <Download className="w-4 h-4" />
+          </button>
+
+          <button type="button" onClick={() => refetch()} className={toolBtn} aria-label={t('Refresh events')}>
+            <RefreshCw className="w-4 h-4" />
+          </button>
         </div>
 
+        {showDefaultHourHint && (
+          <div
+            role="status"
+            data-testid="default-hour-hint"
+            className="flex items-center justify-between gap-2 px-3 py-1.5 border-b border-border-subtle bg-warn/10 text-warn text-sm"
+          >
+            <span className="flex items-center gap-2">
+              <Clock size={14} aria-hidden />
+              {t('Showing events from the last hour only')}
+            </span>
+            <button
+              type="button"
+              onClick={clearDefaultDateFilter}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs hover:bg-warn/20 transition-colors"
+            >
+              <X size={12} />
+              {t('Clear')}
+            </button>
+          </div>
+        )}
+
+        {/* The list is the page: it owns the remaining height and scrolls
+            inside itself, so the query line and the pager stay put. */}
+        <div className="flex-1 min-h-0 overflow-auto p-3">
+          {view === 'cards' && (
+            <div className="mb-3">
+              <EventsSortBar sortField={sortField} sortDir={sortDir} onToggle={toggleSort} />
+            </div>
+          )}
         <QueryState
           isLoading={isLoading}
           isError={!!error}
@@ -345,16 +351,31 @@ export default function EventsListPage() {
             </div>
           )}
         </QueryState>
+        </div>
 
         <BulkActionBar selectedIds={selectedIds} onClear={clearSelection} />
 
-        {totalPages > 1 && (
-          <div className="flex items-center justify-center gap-2 mt-6">
+        {/* Status bar: what this page is showing, and how to leave it. */}
+        <div className="flex items-center gap-3 px-3 py-2 shrink-0 border-t border-border-subtle bg-surface text-xs text-fg-dim">
+          <span>{t('Showing {{shown}} of {{total}} events', { shown: events.length, total })}</span>
+          {events.length > 0 && (
+            <>
+              <span data-testid="modern-total-duration" className="font-mono tabular-nums">
+                {t('Σ Duration {{duration}}', { duration: formatDuration(totals.duration) })}
+              </span>
+              <span data-testid="modern-total-disk" className="font-mono tabular-nums">
+                {t('Σ Disk {{size}}', { size: formatBytes(totals.disk) })}
+              </span>
+            </>
+          )}
+          <div className="ms-auto flex items-center gap-2">
+          {totalPages > 1 && (
+            <>
             <button
               onClick={prevPage}
               disabled={page === 1}
               aria-label={t('Previous page')}
-              className={clsx('p-2 rounded-lg border bg-surface border-border-subtle transition-colors', page === 1 ? 'text-text-muted cursor-not-allowed' : 'text-text-primary hover:border-cyan/50')}
+              className={clsx('p-1.5 rounded border border-border-subtle transition-colors', page === 1 ? 'text-fg-faint cursor-not-allowed' : 'text-fg hover:border-accent')}
             >
               <ChevronLeft className="w-4 h-4 rtl:-scale-x-100" />
             </button>
@@ -372,10 +393,10 @@ export default function EventsListPage() {
                     aria-label={t('Go to page {{page}}', { page: pageNum })}
                     aria-current={page === pageNum ? 'page' : undefined}
                     className={clsx(
-                      'w-8 h-8 rounded-lg text-sm font-medium transition-colors',
+                      'w-7 h-7 rounded text-sm tabular-nums transition-colors',
                       page === pageNum
-                        ? 'bg-cyan text-void'
-                        : 'bg-surface border border-border-subtle text-text-secondary hover:text-text-primary hover:border-cyan/50',
+                        ? 'bg-accent text-accent-fg'
+                        : 'border border-border-subtle text-fg-muted hover:text-fg hover:border-accent',
                     )}
                   >
                     {pageNum}
@@ -388,14 +409,16 @@ export default function EventsListPage() {
               onClick={nextPage}
               disabled={page === totalPages}
               aria-label={t('Next page')}
-              className={clsx('p-2 rounded-lg border bg-surface border-border-subtle transition-colors', page === totalPages ? 'text-text-muted cursor-not-allowed' : 'text-text-primary hover:border-cyan/50')}
+              className={clsx('p-1.5 rounded border border-border-subtle transition-colors', page === totalPages ? 'text-fg-faint cursor-not-allowed' : 'text-fg hover:border-accent')}
             >
               <ChevronRight className="w-4 h-4 rtl:-scale-x-100" />
             </button>
 
             <JumpToPage page={page} totalPages={totalPages} onJump={setPage} />
+            </>
+          )}
           </div>
-        )}
+        </div>
       </main>
     </AppShell>
   );

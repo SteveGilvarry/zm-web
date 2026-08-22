@@ -83,7 +83,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
   if (eventLoading || s.eventError) {
     return (
       <AppShell title={t('Event')}>
-        <main className="flex-1 p-6">
+        <main className="flex-1 p-6 overflow-auto">
           <QueryState isLoading={eventLoading} isError={!!s.eventError} error={s.eventError} />
         </main>
       </AppShell>

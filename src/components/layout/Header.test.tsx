@@ -67,34 +67,24 @@ describe('Header — title', () => {
   });
 });
 
-describe('Header — system status strip', () => {
-  it('renders LOAD/CPU/MEM/DISK once stats arrive', async () => {
+describe('Header — telemetry', () => {
+  it('leaves system readings to the page and keeps the chrome quiet', async () => {
     renderWithProviders(<Header />);
-    // Strip uses uppercase short-form labels. Some (CPU) also appear in
-    // the hover tooltip, hence getAllByText.
-    await waitFor(() => expect(screen.getByText('LOAD')).toBeInTheDocument());
-    expect(screen.getByText('MEM')).toBeInTheDocument();
-    expect(screen.getByText('DISK')).toBeInTheDocument();
-    expect(screen.getAllByText('CPU').length).toBeGreaterThanOrEqual(1);
-    // CPU 42% from the default stats — appears in strip + tooltip detail
-    expect(screen.getAllByText('42%').length).toBeGreaterThanOrEqual(1);
-  });
-
-  it('renders the hover tooltip with the same detail values', async () => {
-    renderWithProviders(<Header />);
-    await waitFor(() => screen.getByText('42%'));
-    const tooltip = screen.getByRole('tooltip');
-    // Tooltip has its own detail row showing the version
-    expect(tooltip).toHaveTextContent(/v1\.36\.34/);
-    // Memory detail row shows formatted bytes ("4.0 GB / 8.0 GB")
-    expect(tooltip).toHaveTextContent(/4\.0 GB \/ 8\.0 GB/);
+    // The clock proves the header rendered and the stats query had time to
+    // land; the readings themselves now live on the console's status line.
+    await waitFor(() => expect(screen.getByText(/v1\.36\.34/)).toBeInTheDocument());
+    expect(screen.queryByText('LOAD')).toBeNull();
+    expect(screen.queryByText('MEM')).toBeNull();
+    expect(screen.queryByText('DISK')).toBeNull();
+    expect(screen.queryByRole('tooltip')).toBeNull();
   });
 });
 
 describe('Header — connection indicator', () => {
-  it('shows "Connected" when health_check is OK', async () => {
+  it('says nothing while the backend is reachable', async () => {
     renderWithProviders(<Header />);
-    await waitFor(() => expect(screen.getByText(/connected/i)).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText(/v1\.36\.34/)).toBeInTheDocument());
+    expect(screen.queryByText(/disconnected/i)).toBeNull();
   });
 
   it('shows "Disconnected" when health_check fails', async () => {

@@ -396,25 +396,30 @@ function StreamVideo({
         </div>
       )}
 
-      {/* LIVE badge */}
+      {/* Live mark. On a wall where every tile is live, a pulsing badge on
+          each one is sixteen animations competing with the video, so the
+          compact form is a single dot with the label in its tooltip. */}
       {isConnected && (
         <div
           className={clsx(
-            'absolute top-1.5 start-1.5 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60',
-            compact && 'top-1 start-1',
+            'absolute flex items-center gap-1 rounded',
+            compact
+              ? 'top-1 start-1'
+              : 'top-1.5 start-1.5 px-1.5 py-0.5 bg-black/60',
           )}
+          title={compact ? `${t('LIVE')} · ${protocolLabel}` : undefined}
         >
-          <span className="relative flex h-1.5 w-1.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
-            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-crimson" />
-          </span>
-          <span className="text-[10px] font-mono font-bold text-white">
-            {t('LIVE')}
-          </span>
-          {(!compact || fallback) && (
-            <span className="text-[10px] font-mono text-text-muted">
-              &middot; {protocolLabel}
-            </span>
+          <span
+            className="inline-flex rounded-full h-1.5 w-1.5 bg-danger"
+            aria-label={compact ? t('LIVE') : undefined}
+          />
+          {!compact && (
+            <>
+              <span className="text-xs font-mono text-white">{t('LIVE')}</span>
+              <span className="text-xs font-mono text-white/70">
+                &middot; {protocolLabel}
+              </span>
+            </>
           )}
         </div>
       )}

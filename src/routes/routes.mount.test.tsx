@@ -73,8 +73,12 @@ describe('modern shell', () => {
     const nav = screen.getByRole('navigation');
     expect(within(nav).getByRole('link', { name: /console/i })).toHaveAttribute('href', '/');
     expect(within(nav).getByRole('link', { name: /^events$/i })).toHaveAttribute('href', '/events');
-    // The header's live status strip is part of the chrome, not the page.
-    expect(await screen.findByText(/LOAD/)).toBeInTheDocument();
+    // Nav is grouped by task rather than being one flat list of links.
+    expect(within(nav).getByRole('heading', { name: 'Watch', level: 2 })).toBeInTheDocument();
+    expect(within(nav).getByRole('heading', { name: 'Investigate', level: 2 })).toBeInTheDocument();
+    // The header carries the clock and the version — the system readings
+    // belong to the console, not to the chrome above every page.
+    expect(await screen.findByText(/^\d{2}:\d{2}:\d{2}$/)).toBeInTheDocument();
   });
 
   it('renders the classic top nav instead when the classic skin is active', async () => {

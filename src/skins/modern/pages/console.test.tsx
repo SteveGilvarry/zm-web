@@ -1,11 +1,11 @@
 /**
  * Console (`/`) in the modern skin, rendered through the real router.
  *
- * The page is the app's landing screen: four stat cards over a justified
- * grid of live monitor tiles, with a System panel and a recent-events feed
- * down the right. Everything it shows comes from `useConsoleData`'s eight
- * queries, so the tests here drive it end-to-end through MSW rather than
- * stubbing the hook.
+ * The page is the camera wall. One status line carries the readings and
+ * hides the system detail and the filter chips behind disclosures; the
+ * cameras fill the rest, with recent events in a rail beside them.
+ * Everything comes from `useConsoleData`'s eight queries, so these tests
+ * drive it end-to-end through MSW rather than stubbing the hook.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -43,25 +43,30 @@ beforeEach(() => {
 });
 
 /**
- * A StatCard exposes no landmark or accessible name, so reach it through
- * its subtitle (unique per card) and walk up to the card body.
+ * One reading in the console's status line, found by its label. Scoped to
+ * the region: "Cameras" also names the wall.
  */
-/**
- * One reading in the console's overview strip, found by its label. Scoped to
- * the region: "Monitors" also names a sidebar link and the tile panel.
- */
-async function summaryStat(label: string): Promise<HTMLElement> {
-  const overview = await screen.findByRole('region', { name: 'Overview' });
-  return within(overview).getByText(label).parentElement as HTMLElement;
+async function reading(label: string): Promise<HTMLElement> {
+  const line = await screen.findByRole('region', { name: 'Console status' });
+  return within(line).getByText(label).parentElement as HTMLElement;
 }
 
-/**
- * A Panel's body, reached from its `<h3>` title. The shell repeats some of
- * these words (the sidebar has a "System" section), so pin the level.
- */
-function panel(title: string): HTMLElement {
-  const heading = screen.getByRole('heading', { name: title, level: 3 });
-  return heading.parentElement!.parentElement!.parentElement as HTMLElement;
+/** The camera wall. */
+function wall(): HTMLElement {
+  return screen.getByRole('region', { name: 'Cameras' });
+}
+
+/** The recent-events rail. */
+function rail(): HTMLElement {
+  return screen.getByRole('complementary', { name: 'Recent Events' });
+}
+
+/** Opens one of the status line's disclosures and returns its panel. */
+async function disclose(button: string): Promise<HTMLElement> {
+  const user = userEvent.setup();
+  const line = await screen.findByRole('region', { name: 'Console status' });
+  await user.click(within(line).getByRole('button', { name: button }));
+  return line;
 }
 
 async function renderConsole() {
@@ -72,78 +77,78 @@ async function renderConsole() {
 }
 
 describe('Console — renders with data', () => {
-  it('summarises the fleet in the overview strip', async () => {
+  it('summarises the fleet in the status line', async () => {
     await renderConsole();
-    const overview = await screen.findByRole('region', { name: 'Overview' });
 
-    // Two seeded monitors, both capturing.
-    await waitFor(() => expect(screen.getByText('2 active')).toBeInTheDocument());
-    expect(within(await summaryStat('Monitors')).getByText('2')).toBeInTheDocument();
-
-    // Three seeded events, all inside the 24h count window.
-    expect(within(await summaryStat('Events (24h)')).getByText('3')).toBeInTheDocument();
-
-    // Only Front Door records (Driveway is recording: 'None').
-    expect(within(await summaryStat('Recording')).getByText('1')).toBeInTheDocument();
+    // Two seeded monitors, both capturing; only Front Door records.
+    expect(within(await reading('Cameras')).getByText('2')).toBeInTheDocument();
+    expect(within(await reading('Recording')).getByText('1')).toBeInTheDocument();
+    expect(within(await reading('Events (24h)')).getByText('3')).toBeInTheDocument();
+    expect(within(await reading('Alarms')).getByText('0')).toBeInTheDocument();
 
     // 500 GB of 1 TB used — under the 75% mark, so no colour.
-    expect(within(await summaryStat('Storage')).getByText('50%')).toBeInTheDocument();
-    const storage = within(overview).getByText('50%');
-    expect(storage).not.toHaveClass('text-warn');
-    expect(storage).not.toHaveClass('text-danger');
+    const disk = within(await reading('Disk')).getByText('50%');
+    expect(disk).not.toHaveClass('text-warn');
+    expect(disk).not.toHaveClass('text-danger');
   });
 
   it('renders one tile per monitor, linking into the watch page', async () => {
     await renderConsole();
 
-    const grid = panel('Monitors');
-    const frontDoor = await within(grid).findByRole('link', { name: /Front Door/ });
+    const frontDoor = await within(wall()).findByRole('link', { name: /Front Door/ });
     expect(frontDoor).toHaveAttribute('href', '/monitors/1');
-    expect(within(grid).getByRole('link', { name: /Driveway/ }))
+    expect(within(wall()).getByRole('link', { name: /Driveway/ }))
       .toHaveAttribute('href', '/monitors/2');
-    expect(within(grid).getAllByRole('link')).toHaveLength(2);
+    expect(within(wall()).getAllByRole('link')).toHaveLength(2);
   });
 
-  it('shows daemon health and the ZM version in the System panel', async () => {
+  it('keeps the system detail one click away instead of on screen', async () => {
     await renderConsole();
 
-    const system = panel('System');
-    await waitFor(() => expect(within(system).getByText('v1.37.64')).toBeInTheDocument());
-    expect(within(system).getByText('Running')).toBeInTheDocument();
-    expect(within(system).getByText('zmc -m 1')).toBeInTheDocument();
+    expect(screen.queryByText('zmc -m 1')).toBeNull();
+    const line = await disclose('System detail');
+
+    await waitFor(() => expect(within(line).getByText('v1.37.64')).toBeInTheDocument());
+    expect(within(line).getByText('zmc -m 1')).toBeInTheDocument();
     // used / total from the system stats fixture.
-    expect(within(system).getByText(/465\.7 GB \/ 931\.3 GB/)).toBeInTheDocument();
+    expect(within(line).getByText(/465\.7 GB \/ 931\.3 GB/)).toBeInTheDocument();
   });
 
-  it('lists the newest events in the feed with a total count', async () => {
+  it('lists the newest events in the rail with a total count', async () => {
     await renderConsole();
 
-    const feed = panel('Recent Events');
-    expect(await within(feed).findByRole('link', { name: /Event-101/ }))
+    expect(await within(rail()).findByRole('link', { name: /Event-101/ }))
       .toHaveAttribute('href', '/events/101');
-    expect(within(feed).getByRole('link', { name: /Event-102/ }))
+    expect(within(rail()).getByRole('link', { name: /Event-102/ }))
       .toHaveAttribute('href', '/events/102');
-    expect(within(feed).getByRole('link', { name: /Event-103/ }))
+    expect(within(rail()).getByRole('link', { name: /Event-103/ }))
       .toHaveAttribute('href', '/events/103');
-    expect(within(feed).getByText('3 total')).toBeInTheDocument();
+    expect(within(rail()).getByText('3')).toBeInTheDocument();
   });
 
-  it('caps the grid at nine tiles and links to the full list', async () => {
+  it('shows the whole fleet rather than the first nine cameras', async () => {
     db.monitors = Array.from({ length: 12 }, (_, i) =>
       makeMonitor({ id: i + 1, name: `Cam ${i + 1}`, sequence: i + 1 }),
     );
     await renderConsole();
 
-    const grid = panel('Monitors');
-    const overflow = await within(grid).findByRole('link', { name: 'View all 12 monitors →' });
-    expect(overflow).toHaveAttribute('href', '/monitors');
+    await waitFor(() => expect(within(wall()).getAllByRole('link')).toHaveLength(12));
+    const hrefs = within(wall()).getAllByRole('link').map((a) => a.getAttribute('href'));
+    expect(hrefs).toEqual(
+      Array.from({ length: 12 }, (_, i) => `/monitors/${i + 1}`),
+    );
+  });
 
-    // Nine tiles plus the overflow link — the 10th–12th cameras are not drawn.
-    const hrefs = within(grid).getAllByRole('link').map((a) => a.getAttribute('href'));
-    expect(hrefs).toEqual([
-      '/monitors/1', '/monitors/2', '/monitors/3', '/monitors/4', '/monitors/5',
-      '/monitors/6', '/monitors/7', '/monitors/8', '/monitors/9', '/monitors',
-    ]);
+  it('collapses the rail to give the wall the width', async () => {
+    const user = userEvent.setup();
+    await renderConsole();
+
+    await user.click(screen.getByRole('button', { name: 'Collapse Recent Events' }));
+    expect(rail()).toHaveAttribute('aria-label', 'Recent Events');
+    expect(within(rail()).queryByRole('link', { name: /Event-101/ })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Expand Recent Events' }));
+    expect(await within(rail()).findByRole('link', { name: /Event-101/ })).toBeInTheDocument();
   });
 });
 
@@ -159,8 +164,7 @@ describe('Console — empty and error states', () => {
     db.events = [];
     await renderConsole();
 
-    const feed = panel('Recent Events');
-    await waitFor(() => expect(within(feed).getByText('No recent events')).toBeInTheDocument());
+    await waitFor(() => expect(within(rail()).getByText('No recent events')).toBeInTheDocument());
   });
 
   it('surfaces a 500 on the monitor list with a retry', async () => {
@@ -196,10 +200,8 @@ describe('Console — empty and error states', () => {
     db.systemStatus = makeSystemStatus({ stats: undefined });
     await renderConsole();
 
-    // No stats to report: an em dash, and no free-space line under it.
-    expect(within(await screen.findByRole('region', { name: 'Overview' })).getByText('—'))
-      .toBeInTheDocument();
-    expect(screen.queryByText(/free$/)).toBeNull();
+    // No stats to report: an em dash where the percentage would be.
+    expect(within(await reading('Disk')).getByText('—')).toBeInTheDocument();
   });
 });
 
@@ -209,12 +211,11 @@ describe('Console — permissions', () => {
     expect((await screen.findAllByRole('heading', { name: /^Console$/ })).length)
       .toBeGreaterThan(0);
 
-    const grid = panel('Monitors');
     await waitFor(() =>
-      expect(within(grid).getByText('You do not have permission to view this.'))
+      expect(within(wall()).getByText('You do not have permission to view this.'))
         .toBeInTheDocument(),
     );
-    expect(within(grid).queryByRole('link', { name: /Front Door/ })).not.toBeInTheDocument();
+    expect(within(wall()).queryByRole('link', { name: /Front Door/ })).not.toBeInTheDocument();
   });
 
   it('still renders tiles for a view-only stream grant', async () => {
@@ -222,8 +223,7 @@ describe('Console — permissions', () => {
     expect((await screen.findAllByRole('heading', { name: /^Console$/ })).length)
       .toBeGreaterThan(0);
 
-    const grid = panel('Monitors');
-    expect(await within(grid).findByRole('link', { name: /Front Door/ })).toBeInTheDocument();
+    expect(await within(wall()).findByRole('link', { name: /Front Door/ })).toBeInTheDocument();
   });
 });
 
@@ -255,11 +255,13 @@ describe('Console — monitor filter bar', () => {
     const user = userEvent.setup();
     await renderConsole();
 
-    const grid = panel('Monitors');
-    await within(grid).findByRole('link', { name: /Front Door/ });
+    await within(wall()).findByRole('link', { name: /Front Door/ });
+
+    // The chips live behind the Filters disclosure now.
+    await user.click(screen.getByRole('button', { name: /^Filters/ }));
 
     // Both seeded monitors are capturing, so filtering to "disabled" empties
-    // the grid without emptying the underlying list.
+    // the wall without emptying the underlying list.
     await user.click(screen.getByRole('button', { name: 'Status filter' }));
     await user.click(
       within(screen.getByRole('listbox', { name: 'Status options' }))
@@ -270,8 +272,9 @@ describe('Console — monitor filter bar', () => {
     await waitFor(() =>
       expect(screen.getByText('No monitors match the current filter')).toBeInTheDocument(),
     );
-    // The stat card follows the filter too.
-    expect(screen.getByText('0 active')).toBeInTheDocument();
+    // The readings follow the filter too, and the button counts it.
+    expect(within(await reading('Cameras')).getByText('0/2')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^Filters/ })).toHaveTextContent('1');
 
     await user.click(screen.getByRole('button', { name: 'Reset all filters' }));
     expect(useMonitorFilterStore.getState().status).toEqual([]);
@@ -282,11 +285,15 @@ describe('Console — monitor filter bar', () => {
     // Console / Montage / Montage Review share the selection through
     // sessionStorage, so arriving with one already set must be honoured.
     useMonitorFilterStore.getState().setMonitorIds([2]);
+    const user = userEvent.setup();
     await renderConsole();
 
-    const grid = panel('Monitors');
-    expect(await within(grid).findByRole('link', { name: /Driveway/ })).toBeInTheDocument();
-    expect(within(grid).queryByRole('link', { name: /Front Door/ })).not.toBeInTheDocument();
+    // Applied on first paint, with the bar still closed — the wall reads the
+    // filter store, not the bar's callback.
+    expect(await within(wall()).findByRole('link', { name: /Driveway/ })).toBeInTheDocument();
+    expect(within(wall()).queryByRole('link', { name: /Front Door/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^Filters/ }));
     expect(screen.getByRole('button', { name: 'Monitor filter, 1 selected' })).toBeInTheDocument();
   });
 });
@@ -297,11 +304,10 @@ describe('Console — live session badges', () => {
     const user = userEvent.setup();
     await renderConsole();
 
-    // Static thumbnails is the branch that paints the LIVE badge.
+    // Static thumbnails is the branch that paints the live mark.
     await user.click(screen.getByRole('button', { name: 'Static thumbnails (no streaming)' }));
 
-    const grid = panel('Monitors');
-    await waitFor(() => expect(within(grid).getByText('LIVE')).toBeInTheDocument());
+    await waitFor(() => expect(within(wall()).getByLabelText('Live')).toBeInTheDocument());
   });
 
   it('shows the disk stats it is given', async () => {
@@ -310,10 +316,9 @@ describe('Console — live session badges', () => {
     });
     await renderConsole();
 
-    expect(await screen.findByText('65.2 GB free')).toBeInTheDocument();
-    const storage = within(await summaryStat('Storage')).getByText('93%');
-    expect(storage).toBeInTheDocument();
+    const disk = within(await reading('Disk')).getByText('93%');
+    expect(disk).toBeInTheDocument();
     // Past 90%: the reading itself is the message, so it takes the danger tone.
-    expect(storage).toHaveClass('text-danger');
+    expect(disk).toHaveClass('text-danger');
   });
 });

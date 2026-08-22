@@ -62,6 +62,14 @@ async function rows() {
   return screen.findByRole('link', { name: 'Download video for event 101' });
 }
 
+/**
+ * The seven occasional filters live behind the query line's Filters button
+ * now, so a test that touches one has to open it first.
+ */
+async function openFilters(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /^Filters/ }));
+}
+
 describe('EventsListPage — modern skin', () => {
   it('renders one row per event with monitor, cause, counts and archive state', async () => {
     renderRoute('/events');
@@ -181,10 +189,14 @@ describe('EventsListPage — modern skin', () => {
     await screen.findByRole('link', { name: 'Download video for event 102' });
 
     expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveValue('2');
+    expect(screen.getByRole('combobox', { name: 'Events per page' })).toHaveValue('5');
+    // Two of the URL's filters are behind the disclosure, and the button
+    // counts them so they are never applied invisibly.
+    expect(screen.getByRole('button', { name: /^Filters/ })).toHaveTextContent('2');
+    await openFilters(userEvent.setup());
     // An <input list=…> is a combobox, not a textbox.
     expect(screen.getByRole('combobox', { name: 'Cause' })).toHaveValue('Forced Web');
     expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('1');
-    expect(screen.getByRole('combobox', { name: 'Events per page' })).toHaveValue('5');
     expect(screen.getByRole('textbox', { name: 'Name contains' })).toHaveValue('Event');
     expect(screen.getByRole('button', { name: 'Id, sorted descending' })).toHaveAttribute(
       'aria-pressed',
@@ -197,6 +209,7 @@ describe('EventsListPage — modern skin', () => {
     renderRoute('/events?notes=delivery');
     await screen.findByRole('link', { name: 'Download video for event 103' });
 
+    await openFilters(userEvent.setup());
     expect(screen.getByRole('textbox', { name: 'Notes contain' })).toHaveValue('delivery');
     await waitFor(() => expect(urls.at(-1)!.searchParams.get('notes')).toBe('delivery'));
     // No "within this page" caveat: the total is the filtered total.
@@ -213,6 +226,7 @@ describe('EventsListPage — modern skin', () => {
     renderRoute('/events?tag=1');
     await rows();
 
+    await openFilters(userEvent.setup());
     expect(screen.getByRole('combobox', { name: 'Tag' })).toHaveValue('1');
     await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('1'));
     // Tag counts ride along in the option label.
@@ -269,9 +283,11 @@ describe('EventsListPage — modern skin', () => {
     renderRoute('/events?monitor_id=2&archived=true&notes=van');
     // No event on this page has "van" in its notes, so the list is empty —
     // the seeded link is built from the URL, not from the rows.
-    await screen.findByRole('link', { name: 'Filter' });
+    await screen.findByText('No events found');
+    await openFilters(userEvent.setup());
 
-    const href = screen.getByRole('link', { name: 'Filter' }).getAttribute('href')!;
+    const link = screen.getByRole('link', { name: 'Save these conditions as a filter' });
+    const href = link.getAttribute('href')!;
     const url = new URL(href, 'http://localhost');
     expect(url.pathname).toBe('/filters');
 
@@ -299,6 +315,7 @@ describe('EventsListPage — modern skin', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '2');
     await waitFor(() => expect(router.state.location.search).toEqual({ monitor_id: 2 }));
 
+    await openFilters(user);
     await user.type(screen.getByRole('combobox', { name: 'Cause' }), 'Forced Web');
     await waitFor(
       () => expect(router.state.location.search).toEqual({ monitor_id: 2, cause: 'Forced Web' }),
@@ -314,10 +331,11 @@ describe('EventsListPage — modern skin', () => {
     await waitFor(() => expect(router.state.location.search).toMatchObject({ group: 1 }));
 
     // "All" on each select (and an empty Cause box) removes the param again.
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), 'all');
     await user.clear(screen.getByRole('combobox', { name: 'Cause' }));
     await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), 'all');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), 'all');
+    await user.keyboard('{Escape}');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), 'all');
     await waitFor(() => expect(router.state.location.search).toEqual({}), { timeout: 3000 });
   });
 
@@ -388,6 +406,7 @@ describe('EventsListPage — modern skin', () => {
       { timeout: 3000 },
     );
 
+    await openFilters(user);
     await user.type(screen.getByRole('textbox', { name: 'Notes contain' }), 'van');
     await waitFor(
       () => expect(router.state.location.search).toMatchObject({ q: 'Event-102', notes: 'van' }),
@@ -400,6 +419,7 @@ describe('EventsListPage — modern skin', () => {
     const { router } = renderRoute('/events');
     await rows();
 
+    await openFilters(user);
     const after = screen.getByLabelText('Events starting after');
     await user.clear(after);
     await user.type(after, '2026-08-01T09:30');
@@ -412,11 +432,12 @@ describe('EventsListPage — modern skin', () => {
       expect(router.state.location.search).toMatchObject({ end: '2026-08-02T18:00' }),
     );
 
+    await user.click(screen.getByRole('button', { name: 'Reset filters' }));
+    await user.keyboard('{Escape}');
+
     await user.selectOptions(screen.getByRole('combobox', { name: 'Events per page' }), '50');
     await waitFor(() => expect(router.state.location.search).toMatchObject({ page_size: 50 }));
-
-    await user.click(screen.getByRole('button', { name: 'Reset filters' }));
-    // Reset clears the filters but leaves the page size and sort alone.
+    // Reset cleared the filters; the page size set afterwards survives.
     await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 50 }));
     expect(screen.queryByTestId('default-hour-hint')).toBeNull();
   });

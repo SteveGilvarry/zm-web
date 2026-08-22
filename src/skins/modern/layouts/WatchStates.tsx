@@ -8,7 +8,7 @@ export function WatchLoading() {
   const { t } = useTranslation();
   return (
     <AppShell title={t('Loading...')}>
-      <main className="flex-1 p-6">
+      <main className="flex-1 p-6 overflow-auto">
         <div className="animate-pulse space-y-6">
           <div className="aspect-video bg-surface rounded-xl" />
           <div className="grid grid-cols-3 gap-4">

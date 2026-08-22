@@ -1,6 +1,9 @@
-import { describe, expect, it, vi, beforeAll, afterAll } from 'vitest';
+import { describe, expect, it, vi, beforeAll, afterEach, afterAll } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { formatGB, useConsolePage } from './useConsolePage';
 
 // useConsoleData fires eight queries; the page hook only composes it, so
@@ -42,10 +45,19 @@ beforeAll(() => {
   });
 });
 afterAll(() => useAuthStore.getState().clearAuth());
+afterEach(() => useMonitorFilterStore.getState().reset());
+
+// The filter now reads the store, and reading it means the group queries run.
+const wrapper = ({ children }: { children: ReactNode }) =>
+  createElement(
+    QueryClientProvider,
+    { client: new QueryClient({ defaultOptions: { queries: { retry: false } } }) },
+    children,
+  );
 
 describe('useConsolePage', () => {
   it('starts with the full monitor list and derives active / recording counts', () => {
-    const { result } = renderHook(() => useConsolePage());
+    const { result } = renderHook(() => useConsolePage(), { wrapper });
     expect(result.current.isAuthenticated).toBe(true);
     expect(result.current.filteredMonitors).toHaveLength(3);
     expect(result.current.activeMonitors.map((m) => m.id)).toEqual([1, 3]);
@@ -53,9 +65,10 @@ describe('useConsolePage', () => {
     expect(result.current.liveProtocol).toBe('webrtc');
   });
 
-  it('re-derives from the filter-bar result and swaps it into filteredData', () => {
-    const { result } = renderHook(() => useConsolePage());
-    act(() => result.current.setFilteredMonitors([fakeData.monitors[1]] as never));
+  it('applies the shared filter chips and swaps the result into filteredData', () => {
+    const { result } = renderHook(() => useConsolePage(), { wrapper });
+    act(() => useMonitorFilterStore.getState().setMonitorIds([2]));
+    expect(result.current.activeFilterCount).toBe(1);
     expect(result.current.filteredMonitors.map((m) => m.id)).toEqual([2]);
     expect(result.current.activeMonitors).toEqual([]);
     expect(result.current.filteredData.monitors.map((m) => m.id)).toEqual([2]);
@@ -65,7 +78,7 @@ describe('useConsolePage', () => {
   });
 
   it('switches the thumbnail protocol, including off', () => {
-    const { result } = renderHook(() => useConsolePage());
+    const { result } = renderHook(() => useConsolePage(), { wrapper });
     act(() => result.current.setLiveProtocol('hls'));
     expect(result.current.liveProtocol).toBe('hls');
     act(() => result.current.setLiveProtocol(null));
