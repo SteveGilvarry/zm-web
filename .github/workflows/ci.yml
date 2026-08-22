@@ -110,10 +110,18 @@ jobs:
         env:
           ZM_API_DIR: ${{ github.workspace }}/zm_api
 
+      # Compile before starting, so the health-check window below measures
+      # boot time and not a cold-cache release build — which is what it was
+      # measuring the first time this workflow ran, and why it failed at 6
+      # minutes with cargo still compiling dependencies.
+      - name: Build zm_api
+        run: cargo build --release --locked
+        working-directory: zm_api
+
       - name: Start zm_api against the seeded database
         run: |
           npm run e2e:seed:api -- --release > "$RUNNER_TEMP/zm_api.log" 2>&1 &
-          for _ in $(seq 1 180); do
+          for _ in $(seq 1 90); do
             if curl -sf http://127.0.0.1:8089/api/v3/server/health_check >/dev/null; then
               echo "zm_api healthy"; exit 0
             fi
