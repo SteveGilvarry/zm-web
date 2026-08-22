@@ -4,14 +4,14 @@ This file is high-signal context for coding agents (Claude Code) working in this
 
 ## Project Summary
 
-`zm-web` is ZoneMinder's web interface rewritten in React: the replacement for the PHP UI in ZoneMinder's `web/`. It talks only to `zm_api` — there is no PHP in the stack.
+`zm-web` is ZoneMinder's web interface rewritten in React: the replacement for the PHP UI in ZoneMinder's `web/`. It talks only to `zm-api` — there is no PHP in the stack.
 
 - **Framework**: React 19 + Vite
 - **Styling**: Tailwind CSS v4, semantic tokens per skin and colour scheme (see `docs/DESIGN.md`)
 - **Routing**: TanStack Router (file-based routing)
 - **Data Fetching**: TanStack Query
 - **State Management**: Zustand (auth store)
-- **Backend**: Consumes `zm_api` REST API (address configured via `VITE_API_PROXY_TARGET`, see `.env.example`)
+- **Backend**: Consumes `zm-api` REST API (address configured via `VITE_API_PROXY_TARGET`, see `.env.example`)
 
 ## Design
 
@@ -42,7 +42,7 @@ src/
 # Install dependencies
 npm install
 
-# Start dev server (proxies /api to zm_api backend)
+# Start dev server (proxies /api to zm-api backend)
 npm run dev
 
 # Build for production
@@ -55,7 +55,7 @@ npm run lint
 ## Testing
 
 - Unit: `npm test` (vitest + RTL + MSW; coverage over all of `src/**` with thresholds — `npm run test:coverage`).
-- E2E, seeded (hermetic, preferred): `npm run e2e:seed:up` (MariaDB from zm_api's docker recipe on :3308, loads `e2e/seed/seed.sql`), `npm run e2e:seed:api` (zm_api against it), then `npm run test:e2e:seeded`. See `e2e/seed/README.md`.
+- E2E, seeded (hermetic, preferred): `npm run e2e:seed:up` (MariaDB from zm-api's docker recipe on :3308, loads `e2e/seed/seed.sql`), `npm run e2e:seed:api` (zm_api against it), then `npm run test:e2e:seeded`. See `e2e/seed/README.md`.
 - E2E, live: `npm run test:e2e` against `VITE_API_PROXY_TARGET` with `TEST_USERNAME`/`TEST_PASSWORD` (no fallback). It mutates the box (notes, archive flags) — only against a dev box.
 
 ## Browser Testing
@@ -85,7 +85,7 @@ Key commands:
 
 ## API Proxy
 
-The Vite dev server proxies `/api` requests to the zm_api backend:
+The Vite dev server proxies `/api` requests to the zm-api backend:
 - Dev target: set `VITE_API_PROXY_TARGET` in a local `.env` (see `.env.example`); defaults to `http://localhost:8080`
 - Wired up in `vite.config.ts`
 
@@ -152,7 +152,7 @@ All user-visible text goes through `t('English text')` (react-i18next; key = Eng
 
 The P0–P10 phases below shipped their initial versions (plus follow-on work through ~P28 — see git history). **The dashboard is NOT yet feature-equivalent to the legacy ZoneMinder UI.** The checkmarks below mean "a version shipped," not "full parity."
 
-**Current plan of record: `docs/PRODUCTION-READINESS-PLAN.md`** (2026-08-21). A nine-agent review verified every feature against the live legacy UI and live zm_api and measured **~42% functional parity, ~38% classic-skin fidelity, 54% real test coverage** (the earlier 56%/76% figures counted "a version shipped" and only test-imported files). It lists the verified-broken flows to fix first (filters never save and use a format incompatible with ZoneMinder's; Add/Clone monitor 422; zone units toggle corrupts coordinates; storage edit 405; secrets rendered), the backend ticket list, the test strategy, and a phased roadmap. Detailed per-area evidence: `legacy-requirements/review-2026-08-21/` (local, gitignored). The older `legacy-requirements/PUNCH-LIST.md` is superseded by that review.
+**Current plan of record: `docs/PRODUCTION-READINESS-PLAN.md`** (2026-08-21). A nine-agent review verified every feature against the live legacy UI and live zm-api and measured **~42% functional parity, ~38% classic-skin fidelity, 54% real test coverage** (the earlier 56%/76% figures counted "a version shipped" and only test-imported files). It lists the verified-broken flows to fix first (filters never save and use a format incompatible with ZoneMinder's; Add/Clone monitor 422; zone units toggle corrupts coordinates; storage edit 405; secrets rendered), the backend ticket list, the test strategy, and a phased roadmap. Detailed per-area evidence: `legacy-requirements/review-2026-08-21/` (local, gitignored). The older `legacy-requirements/PUNCH-LIST.md` is superseded by that review.
 
 **Reference version**: the classic skin's fidelity target is the ZoneMinder **1.39** UI on the dev box (not 1.38.3). The bandwidth-profile sub-UI is deliberately omitted (see `MEMORY.md`).
 
@@ -195,4 +195,4 @@ The P0–P10 phases below shipped their initial versions (plus follow-on work th
 
 ## Related Projects
 
-- `zm_api` - Rust REST API backend for ZoneMinder
+- `zm-api` - Rust REST API backend for ZoneMinder

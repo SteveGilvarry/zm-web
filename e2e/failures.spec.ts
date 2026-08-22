@@ -18,7 +18,7 @@ import { SEED } from './seed/seed-data';
  * resolves.
  *
  * These are the only specs that fake the backend (`page.route`); everything
- * else in the seeded suite talks to the real zm_api.
+ * else in the seeded suite talks to the real zm-api.
  */
 
 /** Answer every matching call with a 500, as a dead backend would. */

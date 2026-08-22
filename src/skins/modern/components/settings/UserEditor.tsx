@@ -111,7 +111,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
   const { formData, setField, toggleEnabled, error, usernameError, isSaving, submitDisabled, submit, isLocked } =
     useAccountForm(editing, onSaved, { selfEdit });
   const lockedCls = 'opacity-60 cursor-not-allowed';
-  const lockedTitle = t('Not editable on this zm_api build — see zm-api#23');
+  const lockedTitle = t('Not editable on this zm-api build — see zm-api#23');
 
   return (
     <div className="space-y-4">
@@ -119,7 +119,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
         <div role="note" className={NOTE}>
           <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
           <p className="leading-relaxed">
-            {t('You are editing your own account. Email saves here and your password changes below; language and home view are not stored by this zm_api build.')}
+            {t('You are editing your own account. Email saves here and your password changes below; language and home view are not stored by this zm-api build.')}
           </p>
         </div>
       )}
@@ -128,7 +128,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
           <p className="leading-relaxed">
             <Trans>
-              This zm_api build only saves <strong>Email</strong> and <strong>Enabled</strong> on an
+              This zm-api build only saves <strong>Email</strong> and <strong>Enabled</strong> on an
               existing user. Password, name, phone and permission levels are disabled until{' '}
               <a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-accent underline">
                 zm-api#23

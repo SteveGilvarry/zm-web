@@ -14,7 +14,7 @@ describe('levelSatisfies', () => {
 });
 
 describe('effectivePerms', () => {
-  it('reads the claim as issued by zm_api', () => {
+  it('reads the claim as issued by zm-api', () => {
     const p = effectivePerms({
       perms: { stream: 'View', events: 'Edit', control: 'None', system: 'Edit' },
     });

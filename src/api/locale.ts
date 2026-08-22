@@ -6,7 +6,7 @@ import { apiGet } from './client';
  * the backend resolves `ZM_TIMEZONE` against the host zone for us and hands
  * back the three strftime patterns alongside it.
  *
- * Needs a zm_api that serves `GET /api/v3/system/locale`; older builds 404.
+ * Needs a zm-api that serves `GET /api/v3/system/locale`; older builds 404.
  */
 export interface LocaleResponse {
   /** Effective IANA zone, e.g. `Australia/Melbourne`. Null if unresolvable. */

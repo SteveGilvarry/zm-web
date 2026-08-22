@@ -172,7 +172,7 @@ describe('ReportsListPage — modern skin', () => {
     expect(body!.interval).toBeNull();
   });
 
-  // zm_api rejects fractional seconds ('400 Invalid start_date_time format'),
+  // zm-api rejects fractional seconds ('400 Invalid start_date_time format'),
   // so the payload carries whole seconds — see toApiDateTime().
   it('sends the dates typed into the create form', async () => {
     const user = userEvent.setup();
@@ -202,7 +202,7 @@ describe('ReportsListPage — modern skin', () => {
     await user.click(screen.getByRole('button', { name: 'Create report' }));
 
     await waitFor(() => expect(body).toBeDefined());
-    // Whole seconds, no fractional part: zm_api answers 400 "Invalid
+    // Whole seconds, no fractional part: zm-api answers 400 "Invalid
     // start_date_time format" for `…T08:00:00.000Z` (see toApiDateTime).
     expect(body!.start_date_time).toBe(toApiDateTime(new Date('2026-07-01T08:00')));
     expect(body!.end_date_time).toBe(toApiDateTime(new Date('2026-07-08T20:30')));

@@ -4,7 +4,7 @@ import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, St
 
 /**
  * Enum vocabularies of `Create/UpdateMonitorRequest` (OpenAPI components).
- * Since zm_api #18 (dev box 2026-08-22) GET responses use exactly this
+ * Since zm-api #18 (dev box 2026-08-22) GET responses use exactly this
  * spelling too, so a record read from the API can be written straight back
  * — verified live: `GET /monitors/1` returns `Rotate90`, `System`, `Auto`,
  * `WebRtc`. Older builds echoed the raw DB strings (`ROTATE_90`, `system`,

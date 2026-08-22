@@ -112,7 +112,7 @@ describe('ClassicReportsListPage — extra paths', () => {
     await waitFor(() => expect(created).toHaveLength(1));
     expect(created[0]).toEqual({
       name: null,
-      // Whole seconds: zm_api rejects a fractional part (see toApiDateTime).
+      // Whole seconds: zm-api rejects a fractional part (see toApiDateTime).
       start_date_time: toApiDateTime(new Date('2026-08-01T00:00')),
       end_date_time: toApiDateTime(new Date('2026-08-08T00:00')),
       filter_id: 7,

@@ -20,7 +20,7 @@ export interface Zone {
   num_coords: number;
 
   /* Motion-detection settings. `ZoneResponse` marks the four below as
-   * required, so they are typed as such — a zm_api older than the
+   * required, so they are typed as such — a zm-api older than the
    * zone-detail work (zm-api#22) omits them and this typing would lie.
    * `UpdateZoneRequest` still accepts only `name` + `polygon`, so every
    * field from here down is read-only in the UI. */

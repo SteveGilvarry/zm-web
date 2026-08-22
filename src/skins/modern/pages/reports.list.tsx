@@ -155,7 +155,7 @@ function CreateReportForm({
           onChange={(e) => f.setName(e.target.value)}
           placeholder={t('Weekly motion report')}
           // ZoneMinder's Reports.Name is varchar(30); the API turns anything
-          // longer into a 500 rather than a validation error (zm_api #52).
+          // longer into a 500 rather than a validation error (zm-api #52).
           maxLength={30}
           className={clsx(field, 'w-56')}
         />

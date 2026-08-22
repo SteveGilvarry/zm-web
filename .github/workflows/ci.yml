@@ -104,7 +104,11 @@ jobs:
             libavutil-dev libswscale-dev libavfilter-dev libavdevice-dev
       - run: npm ci
         working-directory: zm-web
-      - run: npx playwright install --with-deps chromium
+      # webkit too: the `mobile` project is an iPhone 13 profile, which
+      # Playwright runs on WebKit. Installing only chromium failed all twelve
+      # of its tests at launch — and did so invisibly until the job started
+      # getting far enough to run them.
+      - run: npx playwright install --with-deps chromium webkit
         working-directory: zm-web
 
       - name: MariaDB + schema + seed

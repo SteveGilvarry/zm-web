@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Bring up the seeded e2e database.
 #
-#   1. Start MariaDB 11.8 via zm_api's scripts/db-manager.sh (container
+#   1. Start MariaDB 11.8 via zm-api's scripts/db-manager.sh (container
 #      zm-e2e-mysql on 127.0.0.1:3308) and load the ZoneMinder schema, unless
 #      the container is already up with the schema in place.
 #   2. Load e2e/seed/seed.sql (idempotent).

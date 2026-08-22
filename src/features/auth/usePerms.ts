@@ -22,7 +22,7 @@ export interface Perms {
  * immediately on first paint, then `GET /me` replaces it once it resolves.
  * The claim is a snapshot taken at login, so without the second read an
  * admin's permission change would not reach the operator until they signed
- * in again. `/me` is missing on zm_api builds before that route existed —
+ * in again. `/me` is missing on zm-api builds before that route existed —
  * there the claim is all there is, which is what shipped before.
  */
 export function usePerms(): Perms {

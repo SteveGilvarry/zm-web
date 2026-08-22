@@ -11,7 +11,7 @@ export type StorageScheme = (typeof STORAGE_SCHEMES)[number];
  * Mirrors Create/UpdateStorageRequest. `do_delete` and `disk_space` are read
  * back from `StorageResponse` but are not writable — zmaudit owns them.
  *
- * Needs a zm_api with the full `StorageResponse` row (zm-api#24): older builds
+ * Needs a zm-api with the full `StorageResponse` row (zm-api#24): older builds
  * drop `scheme` / `server_id` / `url` from the response, so the list columns
  * and the edit form would come back blank after a save. No runtime fallback.
  */

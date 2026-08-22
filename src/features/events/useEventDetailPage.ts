@@ -547,7 +547,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
 
   // Container takes the camera's declared (post-rotation) aspect so a
   // portrait camera gets a portrait box. The stored mp4 SHOULD carry a
-  // rotation side-data tag, but in practice the HLS path served by zm_api
+  // rotation side-data tag, but in practice the HLS path served by zm-api
   // strips it and Safari historically ignores it even when present, so
   // the dashboard applies its own swap-dimensions transform — same
   // strategy as live streaming via StreamCell.

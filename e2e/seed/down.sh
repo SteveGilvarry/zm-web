@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Tear down the seeded e2e database container. Data lives inside the
 # container (db-manager.sh uses no named volume), so this also drops the data.
-# Only our container is touched; zm_api's own zm-api-mysql is left alone.
+# Only our container is touched; zm-api's own zm-api-mysql is left alone.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 

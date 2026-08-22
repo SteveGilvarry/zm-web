@@ -62,7 +62,7 @@ export interface EventQueryParams {
   start_time?: string;
   /**
    * ISO timestamp; events with **end_date_time** <= this (not start — see
-   * zm_api `repo/events.rs`). An event still running at this instant is
+   * zm-api `repo/events.rs`). An event still running at this instant is
    * excluded.
    */
   end_time?: string;

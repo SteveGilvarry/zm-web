@@ -5,7 +5,7 @@ four things, and every option below provides all four:
 
 1. A static file server with an SPA fallback, so a deep link such as
    `/events/123` returns `index.html` and the router takes over.
-2. A reverse proxy from `/api/` to [`zm_api`](https://github.com/SteveGilvarry/zm-api),
+2. A reverse proxy from `/api/` to [`zm-api`](https://github.com/SteveGilvarry/zm-api),
    with WebSocket upgrade. WebRTC signaling runs over
    `/api/v3/live/{id}/webrtc/ws`, and those sockets stay open for as long as the
    operator watches, so proxy read timeouts must be long (the samples use 1 h).
@@ -16,9 +16,9 @@ four things, and every option below provides all four:
    WebSockets), which you do not want on the wire in clear.
 
 **Which one to pick.** Option D is where this is going and what a fresh install
-should end up with: `zm_api` serves `dist/` itself, so the whole UI is one
+should end up with: `zm-api` serves `dist/` itself, so the whole UI is one
 binary plus one directory — no PHP, no Apache, no nginx. It needs a change in
-`zm_api` that has not landed yet. Until it does, Option A (the container) is
+`zm-api` that has not landed yet. Until it does, Option A (the container) is
 the supported path, and B/C exist for people who already run a web server.
 
 ## Option A: the container
@@ -46,8 +46,8 @@ ZM_PUBLIC_HOST=zm.example.net docker compose --profile tls up -d
 
 | Variable | Default | Meaning |
 |---|---|---|
-| `ZM_API_URL` | required | Upstream `zm_api` the container proxies `/api/` to, e.g. `http://zm-api:8080`. Trailing slashes are stripped. |
-| `ZM_API_BASE` | `/api/v3` | Prefix the **browser** calls. Leave unset to use the same-origin proxy. Set it to an absolute URL only if the browser should talk to `zm_api` on another origin; `zm_api` must then answer CORS preflights, and the entrypoint adds that origin to the CSP. |
+| `ZM_API_URL` | required | Upstream `zm-api` the container proxies `/api/` to, e.g. `http://zm-api:8080`. Trailing slashes are stripped. |
+| `ZM_API_BASE` | `/api/v3` | Prefix the **browser** calls. Leave unset to use the same-origin proxy. Set it to an absolute URL only if the browser should talk to `zm-api` on another origin; `zm-api` must then answer CORS preflights, and the entrypoint adds that origin to the CSP. |
 | `ZM_LISTEN_PORT` | `8080` | nginx listen port inside the container. Unprivileged, so the image also runs rootless. |
 | `ZM_CSP_API_SRC` | derived | Override the source list used for `connect-src`, `img-src` and `media-src` in the Content-Security-Policy. |
 
@@ -66,7 +66,7 @@ make sure that layer also forwards WebSocket upgrades.
 - `location /api/` proxies to `ZM_API_URL` with `Upgrade`/`Connection` headers
   and 1 h send/read timeouts.
 - `location ^~ /api/v3/live/` is the same plus `proxy_buffering off`, so HLS
-  segments and signaling frames are forwarded as `zm_api` writes them.
+  segments and signaling frames are forwarded as `zm-api` writes them.
 - `/assets/` gets `Cache-Control: public, max-age=31536000, immutable`;
   `/fonts/` one week; `index.html` `no-cache`; `config.js` `no-store`.
 - gzip for text, JS, JSON, SVG and HLS playlists.
@@ -120,9 +120,9 @@ ZM_WEB_ROOT=/var/www/zm-web caddy run --config docker/Caddyfile
 
 For a LAN-only name add `tls internal` inside the site block.
 
-## Option D (target): served by `zm_api`
+## Option D (target): served by `zm-api`
 
-The four requirements above are not four programs. `zm_api` already terminates
+The four requirements above are not four programs. `zm-api` already terminates
 TLS (`rustls`, with ACME/Let's Encrypt built in — `[server.tls]` and
 `[server.acme]` in its `settings/base.toml`), already compresses responses, and
 already ships a systemd unit and a Debian package. The only thing it does not
@@ -130,7 +130,7 @@ do is hand back the files in `dist/`. Once it does:
 
 ```
                        ┌──────────────────────────────┐
-   browser  ──TLS──▶   │ zm_api                       │
+   browser  ──TLS──▶   │ zm-api                       │
                        │  /api/v3/**  REST, HLS, WS   │
                        │  /**         dist/  (SPA)    │
                        └──────────────┬───────────────┘
@@ -143,7 +143,7 @@ No reverse proxy, because there is nothing to proxy to — the API and the app
 are the same origin by construction, which also retires the CORS configuration
 and the `ZM_API_BASE` cross-origin case.
 
-**What `zm_api` needs to add** (all of it inside `src/routes/mod.rs`;
+**What `zm-api` needs to add** (all of it inside `src/routes/mod.rs`;
 `tower-http`'s `fs` and `set-header` features are already enabled):
 
 1. A `ServeDir` rooted at a configured `web_root` (default `/usr/share/zm_web`),
@@ -168,25 +168,25 @@ and the `ZM_API_BASE` cross-origin case.
 | `zm_api` | the binary, `packaging/systemd/zm_api.service`, JWT keys generated on first run — all of this exists today (deb/rpm/arch via `scripts/package.sh`) |
 | `zm-web` | `dist/` into `/usr/share/zm_web/`, nothing else — does not exist yet |
 
-Install both, point `zm_api` at the ZoneMinder database, done. The web package
+Install both, point `zm-api` at the ZoneMinder database, done. The web package
 is architecture-independent and has no runtime dependencies: it is a directory
 of files, read by the `zoneminder` user the unit already runs as.
 
-`zm_api` installs in *passive* mode (REST only, ZoneMinder keeps supervising
+`zm-api` installs in *passive* mode (REST only, ZoneMinder keeps supervising
 its own daemons) and takes over daemon supervision on `zm_api-takeover`. That
 suits this plan: the UI can be swapped long before the supervisor is.
 
-**Where it has to run.** On the ZoneMinder host. `zm_api` reads the capture
+**Where it has to run.** On the ZoneMinder host. `zm-api` reads the capture
 daemons' shared memory under `/dev/shm` (`src/zm_shm.rs`) and the event files on
 disk, so it is not a service you can move to another machine. That is a
 property of the API, not of this change, and it is why "one binary on the NVR"
 is the right shape.
 
 **Migration.** Nothing here forces Apache off the box. Legacy ZoneMinder keeps
-answering on `/zm` while `zm_api` answers on its own port, so an operator can
+answering on `/zm` while `zm-api` answers on its own port, so an operator can
 run both, compare, and switch when they are ready — then remove PHP.
 
-**Not done yet.** `zm_api` has no static route today (no `ServeDir` anywhere in
+**Not done yet.** `zm-api` has no static route today (no `ServeDir` anywhere in
 `src/`), so this option does not exist to install. Everything above is the
 spec for making it exist.
 
@@ -218,10 +218,10 @@ to match.
 
 `src/streaming/webrtcManager.ts` offers `stun.l.google.com:19302` and
 `stun1.l.google.com:19302` as ICE servers. On a flat LAN, or when the browser
-and `zm_api` can reach each other directly, STUN is never consulted and the
+and `zm-api` can reach each other directly, STUN is never consulted and the
 stream works without internet access. Across NAT (remote operators, VPN with
 hairpinning, double NAT) ICE needs a reachable server: run
-[coturn](https://github.com/coturn/coturn) next to `zm_api` and edit the
+[coturn](https://github.com/coturn/coturn) next to `zm-api` and edit the
 `STUN_SERVERS` list. A runtime `iceServers` key in `config.js` is planned but
 not wired up yet. If WebRTC cannot connect, the Watch page still offers HLS,
 which is plain HTTPS through the proxy.
@@ -243,7 +243,7 @@ curl -sI $H/                 | grep -i 'cache-control'        # no-cache
 curl -so /dev/null -w '%{http_code}\n' $H/events/1             # 200, index.html
 curl -s  $H/config.js                                           # window.__ZM_CONFIG__ = ...
 curl -sI $H/assets/$(curl -s $H/ | grep -o 'assets/[^"]*\.js' | head -1 | cut -d/ -f2) | grep -i cache   # immutable
-curl -s  $H/api/v3/server/health_check                          # proxied to zm_api
+curl -s  $H/api/v3/server/health_check                          # proxied to zm-api
 ```
 
 Then open the Watch page for a monitor with the browser console open. A
