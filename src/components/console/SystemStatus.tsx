@@ -8,7 +8,6 @@ import {
   AlertCircle,
   RotateCw,
   HardDrive,
-  Clock,
 } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { getVersion } from '@/api/system';
@@ -24,18 +23,17 @@ interface SystemStatusProps {
 }
 
 /**
- * System panel — focuses on what the header strip can't show. The header
- * already carries live LOAD/CPU/MEM/DISK + a RUNNING toggle; this panel
- * adds:
+ * System detail — what the console's status line does not have room for.
  *
- *  - ZM version + system uptime (derived from the longest-running daemon)
- *  - Per-daemon health with PID, uptime, restart count
- *  - Storage breakdown — overall % from the header, count of configured
- *    areas with a link to the storage admin page for detail
+ * It used to sit in a panel beside the cameras and deliberately left the
+ * machine readings to the header strip. Both of those are gone: this now
+ * opens from the status line's running indicator, and it is the one place
+ * in the app that carries the full picture — version and uptime, the
+ * machine's load, memory and disk, per-daemon health with PID and restart
+ * count, and a way through to the storage admin.
  *
- * No duplicate CPU/Mem/Disk meters. The header has them; here we trade that
- * vertical space for daemons and config detail the operator actually needs
- * to triage a stuck system.
+ * Laid out in columns because a disclosure is wide and short, not narrow
+ * and tall.
  */
 export function SystemStatus({
   daemons = [],
@@ -55,10 +53,10 @@ export function SystemStatus({
   if (isLoading) {
     return (
       <div className="space-y-4 animate-pulse">
-        <div className="h-4 w-20 bg-border/30 rounded" />
+        <div className="h-4 w-20 bg-surface-2 rounded" />
         <div className="space-y-2">
           {[...Array(4)].map((_, i) => (
-            <div key={i} className="h-3 bg-border/30 rounded" />
+            <div key={i} className="h-3 bg-surface-2 rounded" />
           ))}
         </div>
       </div>
@@ -74,46 +72,66 @@ export function SystemStatus({
   const runningCount = daemons.filter((d) => d.state === 'running').length;
   const stoppedCount = daemons.filter((d) => d.state === 'stopped').length;
 
-  return (
-    <div className="space-y-5">
-      {/* Identity strip — running pill + version + uptime in one tight row */}
-      <div className="flex items-center justify-between gap-2">
-        <span
-          className={clsx(
-            'inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono uppercase tracking-wider border',
-            isRunning
-              ? 'border-emerald/40 bg-emerald/10 text-emerald'
-              : 'border-crimson/40 bg-crimson/10 text-crimson',
-          )}
-        >
-          {isRunning ? <CheckCircle size={10} /> : <XCircle size={10} />}
-          {isRunning ? t('Running') : t('Stopped')}
-        </span>
-        <span className="text-[10px] font-mono text-text-muted tabular-nums">
-          {version?.version ? `v${version.version}` : '—'}
-        </span>
-      </div>
+  const memPct =
+    stats && stats.total_mem > 0
+      ? Math.round(((stats.total_mem - stats.free_mem) / stats.total_mem) * 100)
+      : null;
 
-      {systemUptimeSec > 0 && (
-        <div className="flex items-center gap-2 text-[10px] font-mono text-text-muted">
-          <Clock size={10} />
-          <span className="uppercase tracking-wider text-text-dim">{t('Uptime')}</span>
-          <span className="text-text-secondary tabular-nums">
-            {formatDuration(systemUptimeSec, t)}
+  return (
+    <div className="grid gap-6 sm:grid-cols-3">
+      {/* Identity + machine */}
+      <section className="space-y-3">
+        <div className="flex items-center gap-2">
+          <span
+            aria-hidden
+            className={clsx('w-2 h-2 rounded-full', isRunning ? 'bg-ok' : 'bg-danger')}
+          />
+          <span className={clsx('text-sm', isRunning ? 'text-fg' : 'text-danger')}>
+            {isRunning ? t('Running') : t('Stopped')}
+          </span>
+          <span className="ms-auto text-xs font-mono tabular-nums text-fg-dim">
+            {version?.version ? `v${version.version}` : '—'}
           </span>
         </div>
-      )}
+
+        <dl className="space-y-1 text-xs">
+          {systemUptimeSec > 0 && (
+            <Reading label={t('Uptime')} value={formatDuration(systemUptimeSec, t)} />
+          )}
+          {stats?.cpu_load != null && (
+            <Reading label={t('Load')} value={stats.cpu_load.toFixed(2)} />
+          )}
+          {stats?.cpu_usage_percent != null && (
+            <Reading
+              label={t('CPU')}
+              value={`${stats.cpu_usage_percent.toFixed(1)}%`}
+              warn={stats.cpu_usage_percent > 85}
+            />
+          )}
+          {stats && stats.total_mem > 0 && (
+            <Reading
+              label={t('Memory')}
+              value={`${formatBytes(stats.total_mem - stats.free_mem)} / ${formatBytes(stats.total_mem)}`}
+              warn={memPct != null && memPct > 85}
+            />
+          )}
+          {stats && stats.total_swap > 0 && (
+            <Reading
+              label={t('Swap')}
+              value={`${formatBytes(stats.total_swap - stats.free_swap)} / ${formatBytes(stats.total_swap)}`}
+            />
+          )}
+        </dl>
+      </section>
 
       {/* Daemons — the main payload */}
       <section>
-        <header className="flex items-baseline justify-between mb-2">
-          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-            {t('Daemons')}
-          </span>
+        <header className="flex items-baseline justify-between mb-1.5">
+          <h4 className="text-xs text-fg-dim">{t('Daemons')}</h4>
           <span
             className={clsx(
-              'text-[10px] font-mono tabular-nums',
-              stoppedCount > 0 ? 'text-amber' : 'text-text-muted',
+              'text-xs font-mono tabular-nums',
+              stoppedCount > 0 ? 'text-warn' : 'text-fg-dim',
             )}
           >
             {runningCount}/{daemons.length}
@@ -122,11 +140,9 @@ export function SystemStatus({
         </header>
 
         {daemons.length === 0 ? (
-          <div className="text-[11px] text-text-muted italic py-2 text-center">
-            {t('No daemons reported.')}
-          </div>
+          <p className="text-xs text-fg-faint py-2">{t('No daemons reported.')}</p>
         ) : (
-          <ul className="divide-y divide-border-subtle/60">
+          <ul className="divide-y divide-border-subtle max-h-48 overflow-auto">
             {daemons.map((d) => (
               <DaemonRow key={d.id ?? d.name} daemon={d} />
             ))}
@@ -134,26 +150,33 @@ export function SystemStatus({
         )}
       </section>
 
-      {/* Storage areas — header has overall % but not the breakdown */}
+      {/* Storage */}
       {stats && (
         <section>
-          <header className="flex items-baseline justify-between mb-2">
-            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
-              {t('Storage')}
-            </span>
+          <header className="flex items-baseline justify-between mb-1.5">
+            <h4 className="text-xs text-fg-dim">{t('Storage')}</h4>
             <Link
               to="/settings/storage"
-              className="text-[10px] font-mono text-cyan/80 hover:text-cyan transition-colors"
+              className="text-xs text-accent hover:underline"
             >
               {t('manage →')}
             </Link>
           </header>
-          <div className="flex items-center gap-2 text-[11px]">
-            <HardDrive size={11} className="text-text-muted" />
-            <span className="text-text-secondary font-mono tabular-nums">
+          <div className="flex items-center gap-2 text-xs">
+            <HardDrive size={12} className="text-fg-dim" aria-hidden />
+            <span className="font-mono tabular-nums text-fg-muted">
               {formatBytes(stats.used_disk)} / {formatBytes(stats.total_disk)}
             </span>
-            <span className="ms-auto text-text-muted font-mono">
+            <span
+              className={clsx(
+                'ms-auto font-mono tabular-nums',
+                stats.disk_usage_percent > 90
+                  ? 'text-danger'
+                  : stats.disk_usage_percent > 75
+                    ? 'text-warn'
+                    : 'text-fg-dim',
+              )}
+            >
               {stats.disk_usage_percent != null
                 ? t('{{percent}}% used', { percent: stats.disk_usage_percent.toFixed(0) })
                 : ''}
@@ -161,6 +184,18 @@ export function SystemStatus({
           </div>
         </section>
       )}
+    </div>
+  );
+}
+
+/** One label/value line. Colour only when a threshold has been crossed. */
+function Reading({ label, value, warn }: { label: string; value: string; warn?: boolean }) {
+  return (
+    <div className="flex items-baseline justify-between gap-3">
+      <dt className="text-fg-dim">{label}</dt>
+      <dd className={clsx('font-mono tabular-nums', warn ? 'text-warn' : 'text-fg')}>
+        {value}
+      </dd>
     </div>
   );
 }
@@ -176,28 +211,28 @@ function DaemonRow({ daemon }: { daemon: DaemonStatus }) {
 
   const statusColor =
     daemon.state === 'running'
-      ? 'text-emerald'
+      ? 'text-ok'
       : daemon.state === 'stopped'
-        ? 'text-crimson'
-        : 'text-amber';
+        ? 'text-danger'
+        : 'text-warn';
 
   return (
-    <li className="flex items-center gap-2 py-1.5 text-[11px]">
-      <StatusIcon size={11} className={statusColor} />
-      <span className="font-mono text-text-secondary truncate flex-1" title={daemon.id ?? daemon.name}>
+    <li className="flex items-center gap-2 py-1 text-xs">
+      <StatusIcon size={12} className={statusColor} aria-hidden />
+      <span className="font-mono text-fg-muted truncate flex-1" title={daemon.id ?? daemon.name}>
         {daemon.name}
       </span>
       {daemon.pid != null && (
-        <span className="font-mono text-text-dim tabular-nums" title={t('PID')}>
+        <span className="font-mono text-fg-faint tabular-nums" title={t('PID')}>
           {daemon.pid}
         </span>
       )}
       {daemon.restart_count != null && daemon.restart_count > 0 && (
         <span
-          className="inline-flex items-center gap-0.5 text-amber font-mono tabular-nums"
+          className="inline-flex items-center gap-0.5 text-warn font-mono tabular-nums"
           title={t('Restarted {{count}}× since boot', { count: daemon.restart_count })}
         >
-          <RotateCw size={9} />
+          <RotateCw size={10} aria-hidden />
           {daemon.restart_count}
         </span>
       )}
