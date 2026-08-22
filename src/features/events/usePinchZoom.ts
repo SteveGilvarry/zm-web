@@ -77,8 +77,13 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
   const [state, setState] = useState<PinchZoomState>(IDENTITY);
   const pointers = useRef(new Map<number, { x: number; y: number }>());
   const gesture = useRef<{ distance: number; scale: number } | null>(null);
+  // The listeners are attached once and read the live transform through a
+  // ref; writing it in an effect (not during render) keeps React's rules of
+  // refs happy.
   const stateRef = useRef(state);
-  stateRef.current = state;
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
 
   const reset = useCallback(() => setState(IDENTITY), []);
 
@@ -150,6 +155,10 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
 
     const onDoubleClick = () => setState(IDENTITY);
 
+    // Captured for the cleanup: `pointers` is stable, but the linter wants
+    // the read hoisted out of the teardown closure.
+    const tracked = pointers.current;
+
     el.addEventListener('pointerdown', onPointerDown);
     el.addEventListener('pointermove', onPointerMove, { passive: false });
     el.addEventListener('pointerup', onPointerUp);
@@ -165,7 +174,7 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
       el.removeEventListener('pointerleave', onPointerUp);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('dblclick', onDoubleClick);
-      pointers.current.clear();
+      tracked.clear();
       gesture.current = null;
     };
   }, [enabled]);
