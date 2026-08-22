@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getMonitor, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
+import { getMonitor, getMonitors, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
 import { getAuthToken } from '@/api/client';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
@@ -49,6 +49,8 @@ export interface WatchStageState {
   setWidth: (v: string) => void;
   setHeight: (v: string) => void;
   setScale: (v: string) => void;
+  /** Report the height left below the stage, so Auto can fit it exactly. */
+  setAvailableHeight: (px: number) => void;
   /** Inline style for the stage box (aspect ratio from the monitor). */
   style: CSSProperties;
 }
@@ -101,6 +103,16 @@ export interface WatchPageState {
   /** Legacy "Download Image": save the current snapshot as a JPEG. */
   downloadImage: () => void;
   isDownloading: boolean;
+  /**
+   * Move between cameras without going back to the console — the legacy
+   * Watch page's monitor nav. `siblings` is every monitor in list order;
+   * `prevMonitorId` / `nextMonitorId` wrap, and are null while the list is
+   * loading or when this is the only monitor.
+   */
+  siblings: Monitor[];
+  siblingIndex: number;
+  prevMonitorId: number | null;
+  nextMonitorId: number | null;
 }
 
 /**
@@ -118,6 +130,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const id = monitorId;
 
   const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
+  const [availableHeight, setAvailableHeight] = useState(0);
   const [fellBackToHls, setFellBackToHls] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
   // 0–1. Kept next to the mute flag rather than read off the element, so the
@@ -340,7 +353,12 @@ export function useWatchPage(monitorId: number): WatchPageState {
     setWidth: (width) => setStageSize((s) => ({ ...s, width })),
     setHeight: (height) => setStageSize((s) => ({ ...s, height })),
     setScale: (scale) => setStageSize((s) => ({ ...s, scale })),
-    style: stageStyle(stageSize, monitor ? displayDimensions(monitor) : { width: 16, height: 9 }),
+    setAvailableHeight,
+    style: stageStyle(
+      stageSize,
+      monitor ? displayDimensions(monitor) : { width: 16, height: 9 },
+      availableHeight,
+    ),
   };
 
   // The snapshot endpoint needs the bearer token, so an `<a download>` is
@@ -369,6 +387,23 @@ export function useWatchPage(monitorId: number): WatchPageState {
     } finally {
       setIsDownloading(false);
     }
+  };
+
+  // Monitor navigation. Uses the console's list under the shared query key,
+  // so moving between cameras costs nothing once any page has loaded it.
+  const { data: monitorList } = useQuery({
+    queryKey: ['monitors'],
+    queryFn: () => getMonitors({ per_page: 1000 }),
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
+  const siblings = monitorList?.items ?? [];
+  const siblingIndex = siblings.findIndex((m) => m.id === id);
+  // Wrap, so the last camera's Next is the first — an operator stepping
+  // through a wall should not hit a dead end at either end.
+  const neighbour = (step: number): number | null => {
+    if (siblingIndex < 0 || siblings.length < 2) return null;
+    return siblings[(siblingIndex + step + siblings.length) % siblings.length].id;
   };
 
   return {
@@ -409,5 +444,9 @@ export function useWatchPage(monitorId: number): WatchPageState {
     stage,
     downloadImage: () => { void downloadImage(); },
     isDownloading,
+    siblings,
+    siblingIndex,
+    prevMonitorId: neighbour(-1),
+    nextMonitorId: neighbour(1),
   };
 }

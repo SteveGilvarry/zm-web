@@ -6,6 +6,8 @@ _Review date: 2026-08-21. Reference: ZoneMinder **1.39.16** on the dev box (the 
 
 ## 1. Verdict
 
+> **Reading this later:** Sections 1–4 are the 2026-08-21 review as written. What has changed since is in the ✅ marks in Section 4, the Status column in Section 9, and the done log in Section 12. The headline percentages below are **not** current — the P0/P1 register is clear except F-23, but nobody has re-measured parity since the review, and the next reviewer should not treat the numbers here as today's.
+
 The dashboard is a well-built **beta with the wrong sign on its own progress report**. The README says "feature-complete"; CLAUDE.md says ≈56% parity; measured against the live legacy UI and the live API it is **≈42% functional parity** and **≈38% classic-skin fidelity**. More important than the percentages: four things an operator would do in their first hour are broken against the real backend, one of them destructively.
 
 What is genuinely good: the streaming stack (WebRTC/HLS, Safari paths, rotation), the auth refresh design, the API wrapper layer (94% covered), the pure-logic helpers, the Logs and Audit pages, the mosaic montage. 725 unit tests pass in 8 s; `tsc -b` is clean.
@@ -65,10 +67,10 @@ These are verified live, not inferred. Order within the list is severity.
 |---|---|---|---|---|
 | F-1 ✅ | **Filters: edits never persist and the format is incompatible with ZoneMinder.** _Fixed 2026-08-21 (commit `fix(filters)`): legacy `terms` format round-trips byte-for-byte, actions are first-class columns, preview via `/filters/preview` where the AST allows, unreadable queries are read-only._ `updateFilter` sends `{name, query}`; the field is `query_json`. The dashboard writes `{rules:[…]}`; ZM and zm-api use `{terms:[{attr,op,val,obr,cbr,cnj}],sort_field,sort_asc,limit,skip_locked}`. Both real filters on the dev box (`PurgeWhenFull`, `Update DiskSpace`) load as "no rules". If the PUT bug is fixed naively, saving `PurgeWhenFull` writes an empty rule set with `auto_delete=1, background=1` and `zmfilter.pl` deletes every event. | `src/api/filters.ts:157-175, 206-211`; `src/routes/filters/index.tsx:64-126` | Rebuild the filter model on the backend's first-class columns (`auto_*`, `background`, `concurrent`, `lock_rows`, `execute_interval`, `user_id`) and the legacy `terms` shape for `query_json` (lossless round-trip). Delete the dashboard-private `{rules}` format and the `contains/starts/ends` operators. Until then, disable Save on any filter loaded from the backend. | M |
 | F-2 ✅ | **Add Monitor and Clone return 422.** _Fixed 2026-08-21: `normalizeMonitor()` + `toCreatePayload()`; create → clone → delete verified live. Backend side: zm-api#18, #19._ Defaults send `orientation: ROTATE_0` (schema `Rotate0`), `rtsp2_web_type: mse` (`Mse`), omit required `restream`, include unknown keys; Clone re-POSTs the GET body (`deleted: 0` where a boolean is required, raw enum casing). After those, the backend rejects ZoneMinder's own defaults (`brightness=-1`, `storage_id=0`, `max_image_buffer_count=0`). | `src/api/monitors-crud.ts:14-153, 190-200` | Add a `normalizeMonitor()` response→request mapper (also fixes the editor's Orientation / Event Close Mode selects showing the wrong value on every monitor); fix defaults; coerce on clone. Backend ticket BT-02 for canonical casing and BT-20 for the default-value validation. | S (FE) |
-| F-3 | **Zone units toggle corrupts geometry.** `convertUnits` rescales the polygon to 0–100 and saves it as `coords`; ZoneMinder stores coords in pixels regardless of `Units`. Monitor 1's only zone on the dev box is now a 0% sliver (motion detection effectively off). The editor also uses un-rotated width/height for ROTATE_90/270 cameras, so vertices get clamped and the overlay is wrong. `PUT /zones/{id}` accepts only `name`,`polygon`, so Type/Units changes are silently dropped while the form shows them editable. | `src/features/zones/ZoneEditor.tsx:110-149`; `src/routes/monitors/$monitorId_.zones.tsx:46-47` | Keep coords in pixel space always; use rotated dimensions; disable Type/Units on edit until BT-05 lands. **Done 2026-08-21:** all four dev-box zones (monitors 1–4 were all affected) rewritten to full-frame pixels in view dimensions via the API; `Units` stays `Percent` (ZoneMinder's default for the "All" zone; the API cannot change it). Code fix + test fix land with the skin migration. | S + data repair |
+| F-3 ✅ | **Zone units toggle corrupts geometry.** _Fixed: coords stay in pixel space whatever `Units` says, rotated cameras use view dimensions, and all four dev-box zones were rewritten to full-frame pixels via the API. Tests assert that Pixels→Percent→Pixels leaves the polygon byte-identical. The motion-threshold panel and writable Type/Units still wait on zm-api#22; `updateZone` sends `{name, polygon}` only and the editor renders the rest read-only rather than pretending._ `convertUnits` rescales the polygon to 0–100 and saves it as `coords`; ZoneMinder stores coords in pixels regardless of `Units`. Monitor 1's only zone on the dev box is now a 0% sliver (motion detection effectively off). The editor also uses un-rotated width/height for ROTATE_90/270 cameras, so vertices get clamped and the overlay is wrong. `PUT /zones/{id}` accepts only `name`,`polygon`, so Type/Units changes are silently dropped while the form shows them editable. | `src/features/zones/ZoneEditor.tsx:110-149`; `src/routes/monitors/$monitorId_.zones.tsx:46-47` | Keep coords in pixel space always; use rotated dimensions; disable Type/Units on edit until BT-05 lands. `Units` stays `Percent` (ZoneMinder's default for the "All" zone; the API cannot change it). | S + data repair |
 | F-4 ✅ | **Storage edit / Enabled toggle fail with 405.** _Fixed 2026-08-21: PATCH, errors surfaced, contract test guards the verb._ Wrapper issues PUT; the route is PATCH-only. No `onError`, so the modal just stays open. The unit test asserts the wrong verb. | `src/api/storage.ts:20-25`; `src/api/storage.test.ts:60` | PATCH; add `onError`. | S |
 | F-5 ✅ | **Secrets on screen.** _Fixed 2026-08-21: private/password configs masked, source password field masked, committed credential removed._ `ZM_AUTH_HASH_SECRET` (`private=1`) renders in clear; `title={config.value}` puts even `type=password` values in the hover tooltip; the monitor Source password is a plain text input. A real-looking admin password literal is committed in `e2e/fixtures.ts:11-12`. | `src/routes/settings/index.tsx:678`; `src/features/settings/TypedConfigInput.tsx:152-156`; `src/features/monitors/editor/fields.ts:198` | Honour `private`; drop the tooltip; mask the field; remove the fallback credential and fail fast if env is unset; document `TEST_USERNAME`/`TEST_PASSWORD` in `.env.example`. | S |
-| F-6 | **Sessions page writes junk.** `/sessions` is ZM's PHP web-session table (`access` is a Unix timestamp, `data` is serialised PHP). The page labels `access` as a permission bitmask and "Create token" inserts fabricated rows. | `src/routes/settings/sessions.tsx`; `src/api/sessions.ts` | **Done 2026-08-21: page, API wrapper, test and nav entry removed** — the REST API is sessionless; long-lived API keys are a backend feature (BT-10). | S |
+| F-6 ✅ | **Sessions page writes junk.** `/sessions` is ZM's PHP web-session table (`access` is a Unix timestamp, `data` is serialised PHP). The page labels `access` as a permission bitmask and "Create token" inserts fabricated rows. | `src/routes/settings/sessions.tsx`; `src/api/sessions.ts` | _Fixed 2026-08-21: page, API wrapper, test and nav entry removed_ — the REST API is sessionless; long-lived API keys are a backend feature (zm-api#27). | S |
 | F-7 ✅ | **No deployment path.** _Fixed 2026-08-21: Dockerfile + nginx/Caddy + runtime API base + docs/DEPLOYMENT.md; image smoke-tested in CI._ No Dockerfile, no proxy sample, no `base`, API prefix is a build-time constant, nothing documents SPA fallback + `/api` proxy + WebSocket upgrade for `/api/v3/live/*/webrtc/ws`. | repo root; `vite.config.ts`; `src/api/client.ts:4` | Multi-stage Dockerfile → nginx; sample nginx and Caddy configs; `VITE_BASE` + runtime-configurable API base (`/config.json` or `window.__ENV__`); README "Production" section. | M |
 | F-8 ✅ | **No CI, lint red.** _Fixed 2026-08-21: ci.yml with blocking lint, tests + coverage thresholds, i18n check, build, audit, container smoke test; lint 0/0._ Only the CLA workflow exists; `main` has 34 lint errors / 24 warnings; CONTRIBUTING promises gates that do not run. | `.github/workflows/`; `eslint` output | `ci.yml`: `npm ci`, `tsc -b`, lint, `vitest run --coverage` (thresholds now configured), build, `npm audit --omit=dev`. Fix the 34 errors (7 `set-state-in-effect`, 8 `react-hooks/refs` in `StreamCell`, 14 `only-export-components`, 3 unused vars, 1 false-positive on Playwright `use`). | S + M |
 
@@ -76,7 +78,7 @@ These are verified live, not inferred. Order within the list is severity.
 
 | # | Problem | Where | Effort |
 |---|---|---|---|
-| F-9 | **Event timestamps display ≈10 h ahead** (zm_api stamps server-local `DATETIME` values with `Z`; logs and monitor-status are correct UTC). Knock-ons: Montage Review shows "NO EVENT" in every cell, the Events "last hour" bound disagrees with the console, the date picker defaults to the UTC date. Backend root cause (**BT-00**); FE workaround is to treat event times as server-local using a server-TZ value (BT-23) or an offset probe. | `src/routes/events/index.tsx:78-80, 667, 779-784`; `src/features/montagereview/useReviewEvents.ts` | S (FE) |
+| F-9 ✅ | _Fixed on the backend and consumed here._ **Event timestamps displayed ≈10 h ahead** (zm_api stamps server-local `DATETIME` values with `Z`; logs and monitor-status are correct UTC). Knock-ons: Montage Review shows "NO EVENT" in every cell, the Events "last hour" bound disagrees with the console, the date picker defaults to the UTC date. Root cause was backend (zm-api#16, now serving true UTC — verified against the wall clock), so no client-side offset hack was needed. `useDateTimeFormat` reads `GET /system/locale` (zm-api#33) for the server zone and ZoneMinder's three format patterns, which is the W7 formatter. | `src/routes/events/index.tsx:78-80, 667, 779-784`; `src/features/montagereview/useReviewEvents.ts` | S (FE) |
 | F-10 ✅ | _Fixed (ZoneMinder scale end to end; server `>=` semantics labelled honestly; zm-api#21 for the rest)._ Logs severity labels off by one (live: `0=INF, -1=WAR, -2=ERR`; UI says `-1=ERROR, 0=WARNING, 1=INFO`) and the "Errors only / Info+ / Debug+" tiers return the wrong rows because the backend `level` is a numeric `>=` bound. Two tests enshrine the wrong map. | `src/api/logs.ts:45-64`; `src/features/logs/filter.ts:68-80`; `src/routes/logs/index.tsx:73-79` | S (+BT-04) |
 | F-11 ✅ | _Fixed: time-bounded neighbour queries, verified live._ Event detail Prev/Next only works for the oldest 100 events of a monitor (page 1, id asc, no page targeting). | `src/routes/events/$eventId.tsx:136-156` | S |
 | F-12 ✅ | _Fixed._ Reports chart sums to zero: `length` arrives as a decimal string and `Number.isFinite` rejects it. Same stale `ZmEvent.length: number` type hides it elsewhere. | `src/features/reports/bucketEventsByHour.ts:41`; `src/types/index.ts:214` | S |
@@ -87,7 +89,7 @@ These are verified live, not inferred. Order within the list is severity.
 | F-17 ✅ | _Fixed: pages through all events._ Montage Review fetches 500 events per monitor with no sort or paging; busy cameras and the 30-day window drop events silently. | `src/features/montagereview/useReviewEvents.ts:20-37` | S |
 | F-18 ✅ | _Fixed: fields disabled with reason until zm-api#23._ User edit sends `password/name/phone/perms` that `UpdateUserRequest` (`email`,`enabled`) drops; UI reports success. Disable those fields with a reason until BT-06. | `src/api/users.ts:54-68`; `src/routes/settings/users.tsx:448-455` | S |
 | F-19 ✅ | Monitor editor field types — _fixed 2026-08-21 with F-2 (bitmask select, phantom keys removed, `method` select). Backend rejects `save_jpe_gs` 2/3: zm-api#39._ | `src/features/monitors/editor/fields.ts:190-191, 237, 274, 311` | S |
-| F-20 | ~~Rotate Logs posts to `/system/log_rotate`~~ (fixed); ~~logout wrapper uses POST and is never called~~ (fixed: `GET /auth/logout` on logout); Start/Stop/Restart ZoneMinder on `/settings` and `/settings/state` still have no confirmation. | `src/api/system.ts:98-100`; `src/api/auth.ts:22-30`; `src/routes/settings/index.tsx:488-560` | S |
+| F-20 ✅ | _All three closed._ ~~Rotate Logs posts to `/system/log_rotate`~~; ~~logout wrapper uses POST and is never called~~ (now `GET /auth/logout`); ~~Start/Stop/Restart have no confirmation~~ — system actions on `/settings` run through `ConfirmAction` in `useSettingsOptionsPage`, and `/settings/state` apply and delete each go through a `ConfirmDialog`. | `src/api/system.ts:98-100`; `src/api/auth.ts:22-30`; `src/routes/settings/index.tsx:488-560` | S |
 | F-21 ✅ | _Fixed: root ErrorBoundary, router error/404 inside the shell, QueryState, backend banner, no 4xx retries._ Backend-down renders as "No events found" / "No monitors configured" on 21 of 24 routes; no error boundary, no router `errorComponent`/`notFoundComponent`; `retry: 1` retries 4xx. | `src/main.tsx:15-25`; every route | M |
 | F-22 ✅ | _Fixed: viewport × foreground × budget gating (`maxLiveTiles`, default 12), live by default per decision 7._ Console opens a WebRTC session per enabled monitor by default with no viewport gating (`useInViewport` exists, only `MonitorPreview` uses it). | `src/routes/index.tsx:71`; `src/components/common/StreamCell.tsx:170-178` | M |
 | F-23 ◐ | _Referrer meta added, audit 0, devtools moved; refresh token stays in localStorage (the persistence e2e asserts it; revisit with zm-api#34)._ Both JWTs in `localStorage`; token in `?token=` on `<img>`, download links, Safari HLS and WS (lands in proxy logs and browser history); `npm audit --omit=dev` has 1 critical + 5 high (devtools declared as prod deps; `motion` unused). | `src/stores/auth.ts:160-167`; `package.json` | S now (audit fix, referrer meta, devtools→dev) / M (blob thumbnails, media tokens BT-24) |
@@ -110,7 +112,12 @@ These are verified live, not inferred. Order within the list is severity.
 - Colour is back to meaning state: the tile keeps it for lens, live mark, alarm border and an fps that has fallen behind; the sparkline, the 1H/24H/7D counters and the hover glow lose it. The pinging LIVE pill on every tile is one dot.
 - A real bug fell out of it: the console held the filter result in state seeded from an empty monitor list, so with the bar behind a disclosure the wall came up empty. The filter is now a headless hook (`useMonitorFilter`) both the wall and the bar read.
 
-The same pass across the other 21 modern pages and the shared feature components is in flight.
+**Done 2026-08-22 (wave 8): the pass finished, and the skin got its name.** All 23 modern pages and the shared feature components now follow the structural rules; "Mission Control" is renamed **Modern** everywhere (id, registry, picker, docs), which is what the skin had actually become. Four things fell out of finishing it:
+
+- **Video fits its frame, in every aspect ratio.** Portrait cameras were laid out full-width on Watch, Cycle and the monitors list, so the bottom of the picture sat below the fold with nothing to scroll. `useStageFit` measures the available box and `stageFitStyle` fits to width or height by the camera's own ratio.
+- **Event playback fits the page and pinches to zoom** (`usePinchZoom`: two-finger pinch, trackpad pinch, drag to pan, double-click to reset), shared with the live stage on Watch, which also gained a volume slider.
+- **Rotated cameras play upright.** Chromium already applies the mp4 rotation tag, so the fix was to trust the decoded dimensions rather than re-rotate; only the poster still needs an explicitly rotated `<img>`.
+- The README screenshots are regenerated from a committed script (`npm run screenshots`) with video blurred in-page, so they can be refreshed instead of re-staged by hand.
 
 **Recommendation (unchanged): keep one codebase, replace "Mission Control" with a neutral light + dark token system, and rebuild the classic skin as a true legacy layout on the six pages operators live in (Console, Events, Event view, Watch, Montage/Cycle/Review, Options).** Do not ship classic-only, and do not keep polishing the cyberpunk look.
 
@@ -130,7 +137,11 @@ Architecture rule that makes two skins sustainable: two *layouts* on one token a
 
 ### W1 — API contract layer (stops the next F-4 from shipping)
 
-- Generate types from the OpenAPI document (`openapi-typescript`); replace the hand-written `src/types/index.ts` shapes that drifted (`Monitor.enabled`, `ZmEvent.length`, `ServerStats`, `MonitorRuntimeStatus`, `SystemStatusResponse.daemons`, `Control` missing 45 range fields, `ZmConfig` missing `pattern/format`, `UserClaims` missing `perms`, `EventVideoInfo.in_progress`).
+- ✅ **Done 2026-08-23.** `npm run types:generate` emits `src/types/api.generated.ts` from the tracked snapshot, and `src/types/api.contract.test-d.ts` asserts the hand-written shapes against it **at compile time** — a field whose declared type stops matching is a `tsc -b` error naming the field, at no runtime cost. Verified to fail by re-introducing F-12's bug (`ZmEvent.length` as `number`), which it caught.
+
+  Two things this turned up. The drift the row was written for is **already gone**: comparing every declared field of `Monitor`, `ZmEvent` and `User` against the spec found *zero* type mismatches, so the value here is preventing the next one, not fixing the last one. And zm-api's spec ships **duplicate `operationId`s** — `list_models`, `create_model`, `get_model`, `delete_model`, `update_model`, `update_state` are each declared twice with different shapes — which makes the generated `paths`/`operations` blocks uncompilable; `scripts/generate-api-types.mjs` strips them and says why. That is zm-api#32 (spec hygiene) with a concrete reproduction.
+
+  Original text: generate types from the OpenAPI document (`openapi-typescript`); replace the hand-written `src/types/index.ts` shapes that drifted (`Monitor.enabled`, `ZmEvent.length`, `ServerStats`, `MonitorRuntimeStatus`, `SystemStatusResponse.daemons`, `Control` missing 45 range fields, `ZmConfig` missing `pattern/format`, `UserClaims` missing `perms`, `EventVideoInfo.in_progress`).
 - One contract test that loads the OpenAPI JSON and asserts, for every `src/api/*` wrapper: method + path exist; query params are declared; every select option in `fields.ts` is a member of its enum; every `fields.ts` key exists in `UpdateMonitorRequest`. This single test would have caught F-2, F-4, F-10, F-13, F-19, F-20.
 - Response normalisers for the two enum vocabularies on monitors until BT-02 lands.
 - Shared, schema-validated MSW fixtures (`makeMonitor()`, `makeEvent()` with string `length`, 0/1 ints, full required fields) replacing the 82 ad-hoc `setupServer()` blocks.
@@ -157,7 +168,9 @@ F-5, F-7, F-23 above; `<meta name="referrer" content="no-referrer">`; self-host 
 
 ### W7 — Time, locale, config consumption
 
-Central date/time formatter honouring `ZM_DATE_FORMAT_PATTERN` / `ZM_DATETIME_FORMAT_PATTERN` / `ZM_TIME_FORMAT_PATTERN` and a server timezone (BT-23), with the viewer's locale (header clock hard-codes `en-US`); the F-9 workaround lives here. Consume the `ZM_WEB_*` rows the dashboard already edits but never reads: `EVENTS_PER_PAGE`, `EVENT_SORT_FIELD/ORDER`, `LIST_THUMBS` + sizes, `ID_ON_CONSOLE`, `HOMEVIEW`, `POPUP_ON_ALARM` / `SOUND_ON_ALARM` / `ALARM_SOUND` (driven by `/monitor-status`), `TITLE`/`TITLE_PREFIX`/`CONSOLE_BANNER`, `SHOW_SERVER_STATS`, `OPT_CONTROL` / `OPT_X10` / `FEATURES_SNAPSHOTS` gates, `USER_SELF_EDIT`, `CHECK_FOR_UPDATES` + `ZM_DYN_*`. Set `document.title` per route. **Decided 2026-08-21: string extraction ships in 1.0.** Foundation in place (see `docs/I18N.md`): i18next + react-i18next with English-text keys, `npm run i18n:extract` / `i18n:check` (CI gate), lazy per-language catalogues, a seeder that copies exact-match translations from ZoneMinder's 27 `web/lang/*.php` files, and a language picker. Direction: `applyDirection()` sets `<html dir lang>`; layout uses logical CSS only (`scripts/codemod-logical-css.mjs` rewrites physical utilities), directional icons carry `rtl:-scale-x-100`, and physical media (video, montage wall, timelines, PTZ pad, zone polygons, charts) sits in `dir="ltr"`. Hebrew is RTL today; Arabic/Persian reserved. Vertical writing modes are an explicit non-goal for UI chrome (no ZoneMinder locale uses one); logical properties keep block/inline axes correct if one ever does, and physical media stays horizontal regardless.
+Central date/time formatter honouring `ZM_DATE_FORMAT_PATTERN` / `ZM_DATETIME_FORMAT_PATTERN` / `ZM_TIME_FORMAT_PATTERN` and a server timezone (BT-23), with the viewer's locale (header clock hard-codes `en-US`); the F-9 workaround lives here. Consume the `ZM_WEB_*` rows the dashboard already edits but never reads: `EVENTS_PER_PAGE`, `EVENT_SORT_FIELD/ORDER`, `LIST_THUMBS` + sizes, `ID_ON_CONSOLE`, `HOMEVIEW`, `POPUP_ON_ALARM` / `SOUND_ON_ALARM` / `ALARM_SOUND` (driven by `/monitor-status`), `TITLE`/`TITLE_PREFIX`/`CONSOLE_BANNER`, `SHOW_SERVER_STATS`, `OPT_CONTROL` / `OPT_X10` / `FEATURES_SNAPSHOTS` gates, `USER_SELF_EDIT`, `CHECK_FOR_UPDATES` + `ZM_DYN_*`. Set `document.title` per route. **Decided 2026-08-21: string extraction ships in 1.0.** Foundation in place (see `docs/I18N.md`): i18next + react-i18next with English-text keys, `npm run i18n:extract` / `i18n:check` (CI gate), lazy per-language catalogues, a seeder that copies exact-match translations from ZoneMinder's 27 `web/lang/*.php` files, and a language picker. Direction: `applyDirection()` sets `<html dir lang>`; layout uses logical CSS only (`scripts/codemod-logical-css.mjs` rewrites physical utilities), directional icons carry `rtl:-scale-x-100`, and physical media (video, montage wall, timelines, PTZ pad, zone polygons, charts) sits in `dir="ltr"`. Hebrew, Arabic and Persian are all RTL and all three now have catalogues — Arabic and Persian were offered in the picker with no file behind them until a catalogue test caught it.
+
+**i18n status (2026-08-22).** Extraction rewrites all 26 catalogues, not just `en`, and `i18n:check` diffs the whole directory; before that the others had drifted 720 keys behind the UI. Seeding from ZoneMinder was reworked (trailing-punctuation-insensitive matching, abbreviation rejection) and went from ~2% to the ceiling: ZoneMinder ships **757** strings, this UI has **1,739**, and only **208 (12%)** overlap — no importer does better, and the rest needs translators. Each catalogue carries exactly its language's CLDR plural categories, and `src/i18n/catalogues.test.ts` guards servable languages, key parity, placeholder and `<Trans>`-index integrity, and those plural categories. The files are deliberately in the shape a git-backed translation platform reads without a reformat (`docs/I18N.md` records the properties and the two settings that must match); adopting one is the open decision. Vertical writing modes are an explicit non-goal for UI chrome (no ZoneMinder locale uses one); logical properties keep block/inline axes correct if one ever does, and physical media stays horizontal regardless.
 
 ### W8 — URL compatibility and keyboard
 
@@ -166,6 +179,48 @@ A `view=` compatibility router in `__root.tsx` mapping `?view=watch&mid=`, `?vie
 ### W9 — Feature parity build-out (frontend-only, backend already supports)
 
 Ordered by daily use. Effort is per area, after W1–W3 are in place.
+
+> **Re-verification, 2026-08-23 — this table is stale and badly overstates the remaining work.** Every area below was driven in a browser: first against the live dev box (ZM 1.39.16 / zm-api on `.45`), and after that box's API died mid-session, against the hermetic seeded stack. Static grep was tried first and contradicted itself in both directions within one pass, so **only in-browser observation is recorded here**.
+>
+> **Verified built** (budgeted days in brackets):
+>
+> | Area | | What is there |
+> |---|---|---|
+> | Events list | 8 d | Bulk View / Download / Edit / Archive / Unarchive / Delete; sort on 9 fields; column chooser (16); CSV export; refresh; pager with jump-to-page; tri-state archive filter; card/table toggle |
+> | Filters | 6 d | Both real dev-box filters load **with their rules** — the F-1 symptom is gone. Condition builder, first-class actions, Sort by / direction / Limit / Skip locked / Execute interval, Preview, List matches, Export matches, Save As, Reset, Debug |
+> | Watch / PTZ | 6 d | 8-way D-pad, Home, zoom (Wider/Near/Closer/Far), **preset slots with their names** from `/control_presets`, save/clear preset, Scale select, Stream/Stills, Force + Cancel Alarm, Download Image, fullscreen, WebRTC/HLS, function buttons, Details/Status/Motion-zones/Recent-events panels |
+> | Montage Review | 5 d | 0.25×–16× speeds, Fit, zoom in/out, pan earlier/later, 1 h / 8 h / 24 h ranges, per-monitor filter, All events, Live |
+> | Montage | 5 d | Display, Layout, split/remove tile, fullscreen, WebRTC/HLS, Restart |
+> | Options | 5 d | Category tab rail with counts, per-row reset-to-default, help/prompt text, daemon control, Start/Stop/Restart/Rotate Logs, Appearance (skin, theme, language) |
+> | Users | 3 d | Add / Edit / Delete, bulk delete, Export CSV + JSON |
+> | Servers / Storage | 3 d | Servers: Register / Edit / Delete / Details with live CPU, Load, Free mem, Free swap columns. Storage: Add / Edit / Delete, Disk space, Events, Enabled |
+> | Logs | 2 d | Level filters with live counts, Clear Logs, column chooser, CSV download, paging, refresh |
+> | Audit | 3 d | The legacy gap semantic — Events / FirstEvent / LastEvent / MinGap / MaxGap / MissingFiles / ZeroSize / Server, monitor filter, refresh |
+> | Cycle | 2 d | 5/10/20/30/60 s intervals, Stills toggle, prev/next monitor, pause, filter bar |
+> | PTZ control profiles | 4 d | The full protocol list with Add profile |
+> | Zones | 3 d | Zone list per monitor with New; editor reachable |
+>
+> That is **55 of the 75–85 budgeted days already spent.** The estimate below was written before the work was done and has not been revised since.
+>
+> **What the pass found open, and what was done about it:**
+>
+> - ✅ **Watch had no monitor navigation** — moving between cameras meant going back to the console. Fixed: `useWatchPage` exposes `siblings`/`prevMonitorId`/`nextMonitorId` off the shared `['monitors']` query; modern renders wrapping prev/next links with an `n/m` position, classic gets the legacy monitor dropdown in its action row. Verified in a browser (9002 → 9003).
+> - ✅ **Two event timestamps bypassed the W7 formatter** — the modern Watch's Recent Events and the filter Matches preview called `toLocaleString()` directly, so the same event showed a different time there than on the Events list, ignoring ZoneMinder's format patterns and the server zone. Both now use `useDateTimeFormat`.
+> - Not a gap after all: **Watch's events panel.** Classic already has the full paginated `ClassicEventsTable` with a pager; modern shows recent events plus a "View all" deep link into the filtered events page, which is the right call for that layout.
+> **The rest of the table, measured the same way — all built:**
+>
+> | Area | | What is there |
+> |---|---|---|
+> | Console (classic) | 5 d | Checkbox column, Add / Clone / Edit / Delete / Select toolbar, Scan Network, Zones / Server / Storage columns, Hour / Day / Week / Month event counts, column chooser, Export, Refresh, per-field filter clears, Sort + Reset sort order |
+> | Event detail | 5 d | Archive, Edit, Delete, prev/next event, prev/next frame, Back/Forward 10 s, playback-speed and replay-mode selects, Scale, Show Zones, Stats, tag editor |
+> | Monitor editor | 8 d | Nine legacy tabs; source-type-dependent fields incl. Decoder + hwaccel + device, target colourspace, deinterlacing, method, orientation, resolution preset, the four image adjustments, linked monitors, group membership |
+> | Groups / Reports | 2 d | Groups: add / edit / delete with member counts. Reports: table with Filter / Interval / Range, new, delete |
+>
+> **Conclusion: every W9 area is substantially built.** Two genuine gaps came out of the whole pass, both now fixed (above). The 75–85 day Phase 3 estimate is spent; what remains for 1.0 is Section 10's release criteria, not W9 feature work.
+>
+> Backend findings from this pass are filed, not worked around: the duplicate `operationId`s as a reproduction on **zm-api#32**, and the login field rename as **zm-api#65**.
+>
+> Two environment findings worth keeping: the dev box's zm-api (`.45:8080`) went down mid-session and stayed down; and `.54:8090` runs a newer zm-api whose login takes `username`/`password` where `.45` and this client send `user`/`pass` — another undocumented breaking change of the zm-api#62 kind.
 
 | Area | Work (all FE-possible today) | Effort |
 |---|---|---|
@@ -195,6 +250,8 @@ Deliberately out of scope: bandwidth profiles (the stub "High" chip is gone from
 
 ## 7. Backend tickets for zm-api
 
+- **#65 — login request fields renamed `user`/`pass` → `username`/`password` with no changelog entry** (filed 2026-08-23). The newer dev-box build 422s on the body every existing client sends; the two builds are mutually exclusive. Per this project's policy no compatibility shim was added — zm-web keeps sending the documented names and cannot talk to that build until it is resolved.
+- **#32 — duplicate `operationId`s** (reproduction added 2026-08-23). Six ids are declared twice with different shapes (`list_models`, `create_model`, `get_model`, `delete_model`, `update_model`, `update_state`), which makes generated `paths`/`operations` uncompilable for any codegen client. `scripts/generate-api-types.mjs` strips those blocks and keeps `components`.
 - **#62 — `GET /me` changed shape (`UserResponse` → `MeResponse`) with no changelog entry** (filed 2026-08-22). Reading the wrapper as a user left every permission column absent, which fails closed to `None`: the camera wall and every edit control vanished. Fixed our side in `8ed9c69`; the ask upstream is the changelog entry and a CI guard that fails when an existing `responses.200` `$ref` changes.
 - **#58 — docs and config still say `zm-dash`/`zm-dashboard`** (filed 2026-08-22). Five references, two of them in `settings/base.toml`'s CORS comments where an operator reads them while debugging. Comments only; nothing breaks. The issue also carries the Option D spec, since `docs/architecture.md`'s nginx example is the thing that changes if `zm-api` starts serving `dist/`.
 - **#52 — `POST /reports` 500s on a name longer than 30 characters** (filed 2026-08-22). `Reports.Name` is `varchar(30)`; the truncation surfaces as `DATABASE_ERROR` instead of a 400 naming the field. Both skins cap the input at 30 as a workaround; the same class of bug likely affects every fixed-width ZoneMinder column the API writes.
@@ -235,16 +292,16 @@ Still open, with what each one blocks:
 
 ## 8. Test strategy
 
-### Where it stands (2026-08-22, waves 5–6)
+### Where it stands (measured 2026-08-23)
 
 | | at review | now |
 |---|---|---|
-| unit tests / files | 725 / 83 | **3,373 / 272** |
-| statements / branches | 54.2% / 49.2% | **95.7% / 89.0%** |
-| functions / lines | 50.8% / 55.0% | **95.8% / 97.1%** |
+| unit tests / files | 725 / 83 | **3,506 / 277** |
+| statements / branches | 54.2% / 49.2% | **95.3% / 88.4%** |
+| functions / lines | 50.8% / 55.0% | **95.6% / 96.8%** |
 | files at 0% | 27 | **0** |
 | routes with a test | 14 of 24 | **every page key, both skins** |
-| e2e | 18, live box only | **430 seeded (chromium + mobile + webkit), 28 live** |
+| e2e | 18, live box only | **482 seeded (chromium + mobile + webkit), 28 live** |
 | CI | none | typecheck, lint, unit + coverage + per-file floor, i18n check, build, audit, container smoke, seeded e2e |
 
 Thresholds are the release bar (85/75/85/85 aggregate) plus a per-file floor
@@ -291,14 +348,14 @@ editor having an accessible name; the coverage floor that enforced nothing.
 
 ## 9. Roadmap
 
-| Phase | Contents | Effort | Exit criterion |
-|---|---|---|---|
-| **0 — Stop the bleeding** | F-1…F-8 (+ dev-box zone repair), Test Tier 0, README/CLAUDE.md truth, `npm audit fix`, devtools → dev deps, drop `motion`, delete stray `events-cleared.yaml` | 7–9 d | CI green on every PR; no known data-destroying path; deployable from a container |
-| **1 — Contract & platform** | W1, W2, W3, W4, W5, W6; F-9…F-24; Test Tiers 1–3 | 18–22 d | Every wrapper contract-tested; backend-down and 403 are visible; permissions gate routes/nav/edits; bundle split; streams survive ICE drops |
-| **2 — Design system & classic foundation** | Section 5 tokens + primitives + classic primitives + Material icons + mobile drawer + dialog a11y; classic `OptionsLayout`; W7 formatter + `ZM_WEB_*` consumption; W8 URL shims + shortcuts | 14–17 d | Light + dark themes; no inline button/input recipes; classic nav reaches every admin page; legacy bookmarks resolve |
-| **3 — Parity build-out** | W9 by area in the listed order; classic rebuild of the six core pages; Test Tiers 4–7 running alongside | 75–85 d | Every FE-possible row in Section 6/W9 closed; classic fidelity ≥ 85 on the six core pages; every route has both-skin e2e |
-| **4 — Release** | Versioning + CHANGELOG + release workflow; browser matrix; docs; tag **v1.0.0** | 3–4 d | Section 10 checklist all green |
-| **5 — Backend-dependent (1.1+)** | Items gated on BT-03…BT-26 as zm-api ships them; translations | per ticket | — |
+| Phase | Contents | Effort | Exit criterion | Status (2026-08-23) |
+|---|---|---|---|---|
+| **0 — Stop the bleeding** | F-1…F-8 (+ dev-box zone repair), Test Tier 0, README/CLAUDE.md truth, `npm audit fix`, devtools → dev deps, drop `motion`, delete stray `events-cleared.yaml` | 7–9 d | CI green on every PR; no known data-destroying path; deployable from a container | **Done.** All three criteria met; `main` gates on five required checks. |
+| **1 — Contract & platform** | W1, W2, W3, W4, W5, W6; F-9…F-24; Test Tiers 1–3 | 18–22 d | Every wrapper contract-tested; backend-down and 403 are visible; permissions gate routes/nav/edits; bundle split; streams survive ICE drops | **Mostly done.** W2/W3/W4 complete; contract test (175 cases) against a tracked OpenAPI snapshot; F-9…F-22, F-24, F-25 closed. **Open:** F-23 ◐. W1 closed 2026-08-23 (see below). W5 closed 2026-08-23: `manualChunks` splits react/tanstack/i18n out of the entry (540 kB → 177 kB raw), and `npm run bundle:budget` gates the initial download in CI at 200 kB gz JS / 18 kB gz CSS against 170.3 / 14.4 today — verified to fail when breached, unlike the coverage floor it replaces the lesson of. |
+| **2 — Design system & classic foundation** | Section 5 tokens + primitives + classic primitives + Material icons + mobile drawer + dialog a11y; classic `OptionsLayout`; W7 formatter + `ZM_WEB_*` consumption; W8 URL shims + shortcuts | 14–17 d | Light + dark themes; no inline button/input recipes; classic nav reaches every admin page; legacy bookmarks resolve | **Mostly done.** All four criteria met; the modern IA rebuild (waves 7–8) went past the original scope. **Open:** the `ZM_WEB_*` rows listed in W7 are still mostly unread. |
+| **3 — Parity build-out** | W9 by area in the listed order; classic rebuild of the six core pages; Test Tiers 4–7 running alongside | 75–85 d | Every FE-possible row in Section 6/W9 closed; classic fidelity ≥ 85 on the six core pages; every route has both-skin e2e | **Feature work essentially complete.** Classic owns all 23 pages on legacy layouts (wave 4), Tiers 4–7 are running, and the 2026-08-23 re-verification drove **every** W9 area in a browser: all are substantially built. The two real gaps it found (Watch monitor navigation, two timestamps bypassing the W7 formatter) are fixed. What is left before 1.0 is Section 10, not W9. **Still unmeasured: classic fidelity** — the ≥ 85 criterion needs fresh captures of the legacy UI, and the dev box that hosts it is down. |
+| **4 — Release** | Versioning + CHANGELOG + release workflow; browser matrix; docs; tag **v1.0.0** | 3–4 d | Section 10 checklist all green | **Machinery done 2026-08-23**, version set to `0.9.0`: `CHANGELOG.md`, `.github/workflows/release.yml` (tag-triggered, refuses to publish if the tag disagrees with `package.json`, the CHANGELOG has no section, or the commit has no green CI run; publishes a multi-arch GHCR image and a release from the CHANGELOG section), `.github/dependabot.yml`, and a browser matrix in the README. Remaining: tag v0.9.0, then the 1.0 criteria in Section 10. |
+| **5 — Backend-dependent (1.1+)** | Items gated on the open zm-api tickets in Section 7 as they ship; translation coverage | per ticket | — | Ongoing — 8 of 24 tickets landed and are consumed. |
 
 Milestones: **v0.9 beta** at the end of Phase 2 (correct, deployable, secure, both skins usable, parity still partial); **v1.0** at the end of Phase 4; **v1.1** as backend tickets land.
 
@@ -325,7 +382,7 @@ should be rare enough to be memorable.
 - Lint, `tsc -b`, build, `npm audit --omit=dev` clean in CI; bundle budget enforced; no credential or IP literal in tracked files.
 - Dockerfile + nginx/Caddy samples + runtime API config + TLS/WS proxy docs; a "serve `dist/` behind nginx" smoke test in CI.
 - Permission model gates routes, nav and edit affordances for all eight levels; logout revokes what the backend allows; secrets never render.
-- Times correct against a fixed server offset (test pinned with `TZ=`), honouring ZM date-format config.
+- ✅ Times correct against a fixed server offset, honouring ZM date-format config. **Done 2026-08-23** — differently from how this row was written: the suite was checked at UTC+14 and UTC−11 and is already zone-independent, so pinning it to one `TZ` would have hidden future drift rather than caught it. Instead `npm run test:tz` runs the whole suite at `Pacific/Kiritimati` (+14, the furthest a date can be pushed into tomorrow) as its own CI job, keeping the property true. It is not yet in the required-check list on `main` — that is a repo-settings change to make deliberately.
 
 ## 11. Decisions (taken 2026-08-21)
 
@@ -337,7 +394,9 @@ should be rare enough to be memorable.
 6. **Seeded e2e reuses zm-api's docker test DB** (Test Tier 4); nightly live tests stay on a real box.
 7. **Console thumbnails stay live by default**, gated on viewport visibility with a concurrency cap (PERF-2 becomes "gate, don't default off").
 
-## 12. Done on 2026-08-21
+## 12. Done log
+
+### 2026-08-21 — review, decisions, P0
 
 Review pass:
 - `.env` repointed at the dev box; `@vitest/coverage-v8` added and `vitest.config.ts` now measures all of `src/**` with thresholds.
@@ -357,4 +416,16 @@ Wave 3 (same night, after zm-api#17/#19/#28/#38 were fixed on the backend branch
 
 Wave 4 (2026-08-22, early): classic skin owns all 23 pages (borrowed list empty) on shared classic primitives — Console/Watch/Cycle/Montage/Review/Zones/Events/Event view/Frames/Filters/Logs/Reports/Options/admin/Groups/Login rebuilt to legacy layouts; monitor editor at legacy field depth for every source type with validation and 422 mapping; ONVIF discovery dialog + monitor presets; Audit rewritten to the legacy gap semantic; Frames view; PTZ control-profile editor; users list/matrix polish; modern mobile drawer; QueryState/toasts/RequirePerm adopted across pages; legacy URL params consumed; `/login?reason=expired`. Tests 1,455 / 158 files; lint 0/0; build 190 chunks. Still open from W9: Montage Review Fit/archived filter, modern cycle sidebar on Watch, classic montage gridstack resize (reorder only), Event export (needs zm-api#30), MissingFiles/ZeroSize (zm-api#36), frame thumbnails (zm-api#26), Clear Logs (zm-api#21).
 
-Work is committed on branch `feat/proper-skins-i18n` (16 commits) for review and merge to `main`.
+Wave 5–6 (2026-08-22): semantic light+dark token layer with a stylesheet-parsing contrast test, shared primitives, and the test build-out in Section 8 (725 → 3,373 tests, real coverage 54% → 95%, seeded e2e, CI).
+
+Wave 7 (2026-08-22): the modern skin's information architecture — fixed frame, one line of chrome, console as a wall, events as a table (Section 5).
+
+### 2026-08-22 — wave 8
+
+- **Modern design pass finished** across all 23 pages; skin renamed Mission Control → **Modern**; portrait cameras fit their frame; pinch-zoom on event playback and the live stage; rotated playback upright; screenshots reproducible from a script (Section 5).
+- **Project renamed `zm-dashboard` → `zm-web`** — package, docs, container, Caddy/nginx examples, GitHub repo. `docs/DEPLOYMENT.md` now separates what exists (container + reverse proxy) from the one-binary target (zm-api serves `dist/`), filed upstream as zm-api#58.
+- **Repo went public and `main` is gated** on five required checks with auto-merge (Section 10). Branch protection was impossible while private on the Free plan, and the gap had already cost two bad merges that morning.
+- **CI made honest.** Seeded e2e now builds `zm_api` as its own step, waits like a real runner, installs webkit for the mobile project, and previews a production build instead of a cold dev server. Four separate causes were fixed in sequence, one of them a genuine MSW/Node 22 defect (`Blob` responses) that I twice misread as runner flake.
+- **zm-api#62** — `GET /me` changed shape with no changelog entry, which read as "no permissions" and emptied the UI. Fixed our side; the ask upstream is a spec-diff CI guard.
+- **i18n** — see W7. Catalogue sync, the 12% ceiling documented, CLDR plural categories per language, translation-platform compatibility recorded.
+- **P0/P1 closed this pass:** F-3, F-6, F-9, F-20, F-25. The register is now clear except **F-23 ◐** (refresh token in `localStorage`, pending zm-api#34).

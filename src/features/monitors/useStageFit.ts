@@ -51,3 +51,45 @@ export function stageFitStyle(box: Box, w: number, h: number): CSSProperties {
   }
   return { width: Math.floor(fitted.width), height: Math.floor(fitted.height) };
 }
+
+/**
+ * How much height is left below an element, in the viewport.
+ *
+ * For layouts that scroll (the classic skin's pages do) there is no definite
+ * parent height to fit into, so the stage cannot simply be `height: 100%`.
+ * The alternative it replaces was `calc(100vh - 14rem)` — a constant standing
+ * in for the chrome above, which silently stopped being true the moment a
+ * control was added to that chrome. Measuring the element's own top gives the
+ * same answer and stays true.
+ *
+ * Only `top` is read, so observing the element cannot feed back: setting its
+ * height does not move it.
+ */
+export function useAvailableHeight<T extends HTMLElement>(
+  bottomGap = 16,
+): [(el: T | null) => void, number] {
+  const [node, setNode] = useState<T | null>(null);
+  const [px, setPx] = useState(0);
+  const ref = useCallback((el: T | null) => setNode(el), []);
+
+  useEffect(() => {
+    if (!node) return;
+    const measure = () => {
+      const { top } = node.getBoundingClientRect();
+      setPx(Math.max(0, window.innerHeight - top - bottomGap));
+    };
+    measure();
+    // The element for its own position, the body for anything above it
+    // changing height (an alarm banner appearing, the toolbar wrapping).
+    const ro = new ResizeObserver(measure);
+    ro.observe(node);
+    ro.observe(document.body);
+    window.addEventListener('resize', measure);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener('resize', measure);
+    };
+  }, [node, bottomGap]);
+
+  return [ref, px];
+}

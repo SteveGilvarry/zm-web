@@ -1,7 +1,7 @@
 {
   "name": "zm-web",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.9.0",
   "type": "module",
   "engines": {
     "node": ">=20"
@@ -9,6 +9,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "bundle:budget": "node scripts/bundle-budget.mjs",
+    "types:generate": "node scripts/generate-api-types.mjs",
     "lint": "eslint .",
     "preview": "vite preview",
     "test": "vitest run",
@@ -23,6 +25,7 @@
     "screenshots": "node scripts/screenshots.mjs",
     "css:logical": "node scripts/codemod-logical-css.mjs",
     "test:coverage": "vitest run --coverage && node scripts/coverage-floor.mjs",
+    "test:tz": "TZ=Pacific/Kiritimati vitest run",
     "test:e2e:seeded": "E2E_MODE=seeded playwright test",
     "e2e:seed:up": "bash e2e/seed/up.sh",
     "e2e:seed:reset": "bash e2e/seed/reset.sh",
@@ -73,6 +76,7 @@
     "i18next-parser": "^9.0.2",
     "jsdom": "^29.1.1",
     "msw": "^2.14.6",
+    "openapi-typescript": "^7.13.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^7.2.4",

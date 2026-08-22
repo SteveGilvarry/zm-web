@@ -52,6 +52,15 @@ export const SCALE_VALUES = ['0', '100', 'fit_to_width', '480px', '640px', '800p
 export function stageStyle(
   size: StageSize,
   dims: { width: number; height: number },
+  /**
+   * Height actually left below the stage, measured by the page. Portrait
+   * cameras on Auto are sized by height, and the fallback below guesses
+   * that height from the viewport minus a constant — a guess that breaks
+   * the moment anything is added to the chrome above (adding the monitor
+   * chooser to the classic action row pushed the picture off-screen). Pass
+   * a measurement and the guess is not used.
+   */
+  availableHeightPx?: number,
 ): CSSProperties {
   const style: CSSProperties = {
     aspectRatio: dims.width > 0 && dims.height > 0 ? `${dims.width} / ${dims.height}` : '16 / 9',
@@ -74,7 +83,9 @@ export function stageStyle(
       // Auto = fit the viewport. A portrait camera at full column width
       // would be taller than the screen, so it is sized by height instead.
       if (portrait) {
-        style.height = 'calc(100vh - 14rem)';
+        style.height = availableHeightPx && availableHeightPx > 0
+          ? `${Math.floor(availableHeightPx)}px`
+          : 'calc(100vh - 14rem)';
         style.width = 'auto';
       } else {
         style.width = '100%';

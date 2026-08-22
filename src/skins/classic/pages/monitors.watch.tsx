@@ -1,5 +1,6 @@
+import { useEffect } from 'react';
 import { clsx } from 'clsx';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, Bell, BellOff, Camera, Image as ImageIcon, Maximize2, Pencil, Play,
@@ -16,6 +17,7 @@ import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
 import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
 import { useMonitorEvents } from '@/features/monitors/useMonitorEvents';
 import { formatFps } from '@/features/monitors/useMonitorStatuses';
+import { useAvailableHeight } from '@/features/monitors/useStageFit';
 import { useWatchPage } from '@/features/monitors/useWatchPage';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import { WatchLoading, WatchNotFound } from '@/skins/modern/layouts/WatchStates';
@@ -33,7 +35,13 @@ import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
  */
 export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const page = useWatchPage(monitorId);
+  const [stageAreaRef, availableHeight] = useAvailableHeight<HTMLDivElement>();
+  // Feed the measurement back so Auto sizes a portrait camera to the space
+  // that is actually left, rather than to a constant.
+  const { setAvailableHeight } = page.stage;
+  useEffect(() => { setAvailableHeight(availableHeight); }, [availableHeight, setAvailableHeight]);
   const { monitor, monitorLoading, runtime, alarm, ptzState, protocol, viewMode, stage } = page;
   const events = useMonitorEvents(monitorId, page.isAuthenticated && !!monitor);
   useDocumentTitle(monitor ? t('Monitor - {{id}} - {{name}}', { id: monitor.id, name: monitor.name }) : t('Watch'));
@@ -82,6 +90,16 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           label={t('Watch actions')}
           end={<StageSizeSelects stage={stage} monitors={[monitor]} />}
         >
+          {/* Legacy Watch puts the monitor chooser first in this row, so
+              stepping through cameras never goes via the console. */}
+          {page.siblings.length > 1 && (
+            <ClassicSelect
+              label={t('Monitor')}
+              value={String(monitor.id)}
+              options={page.siblings.map((m) => ({ value: String(m.id), label: m.name }))}
+              onChange={(value) => { void navigate({ to: '/monitors/$monitorId', params: { monitorId: value } }); }}
+            />
+          )}
           <RequirePerm feature="monitors" level="Edit">
             <ClassicButton icon={<Pencil size={14} />} onClick={page.openEditor}>{t('Edit')}</ClassicButton>
             <ClassicButton
@@ -144,7 +162,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
 
         {/* Stage + PTZ column */}
         <div className={clsx('flex flex-col gap-3 items-start', showPtz && 'lg:flex-row')}>
-          <div className="flex-1 min-w-0 w-full">
+          <div ref={stageAreaRef} className="flex-1 min-w-0 w-full">
             <RequirePerm feature="stream" level="View" fallback="message">
               <div dir="ltr" data-testid="watch-stage" className="relative bg-black mx-auto overflow-hidden" style={stage.style}>
                 {viewMode === 'stills' ? (

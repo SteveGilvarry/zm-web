@@ -28,8 +28,7 @@ import {
   Pencil,
   Camera,
   Image as ImageIcon,
-  Search,
-} from 'lucide-react';
+  Search, ChevronLeft} from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import type { CapturingMode, AnalysingMode, RecordingMode } from '@/types';
@@ -43,6 +42,7 @@ import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { zoneViewDimensions } from '@/features/zones/useZonesPage';
 import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useWatchPage } from '@/features/monitors/useWatchPage';
 import { formatFps } from '@/features/monitors/useMonitorStatuses';
 import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
@@ -75,12 +75,14 @@ const modeBtn = (active: boolean) =>
 export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
   const { t, i18n } = useTranslation();
   const page = useWatchPage(monitorId);
+  const { formatTime } = useDateTimeFormat();
   // Digital zoom on the live picture; the camera is not moved.
   const { ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom } =
     usePinchZoom<HTMLDivElement>();
   const {
     monitor, monitorLoading, events, liveStats, runtime, protocol, activeStream,
     isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, volume, setVolume,
+    siblings, siblingIndex, prevMonitorId, nextMonitorId,
     isFullscreen, isWide,
     editorOpen, openEditor, closeEditor, updateModes, isUpdating,
     startStream, stopStream, changeProtocol, toggleFullscreen, toggleMute, retry,
@@ -509,7 +511,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
               <span className="text-sm text-fg truncate">{event.name}</span>
               <span className="flex items-center gap-1 shrink-0 text-xs font-mono tabular-nums text-fg-dim">
                 <Clock size={11} aria-hidden />
-                {event.start_date_time ? new Date(event.start_date_time).toLocaleTimeString() : t('Unknown')}
+                {event.start_date_time ? formatTime(event.start_date_time) : t('Unknown')}
               </span>
             </Link>
           ))}
@@ -569,6 +571,35 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           </Link>
           <ChevronRight size={12} className="shrink-0 text-fg-faint rtl:-scale-x-100" aria-hidden />
           <span className="text-sm text-fg truncate min-w-0">{monitor.name}</span>
+
+          {/* Step between cameras without going back to the console. Real
+              links, so middle-click and the keyboard behave; they wrap, and
+              they are absent entirely when there is only one monitor. */}
+          {prevMonitorId !== null && nextMonitorId !== null && (
+            <div className="flex items-center gap-0.5 shrink-0">
+              <Link
+                to="/monitors/$monitorId"
+                params={{ monitorId: String(prevMonitorId) }}
+                aria-label={t('Previous monitor')}
+                title={t('Previous monitor')}
+                className="p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
+              >
+                <ChevronLeft size={14} className="rtl:-scale-x-100" aria-hidden />
+              </Link>
+              <span className="text-xs font-mono tabular-nums text-fg-faint">
+                {siblingIndex + 1}/{siblings.length}
+              </span>
+              <Link
+                to="/monitors/$monitorId"
+                params={{ monitorId: String(nextMonitorId) }}
+                aria-label={t('Next monitor')}
+                title={t('Next monitor')}
+                className="p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
+              >
+                <ChevronRight size={14} className="rtl:-scale-x-100" aria-hidden />
+              </Link>
+            </div>
+          )}
 
           <div className="ms-auto flex items-center gap-2 shrink-0">
             <div

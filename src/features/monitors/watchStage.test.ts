@@ -17,10 +17,28 @@ describe('width / height options', () => {
 
 describe('stageStyle', () => {
   const dims = { width: 1920, height: 1080 };
+  /** Rotate90: displayed portrait. */
+  const portraitDims = { width: 1080, height: 1920 };
   it('auto fills the column and keeps the camera aspect', () => {
     expect(stageStyle({ width: 'auto', height: 'auto', scale: '0' }, dims))
       .toMatchObject({ width: '100%', aspectRatio: '1920 / 1080', maxWidth: '100%' });
   });
+  it('auto sizes a portrait camera to the height the page measured', () => {
+    // The measurement is what keeps the picture on screen: the fallback
+    // below subtracts a constant for the chrome above the stage, and adding
+    // one control to that chrome once pushed a portrait camera's bottom off
+    // the viewport with nothing to scroll.
+    expect(stageStyle({ width: 'auto', height: 'auto', scale: '0' }, portraitDims, 640))
+      .toMatchObject({ height: '640px', width: 'auto', aspectRatio: '1080 / 1920' });
+  });
+
+  it('falls back to the viewport guess only when nothing measured it', () => {
+    for (const unmeasured of [undefined, 0]) {
+      expect(stageStyle({ width: 'auto', height: 'auto', scale: '0' }, portraitDims, unmeasured))
+        .toMatchObject({ height: 'calc(100vh - 14rem)' });
+    }
+  });
+
   it('auto sizes a portrait camera by viewport height instead of column width', () => {
     expect(stageStyle({ width: 'auto', height: 'auto', scale: '0' }, { width: 1080, height: 1920 }))
       .toMatchObject({ height: 'calc(100vh - 14rem)', width: 'auto', aspectRatio: '1080 / 1920' });

@@ -56,6 +56,23 @@ describe('translation catalogues', () => {
   const base = (key: string) => key.replace(/_(zero|one|two|few|many|other)$/u, '');
   const baseKeys = (cat: Record<string, string>) => new Set(Object.keys(cat).map(base));
 
+  /**
+   * Which plural forms a language has is a property of the language. i18next
+   * picks the form with `Intl.PluralRules`, so a category the language does
+   * not have is never looked up: it bloats the file and asks a translator for
+   * a string that can never render. `scripts/i18n-plurals.mjs` aligns them
+   * after extraction; this is the guard that it ran.
+   */
+  it.each(locales)('%s carries exactly its CLDR plural categories', (code) => {
+    const expected = new Intl.PluralRules(code).resolvedOptions().pluralCategories;
+    const present = new Set<string>();
+    for (const key of Object.keys(read(code))) {
+      const match = /_(zero|one|two|few|many|other)$/u.exec(key);
+      if (match) present.add(match[1]);
+    }
+    expect([...present].sort()).toEqual([...expected].sort());
+  });
+
   it.each(locales.filter((l) => l !== 'en'))('%s covers every string in en', (code) => {
     const theirs = baseKeys(read(code));
     const missing = [...baseKeys(en)].filter((k) => !theirs.has(k));
