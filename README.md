@@ -20,8 +20,8 @@ the [`zm-api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/modern.png" alt="Modern skin — a camera wall filling the frame under a single status line" /></td>
-<td width="50%"><img src="docs/screenshots/classic.png" alt="Classic ZoneMinder skin — legacy top nav and dense console table" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/modern.png" alt="Modern skin — a camera wall filling the frame under a single status line" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/classic.png" alt="Classic ZoneMinder skin — legacy top nav and dense console table" /></td>
 </tr>
 <tr>
 <td align="center"><strong>🎛️ Modern</strong> — content-first ops console</td>
@@ -35,24 +35,24 @@ the [`zm-api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 
 <table>
 <tr>
-<td width="50%"><img src="docs/screenshots/modern-events.png" alt="Events list: one query line, a dense sortable table, totals and pager in a status bar" /></td>
-<td width="50%"><img src="docs/screenshots/modern-watch.png" alt="Watch: the live stage with PTZ, details and recent events in a side rail" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/modern-events.png" alt="Events list: one query line, a dense sortable table, totals and pager in a status bar" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/modern-watch.png" alt="Watch: the live stage with PTZ, details and recent events in a side rail" /></td>
 </tr>
 <tr>
 <td align="center">Events — the table is the page</td>
 <td align="center">Watch — stage plus rail</td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/modern-montage.png" alt="Montage: a resizable mosaic of live cells with layout and display controls on one line" /></td>
-<td width="50%"><img src="docs/screenshots/modern-settings.png" alt="Settings: appearance, system overview and the ZoneMinder configuration editor" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/modern-montage.png" alt="Montage: a resizable mosaic of live cells with layout and display controls on one line" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/modern-settings.png" alt="Settings: appearance, system overview and the ZoneMinder configuration editor" /></td>
 </tr>
 <tr>
 <td align="center">Montage — resizable mosaic</td>
 <td align="center">Settings — configuration editor</td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/screenshots/modern-light.png" alt="The same console in the light theme" /></td>
-<td width="50%"><img src="docs/screenshots/classic-events.png" alt="Classic events list with the legacy filter form and bootstrap-style table" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/modern-light.png" alt="The same console in the light theme" /></td>
+<td width="50%"><img src="https://raw.githubusercontent.com/SteveGilvarry/zm-web/main/docs/screenshots/classic-events.png" alt="Classic events list with the legacy filter form and bootstrap-style table" /></td>
 </tr>
 <tr>
 <td align="center">Light theme — designed, not inverted</td>
@@ -63,7 +63,9 @@ the [`zm-api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 </details>
 
 <sub>Camera images are blurred; the dev box watches a real house.
-Regenerate with <code>node scripts/screenshots.mjs</code>.</sub>
+Regenerate with <code>npm run screenshots</code>. The sources are absolute
+because GitHub does not rewrite relative <code>src</code> inside raw HTML —
+it resolves against the page URL and 404s.</sub>
 
 </div>
 
