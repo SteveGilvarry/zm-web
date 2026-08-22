@@ -28,7 +28,7 @@ export function RequirePerm({ feature, level, fallback, children }: RequirePermP
 export function NoPermission() {
   const { t } = useTranslation();
   return (
-    <p role="status" className="text-sm text-text-muted">
+    <p role="status" className="text-sm text-fg-dim">
       {t('You do not have permission to view this.')}
     </p>
   );

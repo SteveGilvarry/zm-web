@@ -7,6 +7,7 @@ import {
   ChevronLeft, ChevronRight,
   Home, Plus, Minus, Focus as FocusIcon, Save, Trash2, AlertTriangle,
 } from 'lucide-react';
+import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { ptz, type PtzCapabilities, type PtzDirection } from '@/api/ptz';
 import { useControlPresets } from './useControlPresets';
 
@@ -19,10 +20,11 @@ interface PtzControlsProps {
 const ERROR_TTL_MS = 6_000;
 
 /**
- * PTZ control surface — instrument-console aesthetic: tactile depressing
- * buttons, cyan glow on press, inset shadows, mono-font readouts. Press-and-
- * hold via PointerEvents with pointer capture so releasing outside the
- * button still stops the camera.
+ * PTZ control surface — a neutral instrument panel. The pad is grey at rest
+ * and only lights up while a key is engaged, so a glance at the page tells
+ * you whether the camera is moving (docs/DESIGN.md). Press-and-hold via
+ * PointerEvents with pointer capture so releasing outside the button still
+ * stops the camera.
  *
  * Capabilities-gated: only renders the sub-clusters the backend advertises
  * for this monitor (e.g. no zoom cluster if `caps.zoom.can` is false; no
@@ -102,7 +104,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
   });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* D-pad cluster — the focal element of the panel. */}
       {pt.can_move && (
         <div className="flex justify-center" dir="ltr">
@@ -145,7 +147,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
       {error && (
         <div
           role="alert"
-          className="flex items-center gap-2 px-2.5 py-1.5 rounded-md border border-crimson/40 bg-crimson/10 text-crimson text-xs"
+          className="flex items-center gap-2 px-2.5 py-1.5 rounded border border-danger/30 bg-danger/12 text-danger text-xs"
         >
           <AlertTriangle size={12} className="flex-shrink-0" />
           <span className="truncate">{error}</span>
@@ -156,8 +158,8 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
       <Section
         label={t('Speed')}
         action={
-          <span className="text-sm font-mono tabular-nums text-cyan">
-            {speed}<span className="text-text-muted text-[10px] ms-0.5">%</span>
+          <span className="text-sm font-mono tabular-nums text-fg">
+            {speed}<span className="text-fg-dim text-xs ms-0.5">%</span>
           </span>
         }
       >
@@ -165,10 +167,10 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
           <input
             type="range" min={1} max={100} value={speed}
             onChange={(e) => setSpeed(parseInt(e.target.value, 10))}
-            className="w-full accent-cyan"
+            className="w-full accent-accent"
             aria-label={t('Movement speed')}
           />
-          <div className="flex justify-between text-[9px] font-mono text-text-dim select-none px-0.5">
+          <div className="flex justify-between text-xs font-mono text-fg-faint select-none px-0.5">
             <Tick value={1}  highlight={speed <= 12} />
             <Tick value={25} highlight={Math.abs(speed - 25) <= 12} />
             <Tick value={50} highlight={Math.abs(speed - 50) <= 12} />
@@ -223,7 +225,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
         <Section
           label={t('Presets')}
           action={
-            <span className="text-[10px] font-mono text-text-muted tabular-nums">
+            <span className="text-xs font-mono text-fg-dim tabular-nums">
               {t('{{count}} slot', { count: presetSlots })}
             </span>
           }
@@ -235,7 +237,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 type="button"
                 onClick={() => run(t('Preset {{n}}', { n }), ptz.gotoPreset(monitorId, n))}
                 className={clsx(
-                  'min-w-9 h-9 px-1.5 rounded-md border-2 border-border bg-surface text-cyan font-mono tabular-nums text-xs select-none transition-all hover:border-cyan/50 hover:bg-cyan/10 hover:shadow-[0_0_8px_rgba(0,212,255,0.15)] active:scale-95',
+                  'min-w-9 h-9 px-1.5 rounded border border-border bg-surface-2 text-fg font-mono tabular-nums text-xs select-none transition-colors hover:border-border hover:bg-surface-3',
                   presetLabels[n] && 'flex flex-col items-center justify-center leading-none gap-0.5',
                 )}
                 title={presetLabels[n] ? t('Go to preset {{n}}: {{label}}', { n, label: presetLabels[n] }) : t('Go to preset {{n}}', { n })}
@@ -243,7 +245,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               >
                 {n}
                 {presetLabels[n] && (
-                  <span className="text-[9px] font-sans normal-case text-text-secondary max-w-16 truncate">{presetLabels[n]}</span>
+                  <span className="text-xs font-sans text-fg-dim max-w-16 truncate">{presetLabels[n]}</span>
                 )}
               </button>
             ))}
@@ -254,7 +256,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               <select
                 value={presetSlot}
                 onChange={(e) => setPresetSlot(parseInt(e.target.value, 10))}
-                className="px-2 py-1.5 text-xs font-mono tabular-nums rounded-md border-2 border-border bg-surface text-text-primary"
+                className="px-2 py-1 text-label font-mono tabular-nums rounded bg-surface border border-border-subtle text-fg"
                 aria-label={t('Preset slot')}
               >
                 {Array.from({ length: presetSlots }, (_, i) => i + 1).map((n) => (
@@ -266,7 +268,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 placeholder={t('Name (optional)')}
                 value={presetName}
                 onChange={(e) => setPresetName(e.target.value)}
-                className="flex-1 min-w-0 px-2 py-1.5 text-xs rounded-md border-2 border-border bg-surface text-text-primary placeholder:text-text-dim focus:outline-none focus:border-cyan/50"
+                className={clsx('flex-1 min-w-0', fieldClasses('sm'))}
               />
               <button
                 type="button"
@@ -274,7 +276,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                   run(t('Save preset'), ptz.setPreset(monitorId, presetSlot, presetName || undefined));
                   setPresetName('');
                 }}
-                className="flex items-center gap-1 px-2.5 py-1.5 text-xs font-medium uppercase tracking-wider rounded-md border-2 border-cyan/40 bg-cyan/15 text-cyan hover:bg-cyan/25 hover:border-cyan/60 active:scale-95 transition-all"
+                className={buttonClasses('primary', 'sm')}
                 title={t('Save current position to selected slot')}
               >
                 <Save size={12} strokeWidth={2.5} />
@@ -283,7 +285,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               <button
                 type="button"
                 onClick={() => run(t('Clear preset'), ptz.clearPreset(monitorId, presetSlot))}
-                className="flex items-center px-2.5 py-1.5 text-xs rounded-md border-2 border-border text-text-muted hover:border-crimson/60 hover:text-crimson hover:bg-crimson/5 active:scale-95 transition-all"
+                className="flex items-center px-2.5 py-1.5 text-xs rounded border border-border-subtle text-fg-dim hover:border-danger/50 hover:text-danger transition-colors"
                 title={t('Clear preset in selected slot')}
                 aria-label={t('Clear preset in selected slot')}
               >
@@ -304,8 +306,8 @@ function Section({ label, children, action }: {
 }) {
   return (
     <div>
-      <div className="flex items-center justify-between mb-2">
-        <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="text-label text-fg-dim">
           {label}
         </span>
         {action}
@@ -317,7 +319,7 @@ function Section({ label, children, action }: {
 
 function Tick({ value, highlight }: { value: number; highlight: boolean }) {
   return (
-    <span className={clsx(highlight ? 'text-cyan' : 'text-text-dim')}>
+    <span className={clsx(highlight ? 'text-fg' : 'text-fg-faint')}>
       {value}
     </span>
   );
@@ -334,12 +336,14 @@ function DpadBtn({ children, center, disabled, className, ...rest }: DpadBtnProp
       type="button"
       disabled={disabled}
       className={clsx(
-        'aspect-square flex items-center justify-center rounded-md border-2 select-none touch-none transition-all duration-100',
+        // Grey at rest; the accent only appears on `:active`, i.e. while the
+        // key is actually driving the camera.
+        'aspect-square flex items-center justify-center rounded border select-none touch-none transition-colors',
         disabled
-          ? 'border-border-subtle/30 text-text-dim/50 cursor-not-allowed bg-surface/30'
+          ? 'border-border-subtle text-fg-faint cursor-not-allowed bg-surface'
           : center
-            ? 'border-cyan/50 bg-cyan/15 text-cyan shadow-[inset_0_0_12px_rgba(0,212,255,0.18)] hover:bg-cyan/25 hover:border-cyan/70 hover:shadow-[inset_0_0_16px_rgba(0,212,255,0.3),0_0_10px_rgba(0,212,255,0.25)] active:scale-90 active:shadow-[inset_0_0_24px_rgba(0,212,255,0.5)]'
-            : 'border-border bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan hover:bg-cyan/5 active:scale-90 active:bg-cyan/20 active:border-cyan/60 active:text-cyan active:shadow-[inset_0_0_14px_rgba(0,212,255,0.4)]',
+            ? 'border-border bg-surface-3 text-fg hover:bg-surface-2 active:border-accent active:bg-accent/15 active:text-accent'
+            : 'border-border bg-surface-2 text-fg-muted hover:text-fg hover:bg-surface-3 active:border-accent active:bg-accent/15 active:text-accent',
         className,
       )}
       {...rest}
@@ -361,12 +365,13 @@ function RockerBtn({ children, variant = 'default', disabled, className, ...rest
       type="button"
       disabled={disabled}
       className={clsx(
-        'flex items-center justify-center gap-1.5 py-2.5 rounded-md border-2 text-xs font-medium uppercase tracking-wider select-none touch-none transition-all duration-100',
+        'flex items-center justify-center gap-1.5 py-2 rounded border text-xs font-medium select-none touch-none transition-colors',
         disabled
-          ? 'border-border-subtle/30 text-text-dim/50 cursor-not-allowed bg-surface/30'
+          ? 'border-border-subtle text-fg-faint cursor-not-allowed bg-surface'
+          // Auto focus is a camera *mode*, so it stays coloured while offered.
           : variant === 'state'
-            ? 'border-amber/40 bg-amber/10 text-amber hover:bg-amber/20 hover:border-amber/60 active:scale-[0.97] active:shadow-[inset_0_0_12px_rgba(255,176,0,0.3)]'
-            : 'border-border bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan hover:bg-cyan/5 active:scale-[0.97] active:bg-cyan/15 active:border-cyan/60 active:text-cyan active:shadow-[inset_0_0_12px_rgba(0,212,255,0.35)]',
+            ? 'border-warn/30 bg-warn/12 text-warn hover:bg-warn/20'
+            : 'border-border bg-surface-2 text-fg-muted hover:text-fg hover:bg-surface-3 active:border-accent active:bg-accent/15 active:text-accent',
         className,
       )}
       {...rest}

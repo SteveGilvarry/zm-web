@@ -3,6 +3,8 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
+import { Button } from '@/components/common/Button';
+import { fieldClasses, LABEL } from '@/components/common/styles';
 
 export type ArchivedChoice = 'keep' | 'archive' | 'unarchive';
 
@@ -29,9 +31,7 @@ interface EventEditFormProps {
   error?: string | null;
 }
 
-const inputCls =
-  'w-full px-3 py-2 text-sm rounded-lg bg-surface border border-border-subtle text-text-primary ' +
-  'placeholder:text-text-muted focus:outline-none focus:border-cyan/50';
+const inputCls = fieldClasses('md');
 
 /**
  * Name / Cause / Notes editor for one event, or — in bulk mode — for a whole
@@ -55,14 +55,14 @@ export function EventEditForm({
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
-      <form onSubmit={submit} className="space-y-4" data-testid="event-edit-form">
+      <form onSubmit={submit} className="space-y-3" data-testid="event-edit-form">
         {bulk && (
-          <p className="text-xs text-text-muted">
+          <p className="text-xs text-fg-dim">
             {t('Blank fields are left unchanged on every selected event.')}
           </p>
         )}
         <label className="block space-y-1">
-          <span className="text-xs font-mono uppercase tracking-[0.16em] text-text-muted">{t('Name')}</span>
+          <span className={LABEL}>{t('Name')}</span>
           <input
             className={inputCls}
             value={name}
@@ -73,7 +73,7 @@ export function EventEditForm({
           />
         </label>
         <label className="block space-y-1">
-          <span className="text-xs font-mono uppercase tracking-[0.16em] text-text-muted">{t('Cause')}</span>
+          <span className={LABEL}>{t('Cause')}</span>
           <input
             className={inputCls}
             value={cause}
@@ -83,7 +83,7 @@ export function EventEditForm({
           />
         </label>
         <label className="block space-y-1">
-          <span className="text-xs font-mono uppercase tracking-[0.16em] text-text-muted">{t('Notes')}</span>
+          <span className={LABEL}>{t('Notes')}</span>
           <textarea
             className={clsx(inputCls, 'min-h-24 resize-y')}
             value={notes}
@@ -94,8 +94,8 @@ export function EventEditForm({
         </label>
         {bulk && (
           <fieldset className="space-y-1">
-            <legend className="text-xs font-mono uppercase tracking-[0.16em] text-text-muted">{t('Archived')}</legend>
-            <div className="flex flex-wrap gap-3 text-sm text-text-secondary">
+            <legend className={LABEL}>{t('Archived')}</legend>
+            <div className="flex flex-wrap gap-3 text-sm text-fg-muted">
               {([
                 ['keep', t('Leave unchanged')],
                 ['archive', t('Archive')],
@@ -117,26 +117,17 @@ export function EventEditForm({
         )}
 
         {error && (
-          <p role="alert" className="text-sm text-crimson">{error}</p>
+          <p role="alert" className="text-sm text-danger">{error}</p>
         )}
 
-        <div className="flex items-center justify-end gap-3 pt-2">
-          <button
-            type="button"
-            onClick={onClose}
-            disabled={pending}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-panel border border-border-subtle text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
-          >
+        <div className="flex items-center justify-end gap-2 pt-1">
+          <Button onClick={onClose} disabled={pending}>
             {t('Cancel')}
-          </button>
-          <button
-            type="submit"
-            disabled={pending}
-            className="px-4 py-2 rounded-lg text-sm font-medium bg-cyan text-void hover:bg-cyan-dim transition-colors flex items-center gap-2 disabled:opacity-50"
-          >
-            {pending && <Loader2 size={14} className="animate-spin" />}
+          </Button>
+          <Button type="submit" variant="primary" disabled={pending}>
+            {pending && <Loader2 size={14} className="animate-spin" aria-hidden />}
             {t('Save')}
-          </button>
+          </Button>
         </div>
       </form>
     </Modal>

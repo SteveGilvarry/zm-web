@@ -35,7 +35,7 @@ export function PresetPicker({ onPick, className }: PresetPickerProps) {
           <option key={p.id} value={p.id}>{p.name}</option>
         ))}
       </select>
-      {isError && <p className="text-[10px] text-crimson mt-1">{t('Could not load monitor presets.')}</p>}
+      {isError && <p className="text-xs text-danger mt-1">{t('Could not load monitor presets.')}</p>}
     </div>
   );
 }

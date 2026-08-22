@@ -44,8 +44,8 @@ describe('Login page', () => {
     const user = userEvent.setup();
     renderWithProviders(<LoginPage />);
 
-    await user.type(screen.getByLabelText(/username/i), 'admin');
-    await user.type(screen.getByLabelText(/password/i), 'secret');
+    await user.type(screen.getByLabelText('Username'), 'admin');
+    await user.type(screen.getByLabelText('Password'), 'secret');
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(body).toEqual({ username: 'admin', password: 'secret' }));
@@ -62,8 +62,8 @@ describe('Login page', () => {
     const user = userEvent.setup();
     renderWithProviders(<LoginPage />);
 
-    await user.type(screen.getByLabelText(/username/i), 'admin');
-    await user.type(screen.getByLabelText(/password/i), 'nope');
+    await user.type(screen.getByLabelText('Username'), 'admin');
+    await user.type(screen.getByLabelText('Password'), 'nope');
     await user.click(screen.getByRole('button', { name: /sign in/i }));
 
     await waitFor(() => expect(screen.getByText('Bad credentials')).toBeInTheDocument());

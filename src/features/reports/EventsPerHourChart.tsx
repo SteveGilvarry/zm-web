@@ -16,8 +16,11 @@ interface EventsPerHourChartProps {
  * / Chart.js would bloat the bundle (~150KB+) for a single route.
  *
  * Layout: 800x300 viewBox, scales-on-resize via `preserveAspectRatio`.
- * Datasets get a stable colour by index (cyan / amber / emerald / crimson
- * / purple / pink, then cycles).
+ *
+ * The lines are data, not state, so they are all drawn in the foreground
+ * colour and told apart by weight, opacity and dash pattern rather than by
+ * hue — that keeps the only saturated thing on a reports page a threshold
+ * someone actually has to act on (docs/DESIGN.md).
  */
 export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartProps) {
   const { t } = useTranslation();
@@ -50,7 +53,7 @@ export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartPro
       <svg
         viewBox={`0 0 ${width} ${height}`}
         preserveAspectRatio="xMidYMid meet"
-        className="w-full h-auto text-text-muted"
+        className="w-full h-auto text-fg-muted"
         role="img"
         aria-label={ariaLabel ?? t('Events per hour, grouped by date')}
       >
@@ -102,16 +105,16 @@ export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartPro
 
         {/* Datasets — one polyline per date. */}
         {buckets.map((b, idx) => {
-          const colour = PALETTE[idx % PALETTE.length];
+          const series = seriesStyle(idx);
           const points = b.seconds
             .map((v, h) => `${xFor(h)},${yFor(v)}`)
             .join(' ');
           return (
-            <g key={b.date}>
+            <g key={b.date} stroke="currentColor" fill="currentColor" opacity={series.opacity}>
               <polyline
                 fill="none"
-                stroke={colour}
-                strokeWidth={1.5}
+                strokeWidth={series.width}
+                strokeDasharray={series.dash}
                 points={points}
                 strokeLinejoin="round"
                 strokeLinecap="round"
@@ -123,7 +126,7 @@ export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartPro
                     cx={xFor(h)}
                     cy={yFor(v)}
                     r={2}
-                    fill={colour}
+                    stroke="none"
                   >
                     <title>
                       {t('{{date}} {{hour}}:00 — {{duration}}', {
@@ -160,20 +163,32 @@ export function EventsPerHourChart({ buckets, ariaLabel }: EventsPerHourChartPro
         />
       </svg>
 
-      {/* Legend */}
+      {/* Legend — each swatch repeats its series' weight, opacity and dash so
+          the line can be identified without relying on colour. */}
       <ul
-        className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-[11px] font-mono text-text-secondary"
+        className="flex flex-wrap gap-x-4 gap-y-1 mt-2 text-xs text-fg-muted"
         aria-label={t('Chart legend')}
       >
-        {buckets.map((b, idx) => (
-          <li key={b.date} className="flex items-center gap-1.5">
-            <span
-              className="inline-block w-3 h-0.5"
-              style={{ backgroundColor: PALETTE[idx % PALETTE.length] }}
-            />
-            {formatDateLabel(b.date)}
-          </li>
-        ))}
+        {buckets.map((b, idx) => {
+          const series = seriesStyle(idx);
+          return (
+            <li key={b.date} className="flex items-center gap-1.5">
+              <svg width={16} height={6} aria-hidden className="shrink-0 text-fg-muted">
+                <line
+                  x1={0}
+                  y1={3}
+                  x2={16}
+                  y2={3}
+                  stroke="currentColor"
+                  strokeWidth={series.width}
+                  strokeDasharray={series.dash}
+                  opacity={series.opacity}
+                />
+              </svg>
+              {formatDateLabel(b.date)}
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -185,16 +200,22 @@ const LAYOUT = {
   padding: { top: 12, right: 16, bottom: 28, left: 56 },
 } as const;
 
-const PALETTE = [
-  '#00d4ff', // cyan
-  '#fbbf24', // amber
-  '#34d399', // emerald
-  '#f87171', // crimson
-  '#c084fc', // purple
-  '#f472b6', // pink
-  '#60a5fa', // blue
-  '#a3e635', // lime
-];
+/**
+ * Per-series ink. Eight distinguishable looks out of one hue: the first
+ * series is solid and full strength, the rest step down in opacity and pick
+ * up a dash pattern, so the chart stays legible in both themes and for
+ * anyone who cannot separate the colours.
+ */
+const SERIES_DASH = ['none', '5 3', '1 3', '7 3 1 3', '3 2', '9 3', '1 2 4 2', '5 2 1 2'];
+const SERIES_OPACITY = [1, 0.9, 0.8, 0.72, 0.64, 0.56, 0.48, 0.42];
+
+function seriesStyle(idx: number): { dash: string; opacity: number; width: number } {
+  return {
+    dash: SERIES_DASH[idx % SERIES_DASH.length],
+    opacity: SERIES_OPACITY[Math.min(idx, SERIES_OPACITY.length - 1)],
+    width: idx === 0 ? 1.75 : 1.25,
+  };
+}
 
 function niceMax(raw: number): number {
   if (raw <= 0) return 1;

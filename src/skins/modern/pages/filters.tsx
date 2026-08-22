@@ -2,13 +2,12 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import {
-  Filter, Plus, Trash2, Save, Archive, ArchiveRestore, Trash, Clock, Video, Terminal,
+  Plus, Trash2, Save, Archive, ArchiveRestore, Trash, Clock, Video, Terminal,
   Mail, MessageSquare, Copy, Move, Activity, Lock, Layers, HardDrive, Upload, AlertTriangle,
   CopyPlus, RotateCcw, Bug,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
-import { Panel } from '@/components/common/Panel';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { FILTER_SORT_FIELDS, type FilterColumns } from '@/api/filters';
@@ -19,7 +18,10 @@ import { useFiltersPage, type FlagKey } from '@/features/filters/useFiltersPage'
 import type { ZmStorage } from '@/types';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
-/** Filters — Mission Control. Saved list on the left, rule/action editor on the right. */
+/**
+ * Filters — the modern skin. One action line, then the saved list and the
+ * rule/action editor as two panes that scroll inside themselves.
+ */
 export default function FiltersPage() {
   const { t } = useTranslation();
   const s = useFiltersPage();
@@ -34,8 +36,8 @@ export default function FiltersPage() {
 
   if (!s.isAuthenticated) return null;
 
-  const label = 'text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted';
-  const input = 'px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
+  const label = 'text-xs text-fg-dim';
+  const input = 'px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg placeholder:text-fg-faint focus:outline-none focus:border-accent transition-colors';
   const flag = (key: FlagKey) => c[key] === 1;
 
   const onSave = () => {
@@ -49,20 +51,63 @@ export default function FiltersPage() {
     const name = prompt(t('Save filter as'), draftName ? t('{{name}} copy', { name: draftName }) : '');
     if (name) s.saveAs(name);
   };
-  const smallBtn = 'flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded border transition-colors disabled:opacity-50';
+  const smallBtn = 'shrink-0 flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50';
 
   return (
     <AppShell title={t('Filters')}>
-      <main className="flex-1 p-6 overflow-auto">
-        <div className="grid grid-cols-12 gap-6">
+      <main className="flex-1 min-h-0 flex flex-col">
+        {/* One action line: what is open, and what you can do to it. */}
+        <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
+          <span className="text-sm text-fg truncate">
+            {selectedFilter ? t('Editing — {{name}}', { name: selectedFilter.name }) : t('New filter')}
+          </span>
+          <span className="ms-auto" />
+          <button
+            type="button"
+            onClick={() => setShowDebug((v) => !v)}
+            aria-pressed={showDebug}
+            className={clsx(smallBtn, showDebug ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg')}
+          >
+            <Bug size={12} aria-hidden />
+            {t('Debug')}
+          </button>
+          <button
+            type="button"
+            onClick={s.reset}
+            className={clsx(smallBtn, 'text-fg-dim hover:text-fg')}
+          >
+            <RotateCcw size={12} aria-hidden />
+            {t('Reset')}
+          </button>
+          <RequirePerm feature="events" level="Edit">
+            <button
+              type="button"
+              onClick={onSaveAs}
+              disabled={!draftQuery || s.createPending}
+              className={clsx(smallBtn, 'text-fg-dim hover:text-fg')}
+            >
+              <CopyPlus size={12} aria-hidden />
+              {t('Save As')}
+            </button>
+            <button
+              onClick={onSave}
+              disabled={!canSave || s.savePending || s.createPending}
+              className={clsx(smallBtn, 'bg-accent text-accent-fg font-medium hover:bg-accent-dim')}
+            >
+              {selectedId ? <Save size={12} aria-hidden /> : <Plus size={12} aria-hidden />}
+              {selectedId ? t('Save') : t('Create')}
+            </button>
+          </RequirePerm>
+        </div>
+
+        <div className="flex-1 min-h-0 flex">
           {/* Saved filter list */}
-          <div className="col-span-3">
-            <Panel title={t('Saved')} icon={<Filter size={16} />}>
+          <div className="w-60 shrink-0 min-h-0 overflow-auto border-e border-border-subtle p-2">
               <button
                 onClick={() => startEditing(null)}
-                className="flex items-center gap-1 w-full px-2 py-1.5 mb-2 rounded border border-dashed border-border-subtle text-xs text-text-muted hover:border-cyan/40 hover:text-cyan transition-colors"
+                className="flex items-center gap-1 w-full px-2 py-1.5 mb-2 rounded border border-dashed border-border-subtle text-xs text-fg-dim hover:text-fg hover:border-border transition-colors"
               >
-                <Plus size={11} />
+                <Plus size={12} aria-hidden />
                 {t('New filter')}
               </button>
 
@@ -74,14 +119,14 @@ export default function FiltersPage() {
                 empty={filters.length === 0}
                 emptyMessage={t('No saved filters yet.')}
               >
-              <ul className="space-y-0.5 max-h-[60vh] overflow-y-auto">
+              <ul className="space-y-0.5">
                 {filters.map((f) => (
                     <li key={f.id}>
                       <div
                         className={clsx(
                           'flex items-center gap-1 px-2 py-1.5 rounded transition-colors',
                           selectedId === f.id
-                            ? 'bg-cyan/10 border border-cyan/30'
+                            ? 'bg-accent/10 border border-accent/30'
                             : 'border border-transparent hover:bg-surface/60',
                         )}
                       >
@@ -89,20 +134,20 @@ export default function FiltersPage() {
                           onClick={() => startEditing(f)}
                           className={clsx(
                             'flex-1 text-start text-xs truncate',
-                            selectedId === f.id ? 'text-cyan' : 'text-text-primary',
+                            selectedId === f.id ? 'text-accent' : 'text-fg',
                           )}
                         >
                           {f.name}
                           {/* Legacy cues: * = background, & = concurrent */}
-                          {f.background === 1 && <span className="text-text-muted" title={t('Runs in background')}>*</span>}
-                          {f.concurrent === 1 && <span className="text-text-muted" title={t('Runs concurrently')}>&amp;</span>}
+                          {f.background === 1 && <span className="text-fg-dim" title={t('Runs in background')}>*</span>}
+                          {f.concurrent === 1 && <span className="text-fg-dim" title={t('Runs concurrently')}>&amp;</span>}
                         </button>
                         <RequirePerm feature="events" level="Edit">
                           <button
                             onClick={() => {
                               if (confirm(t('Delete filter "{{name}}"?', { name: f.name }))) s.remove(f.id);
                             }}
-                            className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+                            className="p-1 rounded text-fg-dim hover:text-danger hover:bg-danger/10 transition-colors"
                             aria-label={t('Delete {{name}}', { name: f.name })}
                           >
                             <Trash2 size={11} />
@@ -113,58 +158,13 @@ export default function FiltersPage() {
                   ))}
               </ul>
               </QueryState>
-            </Panel>
           </div>
 
           {/* Editor */}
-          <div className="col-span-9 space-y-4">
-            <Panel
-              title={selectedFilter ? t('Editing — {{name}}', { name: selectedFilter.name }) : t('New filter')}
-              icon={<Filter size={16} />}
-              action={
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => setShowDebug((v) => !v)}
-                    aria-pressed={showDebug}
-                    className={clsx(smallBtn, 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan')}
-                  >
-                    <Bug size={11} />
-                    {t('Debug')}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={s.reset}
-                    className={clsx(smallBtn, 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan')}
-                  >
-                    <RotateCcw size={11} />
-                    {t('Reset')}
-                  </button>
-                  <RequirePerm feature="events" level="Edit">
-                    <button
-                      type="button"
-                      onClick={onSaveAs}
-                      disabled={!draftQuery || s.createPending}
-                      className={clsx(smallBtn, 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan')}
-                    >
-                      <CopyPlus size={11} />
-                      {t('Save As')}
-                    </button>
-                    <button
-                      onClick={onSave}
-                      disabled={!canSave || s.savePending || s.createPending}
-                      className={clsx(smallBtn, 'border-cyan/50 bg-cyan/15 text-cyan hover:bg-cyan/25')}
-                    >
-                      {selectedId ? <Save size={11} /> : <Plus size={11} />}
-                      {selectedId ? t('Save') : t('Create')}
-                    </button>
-                  </RequirePerm>
-                </div>
-              }
-            >
+          <div className="flex-1 min-w-0 min-h-0 overflow-auto p-3">
               <div className="space-y-4">
                 {s.saveError && (
-                  <p role="alert" className="text-xs text-crimson">
+                  <p role="alert" className="text-xs text-danger">
                     {t('Save failed: {{message}}', { message: s.saveError.message })}
                   </p>
                 )}
@@ -183,10 +183,10 @@ export default function FiltersPage() {
 
                 {/* Conditions */}
                 <div>
-                  <h3 className={clsx(label, 'mb-2')}>{t('Conditions')}</h3>
+                  <h3 className="mb-2 text-xs font-medium text-fg-muted">{t('Conditions')}</h3>
                   {unreadable ? (
-                    <div className="space-y-2 border border-amber/40 rounded-md p-3 bg-amber/5" data-testid="unreadable-query">
-                      <p className="flex items-start gap-2 text-xs text-amber">
+                    <div className="space-y-2 border border-warn/40 rounded-md p-3 bg-warn/5" data-testid="unreadable-query">
+                      <p className="flex items-start gap-2 text-xs text-warn">
                         <AlertTriangle size={14} className="shrink-0 mt-0.5" />
                         <span>
                           {t('This filter’s conditions are stored in a format the dashboard cannot read ({{reason}}). They are shown as-is and will not be changed; saving is disabled so nothing is overwritten. Edit it in the legacy ZoneMinder UI.', {
@@ -194,7 +194,7 @@ export default function FiltersPage() {
                           })}
                         </span>
                       </p>
-                      <pre className="p-2 rounded bg-abyss border border-border-subtle text-text-secondary overflow-x-auto font-mono text-[10px] whitespace-pre-wrap break-all">
+                      <pre className="p-2 rounded bg-bg-sunken border border-border-subtle text-fg-muted overflow-x-auto font-mono text-xs whitespace-pre-wrap break-all">
                         {unreadable.raw}
                       </pre>
                     </div>
@@ -208,7 +208,7 @@ export default function FiltersPage() {
                       />
 
                       {/* Sort / limit / skip locked — ZM's `sort_field`, `sort_asc`, `limit`, `skip_locked` */}
-                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-text-secondary">
+                      <div className="mt-3 flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-fg-muted">
                         <span className="flex items-center gap-2">
                           <label htmlFor="filter-sort" className={label}>{t('Sort by')}</label>
                           <select
@@ -241,7 +241,7 @@ export default function FiltersPage() {
                             onChange={(e) => setDraftQuery({ ...draftQuery, limit: e.target.value.replace(/[^\d]/g, '') || '0' })}
                             className={clsx(input, 'w-20 font-mono')}
                           />
-                          <span className="text-text-muted">{t('results (0 = all)')}</span>
+                          <span className="text-fg-dim">{t('results (0 = all)')}</span>
                         </span>
                         <span className="flex items-center gap-2">
                           <label htmlFor="filter-skip-locked" className={label}>{t('Skip locked')}</label>
@@ -262,7 +262,7 @@ export default function FiltersPage() {
 
                 {/* Actions — one column each on the backend */}
                 <div>
-                  <h3 className={clsx(label, 'mb-2')}>{t('Actions')}</h3>
+                  <h3 className="mb-2 text-xs font-medium text-fg-muted">{t('Actions')}</h3>
                   <div className="flex flex-wrap gap-2">
                     <ActionToggle icon={<Archive size={11} />} label={t('Archive all matches')} active={flag('auto_archive')} onClick={() => toggleFlag('auto_archive')} />
                     <ActionToggle icon={<ArchiveRestore size={11} />} label={t('Unarchive all matches')} active={flag('auto_unarchive')} onClick={() => toggleFlag('auto_unarchive')} />
@@ -272,13 +272,13 @@ export default function FiltersPage() {
                     <ActionToggle icon={<Mail size={11} />} label={t('Email details of all matches')} active={flag('auto_email')} onClick={() => toggleFlag('auto_email')} />
                     <ActionToggle icon={<MessageSquare size={11} />} label={t('Message details of all matches')} active={flag('auto_message')} onClick={() => toggleFlag('auto_message')} />
                     <ActionToggle icon={<Terminal size={11} />} label={t('Execute command on all matches')} active={flag('auto_execute')} onClick={() => toggleFlag('auto_execute')} />
-                    <ActionToggle icon={<Trash size={11} />} label={t('Delete all matches')} tone="crimson" active={flag('auto_delete')} onClick={() => toggleFlag('auto_delete')} />
+                    <ActionToggle icon={<Trash size={11} />} label={t('Delete all matches')} tone="danger" active={flag('auto_delete')} onClick={() => toggleFlag('auto_delete')} />
                     <ActionToggle icon={<Copy size={11} />} label={t('Copy all matches')} active={flag('auto_copy')} onClick={() => toggleFlag('auto_copy')} />
                     <ActionToggle icon={<Move size={11} />} label={t('Move all matches')} active={flag('auto_move')} onClick={() => toggleFlag('auto_move')} />
                   </div>
 
                   {s.deleteEverythingRisk && (
-                    <p className="mt-2 flex items-center gap-1.5 text-[11px] text-crimson" role="alert">
+                    <p className="mt-2 flex items-center gap-1.5 text-xs text-danger" role="alert">
                       <AlertTriangle size={12} />
                       {t('No conditions + Delete all matches = every event will be deleted when this filter runs.')}
                     </p>
@@ -300,7 +300,7 @@ export default function FiltersPage() {
                   )}
 
                   {flag('auto_email') && (
-                    <div className="mt-2 space-y-2 border-s-2 border-cyan/30 ps-3">
+                    <div className="mt-2 space-y-2 border-s border-border-subtle ps-3">
                       <TextField id="filter-email-to" label={t('Email to')} value={c.email_to ?? ''} onChange={(v) => setColumn('email_to', v)} placeholder="ops@example.com, alerts@example.com" />
                       <TextField id="filter-email-subject" label={t('Subject')} value={c.email_subject ?? ''} onChange={(v) => setColumn('email_subject', v)} placeholder={t('ZoneMinder alert')} />
                       <div className="flex items-start gap-3">
@@ -338,7 +338,7 @@ export default function FiltersPage() {
                   )}
 
                   {s.anyActionOn && c.background !== 1 && (
-                    <p className="mt-2 text-[10px] text-amber italic">
+                    <p className="mt-2 text-xs text-fg-dim">
                       {t('Actions only run automatically when "Run in background" is on; otherwise use Execute now.')}
                     </p>
                   )}
@@ -346,23 +346,23 @@ export default function FiltersPage() {
 
                 {/* Options */}
                 <div>
-                  <h3 className={clsx(label, 'mb-2')}>{t('Options')}</h3>
+                  <h3 className="mb-2 text-xs font-medium text-fg-muted">{t('Options')}</h3>
                   <div className="flex flex-wrap gap-2">
                     <ActionToggle icon={<Activity size={11} />} label={t('Run in background')} active={flag('background')} onClick={() => toggleFlag('background')} />
                     <ActionToggle icon={<Layers size={11} />} label={t('Run concurrently')} active={flag('concurrent')} onClick={() => toggleFlag('concurrent')} />
                     <ActionToggle icon={<Lock size={11} />} label={t('Lock rows')} active={flag('lock_rows')} onClick={() => toggleFlag('lock_rows')} />
-                    <div className="flex items-center gap-2 px-3 py-1.5 rounded border-2 border-border-subtle bg-surface/50 text-text-secondary">
-                      <Clock size={11} />
-                      <label htmlFor="filter-interval" className="text-[11px]">{t('Execute interval')}</label>
+                    <div className="flex items-center gap-2 px-2 py-1 rounded border border-border-subtle text-fg-muted">
+                      <Clock size={12} aria-hidden />
+                      <label htmlFor="filter-interval" className="text-xs">{t('Execute interval')}</label>
                       <input
                         id="filter-interval"
                         type="number"
                         min={0}
                         value={c.execute_interval}
                         onChange={(e) => setColumn('execute_interval', Math.max(0, parseInt(e.target.value || '0', 10) || 0))}
-                        className={clsx(input, 'w-16 py-0.5 text-[11px] font-mono')}
+                        className={clsx(input, 'w-16 py-0.5 text-xs font-mono tabular-nums')}
                       />
-                      <span className="text-[11px] text-text-muted">{t('seconds')}</span>
+                      <span className="text-xs text-fg-dim">{t('seconds')}</span>
                     </div>
                   </div>
                 </div>
@@ -370,7 +370,7 @@ export default function FiltersPage() {
                 {/* Preview */}
                 {draftQuery && (
                   <div>
-                    <h3 className={clsx(label, 'mb-2')}>{t('Preview')}</h3>
+                    <h3 className="mb-2 text-xs font-medium text-fg-muted">{t('Preview')}</h3>
                     <MatchesPreview
                       query={draftQuery}
                       monitors={monitors}
@@ -387,27 +387,26 @@ export default function FiltersPage() {
                 {/* Debug — the structured query the backend (or we) derived from the terms */}
                 {showDebug && s.debug && (
                   <div data-testid="filter-debug">
-                    <h3 className={clsx(label, 'mb-2')}>
+                    <h3 className="mb-2 text-xs font-medium text-fg-muted">
                       {s.debug.source === 'backend' ? t('Debug — backend filter AST') : t('Debug — preview AST from the draft terms')}
                     </h3>
-                    <pre className="p-2 rounded bg-abyss border border-border-subtle text-text-secondary overflow-x-auto font-mono text-[10px] whitespace-pre-wrap break-all">
+                    <pre className="p-2 rounded bg-bg-sunken border border-border-subtle text-fg-muted overflow-x-auto font-mono text-xs whitespace-pre-wrap break-all">
                       {JSON.stringify(s.debug.source === 'backend' ? s.debug.backendAst : s.debug.ast, null, 2)}
                     </pre>
                   </div>
                 )}
 
                 {draftQuery && (
-                  <details className="text-[10px]">
-                    <summary className="cursor-pointer text-text-muted hover:text-text-primary">
+                  <details className="text-xs">
+                    <summary className="cursor-pointer text-fg-dim hover:text-fg">
                       {t('Show raw query JSON')}
                     </summary>
-                    <pre className="mt-2 p-2 rounded bg-abyss border border-border-subtle text-text-secondary overflow-x-auto font-mono">
+                    <pre className="mt-2 p-2 rounded bg-bg-sunken border border-border-subtle text-fg-muted overflow-x-auto font-mono">
                       {composeQueryJson()}
                     </pre>
                   </details>
                 )}
               </div>
-            </Panel>
           </div>
         </div>
       </main>
@@ -416,17 +415,18 @@ export default function FiltersPage() {
 }
 
 function ActionToggle({
-  icon, label, active, tone = 'cyan', onClick,
+  icon, label, active, tone = 'accent', onClick,
 }: {
   icon: React.ReactNode;
   label: string;
-  tone?: 'cyan' | 'crimson';
+  tone?: 'accent' | 'danger';
   active: boolean;
   onClick: () => void;
 }) {
-  const activeCls = tone === 'crimson'
-    ? 'border-crimson/60 bg-crimson/15 text-crimson'
-    : 'border-cyan/60 bg-cyan/15 text-cyan';
+  // Only the destructive action gets a colour of its own when it is armed.
+  const activeCls = tone === 'danger'
+    ? 'border-danger bg-danger/10 text-danger'
+    : 'border-accent bg-accent/10 text-accent';
   return (
     <button
       type="button"
@@ -434,8 +434,8 @@ function ActionToggle({
       aria-checked={active}
       onClick={onClick}
       className={clsx(
-        'flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium uppercase tracking-wider rounded border-2 transition-all',
-        active ? activeCls : 'border-border-subtle bg-surface/50 text-text-muted hover:border-cyan/40 hover:text-cyan',
+        'flex items-center gap-1.5 px-2 py-1 text-xs rounded border transition-colors',
+        active ? activeCls : 'border-border-subtle text-fg-dim hover:text-fg hover:border-border',
       )}
     >
       {icon}
@@ -455,7 +455,7 @@ function TextField({
 }) {
   return (
     <div className="flex items-center gap-3">
-      <label htmlFor={id} className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-20">
+      <label htmlFor={id} className="text-xs text-fg-dim w-20">
         {label}
       </label>
       <input
@@ -464,7 +464,7 @@ function TextField({
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
-        className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+        className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg placeholder:text-fg-faint focus:outline-none focus:border-accent transition-colors"
       />
     </div>
   );
@@ -483,14 +483,14 @@ function StorageField({
   const { t } = useTranslation();
   return (
     <div className="mt-2 flex items-center gap-3">
-      <label htmlFor={id} className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-20">
+      <label htmlFor={id} className="text-xs text-fg-dim w-20">
         {label}
       </label>
       <select
         id={id}
         value={String(value ?? 0)}
         onChange={(e) => onChange(parseInt(e.target.value, 10) || 0)}
-        className="w-72 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+        className="w-72 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors cursor-pointer"
       >
         <option value="0">{t('Zero (unspecified)')}</option>
         {storage.map((s) => (

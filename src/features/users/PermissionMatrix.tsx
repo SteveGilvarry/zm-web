@@ -52,31 +52,31 @@ export function PermissionMatrix({
       <table className="w-full text-sm">
         <thead>
           <tr className="border-b border-border-subtle text-start">
-            <th className="px-3 py-2 font-medium text-text-muted">{rowHeader ?? t('Permission')}</th>
+            <th className="px-3 py-1.5 font-medium text-fg-dim text-start">{rowHeader ?? t('Permission')}</th>
             {allOptions.map((opt) => (
-              <th key={opt} className="px-3 py-2 font-medium text-text-muted text-center">
+              <th key={opt} className="px-3 py-1.5 font-medium text-fg-dim text-center">
                 {levelLabel(opt)}
               </th>
             ))}
             {trailingHeader && (
-              <th className="px-3 py-2 font-medium text-text-muted text-start">{trailingHeader}</th>
+              <th className="px-3 py-1.5 font-medium text-fg-dim text-start">{trailingHeader}</th>
             )}
           </tr>
         </thead>
         <tbody className="divide-y divide-border-subtle">
           {rows.map((row) => (
-            <tr key={row.key} className="hover:bg-panel/40 transition-colors">
+            <tr key={row.key} className="hover:bg-surface-2 transition-colors">
               <td
-                className="px-3 py-2 align-top"
+                className="px-3 py-1.5 align-top"
                 data-depth={row.depth}
                 style={row.depth ? { paddingInlineStart: `${0.75 + row.depth * 1.25}rem` } : undefined}
               >
-                <div className="text-text-primary font-medium">
-                  {row.depth ? <span aria-hidden className="text-text-muted me-1">↳</span> : null}
+                <div className="text-fg font-medium">
+                  {row.depth ? <span aria-hidden className="text-fg-dim me-1">↳</span> : null}
                   {row.label}
                 </div>
                 {row.sublabel && (
-                  <div className="text-[11px] text-text-muted mt-0.5">{row.sublabel}</div>
+                  <div className="text-xs text-fg-dim mt-0.5">{row.sublabel}</div>
                 )}
               </td>
               {allOptions.map((opt) => {
@@ -84,13 +84,13 @@ export function PermissionMatrix({
                 const checked = row.value === opt;
                 if (!available) {
                   return (
-                    <td key={opt} className="px-3 py-2 text-center text-text-dim">
+                    <td key={opt} className="px-3 py-1.5 text-center text-fg-faint">
                       —
                     </td>
                   );
                 }
                 return (
-                  <td key={opt} className="px-3 py-2 text-center">
+                  <td key={opt} className="px-3 py-1.5 text-center">
                     <label
                       className={clsx(
                         'inline-flex items-center justify-center',
@@ -106,14 +106,14 @@ export function PermissionMatrix({
                         checked={checked}
                         disabled={readOnly}
                         onChange={() => onChange?.(row.key, opt)}
-                        className="accent-cyan w-4 h-4"
+                        className="accent-accent w-4 h-4"
                       />
                     </label>
                   </td>
                 );
               })}
               {trailingHeader && (
-                <td className="px-3 py-2 align-top text-text-secondary">{row.trailing ?? null}</td>
+                <td className="px-3 py-1.5 align-top text-fg-muted">{row.trailing ?? null}</td>
               )}
             </tr>
           ))}

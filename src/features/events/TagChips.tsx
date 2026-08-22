@@ -95,23 +95,23 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
       {/* Attached chips */}
       <div className="flex flex-wrap gap-1.5">
         {currentTags.length === 0 ? (
-          <span className="text-xs text-text-muted italic">{t('No tags')}</span>
+          <span className="text-xs text-fg-dim">{t('No tags')}</span>
         ) : (
           currentTags.map((tag) => (
             <span
               key={tag.id}
               className={clsx(
-                'inline-flex items-center gap-1 px-2 py-0.5 rounded-md',
-                'bg-cyan/15 border border-cyan/40 text-cyan text-xs',
+                'inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs',
+                'bg-surface-2 border border-border-subtle text-fg-muted',
               )}
             >
-              <TagIcon size={10} />
+              <TagIcon size={10} aria-hidden />
               {tag.name}
               <button
                 onClick={() => detachMutation.mutate({ tagId: tag.id })}
                 disabled={detachMutation.isPending}
                 aria-label={t('Remove tag {{name}}', { name: tag.name })}
-                className="ms-0.5 -me-0.5 hover:text-text-primary transition-colors disabled:opacity-50"
+                className="ms-0.5 -me-0.5 hover:text-fg transition-colors disabled:opacity-50"
               >
                 <X size={10} />
               </button>
@@ -123,11 +123,11 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
       {/* Input + suggestions */}
       <div className="relative">
         <div className={clsx(
-          'flex items-center gap-1.5 px-2 py-1.5 rounded-md border',
-          focused ? 'border-cyan/50 bg-surface' : 'border-border-subtle bg-surface/50',
+          'flex items-center gap-1.5 px-2 py-1 rounded border bg-surface',
+          focused ? 'border-accent' : 'border-border-subtle',
           'transition-colors',
         )}>
-          <Plus size={12} className="text-text-muted" />
+          <Plus size={12} className="text-fg-dim" aria-hidden />
           <input
             value={input}
             onChange={(e) => setInput(e.target.value)}
@@ -135,13 +135,13 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
             onFocus={() => setFocused(true)}
             onBlur={() => setTimeout(() => setFocused(false), 150)}
             placeholder={t('Add tag…')}
-            className="flex-1 bg-transparent text-xs text-text-primary placeholder:text-text-muted focus:outline-none"
+            className="flex-1 bg-transparent text-xs text-fg placeholder:text-fg-faint focus:outline-none"
           />
           {input.trim() && (
             <button
               onClick={submit}
               disabled={attachMutation.isPending || createMutation.isPending}
-              className="px-2 py-0.5 text-[10px] font-medium rounded bg-cyan/20 text-cyan hover:bg-cyan/30 transition-colors disabled:opacity-50"
+              className="px-2 py-0.5 text-xs font-medium rounded bg-accent text-accent-fg hover:bg-accent-dim transition-colors disabled:opacity-50"
             >
               {exactMatch ? t('Add') : t('Create')}
             </button>
@@ -149,7 +149,7 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
         </div>
 
         {focused && suggestions.length > 0 && (
-          <div className="absolute start-0 end-0 mt-1 rounded-md border border-border bg-panel shadow-lg z-10 overflow-hidden">
+          <div className="absolute start-0 end-0 mt-1 rounded border border-border bg-surface shadow-[var(--elevation-2)] z-10 overflow-hidden">
             {suggestions.map((tag) => (
               <button
                 key={tag.id}
@@ -157,12 +157,12 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
                   attachMutation.mutate({ tagId: tag.id });
                   setInput('');
                 }}
-                className="w-full flex items-center gap-1.5 px-2.5 py-1.5 text-start text-xs text-text-secondary hover:bg-cyan/10 hover:text-cyan transition-colors"
+                className="w-full flex items-center gap-1.5 px-2.5 py-1 text-start text-xs text-fg-muted hover:bg-surface-2 hover:text-fg transition-colors"
               >
-                <TagIcon size={10} />
+                <TagIcon size={10} aria-hidden />
                 {tag.name}
                 {tag.event_count != null && (
-                  <span className="ms-auto text-[10px] text-text-muted">
+                  <span className="ms-auto font-mono tabular-nums text-xs text-fg-dim">
                     {tag.event_count}
                   </span>
                 )}

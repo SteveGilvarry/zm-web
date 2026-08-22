@@ -1,11 +1,12 @@
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 
-const permissionColors: Record<string, string> = {
-  Edit: 'bg-amber/20 text-amber',
-  View: 'bg-cyan/20 text-cyan',
-  Create: 'bg-emerald/20 text-emerald',
-  None: 'bg-panel text-text-muted',
+/** A permission level is state, so it keeps its colour; `None` is the quiet one. */
+const permissionTone: Record<string, string> = {
+  Edit: 'bg-warn/15 text-warn',
+  View: 'bg-accent/15 text-accent',
+  Create: 'bg-ok/15 text-ok',
+  None: 'bg-surface-2 text-fg-dim',
 };
 
 /** Permission wire values are fixed; only the display label is translated. */
@@ -29,7 +30,7 @@ export function PermPill({ value }: { value: string }) {
     <span
       className={clsx(
         'text-xs font-medium px-2 py-0.5 rounded',
-        permissionColors[v] || permissionColors.None,
+        permissionTone[v] || permissionTone.None,
       )}
     >
       {label(v)}

@@ -111,6 +111,8 @@ export interface EventDetailPageState {
   eventData: EventDataRow[];
 
   videoRef: RefObject<HTMLVideoElement | null>;
+  /** The player frame: what goes fullscreen, so the overlays go with it. */
+  playerRef: RefObject<HTMLDivElement | null>;
   playbackMode: ReturnType<typeof useEventVideo>['mode'];
   playbackError: ReturnType<typeof useEventVideo>['error'];
   isPlaying: boolean;
@@ -131,6 +133,8 @@ export interface EventDetailPageState {
   setShowStats: (v: boolean) => void;
   /** CSS max-width for the player frame, derived from `scale`. */
   playerMaxWidth: ReturnType<typeof scaleToMaxWidth>;
+  /** The same cap in pixels, for the layout that measures rather than styles. */
+  playerMaxWidthPx: number | undefined;
   /** Playback speed (0.25× … 16×), applied to the <video>. */
   rate: number;
   setRate: (rate: number) => void;
@@ -222,6 +226,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const [editOpen, setEditOpen] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const playerRef = useRef<HTMLDivElement>(null);
 
   // Track fullscreen so the rotated-video styling can switch between the
   // event-shaped container fit (inline) and the 16:9-screen fit (fullscreen).
@@ -445,11 +450,15 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   };
 
   const handleToggleFullscreen = () => {
-    if (videoRef.current) {
+    // Fullscreen the frame, not the <video>: the controls, the zones overlay
+    // and the pinch-zoom transform all live in the frame, and fullscreening
+    // the video alone would drop them for the browser's own control bar.
+    const target = playerRef.current ?? videoRef.current;
+    if (target) {
       if (document.fullscreenElement) {
         document.exitFullscreen();
       } else {
-        videoRef.current.requestFullscreen();
+        target.requestFullscreen();
       }
     }
   };
@@ -584,6 +593,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   // Scale → max-width style on the video frame container. `auto` leaves
   // the container at column-width.
   const playerMaxWidth = scaleToMaxWidth(scale);
+  const playerMaxWidthPx = playerMaxWidth ? parseInt(playerMaxWidth, 10) : undefined;
 
   return {
     isAuthenticated,
@@ -596,6 +606,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     eventData,
 
     videoRef,
+    playerRef,
     playbackMode,
     playbackError,
     isPlaying,
@@ -615,6 +626,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     showStats,
     setShowStats,
     playerMaxWidth,
+    playerMaxWidthPx,
     rate,
     setRate,
     rateOptions: PLAYBACK_RATES,

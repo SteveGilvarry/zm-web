@@ -85,11 +85,11 @@ describe('Run State page — list', () => {
     renderWithProviders(<RunStatePage />);
     await waitFor(() => expect(screen.getByText('default')).toBeInTheDocument());
     // Two matches expected: the table header "Active" + the per-row badge
-    // on the is_active=1 row. The badge sits inside a span with emerald
-    // styling, distinct from the <th>.
+    // on the is_active=1 row. The badge sits inside a span tinted with the
+    // `ok` state token, distinct from the <th>.
     const badges = screen.getAllByText('Active');
     expect(badges.length).toBeGreaterThanOrEqual(2);
-    expect(badges.some((el) => el.className.includes('emerald'))).toBe(true);
+    expect(badges.some((el) => el.className.includes('text-ok'))).toBe(true);
   });
 
   it('disables Delete on the protected "default" state', async () => {

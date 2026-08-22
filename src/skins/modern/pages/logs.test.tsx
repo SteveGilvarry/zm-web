@@ -39,6 +39,17 @@ function levelChips(): HTMLElement {
   return screen.getByRole('group', { name: 'Minimum level' });
 }
 
+/**
+ * Open the toolbar's Filters disclosure.
+ *
+ * The date window and the cluster's server picker are occasional controls,
+ * so they live one click away rather than permanently on the query line
+ * (docs/DESIGN.md).
+ */
+async function openFilters(user: ReturnType<typeof userEvent.setup>): Promise<void> {
+  await user.click(screen.getByRole('button', { name: /^Filters/ }));
+}
+
 describe('LogsPage (modern) — rendering', () => {
   it('renders the seeded rows with their level labels and default columns', async () => {
     renderRoute('/logs');
@@ -377,6 +388,7 @@ describe('LogsPage (modern) — filters', () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/logs');
     await findTable();
+    await openFilters(user);
 
     // Every seeded row is stamped 2026; an end bound in 2020 excludes them all.
     await user.type(screen.getByLabelText('End date'), '2020-01-01T00:00');
@@ -395,6 +407,7 @@ describe('LogsPage (modern) — filters', () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/logs');
     await findTable();
+    await openFilters(user);
 
     await user.type(screen.getByLabelText('Start date'), '2020-01-01T00:00');
 
@@ -407,8 +420,10 @@ describe('LogsPage (modern) — filters', () => {
 
 describe('LogsPage (modern) — server filter', () => {
   it('hides the server picker on a single-server install', async () => {
+    const user = userEvent.setup();
     renderRoute('/logs');
     await findTable();
+    await openFilters(user);
     expect(screen.queryByLabelText('Server filter')).not.toBeInTheDocument();
   });
 
@@ -428,6 +443,7 @@ describe('LogsPage (modern) — server filter', () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/logs');
     await findTable();
+    await openFilters(user);
 
     const picker = await screen.findByLabelText('Server filter');
     await user.selectOptions(picker, 'zm-node-2');

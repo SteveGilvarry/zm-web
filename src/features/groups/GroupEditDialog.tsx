@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Users, X, Save, Loader2 } from 'lucide-react';
+import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { getValidParentOptions } from './tree';
 import type { Group } from '@/api/groups';
 
@@ -81,33 +82,33 @@ function GroupEditForm({
       role="dialog"
       aria-modal="true"
       aria-label={editing ? t('Edit group') : t('Create group')}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <form
         onSubmit={submit}
-        className="w-full max-w-md rounded-xl border border-cyan/40 bg-panel/95 backdrop-blur-md shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
+        className="w-full max-w-md rounded border border-border bg-surface shadow-elevated"
       >
-        <header className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <div className="flex items-center gap-2">
-            <Users size={16} className="text-cyan" />
-            <h2 className="text-sm font-semibold text-text-primary">{title}</h2>
+            <Users size={14} className="text-fg-dim" aria-hidden />
+            <h2 className="text-sm font-semibold text-fg">{title}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={t('Close')}
-            className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+            className="p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
           >
             <X size={14} />
           </button>
         </header>
 
-        <div className="p-5 space-y-4">
-          <div className="flex items-center gap-2">
+        <div className="p-4 space-y-3">
+          <div className="flex items-center gap-3">
             <label
               htmlFor="group-name"
-              className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-24 flex-shrink-0"
+              className="text-label text-fg-dim w-24 flex-shrink-0"
             >
               {t('Name')}
             </label>
@@ -118,14 +119,14 @@ function GroupEditForm({
               onChange={(e) => setName(e.target.value)}
               placeholder={t('Front Yard')}
               maxLength={64}
-              className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+              className={clsx('flex-1', fieldClasses('sm'))}
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
             <label
               htmlFor="group-parent"
-              className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-24 flex-shrink-0"
+              className="text-label text-fg-dim w-24 flex-shrink-0"
             >
               {t('Parent')}
             </label>
@@ -133,7 +134,7 @@ function GroupEditForm({
               id="group-parent"
               value={parentId === null ? '' : String(parentId)}
               onChange={(e) => setParentId(e.target.value === '' ? null : Number(e.target.value))}
-              className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+              className={clsx('flex-1', fieldClasses('sm'))}
             >
               <option value="">{t('— None (top level) —')}</option>
               {options.map(({ group, depth }) => (
@@ -149,30 +150,25 @@ function GroupEditForm({
           {error ? (
             <div
               role="alert"
-              className="rounded-md bg-crimson/15 border border-crimson/40 px-3 py-2 text-xs text-crimson"
+              className="rounded bg-danger/12 border border-danger/30 px-3 py-2 text-label text-danger"
             >
               {error}
             </div>
           ) : null}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-subtle">
+        <footer className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border-subtle">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium rounded border border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors"
+            className={buttonClasses('secondary', 'sm')}
           >
             {t('Cancel')}
           </button>
           <button
             type="submit"
             disabled={pending || !name.trim()}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border-2',
-              'border-cyan/60 bg-cyan/15 text-cyan',
-              'hover:bg-cyan/25 transition-colors',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-            )}
+            className={buttonClasses('primary', 'sm')}
           >
             {pending ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
             {t('Save')}

@@ -1,23 +1,26 @@
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Circle, Copy, Trash2 } from 'lucide-react';
+import { Copy, Trash2 } from 'lucide-react';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { MonitorsListLayout } from '../layouts/MonitorsListLayout';
 import { formatFps, runtimeTone, type MonitorRuntime, type RuntimeTone } from '@/features/monitors/useMonitorStatuses';
 import type { Monitor as MonitorType } from '@/types';
 
+/** The status lamp beside a monitor's name. Colour is state, nothing else. */
 const LENS: Record<RuntimeTone, string> = {
-  ok: 'bg-emerald',
-  warn: 'bg-amber',
-  down: 'bg-crimson',
-  unknown: 'bg-text-muted',
+  ok: 'bg-ok',
+  warn: 'bg-warn',
+  down: 'bg-danger',
+  unknown: 'bg-fg-faint',
 };
 
-const capturingColors: Record<string, string> = {
-  Always: 'bg-cyan/20 text-cyan',
-  Ondemand: 'bg-amber/20 text-amber',
-  None: 'bg-text-muted/20 text-text-muted',
+/** Runtime readout tone — grey unless something is actually wrong. */
+const RUNTIME_TEXT: Record<RuntimeTone, string> = {
+  ok: 'text-fg-dim',
+  warn: 'text-warn',
+  down: 'text-danger',
+  unknown: 'text-fg-dim',
 };
 
 /** Display label for the capturing wire value (the value itself stays raw). */
@@ -33,13 +36,20 @@ function useCapturingLabel() {
   };
 }
 
-/** Monitors list — Mission Control: thumbnail cards or list rows. */
+/**
+ * Monitors list — the modern skin.
+ *
+ * Grid view is a wall of thumbnails that fills the frame: the tiles size
+ * themselves to the column count the viewport allows rather than sitting at
+ * a quarter width with dead space around them. List view is a dense row per
+ * camera for scanning a large fleet.
+ */
 export default function MonitorsListPage() {
   return (
     <MonitorsListLayout
       renderMonitors={({ filteredMonitors, liveSessions, runtimeById, viewMode, clone, requestDelete, busy }) =>
         viewMode === 'grid' ? (
-          <div className="grid grid-cols-4 gap-4 stagger-children">
+          <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]">
             {filteredMonitors.map((monitor) => (
               <MonitorCard
                 key={monitor.id}
@@ -53,7 +63,7 @@ export default function MonitorsListPage() {
             ))}
           </div>
         ) : (
-          <div className="flex flex-col gap-2 stagger-children">
+          <div className="flex flex-col divide-y divide-border-subtle border border-border-subtle rounded overflow-hidden">
             {filteredMonitors.map((monitor) => (
               <MonitorListItem
                 key={monitor.id}
@@ -69,6 +79,21 @@ export default function MonitorsListPage() {
         )
       }
     />
+  );
+}
+
+/** A small dot + label mark, used for the live-session flag over a tile. */
+function LiveMark({ label, compact }: { label: string; compact?: boolean }) {
+  return (
+    <span
+      className={clsx(
+        'absolute top-1 start-1 z-10 flex items-center gap-1 rounded bg-black/60 pointer-events-none',
+        compact ? 'px-1 py-0.5' : 'px-1.5 py-0.5',
+      )}
+    >
+      <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-recording" />
+      <span className="text-xs font-medium text-white">{label}</span>
+    </span>
   );
 }
 
@@ -97,14 +122,12 @@ function MonitorCard({
       to="/monitors/$monitorId"
       params={{ monitorId: String(monitor.id) }}
       className={clsx(
-        'group relative block rounded-xl overflow-hidden',
+        'group relative block rounded overflow-hidden',
         'bg-surface border border-border-subtle',
-        'transition-all duration-base',
-        'hover:border-cyan/50 hover:shadow-lg hover:shadow-cyan/10'
+        'hover:border-accent transition-colors',
       )}
     >
-      {/* Thumbnail */}
-      <div className="aspect-video relative bg-abyss">
+      <div className="aspect-video relative bg-bg-sunken">
         <MonitorPreview
           monitorId={monitor.id}
           monitorName={monitor.name}
@@ -113,53 +136,34 @@ function MonitorCard({
           enableLivePreview
         />
 
-        {isStreaming && (
-          <div className="absolute top-2 start-2 z-10 flex items-center gap-1.5 px-2 py-1 rounded bg-black/60 pointer-events-none">
-            <span className="relative flex h-2 w-2">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
-              <span className="relative inline-flex rounded-full h-2 w-2 bg-crimson" />
-            </span>
-            <span className="text-xs font-mono font-bold text-white">{t('LIVE')}</span>
-          </div>
-        )}
+        {isStreaming && <LiveMark label={t('LIVE')} />}
 
         <CardActions onClone={onClone} onDelete={onDelete} busy={busy} name={monitor.name} />
-
-        <div className="absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/80 to-transparent pointer-events-none" />
       </div>
 
-      {/* Info */}
-      <div className="absolute inset-x-0 bottom-0 p-3 z-10 pointer-events-none">
-        <div className="flex items-center justify-between mb-1">
-          <div className="flex items-center gap-2 min-w-0">
-            <span
-              className={clsx('flex-shrink-0 w-2 h-2 rounded-full', LENS[tone])}
-              title={runtime?.status}
-            />
-            <span className="text-sm font-medium text-white truncate">
-              {monitor.name}
-            </span>
-          </div>
-          <span className="text-xs font-mono text-text-muted">
+      {/* Name + state ribbon under the picture, not painted over it. */}
+      <div className="px-2 py-1.5">
+        <div className="flex items-center gap-2 min-w-0">
+          <span
+            aria-hidden
+            className={clsx('shrink-0 w-1.5 h-1.5 rounded-full', LENS[tone])}
+          />
+          <span className="text-sm text-fg truncate">{monitor.name}</span>
+          <span className="ms-auto text-xs font-mono tabular-nums text-fg-faint">
             #{monitor.id}
           </span>
         </div>
 
-        <div className="flex items-center justify-between">
-          <span
-            className={clsx(
-              'text-[10px] font-mono font-medium px-1.5 py-0.5 rounded',
-              capturingColors[monitor.capturing] || capturingColors['None']
-            )}
-          >
+        <div className="flex items-center gap-2 mt-0.5">
+          <span className={clsx('text-xs', isActive ? 'text-fg-dim' : 'text-fg-faint')}>
             {capturingLabel(monitor.capturing)}
           </span>
           {isActive && runtime ? (
-            <span className={clsx('text-[10px] font-mono tabular-nums', tone === 'ok' ? 'text-text-muted' : 'text-amber')}>
+            <span className={clsx('ms-auto text-xs font-mono tabular-nums', RUNTIME_TEXT[tone])}>
               {runtime.status} · {formatFps(runtime.captureFps, i18n.language)}
             </span>
           ) : (
-            <span className="text-[10px] font-mono text-text-muted opacity-0 group-hover:opacity-100 transition-opacity">
+            <span className="ms-auto text-xs font-mono tabular-nums text-fg-faint">
               {monitor.width}x{monitor.height}
             </span>
           )}
@@ -193,15 +197,9 @@ function MonitorListItem({
     <Link
       to="/monitors/$monitorId"
       params={{ monitorId: String(monitor.id) }}
-      className={clsx(
-        'flex items-center gap-4 p-4',
-        'bg-surface border border-border-subtle rounded-xl',
-        'transition-all duration-base',
-        'hover:border-cyan/50 hover:shadow-lg hover:shadow-cyan/10'
-      )}
+      className="flex items-center gap-3 px-2 py-1.5 bg-surface hover:bg-surface-2 transition-colors"
     >
-      {/* Thumbnail */}
-      <div className="w-32 aspect-video relative rounded-lg overflow-hidden bg-abyss flex-shrink-0">
+      <div className="w-24 aspect-video relative rounded overflow-hidden bg-bg-sunken shrink-0">
         <MonitorPreview
           monitorId={monitor.id}
           monitorName={monitor.name}
@@ -209,61 +207,33 @@ function MonitorListItem({
           isActive={isActive}
           compact
         />
-        {isStreaming && (
-          <div className="absolute top-1 start-1 z-10 flex items-center gap-1 px-1.5 py-0.5 rounded bg-black/60 pointer-events-none">
-            <span className="relative flex h-1.5 w-1.5">
-              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-crimson opacity-75" />
-              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-crimson" />
-            </span>
-            <span className="text-[10px] font-mono font-bold text-white">{t('LIVE')}</span>
-          </div>
-        )}
+        {isStreaming && <LiveMark label={t('LIVE')} compact />}
       </div>
 
-      {/* Info */}
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2 mb-1">
-          <span className={clsx('w-2 h-2 rounded-full', LENS[tone])} title={runtime?.status} />
-          <h3 className="font-medium text-text-primary truncate">
-            {monitor.name}
-          </h3>
-          <span className="text-xs font-mono text-text-muted">
-            #{monitor.id}
-          </span>
+        <div className="flex items-center gap-2 min-w-0">
+          <span aria-hidden className={clsx('w-1.5 h-1.5 rounded-full shrink-0', LENS[tone])} />
+          <h3 className="text-sm font-medium text-fg truncate">{monitor.name}</h3>
+          <span className="text-xs font-mono tabular-nums text-fg-faint">#{monitor.id}</span>
         </div>
 
-        <div className="flex items-center gap-3 text-sm text-text-secondary">
-          <span
-            className={clsx(
-              'text-xs font-mono font-medium px-2 py-0.5 rounded',
-              capturingColors[monitor.capturing] || capturingColors['None']
-            )}
-          >
-            {capturingLabel(monitor.capturing)}
-          </span>
-          <span className="font-mono text-text-muted">
+        <div className="flex items-center gap-3 text-xs text-fg-dim">
+          <span>{capturingLabel(monitor.capturing)}</span>
+          <span className="font-mono tabular-nums">
             {monitor.width}x{monitor.height}
           </span>
-          {monitor.type && (
-            <span className="text-text-muted">{monitor.type}</span>
-          )}
+          {monitor.type && <span>{monitor.type}</span>}
         </div>
       </div>
 
-      {/* Status indicators */}
-      <div className="flex items-center gap-3 text-text-muted">
+      <div className="flex items-center gap-3 shrink-0">
         {isStreaming && (
-          <div className="flex items-center gap-1.5 text-crimson">
-            <Circle className="w-2 h-2 fill-current" />
-            <span className="text-xs font-mono">{t('Streaming')}</span>
-          </div>
+          <span className="flex items-center gap-1.5 text-xs text-fg-dim">
+            <span aria-hidden className="w-1.5 h-1.5 rounded-full bg-recording" />
+            {t('Streaming')}
+          </span>
         )}
-        <span className={clsx('text-xs tabular-nums', {
-          'text-emerald': tone === 'ok',
-          'text-amber': tone === 'warn',
-          'text-crimson': tone === 'down',
-          'text-text-muted': tone === 'unknown',
-        })}>
+        <span className={clsx('text-xs font-mono tabular-nums', RUNTIME_TEXT[tone])}>
           {!isActive
             ? t('Inactive')
             : runtime
@@ -283,7 +253,7 @@ function CardActions({
 }: { onClone: () => void; onDelete: () => void; busy: boolean; name: string }) {
   const { t } = useTranslation();
   return (
-    <div className="absolute top-2 end-2 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+    <div className="absolute top-1 end-1 z-20 flex items-center gap-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity">
       <ActionBtn
         title={t('Clone {{name}}', { name })}
         onClick={(e) => { e.preventDefault(); e.stopPropagation(); onClone(); }}
@@ -337,8 +307,8 @@ function ActionBtn({
       type="button"
       {...rest}
       className={clsx(
-        'p-1.5 rounded bg-black/60 text-text-secondary transition-colors',
-        tone === 'danger' ? 'hover:text-crimson' : 'hover:text-cyan',
+        'p-1 rounded bg-black/60 text-white/80 transition-colors',
+        tone === 'danger' ? 'hover:text-danger' : 'hover:text-white',
         'disabled:opacity-40 disabled:cursor-not-allowed',
       )}
     >

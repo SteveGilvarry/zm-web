@@ -12,6 +12,7 @@ import { listControls } from '@/api/controls';
 import { attachMonitorToGroup, detachMonitorFromGroup } from '@/api/groups';
 import { ApiClientError } from '@/api/client';
 import { useToast } from '@/components/common/toastStore';
+import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import type { Monitor } from '@/types';
 import {
@@ -44,7 +45,7 @@ interface MonitorEditorProps {
  * verbs (Save / Save and Close / Cancel / Delete, Watch / Cycle / Zones
  * links) but adds:
  *
- *  - explicit diff tracking — every changed field gets a cyan marker dot,
+ *  - explicit diff tracking — every changed field gets a accent marker dot,
  *    the footer shows a count, and Save only PATCHes the keys that changed
  *  - type-dependent Source widgets, as the legacy form swaps on `type`
  *  - client validation plus backend 422 details mapped onto the fields
@@ -232,22 +233,22 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
   const busy = saveMutation.isPending || deleteMutation.isPending;
   const monitorId = String(monitor.id);
 
-  const linkClass = 'inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-border-subtle text-xs text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors';
+  const linkClass = buttonClasses('secondary', 'sm');
 
   return (
     <div
       data-testid="monitor-editor"
-      className="fixed inset-0 z-40 bg-void/95 backdrop-blur-md flex flex-col animate-in fade-in duration-150"
+      className="fixed inset-0 z-40 bg-bg flex flex-col animate-in fade-in duration-150"
     >
       {/* Header strip — title, quick links, delete, cancel */}
-      <div className="flex items-center justify-between gap-4 px-6 py-3 border-b border-cyan/20 bg-surface/40">
+      <div className="flex items-center justify-between gap-4 px-5 py-2.5 border-b border-border bg-surface">
         <div className="flex items-center gap-3 min-w-0">
-          <div className="w-8 h-8 rounded border border-cyan/40 bg-cyan/15 flex items-center justify-center flex-shrink-0">
-            <span className="text-cyan font-mono text-[11px] font-semibold">M{monitor.id}</span>
+          <div className="w-8 h-8 rounded border border-border-subtle bg-surface-2 flex items-center justify-center flex-shrink-0">
+            <span className="text-fg-muted font-mono tabular-nums text-xs font-semibold">M{monitor.id}</span>
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-text-primary truncate">{t('Edit · {{name}}', { name: monitor.name })}</h2>
-            <div className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
+            <h2 className="text-sm font-semibold text-fg truncate">{t('Edit · {{name}}', { name: monitor.name })}</h2>
+            <div className="text-label text-fg-dim">
               {t('Configuration')}
             </div>
           </div>
@@ -270,7 +271,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
               type="button"
               onClick={handleDelete}
               disabled={busy}
-              className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded border border-crimson/40 text-xs text-crimson hover:bg-crimson/10 transition-colors disabled:opacity-40"
+              className={clsx(buttonClasses('secondary', 'sm'), 'text-danger hover:text-danger hover:border-danger/50')}
             >
               {deleteMutation.isPending ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
               {t('Delete')}
@@ -292,7 +293,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
         {/* Left rail — tabs */}
         <nav
           aria-label={t('Edit sections')}
-          className="w-56 flex-shrink-0 border-e border-border-subtle bg-surface/20 overflow-y-auto"
+          className="w-56 flex-shrink-0 border-e border-border-subtle bg-surface overflow-y-auto"
         >
           <ul className="py-2">
             {tabs.map((tab) => {
@@ -305,17 +306,17 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
                     type="button"
                     onClick={() => setActiveTab(tab.id)}
                     className={clsx(
-                      'group w-full flex items-center gap-2 px-4 py-2 text-start text-sm transition-all',
+                      'group w-full flex items-center gap-2 px-4 py-1.5 text-start text-sm transition-colors',
                       'border-s-2',
                       isActive
-                        ? 'border-cyan bg-cyan/10 text-cyan'
-                        : 'border-transparent text-text-secondary hover:bg-surface/60 hover:text-text-primary',
+                        ? 'border-accent bg-accent/10 text-accent'
+                        : 'border-transparent text-fg-muted hover:bg-surface-2 hover:text-fg',
                     )}
                   >
                     <span className="flex-1">{tab.label}</span>
                     {errors > 0 && (
                       <span
-                        className="inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full text-[10px] font-mono bg-crimson/20 text-crimson"
+                        className="inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded text-xs font-mono tabular-nums bg-danger/12 text-danger"
                         aria-label={t('{{count}} invalid field in {{tab}}', { count: errors, tab: tab.label })}
                       >
                         {errors}
@@ -324,10 +325,8 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
                     {count > 0 && (
                       <span
                         className={clsx(
-                          'inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded-full text-[10px] font-mono',
-                          isActive
-                            ? 'bg-cyan/30 text-cyan'
-                            : 'bg-cyan/20 text-cyan',
+                          'inline-flex items-center justify-center min-w-[1.25rem] h-4 px-1 rounded text-xs font-mono tabular-nums',
+                          'bg-accent/12 text-accent',
                         )}
                         aria-label={t('{{count}} pending change in {{tab}}', { count, tab: tab.label })}
                       >
@@ -359,8 +358,8 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
             onUpdate={updateField}
           />
           {activeTabDef.id === 'general' && (
-            <div className="max-w-4xl mx-auto px-8 pb-8">
-              <h4 className="text-[10px] font-mono uppercase tracking-[0.22em] text-cyan/80 pt-2 pb-1 mb-3 border-b border-cyan/15">
+            <div className="max-w-4xl mx-auto px-6 pb-6">
+              <h4 className="text-label font-medium text-fg-muted pt-2 pb-1 mb-3 border-b border-border-subtle">
                 {t('Groups')}
               </h4>
               <GroupsMembership value={groupsValue} onChange={setGroupsDraft} />
@@ -370,25 +369,22 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
       </div>
 
       {/* Sticky footer — diff count + actions */}
-      <footer className="flex items-center justify-between px-6 py-3 border-t border-cyan/20 bg-surface/60 backdrop-blur-sm">
+      <footer className="flex items-center justify-between px-5 py-2.5 border-t border-border bg-surface">
         <div className="flex items-center gap-3">
           {saveError ? (
-            <span className="inline-flex items-center gap-1.5 text-xs text-crimson">
+            <span className="inline-flex items-center gap-1.5 text-xs text-danger">
               <AlertCircle size={12} />
               {saveError}
             </span>
           ) : diffCount > 0 ? (
             <>
-              <span
-                className="w-1.5 h-1.5 rounded-full bg-cyan animate-pulse"
-                aria-hidden
-              />
-              <span className="text-xs font-mono text-cyan tabular-nums">
+              <span className="w-1.5 h-1.5 rounded-full bg-accent" aria-hidden />
+              <span className="text-xs text-accent">
                 {t('{{count}} unsaved change', { count: diffCount })}
               </span>
             </>
           ) : (
-            <span className="text-xs font-mono text-text-muted">{t('No pending changes')}</span>
+            <span className="text-xs text-fg-dim">{t('No pending changes')}</span>
           )}
         </div>
 
@@ -397,7 +393,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
             type="button"
             onClick={handleReset}
             disabled={diffCount === 0 || busy}
-            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs rounded border border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            className={buttonClasses('secondary', 'sm')}
           >
             <Undo2 size={11} />
             {t('Reset')}
@@ -405,19 +401,13 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
           <RequirePerm
             feature="monitors"
             level="Edit"
-            fallback={<span className="text-xs text-text-muted">{t('Read-only: you lack Monitors edit permission.')}</span>}
+            fallback={<span className="text-xs text-fg-dim">{t('Read-only: you lack Monitors edit permission.')}</span>}
           >
             <button
               type="button"
               onClick={() => save(false)}
               disabled={diffCount === 0 || busy}
-              className={clsx(
-                'inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-medium rounded border-2 transition-all',
-                diffCount > 0 && !busy
-                  ? 'border-cyan/60 bg-cyan/15 text-cyan hover:bg-cyan/25 shadow-[0_0_18px_rgba(0,212,255,0.25)]'
-                  : 'border-border-subtle text-text-muted bg-surface/40',
-                'disabled:opacity-50 disabled:cursor-not-allowed',
-              )}
+              className={buttonClasses('primary', 'sm')}
             >
               {saveMutation.isPending
                 ? <Loader2 size={11} className="animate-spin" />
@@ -430,7 +420,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
               type="button"
               onClick={() => save(true)}
               disabled={diffCount === 0 || busy}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border border-cyan/40 text-cyan hover:bg-cyan/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              className={buttonClasses('secondary', 'sm')}
             >
               {t('Save and close')}
             </button>
@@ -457,21 +447,21 @@ interface FormPaneProps {
 function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate }: FormPaneProps) {
   const fields = visibleFields(tab, draft);
   return (
-    <div className="max-w-4xl mx-auto px-8 py-6">
-      <header className="mb-6 pb-4 border-b border-border-subtle/50">
-        <h3 className="text-lg font-semibold text-text-primary">{tab.label}</h3>
+    <div className="max-w-4xl mx-auto px-6 py-5">
+      <header className="mb-5 pb-3 border-b border-border-subtle">
+        <h3 className="text-base font-semibold text-fg">{tab.label}</h3>
         {tab.description && (
-          <p className="text-xs text-text-muted mt-1">{tab.description}</p>
+          <p className="text-xs text-fg-dim mt-1">{tab.description}</p>
         )}
       </header>
 
-      <div className="grid grid-cols-2 gap-x-6 gap-y-5">
+      <div className="grid grid-cols-2 gap-x-6 gap-y-4">
         {fields.map((f, idx) => {
           if (f.kind === 'group') {
             return (
               <h4
                 key={`${tab.id}-${f.key}`}
-                className="col-span-2 text-[10px] font-mono uppercase tracking-[0.22em] text-cyan/80 pt-2 pb-1 border-b border-cyan/15"
+                className="col-span-2 text-label font-medium text-fg-muted pt-2 pb-1 border-b border-border-subtle"
               >
                 {f.label}
               </h4>
@@ -513,26 +503,26 @@ function FieldRow({ field, monitorId, draft, value, isDirty, error, onChange, on
 
   return (
     <div className={span}>
-      <label className="flex items-center gap-2 mb-1.5">
+      <label className="flex items-center gap-2 mb-1">
         <span
           className={clsx(
-            'text-[10px] font-mono uppercase tracking-[0.18em]',
-            error ? 'text-crimson' : isDirty ? 'text-cyan' : 'text-text-muted',
+            'text-label',
+            error ? 'text-danger' : isDirty ? 'text-accent' : 'text-fg-dim',
           )}
         >
           {field.label}
-          {field.required && <span aria-hidden className="text-crimson ms-0.5">*</span>}
+          {field.required && <span aria-hidden className="text-danger ms-0.5">*</span>}
         </span>
         {isDirty && (
           <span
-            className="w-1 h-1 rounded-full bg-cyan animate-pulse"
+            className="w-1 h-1 rounded-full bg-accent"
             aria-label={t('Changed')}
           />
         )}
         {field.link && (
           <Link
             to={field.link.to}
-            className="ms-auto inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-cyan hover:underline"
+            className="ms-auto inline-flex items-center gap-1 text-xs text-accent hover:underline"
           >
             {field.link.label}
             <ExternalLink size={10} />
@@ -551,9 +541,9 @@ function FieldRow({ field, monitorId, draft, value, isDirty, error, onChange, on
       />
 
       {error ? (
-        <p role="alert" className="text-[10px] text-crimson mt-1 leading-relaxed">{error}</p>
+        <p role="alert" className="text-xs text-danger mt-1 leading-relaxed">{error}</p>
       ) : field.help ? (
-        <p className="text-[10px] text-text-muted mt-1 leading-relaxed">
+        <p className="text-xs text-fg-dim mt-1 leading-relaxed">
           {field.help}
         </p>
       ) : null}
@@ -579,12 +569,9 @@ function FieldInput({
   onUpdate: (key: string, value: FieldValue) => void;
 }) {
   const { t } = useTranslation();
-  const baseInput = clsx(
-    'w-full px-2.5 py-1.5 text-sm bg-surface border rounded text-text-primary placeholder:text-text-dim focus:outline-none focus:ring-1 transition-colors',
-    invalid
-      ? 'border-crimson/60 focus:border-crimson focus:ring-crimson/20'
-      : 'border-border-subtle focus:border-cyan/50 focus:ring-cyan/20',
-  );
+  // Focus comes from the base `:focus-visible` rule in src/index.css, so this
+  // is the shared field recipe with nothing bolted on.
+  const baseInput = fieldClasses('sm', invalid);
 
   if (field.kind === 'textarea') {
     return (
@@ -630,19 +617,19 @@ function FieldInput({
         aria-checked={on}
         onClick={() => onChange(on ? 0 : 1)}
         className={clsx(
-          'inline-flex items-center gap-2 px-3 py-1.5 rounded border-2 text-xs font-medium tracking-wide transition-all',
+          'inline-flex items-center gap-2 px-3 py-1.5 rounded border text-xs font-medium transition-colors',
           on
-            ? 'border-cyan/60 bg-cyan/15 text-cyan'
-            : 'border-border-subtle bg-surface text-text-muted hover:border-text-secondary/50',
+            ? 'border-accent/30 bg-accent/12 text-accent'
+            : 'border-border-subtle bg-surface text-fg-dim hover:border-border hover:text-fg',
         )}
       >
         <span
           className={clsx(
             'w-6 h-3 rounded-full p-0.5 flex items-center transition-colors',
-            on ? 'bg-cyan/40 justify-end' : 'bg-text-muted/30 justify-start',
+            on ? 'bg-accent/40 justify-end' : 'bg-fg-dim/40 justify-start',
           )}
         >
-          <span className="w-2 h-2 rounded-full bg-white" />
+          <span className="w-2 h-2 rounded-full bg-surface" />
         </span>
         {on ? t('Enabled') : t('Disabled')}
       </button>
@@ -732,7 +719,7 @@ function FieldInput({
       placeholder={field.placeholder}
       aria-label={field.label}
       aria-invalid={invalid || undefined}
-      className={clsx(baseInput, 'font-mono')}
+      className={baseInput}
     />
   );
 }
@@ -777,7 +764,7 @@ function PasswordInput({
         type="button"
         onClick={() => setVisible((v) => !v)}
         aria-label={visible ? t('Hide password') : t('Show password')}
-        className="absolute end-2 top-1/2 -translate-y-1/2 text-text-muted hover:text-text-primary transition-colors"
+        className="absolute end-2 top-1/2 -translate-y-1/2 text-fg-dim hover:text-fg transition-colors"
       >
         {visible ? <EyeOff size={14} /> : <Eye size={14} />}
       </button>
@@ -826,7 +813,7 @@ function ColorInput({
           onClick={() => onChange(randomHexColour())}
           aria-label={t('Random colour')}
           title={t('Random colour')}
-          className="p-1.5 rounded border border-border-subtle text-text-muted hover:text-text-primary"
+          className="p-1.5 rounded border border-border-subtle text-fg-dim hover:text-fg"
         >
           <Shuffle size={12} />
         </button>
@@ -887,7 +874,7 @@ function ResolutionInput({
         aria-invalid={invalid || undefined}
         className={clsx(className, 'font-mono tabular-nums w-24 flex-none')}
       />
-      <span className="text-text-muted">×</span>
+      <span className="text-fg-dim">×</span>
       <input
         type="number"
         min={1}
@@ -912,8 +899,8 @@ function ResolutionInput({
           <option key={p.label} value={`${p.width}x${p.height}`}>{p.label}</option>
         ))}
       </select>
-      <label className="inline-flex items-center gap-1.5 text-xs text-text-secondary cursor-pointer select-none">
-        <input type="checkbox" className="accent-cyan" checked={ratio != null} onChange={toggleLock} />
+      <label className="inline-flex items-center gap-1.5 text-xs text-fg-muted cursor-pointer select-none">
+        <input type="checkbox" className="accent-accent" checked={ratio != null} onChange={toggleLock} />
         {t('Preserve aspect ratio')}
       </label>
     </div>
@@ -967,7 +954,7 @@ function ControlSelect({
         ))}
       </select>
       {isError && (
-        <p className="text-[10px] text-crimson mt-1">
+        <p className="text-xs text-danger mt-1">
           {t('Could not load control list — save will still work if you don’t change this field.')}
         </p>
       )}

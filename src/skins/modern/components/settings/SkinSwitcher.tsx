@@ -1,8 +1,7 @@
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Monitor, Moon, Server, Sun } from 'lucide-react';
+import { Monitor, Moon, Sun } from 'lucide-react';
 import type { ReactNode } from 'react';
-import { Panel } from '@/components/common/Panel';
 import { LanguagePicker } from '@/components/common/LanguagePicker';
 import { skins, useSkin } from '@/skins/registry';
 import type { SkinId } from '@/skins/types';
@@ -11,6 +10,10 @@ import { useUiStore, type ThemePreference } from '@/stores/ui';
 /**
  * Settings → Appearance. The one place the UI reads the active skin as a
  * value rather than through the page registry: it is the chooser itself.
+ *
+ * A plain section, not a panel: on the settings page the hierarchy comes
+ * from spacing and type, and a border here would only box in three
+ * controls (docs/DESIGN.md).
  */
 export function SkinSwitcher() {
   const { t } = useTranslation();
@@ -42,26 +45,19 @@ export function SkinSwitcher() {
       key={value}
       type="button"
       onClick={() => setSkin(value)}
+      aria-pressed={active === value}
       className={clsx(
-        'flex-1 text-start p-4 rounded-lg border transition-colors',
+        'flex-1 text-start p-3 rounded border transition-colors',
         active === value
-          ? 'bg-accent/10 border-accent/40 text-fg'
-          : 'bg-surface/50 border-border-subtle text-fg-dim hover:border-fg-dim/50 hover:text-fg',
+          ? 'border-accent bg-accent/5 text-fg'
+          : 'border-border-subtle text-fg-muted hover:border-border hover:text-fg',
       )}
     >
-      <div className="flex items-center gap-2 mb-1">
-        <span
-          className={clsx(
-            'w-2 h-2 rounded-full',
-            active === value ? 'bg-accent' : 'bg-border',
-          )}
-        />
-        <span className="font-medium">{label}</span>
-        {active === value && (
-          <span className="ms-auto text-label font-mono text-accent">{t('ACTIVE')}</span>
-        )}
+      <div className="flex items-center gap-2">
+        <span className="text-sm font-medium">{label}</span>
+        {active === value && <span className="ms-auto text-xs text-accent">{t('Active')}</span>}
       </div>
-      <div className="text-label text-fg-dim">{blurb}</div>
+      <p className="mt-1 text-xs text-fg-dim">{blurb}</p>
     </button>
   );
 
@@ -77,11 +73,11 @@ export function SkinSwitcher() {
       aria-pressed={theme === value}
       disabled={!supportsDark}
       className={clsx(
-        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border text-sm transition-colors',
+        'inline-flex items-center gap-1.5 px-2.5 py-1 rounded text-sm transition-colors',
         'disabled:opacity-50 disabled:cursor-not-allowed',
         theme === value
-          ? 'bg-accent/10 border-accent/40 text-accent'
-          : 'bg-surface/50 border-border-subtle text-fg-muted hover:text-fg hover:border-border',
+          ? 'bg-accent/15 text-accent'
+          : 'text-fg-dim hover:text-fg hover:bg-surface-2',
       )}
     >
       <span aria-hidden>{icon}</span>
@@ -90,33 +86,38 @@ export function SkinSwitcher() {
   );
 
   return (
-    <Panel title={t('Appearance')} icon={<Server size={18} />}>
+    <section className="space-y-4">
+      <h2 className="text-sm font-medium text-fg">{t('Appearance')}</h2>
+
       <div className="flex flex-col sm:flex-row gap-3">
         {Object.values(skins).map((def) =>
           option(def.id, skinName(def.id, def.name), skinBlurb(def.id, def.description)),
         )}
       </div>
 
-      <div className="mt-4">
-        <div className="flex flex-wrap items-center gap-3">
+      <div className="flex flex-wrap items-center gap-x-6 gap-y-3">
+        <div className="flex items-center gap-3">
           <span className="text-sm text-fg-muted">{t('Theme')}</span>
-          <div className="flex flex-wrap items-center gap-2" role="group" aria-label={t('Theme')}>
+          <div
+            className="flex flex-wrap items-center gap-1 rounded border border-border-subtle p-0.5"
+            role="group"
+            aria-label={t('Theme')}
+          >
             {themeOption('system', t('System'), <Monitor size={14} />)}
             {themeOption('light', t('Light'), <Sun size={14} />)}
             {themeOption('dark', t('Dark'), <Moon size={14} />)}
           </div>
         </div>
-        {!supportsDark && (
-          <p className="mt-2 text-label text-fg-dim">
-            {t('This skin is light only.')}
-          </p>
-        )}
+
+        <div className="flex items-center gap-3">
+          <span className="text-sm text-fg-muted">{t('Language')}</span>
+          <LanguagePicker />
+        </div>
       </div>
 
-      <div className="mt-4 flex items-center gap-3">
-        <span className="text-sm text-fg-muted">{t('Language')}</span>
-        <LanguagePicker />
-      </div>
-    </Panel>
+      {!supportsDark && (
+        <p className="text-xs text-fg-dim">{t('This skin is light only.')}</p>
+      )}
+    </section>
   );
 }

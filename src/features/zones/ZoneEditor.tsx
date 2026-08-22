@@ -10,6 +10,7 @@ import {
   parseCoords, serializeCoords, insertMidpoint,
   type Zone, type ZoneType, type Point,
 } from '@/api/zones';
+import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { useRefreshingSnapshot } from '@/hooks/useRefreshingSnapshot';
 import { zoneArea } from './zoneArea';
 
@@ -240,23 +241,23 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
 
       {/* Sidebar — zone list + form */}
       <div className="space-y-3">
-        <div className="rounded-lg border border-border-subtle bg-surface/40 overflow-hidden">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-border-subtle">
-            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
+        <div className="rounded border border-border-subtle bg-surface overflow-hidden">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
+            <span className="text-label text-fg-dim">
               {t('Zones')}
             </span>
             <button
               onClick={startNewZone}
-              className="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium rounded border border-cyan/40 text-cyan hover:bg-cyan/15 transition-colors"
+              className={buttonClasses('secondary', 'sm')}
             >
               <Plus size={10} />
               {t('New')}
             </button>
           </div>
           {zonesQ.isLoading ? (
-            <div className="p-4 text-center text-xs text-text-muted">{t('Loading…')}</div>
+            <div className="p-4 text-center text-xs text-fg-dim">{t('Loading…')}</div>
           ) : zones.length === 0 ? (
-            <div className="p-4 text-center text-xs text-text-muted italic">
+            <div className="p-4 text-center text-xs text-fg-dim italic">
               <Trans>No zones yet. Click <strong>New</strong> to draw one.</Trans>
             </div>
           ) : (
@@ -270,14 +271,14 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
                       className={clsx(
                         'w-full flex items-center gap-2 px-3 py-1.5 text-start text-xs border-s-2 transition-colors',
                         selectedId === z.id
-                          ? 'bg-cyan/10'
-                          : 'hover:bg-surface/80',
+                          ? 'bg-accent/10'
+                          : 'hover:bg-surface-2',
                       )}
                       style={{ borderInlineStartColor: c.stroke }}
                     >
                       <Square size={10} style={{ color: c.stroke }} fill={c.fill} />
-                      <span className="text-text-primary truncate flex-1">{z.name}</span>
-                      <span className="text-[10px] font-mono uppercase text-text-muted">{zoneTypeLabel(z.type, t)}</span>
+                      <span className="text-fg truncate flex-1">{z.name}</span>
+                      <span className="text-xs text-fg-dim">{zoneTypeLabel(z.type, t)}</span>
                     </button>
                   </li>
                 );
@@ -288,15 +289,15 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
 
         {/* Editor form */}
         {draft && (
-          <div className="rounded-lg border border-cyan/40 bg-panel/50 p-3 space-y-3">
+          <div className="rounded border border-border bg-surface p-3 space-y-2.5">
             <div className="flex items-center justify-between">
-              <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-cyan">
+              <span className="text-label text-fg">
                 {draft.id == null ? t('New zone') : t('Editing #{{id}}', { id: draft.id })}
               </span>
               <button
                 onClick={clearSelection}
                 aria-label={t('Cancel edit')}
-                className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+                className="p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
               >
                 <X size={11} />
               </button>
@@ -306,25 +307,25 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
               <input
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                className={clsx('flex-1', fieldClasses('sm'))}
               />
             </Field>
             <Field label={t('Type')}>
               <select
                 value={draft.type}
                 onChange={(e) => setDraft({ ...draft, type: e.target.value })}
-                className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                className={clsx('flex-1', fieldClasses('sm'))}
               >
                 {ZONE_TYPE_ORDER.map((type) => (
                   <option key={type} value={type}>{zoneTypeLabel(type, t)}</option>
                 ))}
               </select>
             </Field>
-            <div className="text-[10px] text-text-muted italic px-1">
+            <div className="text-xs text-fg-dim italic px-1">
               {zoneTypeHint(draft.type, t)}
             </div>
             <Field label={t('Units')}>
-              <div className="flex items-center gap-1 text-[11px]">
+              <div className="flex items-center gap-1 text-xs">
                 <UnitToggleBtn
                   active={draft.units === 'Pixels'}
                   onClick={() => setUnits('Pixels')}
@@ -345,7 +346,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
                     if (e.target.value) applyPreset(Number(e.target.value));
                     e.target.value = '';
                   }}
-                  className="flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                  className={clsx('flex-1', fieldClasses('sm'))}
                 >
                   <option value="" disabled>{t('Apply preset…')}</option>
                   {presets.map((p) => (
@@ -355,7 +356,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
               </Field>
             )}
             {draftArea && (
-              <div className="text-[10px] font-mono text-text-muted">
+              <div className="text-xs font-mono text-fg-dim">
                 {/* "Draft", not "Zone Area": the settings panel shows the
                     stored Zones.Area, and the two disagree while you drag. */}
                 {t('Draft area {{px}} px ({{pct}}%)', {
@@ -364,7 +365,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
                 })}
               </div>
             )}
-            <div className="text-[10px] text-text-muted">
+            <div className="text-xs text-fg-dim">
               {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}
             </div>
 
@@ -376,7 +377,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
                     if (confirm(t('Delete zone "{{name}}"?', { name: draft.name }))) deleteMutation.mutate(draft.id!);
                   }}
                   disabled={deleteMutation.isPending}
-                  className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-crimson/40 text-crimson hover:bg-crimson/15 transition-colors disabled:opacity-50"
+                  className={clsx(buttonClasses('secondary', 'sm'), 'text-danger hover:text-danger hover:border-danger/50')}
                 >
                   <Trash2 size={10} />
                   {t('Delete')}
@@ -386,7 +387,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
                 type="button"
                 onClick={() => saveMutation.mutate()}
                 disabled={saveMutation.isPending || draft.points.length < 3 || !draft.name.trim()}
-                className="flex items-center gap-1 px-3 py-1 text-[11px] font-medium rounded border border-cyan/50 bg-cyan/15 text-cyan hover:bg-cyan/25 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                className={buttonClasses('primary', 'sm')}
               >
                 <Save size={10} />
                 {t('Save')}
@@ -402,7 +403,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <label className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-12">
+      <label className="text-label text-fg-dim w-14 flex-shrink-0">
         {label}
       </label>
       {children}
@@ -421,8 +422,8 @@ function UnitToggleBtn({ active, onClick, label }: {
       className={clsx(
         'px-2 py-0.5 rounded border transition-colors',
         active
-          ? 'border-cyan/50 bg-cyan/15 text-cyan'
-          : 'border-border-subtle text-text-muted hover:bg-surface',
+          ? 'border-accent/30 bg-accent/12 text-accent'
+          : 'border-border-subtle text-fg-dim hover:text-fg hover:bg-surface-2',
       )}
     >
       {label}
@@ -494,7 +495,7 @@ function ZoneCanvas({
   );
 
   return (
-    <div dir="ltr" className="relative w-full rounded-lg overflow-hidden border border-border-subtle bg-abyss">
+    <div dir="ltr" className="relative w-full rounded overflow-hidden border border-border-subtle bg-bg-sunken">
       {/* Snapshot — sized via aspect-ratio to the camera resolution */}
       <div className="relative" style={{ aspectRatio: `${monitorWidth} / ${monitorHeight}` }}>
         {snapshotUrl && (

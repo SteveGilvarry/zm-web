@@ -34,7 +34,7 @@ function thumbnailRotationStyle(orientation?: string | null): CSSProperties | un
   }
 }
 
-/** One row of the Mission Control events list: thumbnail, meta, scores, download. */
+/** One row of the modern events list in card view: thumbnail, meta, scores, download. */
 export function EventCard({
   event,
   monitorName,
@@ -58,23 +58,12 @@ export function EventCard({
   const endTime = event.end_date_time ? new Date(event.end_date_time) : null;
   const duration = eventDurationSeconds(event.length) || null;
 
-  const getCauseColor = (cause: string) => {
-    const lowerCause = cause.toLowerCase();
-    if (lowerCause.includes('motion')) return 'bg-amber/20 text-amber';
-    if (lowerCause.includes('alarm')) return 'bg-crimson/20 text-crimson';
-    if (lowerCause.includes('continuous')) return 'bg-cyan/20 text-cyan';
-    return 'bg-text-muted/20 text-text-secondary';
-  };
-
   return (
     <div
       className={clsx(
-        'flex items-center gap-3 p-4 group',
-        'bg-surface border rounded-xl',
-        'transition-all duration-base',
-        isSelected
-          ? 'border-cyan/60 shadow-lg shadow-cyan/10'
-          : 'border-border-subtle hover:border-cyan/50 hover:shadow-lg hover:shadow-cyan/10',
+        'flex items-center gap-3 p-3 group',
+        'bg-surface border rounded transition-colors',
+        isSelected ? 'border-accent bg-accent/10' : 'border-border-subtle hover:border-border',
       )}
     >
       {/* Selection checkbox — opt-in, doesn't compete with the Link target */}
@@ -83,14 +72,11 @@ export function EventCard({
         onClick={(e) => { e.stopPropagation(); onToggleSelected(); }}
         aria-label={isSelected ? t('Deselect event') : t('Select event')}
         className={clsx(
-          'w-5 h-5 rounded border-2 flex items-center justify-center flex-shrink-0',
-          'transition-all',
-          isSelected
-            ? 'border-cyan bg-cyan/20'
-            : 'border-border opacity-0 group-hover:opacity-100 hover:border-cyan',
+          'w-5 h-5 rounded border flex items-center justify-center shrink-0 transition-colors',
+          isSelected ? 'border-accent bg-accent/20' : 'border-border hover:border-fg-dim',
         )}
       >
-        {isSelected && <span className="text-cyan text-xs leading-none">✓</span>}
+        {isSelected && <span className="text-accent text-xs leading-none">✓</span>}
       </button>
 
       <Link
@@ -99,7 +85,7 @@ export function EventCard({
         className="flex items-center gap-4 flex-1 min-w-0"
       >
       {showThumbnail && (
-      <div className="w-40 aspect-square relative flex-shrink-0">
+      <div className="w-32 aspect-square relative shrink-0">
         <img
           src={getEventThumbnailUrl(event.id, token || undefined)}
           alt={event.name}
@@ -113,7 +99,7 @@ export function EventCard({
           <Play size={32} className="text-white/80 drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]" />
         </div>
         {duration && (
-          <div className="absolute bottom-1 end-1 px-1.5 py-0.5 rounded bg-black/70 text-[10px] font-mono text-white">
+          <div className="absolute bottom-1 end-1 px-1.5 py-0.5 rounded bg-black/70 text-xs font-mono text-white">
             {t('{{seconds}}s', { seconds: duration })}
           </div>
         )}
@@ -123,28 +109,24 @@ export function EventCard({
       {/* Info */}
       <div className="flex-1 min-w-0">
         <div className="flex items-center gap-3 mb-2">
-          <h3 className="font-medium text-text-primary truncate">{event.name}</h3>
-          <span className="text-xs font-mono text-text-muted">#{event.id}</span>
+          <h3 className="font-medium text-fg truncate">{event.name}</h3>
+          <span className="text-xs font-mono text-fg-dim">#{event.id}</span>
           {event.archived === 1 && (
-            <span className="flex items-center gap-1 text-xs text-amber">
-              <Archive size={12} />
+            <span className="flex items-center gap-1 text-xs text-fg-dim">
+              <Archive size={12} aria-hidden />
               {t('Archived')}
             </span>
           )}
         </div>
 
-        <div className="flex items-center gap-4 text-sm text-text-secondary mb-2 flex-wrap">
+        <div className="flex items-center gap-4 text-sm text-fg-muted mb-2 flex-wrap">
           <span className="flex items-center gap-1.5">
-            <Monitor size={14} className="text-text-muted" />
+            <Monitor size={14} className="text-fg-dim" />
             {monitorName}
           </span>
+          {/* The cause is a label, not a state, so it stays neutral. */}
           {event.cause && (
-            <span
-              className={clsx(
-                'px-2 py-0.5 rounded text-xs font-medium',
-                getCauseColor(event.cause)
-              )}
-            >
+            <span className="px-2 py-0.5 rounded bg-surface-2 text-xs text-fg-muted">
               {event.cause}
             </span>
           )}
@@ -153,9 +135,9 @@ export function EventCard({
               {event.tags.map((tag) => (
                 <span
                   key={tag.id}
-                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-cyan/15 border border-cyan/30 text-cyan text-[10px]"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border-subtle text-xs text-fg-muted"
                 >
-                  <TagIcon size={9} />
+                  <TagIcon size={10} aria-hidden />
                   {tag.name}
                 </span>
               ))}
@@ -163,7 +145,7 @@ export function EventCard({
           )}
         </div>
 
-        <div className="flex items-center gap-4 text-xs text-text-muted">
+        <div className="flex items-center gap-4 text-xs text-fg-dim">
           {startTime && (
             <>
               <span className="flex items-center gap-1.5">
@@ -181,36 +163,21 @@ export function EventCard({
       </div>
 
       {/* Stats */}
-      <div className="flex items-center gap-5 text-end">
+      <div className="flex items-center gap-4 text-end shrink-0">
         {event.frames != null && event.frames > 0 && (
-          <div>
-            <p className="text-lg font-mono font-medium text-text-primary">{event.frames}</p>
-            <p className="text-xs text-text-muted">{t('Frames')}</p>
-          </div>
+          <Stat label={t('Frames')} value={event.frames} />
         )}
         {event.alarm_frames != null && event.alarm_frames > 0 && (
-          <div>
-            <p className="text-lg font-mono font-medium text-crimson">{event.alarm_frames}</p>
-            <p className="text-xs text-text-muted">{t('Alarm')}</p>
-          </div>
+          <Stat label={t('Alarm')} value={event.alarm_frames} tone="alarm" />
         )}
         {event.tot_score != null && event.tot_score > 0 && (
-          <div>
-            <p className="text-lg font-mono font-medium text-text-primary">{event.tot_score}</p>
-            <p className="text-xs text-text-muted">{t('Tot')}</p>
-          </div>
+          <Stat label={t('Tot')} value={event.tot_score} />
         )}
         {event.avg_score != null && event.avg_score > 0 && (
-          <div>
-            <p className="text-lg font-mono font-medium text-cyan">{event.avg_score}</p>
-            <p className="text-xs text-text-muted">{t('Avg')}</p>
-          </div>
+          <Stat label={t('Avg')} value={event.avg_score} />
         )}
         {event.max_score != null && event.max_score > 0 && (
-          <div>
-            <p className="text-lg font-mono font-medium text-amber">{event.max_score}</p>
-            <p className="text-xs text-text-muted">{t('Max')}</p>
-          </div>
+          <Stat label={t('Max')} value={event.max_score} />
         )}
       </div>
       </Link>
@@ -224,15 +191,29 @@ export function EventCard({
         download={`event-${event.id}.mp4`}
         aria-label={t('Download video for event {{id}}', { id: event.id })}
         title={t('Download video')}
-        className={clsx(
-          'flex items-center justify-center w-8 h-8 rounded-lg flex-shrink-0',
-          'border border-border-subtle text-text-muted',
-          'hover:border-cyan/50 hover:text-cyan transition-colors',
-        )}
+        className="flex items-center justify-center w-8 h-8 rounded shrink-0 border border-border-subtle text-fg-dim hover:text-fg hover:border-border transition-colors"
         onClick={(e) => e.stopPropagation()}
       >
         <Download size={14} />
       </a>
+    </div>
+  );
+}
+
+/**
+ * One score readout. Numbers are neutral: an alarm-frame count is the only
+ * one that reports a state worth colouring (docs/DESIGN.md).
+ */
+function Stat({ label, value, tone }: { label: string; value: number; tone?: 'alarm' }) {
+  return (
+    <div>
+      <p className={clsx(
+        'text-base font-mono tabular-nums font-medium',
+        tone === 'alarm' ? 'text-danger' : 'text-fg',
+      )}>
+        {value}
+      </p>
+      <p className="text-xs text-fg-dim">{label}</p>
     </div>
   );
 }

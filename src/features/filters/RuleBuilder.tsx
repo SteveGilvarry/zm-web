@@ -44,12 +44,12 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
   const removeTerm = (idx: number) => setTerms(query.terms.filter((_, i) => i !== idx));
   const addTerm = () => setTerms([...query.terms, newTerm(monitors)]);
 
-  const select = 'px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
+  const select = 'px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors';
 
   return (
     <div className="space-y-2">
       {query.terms.length === 0 && (
-        <p className="text-xs text-text-muted italic">
+        <p className="text-xs text-fg-dim">
           {t('No conditions yet — every event will match. Add a condition below to narrow it down.')}
         </p>
       )}
@@ -63,7 +63,7 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
         return (
           <div key={i} className="flex items-center gap-1.5 flex-wrap" data-testid="filter-term">
             {i === 0 ? (
-              <span className="text-[10px] font-mono uppercase text-text-muted w-12 text-end">
+              <span className="w-12 text-end text-xs text-fg-dim">
                 {t('where')}
               </span>
             ) : (
@@ -71,7 +71,7 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
                 aria-label={t('Conjunction')}
                 value={term.cnj === 'or' ? 'or' : 'and'}
                 onChange={(e) => updateTerm(i, { cnj: e.target.value as FilterConjunction })}
-                className="w-12 px-1 py-1 text-[10px] font-mono uppercase bg-surface border border-border-subtle rounded text-cyan focus:outline-none focus:border-cyan/50"
+                className="w-14 px-1 py-1 text-xs bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
               >
                 <option value="and">{t('and')}</option>
                 <option value="or">{t('or')}</option>
@@ -82,7 +82,7 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               aria-label={t('Open brackets')}
               value={bracketCount(term.obr)}
               onChange={(e) => updateTerm(i, { obr: e.target.value })}
-              className="w-10 px-1 py-1 text-[10px] font-mono bg-surface border border-border-subtle rounded text-text-secondary focus:outline-none focus:border-cyan/50"
+              className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
             >
               {BRACKET_CHOICES.map((n) => (
                 <option key={n} value={n}>{n === 0 ? '(' : '('.repeat(n)}</option>
@@ -140,7 +140,7 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               aria-label={t('Close brackets')}
               value={bracketCount(term.cbr)}
               onChange={(e) => updateTerm(i, { cbr: e.target.value })}
-              className="w-10 px-1 py-1 text-[10px] font-mono bg-surface border border-border-subtle rounded text-text-secondary focus:outline-none focus:border-cyan/50"
+              className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
             >
               {BRACKET_CHOICES.map((n) => (
                 <option key={n} value={n}>{n === 0 ? ')' : ')'.repeat(n)}</option>
@@ -151,7 +151,7 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               type="button"
               onClick={() => removeTerm(i)}
               aria-label={t('Remove condition')}
-              className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+              className="p-1 rounded text-fg-dim hover:text-danger hover:bg-danger/10 transition-colors"
             >
               <X size={12} />
             </button>
@@ -163,9 +163,9 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
         type="button"
         onClick={addTerm}
         className={clsx(
-          'flex items-center gap-1 px-2 py-1 text-[11px] rounded border-2 border-dashed',
-          'border-border-subtle text-text-muted',
-          'hover:border-cyan/40 hover:text-cyan transition-colors',
+          'flex items-center gap-1 px-2 py-1 text-xs rounded border border-dashed',
+          'border-border-subtle text-fg-dim',
+          'hover:border-border hover:text-fg transition-colors',
         )}
       >
         <Plus size={11} />
@@ -186,7 +186,7 @@ function ValueInput({
 }) {
   const { t } = useTranslation();
   const weekdays = useWeekdayLabels();
-  const cls = 'flex-1 min-w-[8rem] px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
+  const cls = 'flex-1 min-w-[8rem] px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-fg placeholder:text-fg-faint focus:outline-none focus:border-accent transition-colors';
   const value = term.val == null ? '' : String(term.val);
   const label = t('Value');
 

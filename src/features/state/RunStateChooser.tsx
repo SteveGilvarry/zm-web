@@ -3,6 +3,7 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Modal } from '@/components/common/Modal';
+import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { isDaemonAction, useRunStateChooser } from './useRunStateChooser';
 
@@ -59,18 +60,18 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
   return (
     <>
       <Modal isOpen={isOpen && !c.confirming} onClose={close} title={t('Run State')}>
-        <div className="space-y-4">
-          <p className="text-xs text-text-muted">
+        <div className="space-y-3">
+          <p className="text-label text-fg-dim">
             {running === false
               ? t('ZoneMinder is stopped. Start it, or apply a saved state to start it with that configuration.')
               : t('Change the run state: stop or restart the daemons, or apply a saved state to every monitor.')}
           </p>
-          <label className="block text-sm font-medium text-text-secondary">
+          <label className="block text-label text-fg-dim">
             {t('New state')}
             <select
               value={c.choice}
               onChange={(e) => c.setChoice(e.target.value)}
-              className="mt-1.5 w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50"
+              className={clsx('mt-1 text-fg', fieldClasses('md'))}
             >
               <option value="">{t('Choose…')}</option>
               <optgroup label={t('Daemons')}>
@@ -90,21 +91,21 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
             </select>
           </label>
           {c.statesLoading && (
-            <p className="text-[11px] text-text-muted flex items-center gap-1">
+            <p className="text-label text-fg-dim flex items-center gap-1">
               <Loader2 size={11} className="animate-spin" />
               {t('Loading states…')}
             </p>
           )}
           {c.error && (
-            <p role="alert" className="text-xs text-crimson">
+            <p role="alert" className="text-label text-danger">
               {t('Failed: {{message}}', { message: c.error.message })}
             </p>
           )}
-          <div className="flex items-center justify-end gap-3 pt-1">
+          <div className="flex items-center justify-end gap-2 pt-1">
             <button
               type="button"
               onClick={close}
-              className="px-4 py-2 rounded-lg text-sm font-medium bg-panel border border-border-subtle text-text-secondary hover:text-text-primary transition-colors"
+              className={buttonClasses('secondary', 'md')}
             >
               {t('Cancel')}
             </button>
@@ -113,7 +114,7 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
               onClick={c.requestApply}
               disabled={!c.choice || c.pending}
               className={clsx(
-                'px-4 py-2 rounded-lg text-sm font-medium bg-cyan text-void hover:bg-cyan/80 transition-colors flex items-center gap-2',
+                buttonClasses('primary', 'md'),
                 (!c.choice || c.pending) && 'opacity-50 cursor-not-allowed',
               )}
             >

@@ -22,9 +22,9 @@ export function EventsSortBar({
     <div
       role="group"
       aria-label={t('Sort events')}
-      className="flex flex-wrap items-center gap-1 mb-3 text-xs"
+      className="flex flex-wrap items-center gap-1 text-xs"
     >
-      <span className="me-1 font-mono uppercase tracking-[0.16em] text-text-muted">{t('Sort')}</span>
+      <span className="me-1 text-fg-dim">{t('Sort')}</span>
       {EVENT_SORT_FIELDS.map((field) => {
         const active = field === sortField;
         return (
@@ -44,8 +44,8 @@ export function EventsSortBar({
             className={clsx(
               'inline-flex items-center gap-1 px-2 py-1 rounded border transition-colors',
               active
-                ? 'border-cyan/50 bg-cyan/15 text-cyan'
-                : 'border-border-subtle bg-surface text-text-secondary hover:border-cyan/40 hover:text-cyan',
+                ? 'border-accent/50 bg-accent/12 text-accent'
+                : 'border-border-subtle bg-surface text-fg-muted hover:text-fg hover:border-border',
             )}
           >
             {labels[field]}

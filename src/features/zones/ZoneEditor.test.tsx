@@ -261,13 +261,17 @@ describe('ZoneEditor — units toggle', () => {
 
     await user.click(screen.getByRole('button', { name: /new/i }));
 
-    // Pixels is active by default.
+    // Pixels is active by default. Asserted on `aria-pressed` rather than on
+    // the class string — which one is selected is a fact about the control,
+    // not about the palette it happens to be painted in.
     const pixelsBtn = screen.getByRole('button', { name: 'Pixels' });
     const percentBtn = screen.getByRole('button', { name: 'Percent' });
-    expect(pixelsBtn.className).toMatch(/border-cyan/);
+    expect(pixelsBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(percentBtn).toHaveAttribute('aria-pressed', 'false');
 
     await user.click(percentBtn);
-    expect(percentBtn.className).toMatch(/border-cyan/);
+    expect(percentBtn).toHaveAttribute('aria-pressed', 'true');
+    expect(pixelsBtn).toHaveAttribute('aria-pressed', 'false');
   });
 
   it('serialises Percent units in the create POST body without rescaling the coords', async () => {

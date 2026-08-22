@@ -134,17 +134,17 @@ export function SavedLayoutsMenu({ currentTree, statusPosition, onLoad }: SavedL
 
   const activeLayout = activeId != null ? userLayouts.find((l) => l.id === activeId) : null;
   const busy = createMutation.isPending || updateMutation.isPending || deleteMutation.isPending;
-  const btn = 'flex items-center gap-1 px-2.5 py-1 rounded text-[11px] font-mono font-medium text-text-muted transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-text-muted';
+  const btn = 'flex items-center gap-1 px-2 py-1 rounded text-xs font-medium text-fg-dim transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:hover:text-fg-dim';
 
   return (
-    <div className="flex items-center gap-1 bg-surface rounded-lg p-1 border border-border-subtle">
-      <Bookmark size={14} className="ms-2 text-text-muted" aria-hidden="true" />
+    <div className="flex items-center gap-1 bg-surface rounded p-1 border border-border-subtle">
+      <Bookmark size={14} className="ms-1.5 text-fg-dim" aria-hidden="true" />
 
       <select
         aria-label={t('Saved layouts')}
         value={activeId ?? ''}
         onChange={handleSelect}
-        className="bg-transparent px-2 py-1 text-[11px] font-mono text-text-secondary hover:text-cyan focus:outline-none focus:text-cyan transition-colors"
+        className="bg-transparent px-2 py-1 text-xs text-fg-muted hover:text-fg transition-colors"
       >
         <option value="">{t('Saved layouts…')}</option>
         {userLayouts.map((l) => (
@@ -158,7 +158,7 @@ export function SavedLayoutsMenu({ currentTree, statusPosition, onLoad }: SavedL
         type="button"
         onClick={handleSave}
         disabled={busy}
-        className={`${btn} hover:text-cyan hover:bg-cyan/10`}
+        className={`${btn} hover:text-fg hover:bg-surface-2`}
         title={t('Save current arrangement as a new named layout')}
       >
         <Save size={12} />
@@ -169,7 +169,7 @@ export function SavedLayoutsMenu({ currentTree, statusPosition, onLoad }: SavedL
         type="button"
         onClick={handleUpdate}
         disabled={activeId == null || busy}
-        className={`${btn} hover:text-cyan hover:bg-cyan/10`}
+        className={`${btn} hover:text-fg hover:bg-surface-2`}
         title={activeLayout
           ? t('Overwrite "{{name}}" with the current arrangement', { name: activeLayout.name })
           : t('Load a layout to update it')}
@@ -182,7 +182,7 @@ export function SavedLayoutsMenu({ currentTree, statusPosition, onLoad }: SavedL
         type="button"
         onClick={handleRename}
         disabled={activeId == null || busy}
-        className={`${btn} hover:text-cyan hover:bg-cyan/10`}
+        className={`${btn} hover:text-fg hover:bg-surface-2`}
         title={activeLayout
           ? t('Rename "{{name}}"', { name: activeLayout.name })
           : t('Load a layout to rename it')}
@@ -195,7 +195,7 @@ export function SavedLayoutsMenu({ currentTree, statusPosition, onLoad }: SavedL
         type="button"
         onClick={handleDelete}
         disabled={activeId == null || busy}
-        className={`${btn} hover:text-crimson hover:bg-crimson/10`}
+        className={`${btn} hover:text-danger hover:bg-danger/10`}
         title={activeLayout
           ? t('Delete "{{name}}"', { name: activeLayout.name })
           : t('Load a layout to delete it')}

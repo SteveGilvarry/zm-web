@@ -70,23 +70,23 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
     downloadCsv(`zm-filter-matches-${stamp}.csv`, csv);
   };
 
-  const btn = (active: boolean, tone: 'cyan' | 'amber' | 'crimson' = 'cyan') => classic
+  const btn = (active: boolean, tone: 'accent' | 'warn' | 'danger' = 'accent') => classic
     ? clsx(
       'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold uppercase border rounded-sm',
-      tone === 'crimson'
+      tone === 'danger'
         ? 'bg-[#d9534f] border-[#d43f3a] text-white hover:bg-[#c9302c]'
         : active ? 'bg-[#286090] border-[#204d74] text-white' : 'bg-[#337ab7] border-[#2e6da4] text-white hover:bg-[#286090]',
       'disabled:opacity-50 disabled:cursor-not-allowed',
     )
     : clsx(
-      'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border-2 transition-all',
-      tone === 'crimson'
-        ? 'border-crimson/60 bg-crimson/15 text-crimson hover:bg-crimson/25'
-        : tone === 'amber'
-          ? 'border-amber/60 bg-amber/15 text-amber hover:bg-amber/25'
+      'flex items-center gap-1.5 px-2 py-1 text-xs font-medium rounded border transition-colors',
+      tone === 'danger'
+        ? 'border-danger/40 text-danger hover:bg-danger/10'
+        : tone === 'warn'
+          ? 'border-warn/40 text-warn hover:bg-warn/10'
           : active
-            ? 'border-cyan/60 bg-cyan/15 text-cyan'
-            : 'border-border-subtle bg-surface/50 text-text-muted hover:border-cyan/40 hover:text-cyan',
+            ? 'border-accent/50 bg-accent/12 text-accent'
+            : 'border-border-subtle bg-surface text-fg-muted hover:text-fg hover:border-border',
       'disabled:opacity-40 disabled:cursor-not-allowed',
     );
 
@@ -148,7 +148,7 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
               if (confirm(prompt)) executeMutation.mutate();
             }}
             disabled={executeMutation.isPending || !open || listed.length === 0}
-            className={btn(false, actions.delete ? 'crimson' : 'amber')}
+            className={btn(false, actions.delete ? 'danger' : 'warn')}
           >
             {executeMutation.isPending
               ? <Loader2 size={11} className="animate-spin" />
@@ -160,14 +160,14 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
         )}
 
         {open && (
-          <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted ms-1">
+          <span className="ms-1 text-xs text-fg-dim">
             {counter()}
           </span>
         )}
       </div>
 
       {open && preview.mode === 'client' && (
-        <p className="text-[11px] text-amber">
+        <p className="text-xs text-warn">
           {t('Server preview cannot run this filter ({{reasons}}); showing a best-effort match over the most recent events. The background daemon evaluates the full rule set.', {
             reasons: preview.reasons.join('; '),
           })}
@@ -180,39 +180,39 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
         </p>
       )}
       {open && preview.mode === 'server' && preview.notes.length > 0 && (
-        <p className="text-[11px] text-text-muted">{preview.notes.join('; ')}</p>
+        <p className="text-xs text-fg-dim">{preview.notes.join('; ')}</p>
       )}
       {open && preview.error && (
-        <p className="text-[11px] text-crimson" role="alert">
+        <p className="text-xs text-danger" role="alert">
           {t('Preview failed: {{message}}', { message: preview.error.message })}
         </p>
       )}
 
       {open && (
-        <div className="border border-border-subtle rounded-md bg-surface/50 overflow-hidden">
+        <div className="border border-border-subtle rounded bg-surface overflow-hidden">
           {preview.isLoading ? (
-            <div className="p-6 flex items-center justify-center gap-2 text-text-muted text-xs">
+            <div className="p-6 flex items-center justify-center gap-2 text-fg-dim text-xs">
               <Loader2 size={12} className="animate-spin" />
               {t('Loading candidate events…')}
             </div>
           ) : listed.length === 0 ? (
-            <div className="p-6 text-center text-text-muted text-xs italic">
+            <div className="p-6 text-center text-fg-dim text-xs">
               {t('No events match these conditions yet.')}
             </div>
           ) : (
-            <ul className="divide-y divide-border-subtle/40 max-h-60 overflow-y-auto">
+            <ul className="divide-y divide-border-subtle max-h-60 overflow-y-auto">
               {listed.map((e) => (
-                <li key={e.id} className="px-3 py-1.5 flex items-center gap-3 text-xs hover:bg-surface/80">
+                <li key={e.id} className="px-3 py-1 flex items-center gap-3 text-xs hover:bg-surface-2">
                   <Link
                     to="/events/$eventId"
                     params={{ eventId: String(e.id) }}
-                    className="font-mono text-cyan hover:underline"
+                    className="font-mono tabular-nums text-fg-muted hover:text-accent transition-colors"
                   >
                     #{e.id}
                   </Link>
-                  <span className="text-text-primary truncate flex-1">{e.name}</span>
-                  <span className="text-text-muted">{e.cause}</span>
-                  <span className="font-mono text-text-secondary tabular-nums whitespace-nowrap">
+                  <span className="text-fg truncate flex-1">{e.name}</span>
+                  <span className="text-fg-dim">{e.cause}</span>
+                  <span className="font-mono tabular-nums text-fg-muted whitespace-nowrap">
                     {e.start_date_time
                       ? new Date(e.start_date_time).toLocaleString([], {
                           month: 'short', day: '2-digit',
@@ -221,7 +221,7 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
                       : ''}
                   </span>
                   {e.archived === 1 && (
-                    <span className="text-[10px] text-amber">{t('archived')}</span>
+                    <span className="text-xs text-fg-dim">{t('archived')}</span>
                   )}
                 </li>
               ))}
@@ -229,13 +229,13 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
           )}
 
           {preview.mode === 'server' && preview.lastPage > 1 && (
-            <div className="flex items-center justify-between px-3 py-1.5 border-t border-border-subtle/40 text-[11px] text-text-muted">
+            <div className="flex items-center justify-between px-3 py-1 border-t border-border-subtle text-xs text-fg-dim">
               <button
                 type="button"
                 onClick={() => preview.setPage(preview.page - 1)}
                 disabled={preview.page <= 1}
                 aria-label={t('Previous page')}
-                className="p-1 rounded hover:text-cyan disabled:opacity-40"
+                className="p-1 rounded hover:text-fg disabled:opacity-40 transition-colors"
               >
                 <ChevronLeft size={12} className="rtl:-scale-x-100" />
               </button>
@@ -247,7 +247,7 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
                 onClick={() => preview.setPage(preview.page + 1)}
                 disabled={preview.page >= preview.lastPage}
                 aria-label={t('Next page')}
-                className="p-1 rounded hover:text-cyan disabled:opacity-40"
+                className="p-1 rounded hover:text-fg disabled:opacity-40 transition-colors"
               >
                 <ChevronRight size={12} className="rtl:-scale-x-100" />
               </button>

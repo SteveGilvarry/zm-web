@@ -6,6 +6,7 @@ import { Plus, X, Loader2, Camera } from 'lucide-react';
 import { createMonitor, type MonitorCreateInput } from '@/api/monitors-crud';
 import { ApiClientError } from '@/api/client';
 import { useToast } from '@/components/common/toastStore';
+import { buttonClasses } from '@/components/common/styles';
 import type { Monitor } from '@/types';
 import { fieldErrorsFromDetails, type FieldErrors } from './editor/fields';
 import { PresetPicker } from './presets/PresetPicker';
@@ -145,9 +146,11 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
     create.mutate();
   };
 
+  // The shared field recipe minus its `w-full` — port, refresh and the two
+  // resolution boxes are deliberately narrow.
   const input = (key: string, extra?: string) => clsx(
-    'px-2 py-1 text-sm bg-surface border rounded text-text-primary focus:outline-none',
-    fieldErrors[key] ? 'border-crimson/60 focus:border-crimson' : 'border-border-subtle focus:border-cyan/50',
+    'rounded bg-surface border px-2 py-1 text-label text-fg placeholder:text-fg-faint transition-colors',
+    fieldErrors[key] ? 'border-danger' : 'border-border-subtle hover:border-border',
     extra,
   );
 
@@ -156,30 +159,30 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
       role="dialog"
       aria-modal="true"
       aria-label={t('Add monitor')}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
       <form
         onSubmit={submit}
         noValidate
-        className="w-full max-w-2xl rounded-xl border border-cyan/40 bg-panel/95 backdrop-blur-md shadow-[0_24px_60px_rgba(0,0,0,0.5)]"
+        className="w-full max-w-2xl rounded border border-border bg-surface shadow-elevated"
       >
-        <header className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <div className="flex items-center gap-2">
-            <Camera size={16} className="text-cyan" />
-            <h2 className="text-sm font-semibold text-text-primary">{t('Add monitor')}</h2>
+            <Camera size={14} className="text-fg-dim" aria-hidden />
+            <h2 className="text-sm font-semibold text-fg">{t('Add monitor')}</h2>
           </div>
           <button
             type="button"
             onClick={onClose}
             aria-label={t('Close')}
-            className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+            className="p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
           >
             <X size={14} />
           </button>
         </header>
 
-        <div className="p-5 space-y-4">
+        <div className="p-4 space-y-2.5">
           {/* Presets */}
           <Row label={t('Preset')}>
             <PresetPicker
@@ -229,8 +232,8 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
           </Row>
 
           {/* Source */}
-          <div className="space-y-2 rounded-md bg-surface/40 p-3 border border-border-subtle">
-            <h3 className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">
+          <div className="space-y-2 rounded bg-bg-sunken p-3 border border-border-subtle">
+            <h3 className="text-label text-fg-muted font-medium">
               {t('Source')}
             </h3>
             {shows('device') && (
@@ -270,7 +273,7 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
                   placeholder={t('port')}
                   aria-label={t('Port')}
                   aria-invalid={!!fieldErrors.port || undefined}
-                  className={input('port', 'w-20 font-mono')}
+                  className={input('port', 'w-20 font-mono tabular-nums')}
                 />
               </Row>
             )}
@@ -291,7 +294,7 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
                   onChange={(e) => update('user', e.target.value)}
                   placeholder={t('user')}
                   autoComplete="off"
-                  className={input('user', 'flex-1 font-mono')}
+                  className={input('user', 'flex-1')}
                 />
                 <input
                   type="password"
@@ -299,7 +302,7 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
                   onChange={(e) => update('pass', e.target.value)}
                   placeholder={t('pass')}
                   autoComplete="new-password"
-                  className={input('pass', 'flex-1 font-mono')}
+                  className={input('pass', 'flex-1')}
                 />
               </Row>
             )}
@@ -310,7 +313,7 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
                   min={0}
                   value={form.refresh ?? ''}
                   onChange={(e) => update('refresh', e.target.value === '' ? null : Number(e.target.value))}
-                  className={input('refresh', 'w-24 font-mono')}
+                  className={input('refresh', 'w-24 font-mono tabular-nums')}
                 />
               </Row>
             )}
@@ -325,9 +328,9 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
               onChange={(e) => update('width', parseInt(e.target.value, 10) || 0)}
               aria-label={t('Width (px)')}
               aria-invalid={!!fieldErrors.width || undefined}
-              className={input('width', 'w-24 font-mono')}
+              className={input('width', 'w-24 font-mono tabular-nums')}
             />
-            <span className="text-text-muted">×</span>
+            <span className="text-fg-dim">×</span>
             <input
               type="number"
               min={1}
@@ -335,34 +338,29 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
               onChange={(e) => update('height', parseInt(e.target.value, 10) || 0)}
               aria-label={t('Height (px)')}
               aria-invalid={!!fieldErrors.height || undefined}
-              className={input('height', 'w-24 font-mono')}
+              className={input('height', 'w-24 font-mono tabular-nums')}
             />
           </Row>
 
           {error && (
-            <div role="alert" className="rounded-md bg-crimson/15 border border-crimson/40 px-3 py-2 text-xs text-crimson">
+            <div role="alert" className="rounded bg-danger/12 border border-danger/30 px-3 py-2 text-label text-danger">
               {error}
             </div>
           )}
         </div>
 
-        <footer className="flex items-center justify-end gap-2 px-5 py-3 border-t border-border-subtle">
+        <footer className="flex items-center justify-end gap-2 px-4 py-3 border-t border-border-subtle">
           <button
             type="button"
             onClick={onClose}
-            className="px-3 py-1.5 text-xs font-medium rounded border border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50 transition-colors"
+            className={buttonClasses('secondary', 'sm')}
           >
             {t('Cancel')}
           </button>
           <button
             type="submit"
             disabled={create.isPending || !form.name.trim()}
-            className={clsx(
-              'flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border-2',
-              'border-cyan/60 bg-cyan/15 text-cyan',
-              'hover:bg-cyan/25 transition-colors',
-              'disabled:opacity-50 disabled:cursor-not-allowed',
-            )}
+            className={buttonClasses('primary', 'sm')}
           >
             {create.isPending ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
             {t('Create monitor')}
@@ -376,13 +374,13 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
 function Row({ label, error, children }: { label: string; error?: string; children: React.ReactNode }) {
   return (
     <div>
-      <div className="flex items-center gap-2">
-        <label className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-20 flex-shrink-0">
+      <div className="flex items-center gap-3">
+        <label className="text-label text-fg-dim w-20 flex-shrink-0">
           {label}
         </label>
         {children}
       </div>
-      {error && <p role="alert" className="text-[10px] text-crimson mt-1 ms-[5.5rem]">{error}</p>}
+      {error && <p role="alert" className="text-label text-danger mt-1 ms-[5.75rem]">{error}</p>}
     </div>
   );
 }

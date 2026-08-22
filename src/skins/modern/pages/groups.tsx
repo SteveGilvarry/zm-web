@@ -1,17 +1,8 @@
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import {
-  Users,
-  Plus,
-  Trash2,
-  Monitor as MonitorIcon,
-  Check,
-  X,
-  Pencil,
-} from 'lucide-react';
+import { Plus, Trash2, Check, X, Pencil } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
-import { Panel } from '@/components/common/Panel';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
@@ -21,7 +12,11 @@ import { GroupEditDialog } from '@/features/groups/GroupEditDialog';
 import { useGroupsPage } from '@/features/groups/useGroupsPage';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
-/** Groups — Mission Control. Tree on the left, membership editor on the right. */
+/**
+ * Groups — the modern skin. One action line, then two panes that each own
+ * their height and scroll inside themselves: the group tree on the start
+ * side, the membership editor on the end side (docs/DESIGN.md).
+ */
 export default function GroupsPage() {
   const { t } = useTranslation();
   const s = useGroupsPage();
@@ -34,66 +29,64 @@ export default function GroupsPage() {
 
   return (
     <AppShell title={t('Groups')}>
-      <main className="flex-1 p-6 overflow-auto">
-        <div className="grid grid-cols-12 gap-6">
-          {/* Left — group tree + create */}
-          <div className="col-span-4 space-y-4">
-            <Panel title={t('Groups')} icon={<Users size={16} />}>
-              <div className="flex items-center justify-between mb-3">
-                <RequirePerm feature="groups" level="Edit" fallback={<span />}>
-                  <button
-                    onClick={s.openCreate}
-                    className="flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium rounded bg-cyan/20 text-cyan hover:bg-cyan/30 transition-colors"
-                  >
-                    <Plus size={12} />
-                    {t('New group')}
-                  </button>
-                </RequirePerm>
-                <span className="text-[10px] text-text-muted">
-                  {t('{{count}} total', { count: groups.length })}
-                </span>
-              </div>
-              <QueryState
-                isLoading={s.isLoading}
-                isError={s.isError}
-                error={s.error}
-                onRetry={s.refetch}
-                empty={tree.length === 0}
-                emptyMessage={t('No groups yet. Click "New group" to create one.')}
-              >
-                <ul
-                  aria-label={t('Groups tree')}
-                  className="-mx-1 space-y-0.5 max-h-[60vh] overflow-y-auto"
-                >
-                  {tree.map(({ group, depth }) => (
-                    <GroupRow
-                      key={group.id}
-                      group={group}
-                      depth={depth}
-                      memberCount={s.memberCount(group.id)}
-                      active={effectiveSelected?.id === group.id}
-                      onSelect={() => s.select(group.id)}
-                      onEdit={canEdit ? () => s.openEdit(group) : undefined}
-                      onDelete={canEdit ? () => s.handleDelete(group) : undefined}
-                    />
-                  ))}
-                </ul>
-              </QueryState>
-            </Panel>
+      <main className="flex-1 min-h-0 flex flex-col">
+        <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
+          <RequirePerm feature="groups" level="Edit" fallback={<span />}>
+            <button
+              onClick={s.openCreate}
+              className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
+            >
+              <Plus size={12} aria-hidden />
+              {t('New group')}
+            </button>
+          </RequirePerm>
+          <span className="ms-auto text-xs text-fg-dim">
+            {t('{{count}} total', { count: groups.length })}
+          </span>
+        </div>
+
+        <div className="flex-1 min-h-0 flex">
+          {/* Group tree */}
+          <div className="w-72 shrink-0 min-h-0 overflow-auto border-e border-border-subtle p-2">
+            <QueryState
+              isLoading={s.isLoading}
+              isError={s.isError}
+              error={s.error}
+              onRetry={s.refetch}
+              empty={tree.length === 0}
+              emptyMessage={t('No groups yet. Click "New group" to create one.')}
+            >
+              <ul aria-label={t('Groups tree')} className="space-y-0.5">
+                {tree.map(({ group, depth }) => (
+                  <GroupRow
+                    key={group.id}
+                    group={group}
+                    depth={depth}
+                    memberCount={s.memberCount(group.id)}
+                    active={effectiveSelected?.id === group.id}
+                    onSelect={() => s.select(group.id)}
+                    onEdit={canEdit ? () => s.openEdit(group) : undefined}
+                    onDelete={canEdit ? () => s.handleDelete(group) : undefined}
+                  />
+                ))}
+              </ul>
+            </QueryState>
           </div>
 
-          {/* Right — membership editor for the selected group */}
-          <div className="col-span-8">
-            <Panel
-              title={effectiveSelected ? t('Members — {{name}}', { name: effectiveSelected.name }) : t('Members')}
-              icon={<MonitorIcon size={16} />}
-            >
+          {/* Membership editor for the selected group */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+            <div className="shrink-0 px-3 py-2 border-b border-border-subtle text-sm text-fg">
+              {effectiveSelected
+                ? t('Members — {{name}}', { name: effectiveSelected.name })
+                : t('Members')}
+            </div>
+            <div className="flex-1 min-h-0 overflow-auto">
               {!effectiveSelected ? (
-                <div className="py-16 text-center text-text-muted text-sm">
+                <div className="py-16 text-center text-fg-dim text-sm">
                   {t('Select a group to manage its monitors.')}
                 </div>
               ) : monitors.length === 0 ? (
-                <div className="py-16 text-center text-text-muted text-sm">
+                <div className="py-16 text-center text-fg-dim text-sm">
                   {t('No monitors configured.')}
                 </div>
               ) : (
@@ -111,7 +104,7 @@ export default function GroupsPage() {
                   ))}
                 </ul>
               )}
-            </Panel>
+            </div>
           </div>
         </div>
       </main>
@@ -147,24 +140,19 @@ function GroupRow({
     <li data-depth={depth}>
       <div
         className={clsx(
-          'flex items-center gap-2 px-2 py-1.5 rounded-md transition-colors group',
-          active
-            ? 'bg-cyan/10 border border-cyan/30'
-            : 'border border-transparent hover:bg-surface/60',
+          'flex items-center gap-2 px-2 py-1.5 rounded transition-colors',
+          active ? 'bg-accent/10' : 'hover:bg-surface-2',
         )}
         style={{ paddingInlineStart: `${8 + indentPx}px` }}
       >
         {depth > 0 ? (
-          <span aria-hidden className="text-text-muted text-[10px] -ms-1.5">↳</span>
+          <span aria-hidden className="text-fg-faint text-xs -ms-1.5">↳</span>
         ) : null}
-        <button
-          onClick={onSelect}
-          className="flex-1 text-start text-xs min-w-0"
-        >
-          <span className={clsx('font-medium block truncate', active ? 'text-cyan' : 'text-text-primary')}>
+        <button onClick={onSelect} className="flex-1 text-start min-w-0">
+          <span className={clsx('text-sm block truncate', active ? 'text-accent' : 'text-fg')}>
             {group.name}
           </span>
-          <span className="text-[10px] text-text-muted">
+          <span className="text-xs text-fg-dim">
             {t('{{count}} monitor', { count: memberCount })}
           </span>
         </button>
@@ -172,18 +160,18 @@ function GroupRow({
           <button
             onClick={onEdit}
             aria-label={t('Edit group {{name}}', { name: group.name })}
-            className="p-1 rounded text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors opacity-0 group-hover:opacity-100"
+            className="p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-3 transition-colors"
           >
-            <Pencil size={12} />
+            <Pencil size={14} />
           </button>
         )}
         {onDelete && (
           <button
             onClick={onDelete}
             aria-label={t('Delete group {{name}}', { name: group.name })}
-            className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors opacity-0 group-hover:opacity-100"
+            className="p-1 rounded text-fg-dim hover:text-danger hover:bg-surface-3 transition-colors"
           >
-            <Trash2 size={12} />
+            <Trash2 size={14} />
           </button>
         )}
       </div>
@@ -203,34 +191,36 @@ function MonitorMembershipRow({
 }) {
   const { t } = useTranslation();
   return (
-    <li className="flex items-center justify-between py-2 px-1">
-      <div className="flex items-center gap-2">
+    <li className="flex items-center justify-between gap-3 py-1.5 px-3">
+      <div className="flex items-center gap-2 min-w-0">
+        {/* Colour is state: a capturing monitor is live, anything else is grey. */}
         <span
           className={clsx(
-            'w-2 h-2 rounded-full',
-            monitor.capturing !== 'None' ? 'bg-emerald-500' : 'bg-text-muted/50',
+            'w-2 h-2 rounded-full shrink-0',
+            monitor.capturing !== 'None' ? 'bg-ok' : 'bg-fg-faint',
           )}
+          aria-hidden
         />
-        <span className="text-sm text-text-primary">{monitor.name}</span>
-        <span className="text-[10px] font-mono text-text-muted">#{monitor.id}</span>
+        <span className="text-sm text-fg truncate">{monitor.name}</span>
+        <span className="text-xs font-mono tabular-nums text-fg-dim">#{monitor.id}</span>
       </div>
       {isMember && membership ? (
         <button
           onClick={() => onDetach(membership)}
           disabled={pending}
-          className="flex items-center gap-1 px-2 py-1 rounded border border-cyan/40 bg-cyan/10 text-cyan text-[11px] hover:bg-cyan/20 transition-colors disabled:opacity-50"
+          className="flex items-center gap-1 px-2 py-1 rounded text-xs bg-accent/15 text-accent hover:bg-accent/25 transition-colors disabled:opacity-50"
         >
-          <Check size={11} />
+          <Check size={12} aria-hidden />
           {t('Member')}
-          <X size={11} className="ms-1 opacity-60" />
+          <X size={12} className="ms-1 opacity-60" aria-hidden />
         </button>
       ) : (
         <button
           onClick={onAttach}
           disabled={pending}
-          className="flex items-center gap-1 px-2 py-1 rounded border border-border-subtle bg-surface text-text-muted text-[11px] hover:border-cyan/40 hover:text-cyan transition-colors disabled:opacity-50"
+          className="flex items-center gap-1 px-2 py-1 rounded border border-border-subtle text-xs text-fg-dim hover:text-fg hover:border-border transition-colors disabled:opacity-50"
         >
-          <Plus size={11} />
+          <Plus size={12} aria-hidden />
           {t('Add')}
         </button>
       )}

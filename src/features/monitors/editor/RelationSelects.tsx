@@ -18,6 +18,7 @@ import { listControlPresets } from '@/api/controlPresets';
 import { getMonitors } from '@/api/monitors';
 import { listGroups } from '@/api/groups';
 import { useToast } from '@/components/common/toastStore';
+import { buttonClasses } from '@/components/common/styles';
 import type { FieldValue } from './fields';
 import { parseIdList, serializeIdList } from './editorState';
 
@@ -103,7 +104,7 @@ export function CreatableSelect({
           <button
             type="submit"
             disabled={!name.trim() || create.isPending}
-            className="inline-flex items-center gap-1 px-2.5 py-1.5 text-xs rounded border border-cyan/50 text-cyan hover:bg-cyan/10 disabled:opacity-40"
+            className={buttonClasses('primary', 'sm')}
           >
             {create.isPending ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
             {t('Add')}
@@ -111,13 +112,13 @@ export function CreatableSelect({
           <button
             type="button"
             onClick={() => { setEntering(false); setName(''); }}
-            className="px-2 py-1.5 text-xs text-text-muted hover:text-text-primary"
+            className={buttonClasses('ghost', 'sm')}
           >
             {t('Cancel')}
           </button>
         </form>
       )}
-      {isError && <p className="text-[10px] text-crimson mt-1">{errorLabel}</p>}
+      {isError && <p className="text-xs text-danger mt-1">{errorLabel}</p>}
     </div>
   );
 }
@@ -200,7 +201,7 @@ export function StorageSelect({ value, onChange, className }: LookupProps) {
           <option key={s.id} value={s.id}>{s.name}{s.path ? ` — ${s.path}` : ''}</option>
         ))}
       </select>
-      {q.isError && <p className="text-[10px] text-crimson mt-1">{t('Could not load storage areas.')}</p>}
+      {q.isError && <p className="text-xs text-danger mt-1">{t('Could not load storage areas.')}</p>}
     </div>
   );
 }
@@ -225,7 +226,7 @@ export function ServerSelect({ value, onChange, className }: LookupProps) {
           <option key={s.id} value={s.id}>{s.name}{s.hostname ? ` (${s.hostname})` : ''}</option>
         ))}
       </select>
-      {q.isError && <p className="text-[10px] text-crimson mt-1">{t('Could not load servers.')}</p>}
+      {q.isError && <p className="text-xs text-danger mt-1">{t('Could not load servers.')}</p>}
     </div>
   );
 }
@@ -258,7 +259,7 @@ export function ReturnLocationSelect({ monitorId, value, onChange, className }: 
         ))}
         {!known && <option value={String(current)}>{t('Preset {{n}}', { n: current })}</option>}
       </select>
-      {q.isError && <p className="text-[10px] text-crimson mt-1">{t('Could not load PTZ presets.')}</p>}
+      {q.isError && <p className="text-xs text-danger mt-1">{t('Could not load PTZ presets.')}</p>}
     </div>
   );
 }
@@ -278,25 +279,27 @@ export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & 
     if (next.has(id)) next.delete(id); else next.add(id);
     onChange(serializeIdList([...next]));
   };
-  if (q.isLoading) return <p className="text-xs text-text-muted">{t('Loading…')}</p>;
-  if (others.length === 0) return <p className="text-xs text-text-muted">{t('No other monitors to link.')}</p>;
+  if (q.isLoading) return <p className="text-xs text-fg-dim">{t('Loading…')}</p>;
+  if (others.length === 0) return <p className="text-xs text-fg-dim">{t('No other monitors to link.')}</p>;
   return (
     <div className="flex flex-wrap gap-2">
       {others.map((m) => (
         <label
           key={m.id}
           className={clsx(
-            'inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs cursor-pointer select-none',
-            selected.has(m.id) ? 'border-cyan/60 bg-cyan/10 text-cyan' : 'border-border-subtle text-text-secondary hover:border-text-secondary/50',
+            'inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs cursor-pointer select-none transition-colors',
+            selected.has(m.id)
+              ? 'border-accent/30 bg-accent/12 text-accent'
+              : 'border-border-subtle text-fg-muted hover:border-border hover:text-fg',
           )}
         >
           <input
             type="checkbox"
-            className="accent-cyan"
+            className="accent-accent"
             checked={selected.has(m.id)}
             onChange={() => toggle(m.id)}
           />
-          <span className="font-mono text-[10px] text-text-muted">{m.id}</span>
+          <span className="font-mono tabular-nums text-xs text-fg-dim">{m.id}</span>
           {m.name}
         </label>
       ))}
@@ -323,20 +326,22 @@ export function GroupsMembership({ value, onChange }: { value: number[]; onChang
     if (next.has(id)) next.delete(id); else next.add(id);
     onChange([...next].sort((a, b) => a - b));
   };
-  if (q.isLoading) return <p className="text-xs text-text-muted">{t('Loading…')}</p>;
-  if (q.isError) return <p className="text-[10px] text-crimson">{t('Could not load groups.')}</p>;
-  if (groups.length === 0) return <p className="text-xs text-text-muted">{t('No groups defined.')}</p>;
+  if (q.isLoading) return <p className="text-xs text-fg-dim">{t('Loading…')}</p>;
+  if (q.isError) return <p className="text-xs text-danger">{t('Could not load groups.')}</p>;
+  if (groups.length === 0) return <p className="text-xs text-fg-dim">{t('No groups defined.')}</p>;
   return (
     <div className="flex flex-wrap gap-2">
       {groups.map((g) => (
         <label
           key={g.id}
           className={clsx(
-            'inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs cursor-pointer select-none',
-            selected.has(g.id) ? 'border-cyan/60 bg-cyan/10 text-cyan' : 'border-border-subtle text-text-secondary hover:border-text-secondary/50',
+            'inline-flex items-center gap-1.5 px-2 py-1 rounded border text-xs cursor-pointer select-none transition-colors',
+            selected.has(g.id)
+              ? 'border-accent/30 bg-accent/12 text-accent'
+              : 'border-border-subtle text-fg-muted hover:border-border hover:text-fg',
           )}
         >
-          <input type="checkbox" className="accent-cyan" checked={selected.has(g.id)} onChange={() => toggle(g.id)} />
+          <input type="checkbox" className="accent-accent" checked={selected.has(g.id)} onChange={() => toggle(g.id)} />
           {g.name}
         </label>
       ))}

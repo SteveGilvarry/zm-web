@@ -5,6 +5,7 @@ import { Radar, X, Loader2, ChevronLeft, Search, Plus, Check, SlidersHorizontal 
 import type { InspectProfile } from '@/api/discovery';
 import type { MonitorCreateInput } from '@/api/monitors-crud';
 import type { Monitor } from '@/types';
+import { buttonClasses } from '@/components/common/styles';
 import { AddMonitorDialog } from '../AddMonitorDialog';
 import { useDiscovery } from './useDiscovery';
 import { prefillFromProfile } from './streamUri';
@@ -45,10 +46,11 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
   const [timeoutMs, setTimeoutMs] = useState(TIMEOUTS[1]);
   const [prefill, setPrefill] = useState<Partial<MonitorCreateInput> | null>(null);
 
-  const input = 'px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
-  const button = 'inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded border transition-colors disabled:opacity-40 disabled:cursor-not-allowed';
-  const primary = clsx(button, 'border-cyan/60 bg-cyan/15 text-cyan hover:bg-cyan/25');
-  const secondary = clsx(button, 'border-border-subtle text-text-muted hover:text-text-primary hover:border-text-secondary/50');
+  // The shared field recipe minus its `w-full` — the wait-time select sits
+  // inline next to the Scan button.
+  const input = 'px-2 py-1 text-label rounded bg-surface border border-border-subtle text-fg placeholder:text-fg-faint hover:border-border transition-colors';
+  const primary = buttonClasses('primary', 'sm');
+  const secondary = buttonClasses('secondary', 'sm');
 
   const startCreate = (profile: InspectProfile) => {
     if (!d.result) return;
@@ -76,15 +78,15 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
       role="dialog"
       aria-modal="true"
       aria-label={t('Scan network for cameras')}
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60"
       onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
     >
-      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl border border-cyan/40 bg-panel/95 backdrop-blur-md shadow-[0_24px_60px_rgba(0,0,0,0.5)]">
-        <header className="flex items-center justify-between px-5 py-3 border-b border-border-subtle">
+      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded border border-border bg-surface shadow-elevated">
+        <header className="flex items-center justify-between px-4 py-3 border-b border-border-subtle">
           <div className="flex items-center gap-2">
-            <Radar size={16} className="text-cyan" />
-            <h2 className="text-sm font-semibold text-text-primary">{t('Scan network for cameras')}</h2>
-            <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted ms-2">
+            <Radar size={14} className="text-fg-dim" aria-hidden />
+            <h2 className="text-sm font-semibold text-fg">{t('Scan network for cameras')}</h2>
+            <span className="text-label text-fg-dim ms-2">
               {d.step === 'scan' ? t('Step 1 of 3 — find') : d.step === 'inspect' ? t('Step 2 of 3 — sign in') : t('Step 3 of 3 — choose a stream')}
             </span>
           </div>
@@ -92,20 +94,20 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
             type="button"
             onClick={onClose}
             aria-label={t('Close')}
-            className="p-1.5 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
+            className="p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
           >
             <X size={14} />
           </button>
         </header>
 
-        <div className="p-5 space-y-4 overflow-y-auto">
+        <div className="p-4 space-y-3 overflow-y-auto">
           {d.step === 'scan' && (
             <>
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-fg-dim">
                 {t('Sends a WS-Discovery probe on the server’s network and lists the ONVIF cameras that answer. Nothing is changed.')}
               </p>
               <div className="flex items-center gap-2">
-                <label className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">{t('Wait')}</label>
+                <label className="text-label text-fg-dim">{t('Wait')}</label>
                 <select
                   value={timeoutMs}
                   onChange={(e) => setTimeoutMs(Number(e.target.value))}
@@ -124,7 +126,7 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
               {d.candidates.length > 0 ? (
                 <div className="overflow-x-auto rounded border border-border-subtle">
                   <table className="w-full text-xs">
-                    <thead className="bg-surface/60 text-[10px] font-mono uppercase tracking-wider text-text-muted">
+                    <thead className="bg-surface-2 text-xs font-medium text-fg-dim">
                       <tr>
                         <th className="text-start px-3 py-2">{t('Name')}</th>
                         <th className="text-start px-3 py-2">{t('Hardware')}</th>
@@ -136,13 +138,13 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                     <tbody>
                       {d.candidates.map((c) => (
                         <tr key={c.endpoint_reference || c.xaddrs[0]} className="border-t border-border-subtle/60">
-                          <td className="px-3 py-2 text-text-primary">{c.name ?? '—'}</td>
-                          <td className="px-3 py-2 text-text-secondary">{c.hardware ?? '—'}</td>
-                          <td className="px-3 py-2 text-text-secondary">{c.location ?? '—'}</td>
-                          <td className="px-3 py-2 font-mono text-text-muted" dir="ltr">{c.xaddrs[0] ?? '—'}</td>
+                          <td className="px-3 py-2 text-fg">{c.name ?? '—'}</td>
+                          <td className="px-3 py-2 text-fg-muted">{c.hardware ?? '—'}</td>
+                          <td className="px-3 py-2 text-fg-muted">{c.location ?? '—'}</td>
+                          <td className="px-3 py-2 font-mono text-fg-dim" dir="ltr">{c.xaddrs[0] ?? '—'}</td>
                           <td className="px-3 py-2 text-end whitespace-nowrap">
                             {c.monitor_id != null && (
-                              <span className="me-2 inline-flex items-center gap-1 text-[10px] uppercase tracking-wider text-emerald">
+                              <span className="me-2 inline-flex items-center gap-1 text-xs text-ok">
                                 <Check size={10} />
                                 {t('Already added')}
                               </span>
@@ -157,13 +159,13 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                   </table>
                 </div>
               ) : d.scanError ? (
-                <p className="text-xs text-crimson">{t('The scan failed. Check that the API server can reach the camera network.')}</p>
+                <p className="text-xs text-danger">{t('The scan failed. Check that the API server can reach the camera network.')}</p>
               ) : !d.isScanning ? (
-                <p className="text-xs text-text-muted">{t('No cameras listed yet. Scan, or type a device-service URL below.')}</p>
+                <p className="text-xs text-fg-dim">{t('No cameras listed yet. Scan, or type a device-service URL below.')}</p>
               ) : null}
 
               <div className="pt-2 border-t border-border-subtle/60">
-                <label className="block text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted mb-1">
+                <label className="block text-label text-fg-dim mb-1">
                   {t('Or enter an ONVIF device-service URL')}
                 </label>
                 <input
@@ -179,11 +181,11 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
 
           {d.step === 'inspect' && (
             <form onSubmit={submitInspect} className="space-y-3">
-              <p className="text-xs text-text-muted">
+              <p className="text-xs text-fg-dim">
                 {t('Sign in to read the camera’s identity and media profiles. Leave the username blank to query it anonymously.')}
               </p>
               <div>
-                <label htmlFor="discovery-xaddr" className="block text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted mb-1">{t('Device-service URL')}</label>
+                <label htmlFor="discovery-xaddr" className="block text-label text-fg-dim mb-1">{t('Device-service URL')}</label>
                 <input
                   id="discovery-xaddr"
                   value={d.xaddr}
@@ -194,29 +196,29 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label htmlFor="discovery-username" className="block text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted mb-1">{t('Username')}</label>
+                  <label htmlFor="discovery-username" className="block text-label text-fg-dim mb-1">{t('Username')}</label>
                   <input
                     id="discovery-username"
                     value={d.username}
                     onChange={(e) => d.setUsername(e.target.value)}
                     autoComplete="off"
-                    className={clsx(input, 'w-full font-mono')}
+                    className={clsx(input, 'w-full')}
                   />
                 </div>
                 <div>
-                  <label htmlFor="discovery-password" className="block text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted mb-1">{t('Password')}</label>
+                  <label htmlFor="discovery-password" className="block text-label text-fg-dim mb-1">{t('Password')}</label>
                   <input
                     id="discovery-password"
                     type="password"
                     value={d.password}
                     onChange={(e) => d.setPassword(e.target.value)}
                     autoComplete="new-password"
-                    className={clsx(input, 'w-full font-mono')}
+                    className={clsx(input, 'w-full')}
                   />
                 </div>
               </div>
               {d.inspectError ? (
-                <p role="alert" className="text-xs text-crimson">
+                <p role="alert" className="text-xs text-danger">
                   {t('The camera did not answer. Check the URL and credentials.')}
                 </p>
               ) : null}
@@ -245,17 +247,17 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
               </dl>
 
               {d.result.monitor_id != null && (
-                <p className="text-xs text-amber">
+                <p className="text-xs text-warn">
                   {t('This camera is already monitor #{{id}}. Adding it again makes a second monitor on the same stream.', { id: d.result.monitor_id })}
                 </p>
               )}
 
               {d.result.profiles.length === 0 ? (
-                <p className="text-xs text-text-muted">{t('The camera reported no media profiles.')}</p>
+                <p className="text-xs text-fg-dim">{t('The camera reported no media profiles.')}</p>
               ) : (
                 <div className="overflow-x-auto rounded border border-border-subtle">
                   <table className="w-full text-xs">
-                    <thead className="bg-surface/60 text-[10px] font-mono uppercase tracking-wider text-text-muted">
+                    <thead className="bg-surface-2 text-xs font-medium text-fg-dim">
                       <tr>
                         <th className="text-start px-3 py-2">{t('Profile')}</th>
                         <th className="text-start px-3 py-2">{t('Encoding')}</th>
@@ -267,15 +269,15 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                     <tbody>
                       {d.result.profiles.map((p) => (
                         <tr key={p.token} className="border-t border-border-subtle/60">
-                          <td className="px-3 py-2 text-text-primary">
+                          <td className="px-3 py-2 text-fg">
                             {p.name ?? p.token}
-                            <span className="block font-mono text-[10px] text-text-muted">{p.token}</span>
+                            <span className="block font-mono text-xs text-fg-dim">{p.token}</span>
                           </td>
-                          <td className="px-3 py-2 text-text-secondary">{p.encoding ?? '—'}</td>
-                          <td className="px-3 py-2 font-mono tabular-nums text-text-secondary">
+                          <td className="px-3 py-2 text-fg-muted">{p.encoding ?? '—'}</td>
+                          <td className="px-3 py-2 font-mono tabular-nums text-fg-muted">
                             {p.width && p.height ? `${p.width}×${p.height}` : '—'}
                           </td>
-                          <td className="px-3 py-2 font-mono text-text-muted break-all" dir="ltr">{p.stream_uri ?? t('(not provided)')}</td>
+                          <td className="px-3 py-2 font-mono text-fg-dim break-all" dir="ltr">{p.stream_uri ?? t('(not provided)')}</td>
                           <td className="px-3 py-2 text-end whitespace-nowrap">
                             <button
                               type="button"
@@ -320,8 +322,8 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
 function Fact({ label, value }: { label: string; value?: string | null }) {
   return (
     <div>
-      <dt className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted">{label}</dt>
-      <dd className="text-text-primary">{value || '—'}</dd>
+      <dt className="text-label text-fg-dim">{label}</dt>
+      <dd className="text-fg">{value || '—'}</dd>
     </div>
   );
 }

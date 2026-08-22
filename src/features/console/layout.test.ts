@@ -168,7 +168,7 @@ describe('packWall row balance', () => {
     // The real dev-box fleet: three 9:16-ish cameras and one 16:9, in the
     // space the console actually measured (825 × 632).
     const fleet = [tile(1, 0.573), tile(2, 0.573), tile(3, 0.573), tile(4, 1.81)];
-    const rows = packWall(fleet, 825, 632, { gap: 16, ribbon: 58 });
+    const rows = packWall(fleet, 825, 632, { gap: 16, ribbon: 64 });
     expect(rows).toHaveLength(2);
     expect(rows[0].tiles).toHaveLength(3);
     expect(rows[1].tiles).toHaveLength(1);

@@ -288,6 +288,9 @@ describe('Cycle — monitor filter bar', () => {
     await renderCycle();
     await onStage();
 
+    // The chip bar is an occasional control, so it lives behind the
+    // toolbar's Filters disclosure.
+    await user.click(screen.getByRole('button', { name: 'Filters' }));
     await user.click(screen.getByRole('button', { name: 'Monitor filter' }));
     await user.click(
       within(screen.getByRole('listbox', { name: 'Monitor options' }))
@@ -305,6 +308,7 @@ describe('Cycle — monitor filter bar', () => {
     await renderCycle();
     await onStage();
 
+    await user.click(screen.getByRole('button', { name: 'Filters' }));
     await user.click(screen.getByRole('button', { name: 'Status filter' }));
     await user.click(
       within(screen.getByRole('listbox', { name: 'Status options' }))

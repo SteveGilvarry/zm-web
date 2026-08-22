@@ -41,28 +41,28 @@ export function SummaryStrip({
     <div
       role="region"
       aria-label={t('Logs summary')}
-      className="flex flex-wrap items-center gap-3 mb-1"
+      className="flex flex-wrap items-center gap-2 mb-1"
     >
       <SummaryCard
         label={t('Errors')}
         count={summary.errors}
         active={activeLevel === 'error'}
         onClick={onPickErrors}
-        tone="crimson"
+        tone="danger"
       />
       <SummaryCard
         label={t('Warnings')}
         count={summary.warnings}
         active={activeLevel === 'warning'}
         onClick={onPickWarnings}
-        tone="amber"
+        tone="warn"
       />
       <SummaryCard
         label={t('Info')}
         count={summary.info}
         active={activeLevel === 'info'}
         onClick={onPickInfo}
-        tone="cyan"
+        tone="info"
       />
       {onPickDebug && (
         <SummaryCard
@@ -73,7 +73,7 @@ export function SummaryStrip({
           tone="muted"
         />
       )}
-      <span className="text-[11px] text-text-muted font-mono ms-auto">
+      <span className="ms-auto font-mono tabular-nums text-xs text-fg-dim">
         {t('Total: {{total}} · Displaying: {{first}}–{{last}}', { total, first, last })}
       </span>
     </div>
@@ -87,26 +87,30 @@ function SummaryCard({
   count: number;
   active: boolean;
   onClick: () => void;
-  tone: 'crimson' | 'amber' | 'cyan' | 'muted';
+  tone: 'danger' | 'warn' | 'info' | 'muted';
 }) {
   const { t } = useTranslation();
-  const toneColor =
-    tone === 'crimson' ? 'text-crimson border-crimson/40'
-    : tone === 'amber' ? 'text-amber border-amber/40'
-    : tone === 'cyan'  ? 'text-cyan border-cyan/40'
-    :                    'text-text-secondary border-text-muted/40';
+  // Colour marks a state worth acting on — errors and warnings that actually
+  // happened. Zero of either, and the info / debug tallies, stay neutral; the
+  // accent is left to say which threshold is currently applied.
+  const countTone =
+    count > 0 && tone === 'danger' ? 'text-danger'
+      : count > 0 && tone === 'warn' ? 'text-warn'
+        : 'text-fg';
   return (
     <button
       onClick={onClick}
       aria-label={t('{{label}}: {{count}}', { label, count })}
       aria-pressed={active}
       className={clsx(
-        'flex items-baseline gap-2 px-3 py-1.5 rounded-md bg-surface border transition-colors',
-        active ? toneColor : 'border-border-subtle text-text-secondary hover:border-cyan/40',
+        'flex items-baseline gap-2 px-2 py-1 rounded border transition-colors',
+        active
+          ? 'border-accent bg-accent/12'
+          : 'border-border-subtle bg-surface hover:border-border',
       )}
     >
-      <span className="text-[10px] font-mono uppercase tracking-[0.18em]">{label}</span>
-      <span className="font-mono text-sm font-semibold">{count}</span>
+      <span className="text-xs text-fg-dim">{label}</span>
+      <span className={clsx('font-mono tabular-nums text-sm font-medium', countTone)}>{count}</span>
     </button>
   );
 }

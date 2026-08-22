@@ -108,7 +108,7 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
       aria-label={t('Monitor filter bar')}
       role="group"
     >
-      <Filter size={14} className="text-text-muted" aria-hidden />
+      <Filter size={14} className="text-fg-dim" aria-hidden />
 
       <Chip
         label={t('Groups')}
@@ -170,7 +170,7 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
         <button
           type="button"
           onClick={reset}
-          className="flex items-center gap-1 px-2 py-1 text-[11px] rounded border border-border-subtle text-text-muted hover:border-crimson/40 hover:text-crimson transition-colors"
+          className="flex items-center gap-1 px-2 py-1 text-xs rounded border border-border-subtle text-fg-dim hover:border-border hover:text-fg transition-colors"
           aria-label={t('Reset all filters')}
         >
           <X size={11} />
@@ -250,22 +250,24 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
           : t('{{label}} filter', { label })}
         className={clsx(
           'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border transition-colors',
+          // The accent marks a chip that is *selected*; an untouched chip is
+          // grey, hover included (docs/DESIGN.md).
           count > 0
-            ? 'border-cyan/50 bg-cyan/10 text-cyan'
-            : 'border-border-subtle bg-surface/40 text-text-secondary hover:border-cyan/40 hover:text-cyan',
+            ? 'border-accent/30 bg-accent/12 text-accent'
+            : 'border-border-subtle bg-surface text-fg-muted hover:border-border hover:text-fg',
         )}
       >
         <span className="font-medium">{label}</span>
         {count > 0 && (
           <span
-            className="px-1 min-w-[1rem] text-center text-[10px] font-mono rounded bg-cyan/20 text-cyan tabular-nums"
+            className="px-1 min-w-[1rem] text-center text-xs font-mono tabular-nums"
             aria-label={t('{{count}} active', { count })}
           >
             {count}
           </span>
         )}
         {count === 0 && (
-          <span className="text-text-muted italic">{summary}</span>
+          <span className="text-fg-dim italic">{summary}</span>
         )}
         <ChevronDown size={12} className={clsx('transition-transform', open && 'rotate-180')} />
       </button>
@@ -275,10 +277,10 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
           role="listbox"
           aria-label={t('{{label}} options', { label })}
           aria-multiselectable="true"
-          className="absolute start-0 top-full mt-1 z-40 w-56 max-h-80 overflow-y-auto rounded-lg border border-border-subtle bg-panel/95 backdrop-blur-md shadow-[0_18px_44px_rgba(0,0,0,0.45)] p-1"
+          className="absolute start-0 top-full mt-1 z-40 w-56 max-h-80 overflow-y-auto rounded border border-border bg-surface shadow-elevated p-1"
         >
           {options.length === 0 ? (
-            <div className="px-3 py-2 text-[11px] italic text-text-muted">
+            <div className="px-3 py-2 text-xs italic text-fg-dim">
               {t('No options')}
             </div>
           ) : (
@@ -290,15 +292,15 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
                     <label
                       className={clsx(
                         'flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-xs',
-                        'hover:bg-cyan/10',
-                        checked && 'text-cyan',
+                        'hover:bg-surface-2',
+                        checked ? 'text-accent' : 'text-fg-muted',
                       )}
                     >
                       <input
                         type="checkbox"
                         checked={checked}
                         onChange={() => toggle(opt.value)}
-                        className="accent-cyan"
+                        className="accent-accent"
                         aria-label={opt.label}
                       />
                       <span className="flex-1 truncate">{opt.label}</span>
@@ -313,7 +315,7 @@ function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
               <button
                 type="button"
                 onClick={() => onChange([])}
-                className="w-full text-start px-2 py-1 text-[11px] text-text-muted hover:text-crimson transition-colors"
+                className="w-full text-start px-2 py-1 text-xs text-fg-dim hover:text-fg transition-colors"
               >
                 {t('Clear {{label}}', { label: label.toLocaleLowerCase() })}
               </button>

@@ -55,12 +55,12 @@ export function ColumnPicker({ visible, onChange, onClose }: ColumnPickerProps) 
       <div
         role="menu"
         aria-label={t('Toggle columns')}
-        className="absolute end-0 top-full mt-1 z-20 min-w-[160px] p-2 rounded-md bg-surface border border-border-subtle shadow-lg"
+        className="absolute end-0 top-full mt-1 z-20 min-w-[160px] p-1 rounded bg-surface border border-border shadow-[var(--elevation-2)]"
       >
         {ALL_LOG_COLUMNS.map((key) => (
           <label
             key={key}
-            className="flex items-center gap-2 px-2 py-1 text-[11px] text-text-secondary hover:text-text-primary cursor-pointer"
+            className="flex items-center gap-2 px-2 py-1 text-xs text-fg-muted hover:text-fg cursor-pointer"
           >
             <input
               type="checkbox"

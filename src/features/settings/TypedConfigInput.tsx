@@ -14,8 +14,10 @@ interface Props {
 
 export function TypedConfigInput({ config, value, onChange, onCommit, onCancel, autoFocus }: Props) {
   const { t } = useTranslation();
+  // The accent border is the only colour here: it marks the row currently
+  // being edited, which is a state, not decoration.
   const baseInput =
-    'px-2 py-1 text-xs font-mono bg-panel border border-cyan/50 rounded text-text-primary focus:outline-none focus:ring-1 focus:ring-cyan/30';
+    'px-2 py-1 text-xs font-mono bg-surface border border-accent rounded text-fg focus:outline-none';
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && onCommit && !(e.target instanceof HTMLTextAreaElement)) onCommit();
@@ -50,9 +52,9 @@ export function TypedConfigInput({ config, value, onChange, onCommit, onCancel, 
             checked={value === '1' || value.toLowerCase() === 'true' || value.toLowerCase() === 'yes'}
             onChange={(e) => onChange(e.target.checked ? '1' : '0')}
             autoFocus={autoFocus}
-            className="w-4 h-4 rounded border-cyan/50 bg-panel text-cyan focus:ring-1 focus:ring-cyan/30"
+            className="w-4 h-4 accent-accent"
           />
-          <span className="text-xs font-mono text-text-secondary">
+          <span className="text-xs text-fg-muted">
             {value === '1' ? t('enabled') : t('disabled')}
           </span>
         </label>

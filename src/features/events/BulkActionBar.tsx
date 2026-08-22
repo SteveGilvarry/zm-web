@@ -16,7 +16,7 @@ interface BulkActionBarProps {
   selectedIds: Set<number>;
   onClear: () => void;
   /**
-   * `modern` floats a cyan bar at the bottom once rows are selected;
+   * `modern` floats a neutral bar at the bottom once rows are selected;
    * `classic` renders an inline flat-Bootstrap button row that is always
    * visible (legacy's toolbar icons, disabled until something is checked).
    */
@@ -98,15 +98,14 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
           ? 'flex flex-col gap-1'
           : [
             'fixed bottom-6 start-1/2 -translate-x-1/2 rtl:translate-x-1/2 z-30',
-            'flex flex-col gap-2 px-3 py-2 rounded-xl',
-            'bg-panel/95 backdrop-blur-md border border-cyan/40',
-            'shadow-[0_8px_32px_rgba(0,0,0,0.4)] shadow-cyan/10',
+            'flex flex-col gap-1.5 px-2 py-1.5 rounded',
+            'bg-surface border border-border shadow-[var(--elevation-2)]',
             'animate-in fade-in slide-in-from-bottom-2 duration-200',
           ],
       )}
     >
       <div className="flex items-center gap-1">
-        <span className={clsx('px-2 text-xs tabular-nums', classic ? 'text-zinc-600' : 'font-mono text-cyan')}>
+        <span className={clsx('px-2 text-xs tabular-nums', classic ? 'text-zinc-600' : 'font-mono text-fg-muted')}>
           {t('{{count}} selected', { count: ids.length })}
         </span>
         {!classic && <div className="w-px h-5 bg-border-subtle mx-1" />}
@@ -151,7 +150,7 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
           variant={variant}
             icon={<Trash2 size={12} />}
             label={t('Delete')}
-            tone="crimson"
+            tone="danger"
             onClick={() => {
               if (confirm(t("Delete {{count}} event? This can't be undone.", { count: ids.length }))) {
                 void runAction(t('Delete'), (id) => deleteEvent(id));
@@ -168,7 +167,7 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
           aria-label={t('Clear selection')}
           className={clsx(
             'p-1.5 rounded transition-colors disabled:opacity-50',
-            classic ? 'text-zinc-500 hover:text-zinc-800' : 'text-text-muted hover:text-text-primary hover:bg-surface',
+            classic ? 'text-zinc-500 hover:text-zinc-800' : 'text-fg-dim hover:text-fg hover:bg-surface-2',
           )}
         >
           <X size={12} />
@@ -179,12 +178,12 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
       {busy && (
         <div
           role="status"
-          className="flex items-center gap-2 px-2 text-[11px] font-mono text-text-secondary"
+          className="flex items-center gap-2 px-2 text-xs font-mono tabular-nums text-fg-muted"
           data-testid="bulk-progress"
         >
           <span>{t('{{action}}: {{done}} / {{total}}', { action: progress.action, done: progress.done, total: progress.total })}</span>
           <progress
-            className="h-1 w-32 [&::-webkit-progress-bar]:bg-surface [&::-webkit-progress-value]:bg-cyan"
+            className="h-1 w-32 [&::-webkit-progress-bar]:bg-surface-2 [&::-webkit-progress-value]:bg-accent"
             value={progress.done}
             max={progress.total}
           />
@@ -193,10 +192,10 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
       {finishedWithFailures && (
         <div
           role="alert"
-          className="flex items-start gap-2 px-2 text-[11px] font-mono text-amber max-w-md"
+          className="flex items-start gap-2 px-2 text-xs text-warn max-w-md"
           data-testid="bulk-failures"
         >
-          <AlertTriangle size={12} className="mt-0.5 shrink-0" />
+          <AlertTriangle size={12} className="mt-0.5 shrink-0" aria-hidden />
           <span>
             {t('{{action}}: {{ok}} of {{total}} succeeded. Failed: {{ids}}', {
               action: progress.action,
@@ -222,28 +221,28 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
 }
 
 function BulkBtn({
-  icon, label, onClick, disabled, tone = 'cyan', variant = 'modern',
+  icon, label, onClick, disabled, tone = 'neutral', variant = 'modern',
 }: {
   icon: React.ReactNode;
   label: string;
   onClick: () => void;
   disabled: boolean;
-  tone?: 'cyan' | 'crimson';
+  tone?: 'neutral' | 'danger';
   variant?: 'modern' | 'classic';
 }) {
   const cls = variant === 'classic'
-    ? (tone === 'crimson'
+    ? (tone === 'danger'
       ? 'rounded-sm bg-[#d9534f] border-[#d43f3a] text-white hover:bg-[#c9302c]'
       : 'rounded-sm bg-[#e9ecef] border-[#adb5bd] text-zinc-800 hover:bg-[#dde1e5]')
-    : (tone === 'crimson'
-      ? 'rounded-md border-crimson/40 text-crimson hover:bg-crimson/15'
-      : 'rounded-md border-cyan/40 text-cyan hover:bg-cyan/15');
+    : (tone === 'danger'
+      ? 'rounded border-danger/40 text-danger hover:bg-danger/10'
+      : 'rounded border-border-subtle text-fg-muted hover:text-fg hover:border-border');
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'flex items-center gap-1.5 px-3 py-1.5 border text-xs font-medium transition-colors',
+        'flex items-center gap-1.5 px-2 py-1 border text-xs font-medium transition-colors',
         cls,
         disabled && 'opacity-60 cursor-not-allowed',
       )}

@@ -1,15 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import {
-  ArrowLeft,
-  Calendar,
-  FileText,
-  Filter as FilterIcon,
-  Loader2,
-  Save,
-  Trash2,
-} from 'lucide-react';
+import { ArrowLeft, Loader2, Save, Trash2 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
@@ -24,7 +16,16 @@ import {
   useReportForm,
 } from '@/features/reports/useReportDetailPage';
 
-/** Report detail — Mission Control. Edit form + events-per-hour chart. */
+const field = clsx(
+  'bg-surface border border-border-subtle rounded px-2 py-1 text-sm',
+  'text-fg placeholder:text-fg-faint',
+  'focus:outline-none focus:border-accent transition-colors',
+);
+
+/**
+ * Report detail — the modern skin. A back line that stays put, then the
+ * edit form and the events-per-hour chart in the scrolling body.
+ */
 export default function ReportDetailPage({ reportId }: { reportId: number }) {
   const { t } = useTranslation();
   const s = useReportDetailPage(reportId);
@@ -34,33 +35,35 @@ export default function ReportDetailPage({ reportId }: { reportId: number }) {
 
   return (
     <AppShell title={t('Report')}>
-      <main className="flex-1 p-6 overflow-auto">
-        <div className="flex items-center justify-between mb-4">
+      <main className="flex-1 min-h-0 flex flex-col">
+        <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
           <Link
             to="/reports"
-            className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-[0.18em] text-text-muted hover:text-cyan transition-colors"
+            className="flex items-center gap-1.5 text-xs text-fg-dim hover:text-fg transition-colors"
           >
-            <ArrowLeft size={12} className="rtl:-scale-x-100" />
+            <ArrowLeft size={14} className="rtl:-scale-x-100" aria-hidden />
             {t('Back to reports')}
           </Link>
         </div>
 
-        <QueryState
-          isLoading={s.isLoading}
-          isError={s.isError}
-          error={s.error}
-          onRetry={s.refetch}
-          empty={!s.report}
-          emptyMessage={t('Could not load report #{{id}}.', { id: reportId })}
-        >
-          {s.report && (
-            <ReportDetailBody
-              report={s.report}
-              filters={s.filters}
-              onSaved={s.onSaved}
-            />
-          )}
-        </QueryState>
+        <div className="flex-1 min-h-0 overflow-auto p-3 space-y-3">
+          <QueryState
+            isLoading={s.isLoading}
+            isError={s.isError}
+            error={s.error}
+            onRetry={s.refetch}
+            empty={!s.report}
+            emptyMessage={t('Could not load report #{{id}}.', { id: reportId })}
+          >
+            {s.report && (
+              <ReportDetailBody
+                report={s.report}
+                filters={s.filters}
+                onSaved={s.onSaved}
+              />
+            )}
+          </QueryState>
+        </div>
       </main>
     </AppShell>
   );
@@ -80,39 +83,39 @@ function ReportDetailBody({
 
   return (
     <>
-      <Panel title={t('Report')} icon={<FileText size={16} />} className="mb-6">
+      <Panel title={t('Report')}>
         <form onSubmit={f.submit} className="space-y-3">
-          <Field label={t('Name')}>
-            <input
-              value={f.name}
-              onChange={(e) => f.setName(e.target.value)}
-              placeholder={t('Weekly motion report')}
-              className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
-            />
-          </Field>
-          <Field label={t('Filter')} icon={<FilterIcon size={11} />}>
-            <select
-              value={f.filterId}
-              onChange={(e) =>
-                f.setFilterId(e.target.value === '' ? '' : parseInt(e.target.value, 10))
-              }
-              className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
-            >
-              <option value="">{t('— none —')}</option>
-              {filters.map((fl) => (
-                <option key={fl.id} value={fl.id}>
-                  {fl.name}
-                </option>
-              ))}
-            </select>
-          </Field>
-          <div className="flex items-center gap-3">
-            <Field label={t('Start')} icon={<Calendar size={11} />}>
+          <div className="flex flex-wrap items-end gap-3">
+            <Field label={t('Name')}>
+              <input
+                value={f.name}
+                onChange={(e) => f.setName(e.target.value)}
+                placeholder={t('Weekly motion report')}
+                className={clsx(field, 'w-56')}
+              />
+            </Field>
+            <Field label={t('Filter')}>
+              <select
+                value={f.filterId}
+                onChange={(e) =>
+                  f.setFilterId(e.target.value === '' ? '' : parseInt(e.target.value, 10))
+                }
+                className={clsx(field, 'w-48 cursor-pointer')}
+              >
+                <option value="">{t('— none —')}</option>
+                {filters.map((fl) => (
+                  <option key={fl.id} value={fl.id}>
+                    {fl.name}
+                  </option>
+                ))}
+              </select>
+            </Field>
+            <Field label={t('Start')}>
               <input
                 type="datetime-local"
                 value={f.start}
                 onChange={(e) => f.setStart(e.target.value)}
-                className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                className={field}
               />
             </Field>
             <Field label={t('End')}>
@@ -120,69 +123,65 @@ function ReportDetailBody({
                 type="datetime-local"
                 value={f.end}
                 onChange={(e) => f.setEnd(e.target.value)}
-                className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+                className={field}
+              />
+            </Field>
+            <Field label={t('Interval')}>
+              <input
+                type="number"
+                min={0}
+                value={f.interval}
+                onChange={(e) =>
+                  f.setInterval(e.target.value === '' ? '' : parseInt(e.target.value, 10))
+                }
+                placeholder={t('minutes (blank = one-off)')}
+                className={clsx(field, 'w-48')}
               />
             </Field>
           </div>
-          <Field label={t('Interval')}>
-            <input
-              type="number"
-              min={0}
-              value={f.interval}
-              onChange={(e) =>
-                f.setInterval(e.target.value === '' ? '' : parseInt(e.target.value, 10))
-              }
-              placeholder={t('minutes (blank = one-off)')}
-              className="flex-1 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
-            />
-          </Field>
 
           <div className="flex items-center justify-end gap-2 pt-1">
             <RequirePerm feature="events" level="Edit">
-            <button
-              type="button"
-              onClick={() => {
-                if (
-                  confirm(t('Delete report "{{name}}"?', { name: report.name ?? `#${report.id}` }))
-                ) {
-                  f.remove();
-                }
-              }}
-              disabled={f.deletePending}
-              className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded border-2 border-crimson/60 bg-crimson/15 text-crimson hover:bg-crimson/25 transition-colors disabled:opacity-50"
-            >
-              <Trash2 size={12} />
-              {t('Delete')}
-            </button>
-            <button
-              type="submit"
-              disabled={f.savePending}
-              className={clsx(
-                'flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded border-2 transition-colors',
-                'border-cyan/60 bg-cyan/15 text-cyan hover:bg-cyan/25',
-                'disabled:opacity-50',
-              )}
-            >
-              {f.savePending ? (
-                <Loader2 size={12} className="animate-spin" />
-              ) : (
-                <Save size={12} />
-              )}
-              {t('Save')}
-            </button>
+              <button
+                type="button"
+                onClick={() => {
+                  if (
+                    confirm(t('Delete report "{{name}}"?', { name: report.name ?? `#${report.id}` }))
+                  ) {
+                    f.remove();
+                  }
+                }}
+                disabled={f.deletePending}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded text-xs text-danger hover:bg-danger/10 transition-colors disabled:opacity-50"
+              >
+                <Trash2 size={12} aria-hidden />
+                {t('Delete')}
+              </button>
+              <button
+                type="submit"
+                disabled={f.savePending}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded bg-accent text-accent-fg text-xs font-medium hover:bg-accent-dim transition-colors disabled:opacity-50"
+              >
+                {f.savePending ? (
+                  <Loader2 size={12} className="animate-spin" aria-hidden />
+                ) : (
+                  <Save size={12} aria-hidden />
+                )}
+                {t('Save')}
+              </button>
             </RequirePerm>
           </div>
 
           {f.saveError && (
-            <p className="text-xs text-crimson">{t('Save failed. Try again.')}</p>
+            <p role="alert" className="text-xs text-danger">{t('Save failed. Try again.')}</p>
           )}
           {f.saveSuccess && (
-            <p className="text-xs text-emerald">{t('Saved.')}</p>
+            <p role="status" className="text-xs text-ok">{t('Saved.')}</p>
           )}
         </form>
       </Panel>
 
-      <Panel title={t('Events per hour')} icon={<FileText size={16} />}>
+      <Panel title={t('Events per hour')}>
         <ReportChart filterId={f.filterId === '' ? null : f.filterId} />
       </Panel>
     </>
@@ -196,7 +195,7 @@ function ReportChart({ filterId }: { filterId: number | null }) {
   if (filterId == null) {
     return (
       <div
-        className="py-12 text-center text-text-muted text-sm"
+        className="py-12 text-center text-fg-dim text-sm"
         data-testid="report-chart-empty"
       >
         {t('Select a Filter to populate the chart.')}
@@ -206,8 +205,8 @@ function ReportChart({ filterId }: { filterId: number | null }) {
 
   if (chart.isLoading) {
     return (
-      <div className="py-12 flex items-center justify-center gap-2 text-text-muted text-sm">
-        <Loader2 size={14} className="animate-spin" />
+      <div className="py-12 flex items-center justify-center gap-2 text-fg-dim text-sm">
+        <Loader2 size={14} className="animate-spin" aria-hidden />
         {t('Loading events…')}
       </div>
     );
@@ -215,7 +214,7 @@ function ReportChart({ filterId }: { filterId: number | null }) {
 
   if (chart.filterError) {
     return (
-      <div className="py-12 text-center text-text-muted text-sm">
+      <div className="py-12 text-center text-fg-dim text-sm">
         {t('Could not load filter #{{id}}.', { id: filterId })}
       </div>
     );
@@ -224,7 +223,7 @@ function ReportChart({ filterId }: { filterId: number | null }) {
   if (chart.buckets.length === 0) {
     return (
       <div
-        className="py-12 text-center text-text-muted text-sm"
+        className="py-12 text-center text-fg-dim text-sm"
         data-testid="report-chart-no-data"
       >
         {t('No matching events in the most recent 500.')}
@@ -239,22 +238,11 @@ function ReportChart({ filterId }: { filterId: number | null }) {
   );
 }
 
-function Field({
-  label,
-  icon,
-  children,
-}: {
-  label: string;
-  icon?: React.ReactNode;
-  children: React.ReactNode;
-}) {
+function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div className="flex items-center gap-2 flex-1">
-      <label className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-16 flex items-center gap-1">
-        {icon}
-        {label}
-      </label>
+    <label className="flex flex-col gap-1 text-xs text-fg-dim">
+      {label}
       {children}
-    </div>
+    </label>
   );
 }

@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { clsx } from 'clsx';
+import { fitToBox } from './fitToBox';
 
 /**
  * A box of fixed aspect ratio, sized to the largest that fits its parent.
@@ -64,21 +65,4 @@ export function FitBox({
       </div>
     </div>
   );
-}
-
-/**
- * Largest `aspect`-shaped box inside `width × height`, never wider than
- * `maxWidth`. Returns null before the first measurement, so the caller can
- * fall back to a CSS aspect box rather than render a zero-sized hole.
- */
-export function fitToBox(
-  width: number,
-  height: number,
-  aspect: number,
-  maxWidth?: number,
-): { width: number; height: number } | null {
-  if (!(width > 0) || !(height > 0) || !(aspect > 0)) return null;
-  const cap = maxWidth && maxWidth > 0 ? Math.min(width, maxWidth) : width;
-  const w = Math.min(cap, height * aspect);
-  return { width: w, height: w / aspect };
 }

@@ -44,6 +44,21 @@ function cellCountLabel(): string {
   return screen.getByText(/^\d+ cells?$/).textContent ?? '';
 }
 
+type User = ReturnType<typeof userEvent.setup>;
+
+/**
+ * The preset shapes and the saved-layout menu are session-scale controls, so
+ * the toolbar keeps them behind the Layout disclosure; the caption position
+ * and the live-tile budget sit behind Display.
+ */
+async function openLayout(user: User): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Layout' }));
+}
+
+async function openDisplay(user: User): Promise<void> {
+  await user.click(screen.getByRole('button', { name: 'Display' }));
+}
+
 /** A saved row whose `positions` this dashboard can actually parse. */
 function savedLayout(name: string, tree: LayoutNode, id = 1) {
   return makeMontageLayout({
@@ -107,6 +122,7 @@ describe('MontagePage (modern) — layout editing', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.click(
       within(screen.getByRole('group', { name: 'Layout presets' })).getByRole('button', {
         name: '1×1',
@@ -123,6 +139,7 @@ describe('MontagePage (modern) — layout editing', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.click(
       within(screen.getByRole('group', { name: 'Layout presets' })).getByRole('button', {
         name: '2×2',
@@ -149,6 +166,7 @@ describe('MontagePage (modern) — layout editing', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.click(
       within(screen.getByRole('group', { name: 'Layout presets' })).getByRole('button', {
         name: '2×2',
@@ -223,6 +241,7 @@ describe('MontagePage (modern) — toolbar', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openDisplay(user);
     const picker = screen.getByLabelText('Monitor status position');
     await user.selectOptions(picker, 'outside');
 
@@ -243,6 +262,7 @@ describe('MontagePage (modern) — toolbar', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openDisplay(user);
     await user.selectOptions(screen.getByLabelText('Live tile limit'), '4');
 
     await waitFor(() => expect(useUiStore.getState().maxLiveTiles).toBe(4));
@@ -305,6 +325,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(userEvent.setup());
     const menu = screen.getByLabelText('Saved layouts');
     expect(within(menu).getByRole('option', { name: 'Night Wall' })).toBeInTheDocument();
     expect(within(menu).queryByRole('option', { name: 'Unreadable' })).not.toBeInTheDocument();
@@ -327,6 +348,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
 
     await waitFor(() => expect(body).toBeDefined());
@@ -351,6 +373,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
     expect(posted).toBe(false);
   });
@@ -361,6 +384,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.selectOptions(screen.getByLabelText('Saved layouts'), 'Driveway only');
 
     await waitFor(() => expect(cellCountLabel()).toBe('1 cell'));
@@ -376,6 +400,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     for (const name of ['Update', 'Rename', 'Delete']) {
       expect(screen.getByRole('button', { name: new RegExp(`^${name}$`) })).toBeDisabled();
     }
@@ -402,6 +427,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.selectOptions(screen.getByLabelText('Saved layouts'), 'Night Wall');
     await user.click(screen.getByRole('button', { name: /^Update$/ }));
 
@@ -425,6 +451,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.selectOptions(screen.getByLabelText('Saved layouts'), 'Night Wall');
     await user.click(screen.getByRole('button', { name: /^Rename$/ }));
 
@@ -447,6 +474,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.selectOptions(screen.getByLabelText('Saved layouts'), 'Night Wall');
     await user.click(screen.getByRole('button', { name: /^Delete$/ }));
 
@@ -475,6 +503,7 @@ describe('MontagePage (modern) — saved layouts', () => {
     renderRoute('/montage');
     await findWall();
 
+    await openLayout(user);
     await user.selectOptions(screen.getByLabelText('Saved layouts'), 'Night Wall');
     await user.click(screen.getByRole('button', { name: /^Delete$/ }));
 

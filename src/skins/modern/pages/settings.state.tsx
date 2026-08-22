@@ -3,7 +3,6 @@ import { clsx } from 'clsx';
 import { Trans, useTranslation } from 'react-i18next';
 import {
   Activity,
-  Layers,
   Play,
   Power,
   RefreshCw,
@@ -17,16 +16,26 @@ import {
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
-import { Panel } from '@/components/common/Panel';
+import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { QueryState } from '@/components/common/QueryState';
+import { fieldClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { parseDefinition, type DaemonAction, type State } from '@/api/states';
 import { isProtectedState, useRunStatePage } from '@/features/state/useRunStatePage';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
-/** Settings → Run State — Mission Control. */
+const heading = 'text-sm font-medium text-fg';
+const th = 'px-3 py-2 text-start text-xs font-medium text-fg-dim';
+
+/**
+ * Settings → Run State — the modern skin.
+ *
+ * Three sections separated by space rather than by three panel frames; the
+ * only colour is which state is active and the two verbs that interrupt
+ * recording (docs/DESIGN.md).
+ */
 export default function SettingsStatePage() {
   const { t } = useTranslation();
   const rs = useRunStatePage();
@@ -40,26 +49,26 @@ export default function SettingsStatePage() {
   return (
     <AppShell title={t('Run State')}>
       <main className="flex-1 p-6 overflow-auto">
-        <div className="grid grid-cols-12 gap-6">
+        <div className="mx-auto w-full max-w-5xl space-y-10">
           {/* Daemon supervisor controls */}
-          <div className="col-span-12">
-            <Panel title={t('Daemon supervisor')} icon={<Power size={16} />}>
-              <p className="text-xs text-text-muted mb-3">
-                <Trans>
-                  Toggles the ZoneMinder process tree via <code className="font-mono">zmpkg.pl</code>. Stop will
-                  halt recording across every monitor; Restart re-launches the supervisor without changing per-monitor
-                  configuration.
-                </Trans>
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <RequirePerm feature="system" level="Edit" fallback="message">
+          <section className="space-y-3">
+            <h2 className={heading}>{t('Daemon supervisor')}</h2>
+            <p className="max-w-prose text-xs text-fg-dim">
+              <Trans>
+                Toggles the ZoneMinder process tree via <code className="font-mono">zmpkg.pl</code>. Stop will
+                halt recording across every monitor; Restart re-launches the supervisor without changing per-monitor
+                configuration.
+              </Trans>
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              <RequirePerm feature="system" level="Edit" fallback="message">
                 <DaemonButton
                   action="start"
                   icon={<Play size={12} />}
                   label={t('Start')}
                   onClick={() => rs.setDaemonTarget('start')}
                   disabled={busy}
-                  tone="emerald"
+                  tone="neutral"
                 />
                 <DaemonButton
                   action="stop"
@@ -67,7 +76,7 @@ export default function SettingsStatePage() {
                   label={t('Stop')}
                   onClick={() => rs.setDaemonTarget('stop')}
                   disabled={busy}
-                  tone="crimson"
+                  tone="danger"
                 />
                 <DaemonButton
                   action="restart"
@@ -75,220 +84,212 @@ export default function SettingsStatePage() {
                   label={t('Restart')}
                   onClick={() => rs.setDaemonTarget('restart')}
                   disabled={busy}
-                  tone="amber"
+                  tone="danger"
                 />
-                </RequirePerm>
-                {rs.daemonPending && (
-                  <span className="flex items-center gap-1 text-xs text-text-muted">
-                    <Loader2 size={11} className="animate-spin" />
-                    {t('Sending…')}
-                  </span>
-                )}
-                {rs.daemonSuccess && (
-                  <span className="flex items-center gap-1 text-xs text-emerald-400">
-                    <CheckCircle2 size={12} />
-                    {rs.daemonMessage ?? t('OK')}
-                  </span>
-                )}
-                {rs.daemonError && (
-                  <span className="text-xs text-crimson" role="alert">
-                    {rs.daemonError.message ?? t('Failed')}
-                  </span>
-                )}
-              </div>
-            </Panel>
-          </div>
+              </RequirePerm>
+              {rs.daemonPending && (
+                <span className="flex items-center gap-1 text-xs text-fg-dim">
+                  <Loader2 size={11} className="animate-spin" />
+                  {t('Sending…')}
+                </span>
+              )}
+              {rs.daemonSuccess && (
+                <span className="flex items-center gap-1 text-xs text-ok">
+                  <CheckCircle2 size={12} aria-hidden />
+                  {rs.daemonMessage ?? t('OK')}
+                </span>
+              )}
+              {rs.daemonError && (
+                <span className="text-xs text-danger" role="alert">
+                  {rs.daemonError.message ?? t('Failed')}
+                </span>
+              )}
+            </div>
+          </section>
 
-          {/* Saved states list */}
-          <div className="col-span-12 lg:col-span-8">
-            <Panel
-              title={t('Saved states')}
-              icon={<Layers size={16} />}
-              noPadding
-            >
-              <QueryState
-                isLoading={rs.statesLoading}
-                isError={rs.statesIsError}
-                error={rs.statesRawError}
-                onRetry={rs.refetchStates}
-                empty={states.length === 0}
-                emptyMessage={t('No saved states yet. Snapshot the current monitor configuration on the right.')}
-              >
-                <table className="w-full text-xs">
-                  <thead className="bg-surface/70 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-muted">
-                    <tr>
-                      <th className="px-3 py-2 text-start">{t('Name')}</th>
-                      <th className="px-3 py-2 text-start">{t('Active')}</th>
-                      <th className="px-3 py-2 text-start">{t('Definition')}</th>
-                      <th className="px-3 py-2 text-end">{t('Actions')}</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {states.map((s) => {
-                      const isProtected = isProtectedState(s.name);
-                      const parsed = parseDefinition(s.definition);
-                      const preview =
-                        parsed.length === 0
-                          ? '—'
-                          : t('{{count}} monitor', { count: parsed.length });
-                      const renaming = rs.renameTarget?.id === s.id;
-                      const expanded = rs.previewId === s.id;
-                      return (
-                        <Fragment key={s.id}>
-                        <tr
-                          className="border-b border-border-subtle/40 hover:bg-surface/40"
-                        >
-                          <td className="px-3 py-2 font-medium text-text-primary">
-                            {renaming ? (
-                              <input
-                                value={rs.renameValue}
-                                onChange={(e) => rs.setRenameValue(e.target.value)}
-                                onKeyDown={(e) => {
-                                  if (e.key === 'Enter') rs.commitRename();
-                                  if (e.key === 'Escape') rs.cancelRename();
-                                }}
-                                onBlur={rs.commitRename}
-                                autoFocus
-                                aria-label={t('New name for {{name}}', { name: s.name })}
-                                className="w-40 px-2 py-1 text-xs bg-surface border border-cyan/50 rounded text-text-primary focus:outline-none"
-                              />
-                            ) : (
-                              <span className="inline-flex items-center gap-1">
-                                {s.name}
-                                {canEdit && !isProtected && (
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-10 items-start">
+            {/* Saved states list */}
+            <section className="lg:col-span-2 space-y-3">
+              <h2 className={heading}>{t('Saved states')}</h2>
+              <div className="rounded border border-border-subtle overflow-hidden">
+                <QueryState
+                  isLoading={rs.statesLoading}
+                  isError={rs.statesIsError}
+                  error={rs.statesRawError}
+                  onRetry={rs.refetchStates}
+                  empty={states.length === 0}
+                  emptyMessage={t('No saved states yet. Snapshot the current monitor configuration on the right.')}
+                >
+                  <table className="w-full text-xs">
+                    <thead className="border-b border-border-subtle">
+                      <tr>
+                        <th className={th}>{t('Name')}</th>
+                        <th className={th}>{t('Active')}</th>
+                        <th className={th}>{t('Definition')}</th>
+                        <th className={clsx(th, 'text-end')}>{t('Actions')}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {states.map((s) => {
+                        const isProtected = isProtectedState(s.name);
+                        const parsed = parseDefinition(s.definition);
+                        const preview =
+                          parsed.length === 0
+                            ? '—'
+                            : t('{{count}} monitor', { count: parsed.length });
+                        const renaming = rs.renameTarget?.id === s.id;
+                        const expanded = rs.previewId === s.id;
+                        return (
+                          <Fragment key={s.id}>
+                            <tr className="border-b border-border-subtle last:border-b-0 hover:bg-surface-2">
+                              <td className="px-3 py-2 font-medium text-fg">
+                                {renaming ? (
+                                  <input
+                                    value={rs.renameValue}
+                                    onChange={(e) => rs.setRenameValue(e.target.value)}
+                                    onKeyDown={(e) => {
+                                      if (e.key === 'Enter') rs.commitRename();
+                                      if (e.key === 'Escape') rs.cancelRename();
+                                    }}
+                                    onBlur={rs.commitRename}
+                                    autoFocus
+                                    aria-label={t('New name for {{name}}', { name: s.name })}
+                                    className={clsx(fieldClasses('sm'), 'w-40 border-accent')}
+                                  />
+                                ) : (
+                                  <span className="inline-flex items-center gap-1">
+                                    {s.name}
+                                    {canEdit && !isProtected && (
+                                      <button
+                                        type="button"
+                                        onClick={() => rs.startRename(s)}
+                                        aria-label={t('Rename {{name}}', { name: s.name })}
+                                        className="p-0.5 rounded text-fg-dim hover:text-fg"
+                                      >
+                                        <Pencil size={10} />
+                                      </button>
+                                    )}
+                                  </span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2">
+                                {s.is_active === 1 ? (
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-ok/12 text-ok text-xs">
+                                    <Activity size={10} aria-hidden />
+                                    {t('Active')}
+                                  </span>
+                                ) : (
+                                  <span className="text-fg-dim">—</span>
+                                )}
+                              </td>
+                              <td className="px-3 py-2 text-fg-muted max-w-[18rem]">
+                                {parsed.length === 0 ? preview : (
                                   <button
                                     type="button"
-                                    onClick={() => rs.startRename(s)}
-                                    aria-label={t('Rename {{name}}', { name: s.name })}
-                                    className="p-0.5 rounded text-text-muted hover:text-cyan"
+                                    onClick={() => rs.togglePreview(s.id)}
+                                    aria-expanded={expanded}
+                                    aria-label={t('Show definition of {{name}}', { name: s.name })}
+                                    className="inline-flex items-center gap-1 hover:text-fg"
                                   >
-                                    <Pencil size={10} />
+                                    {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} className="rtl:-scale-x-100" />}
+                                    {preview}
                                   </button>
                                 )}
-                              </span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2">
-                            {s.is_active === 1 ? (
-                              <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500/15 text-emerald-400 text-[10px] font-mono uppercase">
-                                <Activity size={10} />
-                                {t('Active')}
-                              </span>
-                            ) : (
-                              <span className="text-text-muted text-[10px] font-mono uppercase">—</span>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-text-muted font-mono max-w-[18rem]">
-                            {parsed.length === 0 ? preview : (
-                              <button
-                                type="button"
-                                onClick={() => rs.togglePreview(s.id)}
-                                aria-expanded={expanded}
-                                aria-label={t('Show definition of {{name}}', { name: s.name })}
-                                className="inline-flex items-center gap-1 hover:text-text-primary"
-                              >
-                                {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} className="rtl:-scale-x-100" />}
-                                {preview}
-                              </button>
-                            )}
-                          </td>
-                          <td className="px-3 py-2 text-end">
-                            <RequirePerm feature="system" level="Edit">
-                            <div className="inline-flex items-center gap-1">
-                              <button
-                                onClick={() => rs.setApplyTarget(s)}
-                                disabled={busy || s.is_active === 1}
-                                aria-label={t('Apply state {{name}}', { name: s.name })}
-                                className={clsx(
-                                  'inline-flex items-center gap-1 px-2 py-1 rounded text-[11px] font-mono uppercase tracking-wider border transition-colors',
-                                  s.is_active === 1
-                                    ? 'border-border-subtle text-text-muted cursor-not-allowed opacity-60'
-                                    : 'border-cyan/40 text-cyan hover:bg-cyan/15',
-                                )}
-                              >
-                                <Play size={10} />
-                                {t('Apply')}
-                              </button>
-                              <button
-                                onClick={() => rs.setDeleteTarget(s)}
-                                disabled={busy || isProtected}
-                                aria-label={t('Delete state {{name}}', { name: s.name })}
-                                title={isProtected ? t('"default" cannot be deleted') : t('Delete state')}
-                                className={clsx(
-                                  'p-1 rounded transition-colors',
-                                  isProtected
-                                    ? 'text-text-dim cursor-not-allowed'
-                                    : 'text-text-muted hover:text-crimson hover:bg-crimson/10',
-                                )}
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                            </RequirePerm>
-                          </td>
-                        </tr>
-                        {expanded && <DefinitionPreviewRow state={s} rs={rs} />}
-                        </Fragment>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </QueryState>
-            </Panel>
-          </div>
+                              </td>
+                              <td className="px-3 py-2 text-end">
+                                <RequirePerm feature="system" level="Edit">
+                                  <div className="inline-flex items-center gap-1">
+                                    <button
+                                      onClick={() => rs.setApplyTarget(s)}
+                                      disabled={busy || s.is_active === 1}
+                                      aria-label={t('Apply state {{name}}', { name: s.name })}
+                                      className={clsx(
+                                        'inline-flex items-center gap-1 px-2 py-1 rounded text-xs border transition-colors',
+                                        s.is_active === 1
+                                          ? 'border-border-subtle text-fg-faint cursor-not-allowed'
+                                          : 'border-border-subtle text-fg-muted hover:text-fg hover:border-border',
+                                      )}
+                                    >
+                                      <Play size={10} aria-hidden />
+                                      {t('Apply')}
+                                    </button>
+                                    <button
+                                      onClick={() => rs.setDeleteTarget(s)}
+                                      disabled={busy || isProtected}
+                                      aria-label={t('Delete state {{name}}', { name: s.name })}
+                                      title={isProtected ? t('"default" cannot be deleted') : t('Delete state')}
+                                      className={clsx(
+                                        'p-1 rounded transition-colors',
+                                        isProtected
+                                          ? 'text-fg-faint cursor-not-allowed'
+                                          : 'text-fg-dim hover:text-danger hover:bg-danger/10',
+                                      )}
+                                    >
+                                      <Trash2 size={12} />
+                                    </button>
+                                  </div>
+                                </RequirePerm>
+                              </td>
+                            </tr>
+                            {expanded && <DefinitionPreviewRow state={s} rs={rs} />}
+                          </Fragment>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </QueryState>
+              </div>
+            </section>
 
-          {/* Save current */}
-          <div className="col-span-12 lg:col-span-4">
-            <Panel title={t('Save current as…')} icon={<Save size={16} />}>
+            {/* Save current */}
+            <section className="space-y-3">
+              <h2 className={heading}>{t('Save current as…')}</h2>
               <RequirePerm feature="system" level="Edit" fallback="message">
-              <p className="text-xs text-text-muted mb-3">
-                <Trans>
-                  Snapshots every monitor's <span className="font-mono">Capturing</span>/
-                  <span className="font-mono">Analysing</span>/<span className="font-mono">Recording</span> mode
-                  into a new named state.
-                </Trans>
-              </p>
-              <form onSubmit={rs.handleSaveCurrent} className="space-y-2">
-                <input
-                  value={rs.newStateName}
-                  onChange={(e) => rs.setNewStateName(e.target.value)}
-                  placeholder={t('e.g. Away, Holiday')}
-                  aria-label={t('New state name')}
-                  className="w-full px-2 py-1.5 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
-                />
-                <button
-                  type="submit"
-                  disabled={
-                    !rs.newStateName.trim() ||
-                    rs.savePending ||
-                    rs.monitorsLoading ||
-                    monitors.length === 0
-                  }
-                  className={clsx(
-                    'w-full flex items-center justify-center gap-1 px-3 py-1.5 text-xs font-medium rounded border-2',
-                    'border-cyan/60 bg-cyan/15 text-cyan',
-                    'hover:bg-cyan/25 transition-colors',
-                    'disabled:opacity-50 disabled:cursor-not-allowed',
-                  )}
-                >
-                  {rs.savePending ? (
-                    <Loader2 size={12} className="animate-spin" />
-                  ) : (
-                    <Save size={12} />
-                  )}
-                  {t('Save snapshot')}
-                </button>
-                {rs.saveError && (
-                  <p className="text-[11px] text-crimson" role="alert">
-                    {rs.saveError.message ?? t('Save failed')}
-                  </p>
-                )}
-                <p className="text-[10px] text-text-muted">
-                  {t('{{count}} monitor will be captured.', { count: monitors.length })}
+                <p className="text-xs text-fg-dim">
+                  <Trans>
+                    Snapshots every monitor's <span className="font-mono">Capturing</span>/
+                    <span className="font-mono">Analysing</span>/<span className="font-mono">Recording</span> mode
+                    into a new named state.
+                  </Trans>
                 </p>
-              </form>
+                <form onSubmit={rs.handleSaveCurrent} className="space-y-2">
+                  <input
+                    value={rs.newStateName}
+                    onChange={(e) => rs.setNewStateName(e.target.value)}
+                    placeholder={t('e.g. Away, Holiday')}
+                    aria-label={t('New state name')}
+                    className={fieldClasses('sm')}
+                  />
+                  <Button
+                    type="submit"
+                    variant="primary"
+                    size="sm"
+                    className="w-full"
+                    disabled={
+                      !rs.newStateName.trim() ||
+                      rs.savePending ||
+                      rs.monitorsLoading ||
+                      monitors.length === 0
+                    }
+                  >
+                    {rs.savePending ? (
+                      <Loader2 size={12} className="animate-spin" />
+                    ) : (
+                      <Save size={12} aria-hidden />
+                    )}
+                    {t('Save snapshot')}
+                  </Button>
+                  {rs.saveError && (
+                    <p className="text-xs text-danger" role="alert">
+                      {rs.saveError.message ?? t('Save failed')}
+                    </p>
+                  )}
+                  <p className="text-xs text-fg-dim">
+                    {t('{{count}} monitor will be captured.', { count: monitors.length })}
+                  </p>
+                </form>
               </RequirePerm>
-            </Panel>
+            </section>
           </div>
         </div>
       </main>
@@ -359,23 +360,20 @@ interface DaemonButtonProps {
   label: string;
   onClick: () => void;
   disabled: boolean;
-  tone: 'emerald' | 'crimson' | 'amber';
+  /** `danger` for the two verbs that interrupt recording; everything else is quiet. */
+  tone: 'neutral' | 'danger';
 }
 
 function DaemonButton({ icon, label, onClick, disabled, tone }: DaemonButtonProps) {
-  const toneCls =
-    tone === 'emerald'
-      ? 'border-emerald-500/40 text-emerald-300 hover:bg-emerald-500/15'
-      : tone === 'crimson'
-        ? 'border-crimson/40 text-crimson hover:bg-crimson/15'
-        : 'border-amber/40 text-amber hover:bg-amber/15';
   return (
     <button
       onClick={onClick}
       disabled={disabled}
       className={clsx(
-        'inline-flex items-center gap-1 px-3 py-1.5 rounded font-mono text-[11px] uppercase tracking-wider border-2 transition-colors',
-        toneCls,
+        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded border text-sm transition-colors',
+        tone === 'danger'
+          ? 'border-danger/40 text-danger hover:bg-danger/10'
+          : 'border-border-subtle text-fg-muted hover:text-fg hover:border-border',
         disabled && 'opacity-50 cursor-not-allowed',
       )}
     >
@@ -390,22 +388,22 @@ function DefinitionPreviewRow({ state, rs }: { state: State; rs: ReturnType<type
   const { t } = useTranslation();
   const rows = rs.definitionRows(state);
   return (
-    <tr className="bg-panel/30 border-b border-border-subtle/40">
+    <tr className="bg-surface-2 border-b border-border-subtle">
       <td colSpan={4} className="px-3 py-2">
-        <table className="w-full text-[11px]" aria-label={t('Definition of {{name}}', { name: state.name })}>
-          <thead className="text-[10px] uppercase tracking-wider text-text-muted">
+        <table className="w-full text-xs" aria-label={t('Definition of {{name}}', { name: state.name })}>
+          <thead className="text-fg-dim">
             <tr>
-              <th className="text-start px-2 py-1">{t('Monitor')}</th>
-              <th className="text-start px-2 py-1">{t('Capturing')}</th>
-              <th className="text-start px-2 py-1">{t('Analysing')}</th>
-              <th className="text-start px-2 py-1">{t('Recording')}</th>
+              <th className="text-start px-2 py-1 font-medium">{t('Monitor')}</th>
+              <th className="text-start px-2 py-1 font-medium">{t('Capturing')}</th>
+              <th className="text-start px-2 py-1 font-medium">{t('Analysing')}</th>
+              <th className="text-start px-2 py-1 font-medium">{t('Recording')}</th>
             </tr>
           </thead>
           <tbody>
             {rows.map((r) => (
-              <tr key={r.id} className={clsx(!r.known && 'text-text-muted italic')}>
+              <tr key={r.id} className={clsx(!r.known && 'text-fg-dim italic')}>
                 <td className="px-2 py-1">
-                  <span className="font-mono text-text-muted me-1">#{r.id}</span>
+                  <span className="font-mono tabular-nums text-fg-dim me-1">#{r.id}</span>
                   {r.name}
                   {!r.known && <span className="ms-1">({t('no longer exists')})</span>}
                 </td>

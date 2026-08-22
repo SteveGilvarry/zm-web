@@ -44,15 +44,15 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
 
   const buttonCls = variant === 'classic'
     ? 'px-3 py-1.5 rounded border border-zinc-300 bg-white text-sm text-zinc-700 hover:bg-zinc-50 inline-flex items-center gap-1.5'
-    : 'px-3 py-2 rounded-lg border border-border-subtle bg-surface text-sm text-text-secondary hover:text-text-primary hover:border-cyan/50 inline-flex items-center gap-1.5 transition-colors';
+    : 'px-2 py-1.5 rounded border border-border-subtle bg-surface text-xs text-fg-muted hover:text-fg hover:border-border inline-flex items-center gap-1.5 transition-colors';
 
   const panelCls = variant === 'classic'
     ? 'absolute right-0 top-full mt-1 z-20 w-56 bg-white border border-zinc-300 rounded shadow-lg py-1 text-sm text-zinc-800'
-    : 'absolute right-0 top-full mt-1 z-20 w-56 bg-panel border border-border-subtle rounded-lg shadow-xl py-1 text-sm text-text-primary';
+    : 'absolute end-0 top-full mt-1 z-20 w-56 bg-surface border border-border rounded shadow-[var(--elevation-2)] py-1 text-sm text-fg';
 
   const itemCls = variant === 'classic'
     ? 'flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-zinc-50 cursor-pointer'
-    : 'flex items-center justify-between gap-2 px-3 py-1.5 hover:bg-surface cursor-pointer';
+    : 'flex items-center justify-between gap-2 px-3 py-1 hover:bg-surface-2 cursor-pointer';
 
   return (
     <div ref={wrapRef} className="relative">
@@ -63,9 +63,9 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
         aria-expanded={open}
         className={buttonCls}
       >
-        <Columns3 size={14} />
+        <Columns3 size={12} />
         {t('Columns')}
-        <span className={clsx('font-mono text-xs', variant === 'classic' ? 'text-zinc-500' : 'text-text-muted')}>
+        <span className={clsx('font-mono tabular-nums text-xs', variant === 'classic' ? 'text-zinc-500' : 'text-fg-dim')}>
           ({visibleCount})
         </span>
       </button>
@@ -99,7 +99,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
           <div
             className={clsx(
               'border-t mt-1 pt-1 px-3 flex items-center justify-between gap-2 text-xs',
-              variant === 'classic' ? 'border-zinc-200 text-zinc-500' : 'border-border-subtle text-text-muted',
+              variant === 'classic' ? 'border-zinc-200 text-zinc-500' : 'border-border-subtle text-fg-dim',
             )}
           >
             <button
@@ -107,7 +107,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
               onClick={showAll}
               className={clsx(
                 'py-1 hover:underline',
-                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-cyan',
+                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-fg',
               )}
             >
               {t('Show all')}
@@ -117,7 +117,7 @@ export function ColumnChooser({ variant = 'modern' }: ColumnChooserProps) {
               onClick={resetDefaults}
               className={clsx(
                 'py-1 hover:underline',
-                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-cyan',
+                variant === 'classic' ? 'hover:text-cyan-700' : 'hover:text-fg',
               )}
             >
               {t('Defaults')}

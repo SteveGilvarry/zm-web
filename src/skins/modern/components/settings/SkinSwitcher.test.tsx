@@ -27,18 +27,18 @@ describe('SkinSwitcher — skin choice', () => {
     renderWithProviders(<SkinSwitcher />);
     expect(skinButton(MODERN)).toHaveAccessibleName(/adaptive layouts, live thumbnails/);
     expect(skinButton(CLASSIC)).toHaveAccessibleName(/top nav and dense tables/);
-    expect(skinButton(MODERN)).toHaveAccessibleName(/ACTIVE/);
-    expect(skinButton(CLASSIC)).not.toHaveAccessibleName(/ACTIVE/);
+    expect(skinButton(MODERN)).toHaveAccessibleName(/Active/);
+    expect(skinButton(CLASSIC)).not.toHaveAccessibleName(/Active/);
   });
 
-  it('writes the chosen skin to the ui store and moves the ACTIVE marker', async () => {
+  it('writes the chosen skin to the ui store and moves the Active marker', async () => {
     const user = userEvent.setup();
     renderWithProviders(<SkinSwitcher />);
     await user.click(skinButton(CLASSIC));
 
     expect(useUiStore.getState().skin).toBe('classic');
-    expect(skinButton(CLASSIC)).toHaveAccessibleName(/ACTIVE/);
-    expect(skinButton(MODERN)).not.toHaveAccessibleName(/ACTIVE/);
+    expect(skinButton(CLASSIC)).toHaveAccessibleName(/Active/);
+    expect(skinButton(MODERN)).not.toHaveAccessibleName(/Active/);
   });
 
   it('re-picking the active skin leaves it selected', async () => {

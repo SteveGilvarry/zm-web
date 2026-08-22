@@ -6,6 +6,8 @@ import { Info, Loader2, Shield } from 'lucide-react';
 
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
+import { TextField } from '@/components/common/TextField';
+import { fieldClasses, LABEL } from '@/components/common/styles';
 import { PermissionMatrix } from '@/features/users/PermissionMatrix';
 import { buildTopLevelRows } from '@/features/users/permissions';
 import { USER_FIELDS_ISSUE_URL, USERNAME_PATTERN_SOURCE, useAccountForm } from '@/features/users/useAccountForm';
@@ -15,6 +17,9 @@ import type { User } from '@/types';
 import { PermPill } from './PermPill';
 
 type EditorTab = 'account' | 'global' | 'groups' | 'monitors';
+
+/** A caveat about what this backend stores — informational, so it stays neutral. */
+const NOTE = 'flex items-start gap-2 rounded border border-border-subtle bg-surface-2 p-3 text-xs text-fg-muted';
 
 interface UserEditorProps {
   editing: User | null;
@@ -59,8 +64,8 @@ export function UserEditor({ editing, onClose, mode = 'admin', onChangePassword 
                 className={clsx(
                   'px-3 py-2 text-sm border-b-2 -mb-px transition-colors',
                   tab === key
-                    ? 'border-cyan text-cyan'
-                    : 'border-transparent text-text-muted hover:text-text-primary',
+                    ? 'border-accent text-accent'
+                    : 'border-transparent text-fg-dim hover:text-fg',
                 )}
               >
                 {label}
@@ -111,24 +116,21 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
   return (
     <div className="space-y-4">
       {editing && selfEdit && (
-        <div role="note" className="flex items-start gap-2 text-xs text-text-muted bg-panel border border-border-subtle rounded p-3">
-          <Info size={14} className="mt-0.5 shrink-0 text-amber" />
+        <div role="note" className={NOTE}>
+          <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
           <p className="leading-relaxed">
             {t('You are editing your own account. Email saves here and your password changes below; language and home view are not stored by this zm_api build.')}
           </p>
         </div>
       )}
       {editing && !selfEdit && (
-        <div
-          role="note"
-          className="flex items-start gap-2 text-xs text-text-muted bg-panel border border-border-subtle rounded p-3"
-        >
-          <Info size={14} className="mt-0.5 shrink-0 text-amber" />
+        <div role="note" className={NOTE}>
+          <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
           <p className="leading-relaxed">
             <Trans>
               This zm_api build only saves <strong>Email</strong> and <strong>Enabled</strong> on an
               existing user. Password, name, phone and permission levels are disabled until{' '}
-              <a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-cyan underline">
+              <a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-accent underline">
                 zm-api#23
               </a>{' '}
               lands; per-group and per-monitor grids still save.
@@ -136,40 +138,36 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           </p>
         </div>
       )}
-      <div>
-        <label className="block text-sm font-medium text-text-secondary mb-1.5">{t('Username')}</label>
+
+      {/* Not a `TextField`: the pattern message has to announce itself, and
+          the primitive's error line carries no live role. */}
+      <div className="flex flex-col gap-1.5">
+        <label htmlFor="user-username" className={LABEL}>{t('Username')}</label>
         <input
+          id="user-username"
           type="text"
           value={formData.username}
           onChange={(e) => setField('username', e.target.value)}
           disabled={!!editing}
           pattern={editing ? undefined : USERNAME_PATTERN_SOURCE}
           aria-invalid={!!usernameError}
-          className={clsx(
-            'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg',
-            'text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
-            editing && 'opacity-60 cursor-not-allowed',
-            usernameError && 'border-crimson/60',
-          )}
+          className={clsx(fieldClasses('md', !!usernameError), editing && lockedCls)}
           placeholder={t('username')}
         />
-        {usernameError && <p role="alert" className="mt-1 text-[11px] text-crimson">{usernameError}</p>}
+        {usernameError && <p role="alert" className="text-xs text-danger">{usernameError}</p>}
       </div>
 
       {onChangePassword ? (
-        <div className="flex items-center justify-between gap-4 rounded border border-border-subtle bg-panel p-3">
-          <p className="text-xs text-text-muted">
+        <div className="flex items-center justify-between gap-4 rounded border border-border-subtle bg-surface-2 p-3">
+          <p className="text-xs text-fg-muted">
             {t('Your own password is changed through the self-service form.')}
           </p>
           <Button onClick={onChangePassword}>{t('Change password')}</Button>
         </div>
       ) : (
-      <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">
-            {t('Password')}
-          </label>
-          <input
+        <div className="grid grid-cols-2 gap-4">
+          <TextField
+            label={t('Password')}
             type="password"
             value={formData.password}
             onChange={(e) => setField('password', e.target.value)}
@@ -177,81 +175,57 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
             disabled={isLocked('password')}
             title={isLocked('password') ? lockedTitle : undefined}
             aria-describedby={isLocked('password') ? 'user-fields-locked' : undefined}
-            className={clsx(
-              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
-              isLocked('password') && lockedCls,
-            )}
+            className={clsx(isLocked('password') && lockedCls)}
             placeholder={editing ? t('Not editable yet') : t('Password')}
           />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">
-            {t('Confirm Password')}
-          </label>
-          <input
+          <TextField
+            label={t('Confirm Password')}
             type="password"
             value={formData.confirmPassword}
             onChange={(e) => setField('confirmPassword', e.target.value)}
             autoComplete="new-password"
             disabled={isLocked('password')}
             title={isLocked('password') ? lockedTitle : undefined}
-            className={clsx(
-              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
-              isLocked('password') && lockedCls,
-            )}
+            className={clsx(isLocked('password') && lockedCls)}
             placeholder={t('Confirm password')}
           />
         </div>
-      </div>
       )}
 
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">{t('Full Name')}</label>
-          <input
-            type="text"
-            value={formData.name}
-            onChange={(e) => setField('name', e.target.value)}
-            disabled={isLocked('name')}
-            title={isLocked('name') ? lockedTitle : undefined}
-            className={clsx(
-              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
-              isLocked('name') && lockedCls,
-            )}
-            placeholder={t('Full name')}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">{t('Email')}</label>
-          <input
-            type="email"
-            value={formData.email}
-            onChange={(e) => setField('email', e.target.value)}
-            className="w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors"
-            placeholder="user@example.com"
-          />
-        </div>
+        <TextField
+          label={t('Full Name')}
+          type="text"
+          value={formData.name}
+          onChange={(e) => setField('name', e.target.value)}
+          disabled={isLocked('name')}
+          title={isLocked('name') ? lockedTitle : undefined}
+          className={clsx(isLocked('name') && lockedCls)}
+          placeholder={t('Full name')}
+        />
+        <TextField
+          label={t('Email')}
+          type="email"
+          value={formData.email}
+          onChange={(e) => setField('email', e.target.value)}
+          placeholder="user@example.com"
+        />
       </div>
 
       <div className="grid grid-cols-2 gap-4">
-        <div>
-          <label className="block text-sm font-medium text-text-secondary mb-1.5">{t('Phone')}</label>
-          <input
-            type="tel"
-            value={formData.phone || ''}
-            onChange={(e) => setField('phone', e.target.value)}
-            disabled={isLocked('phone')}
-            title={isLocked('phone') ? lockedTitle : undefined}
-            className={clsx(
-              'w-full px-3 py-2 bg-panel border border-border-subtle rounded-lg text-text-primary text-sm focus:outline-none focus:border-cyan/50 transition-colors',
-              isLocked('phone') && lockedCls,
-            )}
-            placeholder={t('Phone')}
-          />
-        </div>
+        <TextField
+          label={t('Phone')}
+          type="tel"
+          value={formData.phone || ''}
+          onChange={(e) => setField('phone', e.target.value)}
+          disabled={isLocked('phone')}
+          title={isLocked('phone') ? lockedTitle : undefined}
+          className={clsx(isLocked('phone') && lockedCls)}
+          placeholder={t('Phone')}
+        />
         <div className="flex items-end">
           <div className="flex items-center justify-between w-full pb-2">
-            <label className="text-sm font-medium text-text-secondary">{t('Enabled')}</label>
+            <span className="text-sm text-fg-muted">{t('Enabled')}</span>
             <button
               onClick={toggleEnabled}
               role="switch"
@@ -262,7 +236,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
               className={clsx(
                 selfEdit && 'opacity-60 cursor-not-allowed',
                 'relative w-10 h-5 rounded-full transition-colors',
-                formData.enabled === 1 ? 'bg-cyan' : 'bg-border',
+                formData.enabled === 1 ? 'bg-accent' : 'bg-border',
               )}
             >
               <span
@@ -277,35 +251,23 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
       </div>
 
       {error && (
-        <div className="text-xs text-crimson bg-crimson/10 border border-crimson/20 rounded p-2">
+        <div className="rounded border border-danger/30 bg-danger/10 p-2 text-xs text-danger">
           {error}
         </div>
       )}
 
       {!editing && (
-        <p className="text-[11px] text-text-muted leading-relaxed">
+        <p className="text-xs leading-relaxed text-fg-dim">
           {t('New users are created with default permissions. After saving, re-open the user to set Global / Group / Monitor permissions.')}
         </p>
       )}
 
       <div className="flex items-center justify-end gap-3 pt-2">
-        <button
-          onClick={onCancel}
-          className="px-4 py-2 rounded-lg text-sm font-medium bg-panel border border-border-subtle text-text-secondary hover:text-text-primary transition-colors"
-        >
-          {t('Cancel')}
-        </button>
-        <button
-          onClick={submit}
-          disabled={submitDisabled}
-          className={clsx(
-            'px-4 py-2 rounded-lg text-sm font-medium bg-cyan text-void hover:bg-cyan/80 transition-colors flex items-center gap-2',
-            submitDisabled && 'opacity-50 cursor-not-allowed',
-          )}
-        >
+        <Button onClick={onCancel}>{t('Cancel')}</Button>
+        <Button variant="primary" onClick={submit} disabled={submitDisabled}>
           {isSaving && <Loader2 size={14} className="animate-spin" />}
           {editing ? t('Save Changes') : t('Create User')}
-        </button>
+        </Button>
       </div>
     </div>
   );
@@ -317,13 +279,13 @@ function GlobalPermissionsView({ user }: { user: User }) {
   const rows = useMemo(() => buildTopLevelRows(user), [user]);
   return (
     <div className="space-y-3">
-      <div className="flex items-start gap-2 text-xs text-text-muted bg-panel border border-border-subtle rounded p-3">
-        <Info size={14} className="mt-0.5 shrink-0 text-cyan" />
+      <div role="note" className={NOTE}>
+        <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
         <p className="leading-relaxed">
           <Trans>
             Top-level permissions are <strong>read-only</strong> here — the backend
             (<code>CreateUserRequest</code> / <code>UpdateUserRequest</code>) does not yet accept
-            these fields (<a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-cyan underline">zm-api#23</a>).
+            these fields (<a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-accent underline">zm-api#23</a>).
             Use the <em>Groups</em> and <em>Monitors</em> tabs for per-resource
             overrides, which persist via the dedicated permission endpoints.
           </Trans>
@@ -341,11 +303,11 @@ function GroupPermissionsTab({ userId }: { userId: number }) {
   const { isLoading, hasGroups, rows, setLevel } = useGroupPermissions(userId);
 
   if (isLoading) {
-    return <div className="p-4 text-sm text-text-muted">{t('Loading…')}</div>;
+    return <div className="p-4 text-sm text-fg-dim">{t('Loading…')}</div>;
   }
   if (!hasGroups) {
     return (
-      <div className="p-4 text-sm text-text-muted">
+      <div className="p-4 text-sm text-fg-dim">
         <Trans>
           No groups defined. Create groups under <code>/groups</code> first.
         </Trans>
@@ -355,8 +317,8 @@ function GroupPermissionsTab({ userId }: { userId: number }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-text-muted">
-        <Shield size={12} className="inline -mt-0.5 me-1" />
+      <p className="text-xs text-fg-muted">
+        <Shield size={12} className="inline -mt-0.5 me-1" aria-hidden />
         <Trans>
           Per-group overrides. <strong>Inherit</strong> falls through to the global Monitors level.
         </Trans>
@@ -387,10 +349,10 @@ function MonitorPermissionsTab({ user }: { user: User }) {
   const scrollRef = useRef<HTMLDivElement>(null);
 
   if (isLoading) {
-    return <div className="p-4 text-sm text-text-muted">{t('Loading…')}</div>;
+    return <div className="p-4 text-sm text-fg-dim">{t('Loading…')}</div>;
   }
   if (!hasMonitors) {
-    return <div className="p-4 text-sm text-text-muted">{t('No monitors.')}</div>;
+    return <div className="p-4 text-sm text-fg-dim">{t('No monitors.')}</div>;
   }
 
   const matrixRows = rows.map(({ effective, ...row }) => ({
@@ -400,8 +362,8 @@ function MonitorPermissionsTab({ user }: { user: User }) {
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-text-muted">
-        <Shield size={12} className="inline -mt-0.5 me-1" />
+      <p className="text-xs text-fg-muted">
+        <Shield size={12} className="inline -mt-0.5 me-1" aria-hidden />
         <Trans>
           Per-monitor overrides. The <strong>Effective</strong> column shows the level after
           combining global Monitors → group → monitor.

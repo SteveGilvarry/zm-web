@@ -244,12 +244,12 @@ function Divider({
       )}
       style={{ touchAction: 'none' }}
     >
-      {/* Visual: a thin cyan-on-hover line; bigger hit area than the
+      {/* Visual: a thin accent-on-hover line; bigger hit area than the
           visible line so dragging is forgiving. */}
       <div
         className={clsx(
           'absolute inset-0 transition-colors',
-          'bg-border-subtle/40 group-hover/divider:bg-cyan/60',
+          'bg-border-subtle/40 group-hover/divider:bg-accent/60',
         )}
       />
     </div>
@@ -345,7 +345,7 @@ function Cell({
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
-      className="relative flex-1 min-w-0 min-h-0 bg-abyss border border-border-subtle rounded-md overflow-hidden group/cell"
+      className="relative flex-1 min-w-0 min-h-0 bg-bg-sunken border border-border-subtle rounded overflow-hidden group/cell"
     >
       {/* Content (live stream / vacant placeholder) */}
       <div className="absolute inset-0">{renderCell(monitorId, path)}</div>
@@ -356,7 +356,7 @@ function Cell({
           onClick={() => onChooseMonitor(path)}
           className={clsx(
             'absolute inset-0 flex flex-col items-center justify-center gap-2',
-            'text-text-muted hover:text-cyan hover:bg-cyan/5 transition-colors',
+            'text-fg-dim hover:text-fg hover:bg-surface transition-colors',
           )}
         >
           <Camera size={24} />
@@ -374,8 +374,8 @@ function Cell({
           title={t('Drag to reorder')}
           className={clsx(
             'absolute top-1 left-1 flex items-center justify-center',
-            'w-5 h-5 rounded backdrop-blur-sm border border-cyan/30 bg-black/50',
-            'text-cyan/80 hover:text-cyan cursor-grab active:cursor-grabbing',
+            'w-5 h-5 rounded border border-white/20 bg-black/50',
+            'text-white/70 hover:text-white cursor-grab active:cursor-grabbing',
             'opacity-0 group-hover/cell:opacity-100 transition-opacity z-10',
           )}
         >
@@ -402,7 +402,7 @@ function Cell({
         <IconBtn
           aria-label={t('Remove tile')}
           title={t('Remove tile')}
-          tone="crimson"
+          tone="danger"
           onClick={() => onClose(path)}
         >
           <X size={12} />
@@ -416,10 +416,10 @@ function Cell({
 }
 
 function DropZoneOverlay({ zone }: { zone: DropZone }) {
-  // Render a translucent cyan band on the side the operator's about to
+  // Render a translucent accent band on the side the operator's about to
   // drop into, or a centred square for swap.
   const bandClass = clsx(
-    'absolute bg-cyan/25 border-2 border-cyan transition-all pointer-events-none',
+    'absolute bg-accent/25 border-2 border-accent transition-all pointer-events-none',
     zone === 'left'   && 'top-0 start-0 bottom-0 w-1/2',
     zone === 'right'  && 'top-0 end-0 bottom-0 w-1/2',
     zone === 'top'    && 'top-0 start-0 end-0 h-1/2',
@@ -435,20 +435,22 @@ function DropZoneOverlay({ zone }: { zone: DropZone }) {
 
 function IconBtn({
   children,
-  tone = 'cyan',
+  tone = 'accent',
   ...rest
 }: {
   children: ReactNode;
-  tone?: 'cyan' | 'crimson';
+  tone?: 'accent' | 'danger';
 } & React.ButtonHTMLAttributes<HTMLButtonElement>) {
   return (
     <button
       {...rest}
+      // These sit on top of live video, so the neutral tone is white-on-scrim
+      // rather than a theme foreground; only the destructive one is coloured.
       className={clsx(
-        'p-1 rounded backdrop-blur-sm border transition-colors',
-        tone === 'crimson'
-          ? 'bg-black/50 border-crimson/30 text-crimson/80 hover:bg-crimson/20 hover:text-crimson'
-          : 'bg-black/50 border-cyan/30 text-cyan/80 hover:bg-cyan/20 hover:text-cyan',
+        'p-1 rounded border transition-colors',
+        tone === 'danger'
+          ? 'bg-black/50 border-danger/40 text-danger hover:bg-danger/20'
+          : 'bg-black/50 border-white/20 text-white/70 hover:bg-black/70 hover:text-white',
       )}
     >
       {children}

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fitToBox } from './FitBox';
+import { fitToBox } from './fitToBox';
 
 describe('fitToBox', () => {
   it('has nothing to say before the parent has been measured', () => {

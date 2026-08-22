@@ -22,11 +22,22 @@ import {
 } from '@/features/monitors/useMonitorsListPage';
 import { useDocumentTitle } from './useDocumentTitle';
 
+const field = clsx(
+  'bg-surface border border-border-subtle rounded',
+  'text-fg placeholder:text-fg-faint',
+  'focus:outline-none focus:border-accent transition-colors',
+);
+const toolBtn = 'p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-50';
+
 /**
- * Monitors list — Mission Control chrome: search, status filter, add /
- * refresh / view toggle, count line, skeleton, empty state, pagination and
- * the add-monitor dialog. The rows themselves are pluggable so the classic
- * skin can drop its table into the same frame.
+ * Monitors list — the modern frame.
+ *
+ * One query line at the top (search, status, view, refresh, add), the
+ * cameras filling everything below it, and a status bar carrying the count
+ * and the pager. The chrome used to eat two stacked rows and a count line
+ * before the first thumbnail; the cameras are the page (docs/DESIGN.md).
+ * The rows themselves are pluggable so the classic skin can drop its table
+ * into the same frame.
  */
 export function MonitorsListLayout({
   renderMonitors,
@@ -55,117 +66,100 @@ export function MonitorsListLayout({
 
   return (
     <AppShell title={t('Monitors')}>
-      <main className="flex-1 p-4 sm:p-6 overflow-auto min-w-0">
-          {/* Toolbar */}
-          <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
-            <div className="flex flex-wrap items-center gap-3">
-              {/* Search */}
-              <div className="relative">
-                <Search className="absolute start-3 top-1/2 -translate-y-1/2 w-4 h-4 text-text-muted" />
-                <input
-                  type="search"
-                  placeholder={t('Search monitors...')}
-                  aria-label={t('Search monitors')}
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className={clsx(
-                    'ps-10 pe-4 py-2 w-full sm:w-64',
-                    'bg-surface border border-border-subtle rounded-lg',
-                    'text-text-primary placeholder:text-text-muted',
-                    'focus:outline-none focus:border-cyan/50',
-                    'transition-colors'
-                  )}
-                />
-              </div>
+      <main className="flex-1 min-h-0 min-w-0 flex flex-col">
+        {/* The query line: everything you change often, in one row. */}
+        <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface overflow-x-auto">
+          <div className="relative shrink-0">
+            <Search className="absolute start-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-faint" aria-hidden />
+            <input
+              type="search"
+              placeholder={t('Search monitors...')}
+              aria-label={t('Search monitors')}
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className={clsx(field, 'ps-7 pe-2 py-1 w-44 text-sm')}
+            />
+          </div>
 
-              {/* Status Filter */}
-              <div role="group" aria-label={t('Status filter')} className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
-                {MONITORS_STATUS_FILTERS.map((status) => (
-                  <button
-                    key={status}
-                    type="button"
-                    aria-pressed={statusFilter === status}
-                    onClick={() => setStatusFilter(status)}
-                    className={clsx(
-                      'px-3 py-1.5 rounded-md text-sm font-medium transition-colors',
-                      statusFilter === status
-                        ? 'bg-cyan/20 text-cyan'
-                        : 'text-text-muted hover:text-text-primary'
-                    )}
-                  >
-                    {statusLabel(status)}
-                  </button>
-                ))}
-              </div>
-            </div>
+          <div
+            role="group"
+            aria-label={t('Status filter')}
+            className="shrink-0 flex items-center gap-0.5 rounded border border-border-subtle p-0.5"
+          >
+            {MONITORS_STATUS_FILTERS.map((status) => (
+              <button
+                key={status}
+                type="button"
+                aria-pressed={statusFilter === status}
+                onClick={() => setStatusFilter(status)}
+                className={clsx(
+                  'px-2 py-0.5 rounded text-xs transition-colors',
+                  statusFilter === status ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
+              >
+                {statusLabel(status)}
+              </button>
+            ))}
+          </div>
 
-            <div className="flex items-center gap-3">
-              {/* Add monitor */}
-              <RequirePerm feature="monitors" level="Edit">
-                <button
-                  type="button"
-                  onClick={openAdd}
-                  className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-cyan/15 border border-cyan/40 text-cyan hover:bg-cyan/25 transition-colors text-sm font-medium"
-                >
-                  <Plus size={14} aria-hidden />
-                  {t('Add monitor')}
-                </button>
-              </RequirePerm>
-
-              {/* Refresh */}
+          <div className="ms-auto flex items-center gap-2 shrink-0">
+            <div
+              role="group"
+              aria-label={t('View')}
+              className="flex items-center gap-0.5 rounded border border-border-subtle p-0.5"
+            >
               <button
                 type="button"
-                onClick={refetch}
-                aria-label={t('Refresh')}
-                title={t('Refresh')}
-                className="p-2 rounded-lg bg-surface border border-border-subtle text-text-muted hover:text-text-primary hover:border-cyan/50 transition-colors"
+                onClick={() => setViewMode('grid')}
+                aria-label={t('Grid view')}
+                aria-pressed={viewMode === 'grid'}
+                className={clsx(
+                  'p-1 rounded transition-colors',
+                  viewMode === 'grid' ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
               >
-                <RefreshCw className="w-4 h-4" />
+                <Grid3X3 className="w-4 h-4" />
               </button>
-
-              {/* View Toggle */}
-              <div role="group" aria-label={t('View')} className="flex items-center gap-1 p-1 bg-surface border border-border-subtle rounded-lg">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('grid')}
-                  aria-label={t('Grid view')}
-                  aria-pressed={viewMode === 'grid'}
-                  className={clsx(
-                    'p-2 rounded-md transition-colors',
-                    viewMode === 'grid'
-                      ? 'bg-cyan/20 text-cyan'
-                      : 'text-text-muted hover:text-text-primary'
-                  )}
-                >
-                  <Grid3X3 className="w-4 h-4" />
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  aria-label={t('List view')}
-                  aria-pressed={viewMode === 'list'}
-                  className={clsx(
-                    'p-2 rounded-md transition-colors',
-                    viewMode === 'list'
-                      ? 'bg-cyan/20 text-cyan'
-                      : 'text-text-muted hover:text-text-primary'
-                  )}
-                >
-                  <List className="w-4 h-4" />
-                </button>
-              </div>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                aria-label={t('List view')}
+                aria-pressed={viewMode === 'list'}
+                className={clsx(
+                  'p-1 rounded transition-colors',
+                  viewMode === 'list' ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
+              >
+                <List className="w-4 h-4" />
+              </button>
             </div>
-          </div>
 
-          {/* Monitor Count */}
-          <div className="mb-4 text-sm text-text-muted">
-            {t('Showing {{shown}} of {{count}} monitors', { shown: filteredMonitors.length, count: monitors.length })}
-            {total && total > monitors.length && (
-              <span> {t('({{total}} total)', { total })}</span>
-            )}
-          </div>
+            <button
+              type="button"
+              onClick={refetch}
+              aria-label={t('Refresh')}
+              title={t('Refresh')}
+              className={toolBtn}
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
 
-          {/* Content */}
+            <RequirePerm feature="monitors" level="Edit">
+              <button
+                type="button"
+                onClick={openAdd}
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-xs bg-accent text-accent-fg hover:bg-accent-dim transition-colors"
+              >
+                <Plus size={12} aria-hidden />
+                {t('Add monitor')}
+              </button>
+            </RequirePerm>
+          </div>
+        </div>
+
+        {/* The cameras own the remaining height and scroll inside it, so the
+            query line and the pager stay put. */}
+        <div className="flex-1 min-h-0 overflow-auto p-3">
           <QueryState
             isLoading={isLoading}
             isError={isError}
@@ -176,57 +170,58 @@ export function MonitorsListLayout({
           >
             {renderMonitors(state)}
           </QueryState>
+        </div>
 
-          {/* Pagination */}
+        {/* Status bar: what this page is showing, and how to leave it. */}
+        <div className="flex items-center gap-3 px-3 py-2 shrink-0 border-t border-border-subtle bg-surface text-xs text-fg-dim">
+          {t('Showing {{shown}} of {{count}} monitors', { shown: filteredMonitors.length, count: monitors.length })}
+          {total && total > monitors.length
+            ? <span>{t('({{total}} total)', { total })}</span>
+            : null}
+
           {totalPages > 1 && (
-            <nav aria-label={t('Pagination')} className="flex items-center justify-center gap-2 mt-6">
+            <nav aria-label={t('Pagination')} className="ms-auto flex items-center gap-1">
               <button
                 type="button"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
                 disabled={page === 1}
                 aria-label={t('Previous page')}
                 className={clsx(
-                  'p-2 rounded-lg border transition-colors',
-                  page === 1
-                    ? 'bg-surface border-border-subtle text-text-muted cursor-not-allowed'
-                    : 'bg-surface border-border-subtle text-text-primary hover:border-cyan/50'
+                  'p-1 rounded border border-border-subtle transition-colors',
+                  page === 1 ? 'text-fg-faint cursor-not-allowed' : 'text-fg hover:border-accent',
                 )}
               >
                 <ChevronLeft className="w-4 h-4 rtl:-scale-x-100" />
               </button>
 
-              <div className="flex items-center gap-1">
-                {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                  let pageNum: number;
-                  if (totalPages <= 5) {
-                    pageNum = i + 1;
-                  } else if (page <= 3) {
-                    pageNum = i + 1;
-                  } else if (page >= totalPages - 2) {
-                    pageNum = totalPages - 4 + i;
-                  } else {
-                    pageNum = page - 2 + i;
-                  }
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum: number;
+                if (totalPages <= 5 || page <= 3) {
+                  pageNum = i + 1;
+                } else if (page >= totalPages - 2) {
+                  pageNum = totalPages - 4 + i;
+                } else {
+                  pageNum = page - 2 + i;
+                }
 
-                  return (
-                    <button
-                      key={pageNum}
-                      type="button"
-                      onClick={() => setPage(pageNum)}
-                      aria-label={t('Page {{n}}', { n: pageNum })}
-                      aria-current={page === pageNum ? 'page' : undefined}
-                      className={clsx(
-                        'w-8 h-8 rounded-lg text-sm font-medium transition-colors',
-                        page === pageNum
-                          ? 'bg-cyan text-void'
-                          : 'bg-surface border border-border-subtle text-text-secondary hover:text-text-primary hover:border-cyan/50'
-                      )}
-                    >
-                      {pageNum}
-                    </button>
-                  );
-                })}
-              </div>
+                return (
+                  <button
+                    key={pageNum}
+                    type="button"
+                    onClick={() => setPage(pageNum)}
+                    aria-label={t('Page {{n}}', { n: pageNum })}
+                    aria-current={page === pageNum ? 'page' : undefined}
+                    className={clsx(
+                      'w-7 h-7 rounded text-xs tabular-nums transition-colors',
+                      page === pageNum
+                        ? 'bg-accent text-accent-fg'
+                        : 'border border-border-subtle text-fg-muted hover:text-fg hover:border-accent',
+                    )}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
 
               <button
                 type="button"
@@ -234,16 +229,15 @@ export function MonitorsListLayout({
                 disabled={page === totalPages}
                 aria-label={t('Next page')}
                 className={clsx(
-                  'p-2 rounded-lg border transition-colors',
-                  page === totalPages
-                    ? 'bg-surface border-border-subtle text-text-muted cursor-not-allowed'
-                    : 'bg-surface border-border-subtle text-text-primary hover:border-cyan/50'
+                  'p-1 rounded border border-border-subtle transition-colors',
+                  page === totalPages ? 'text-fg-faint cursor-not-allowed' : 'text-fg hover:border-accent',
                 )}
               >
                 <ChevronRight className="w-4 h-4 rtl:-scale-x-100" />
               </button>
             </nav>
           )}
+        </div>
       </main>
 
       <AddMonitorDialog open={showAdd} onClose={closeAdd} />

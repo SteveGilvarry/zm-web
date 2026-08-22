@@ -1,12 +1,13 @@
 import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Server as ServerIcon, Plus, Trash2, Pencil, Save, X, Activity, ChevronDown, ChevronRight } from 'lucide-react';
+import { Plus, Trash2, Pencil, Save, X, ChevronDown, ChevronRight } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
-import { Panel } from '@/components/common/Panel';
+import { Button } from '@/components/common/Button';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { QueryState } from '@/components/common/QueryState';
+import { fieldClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import type { Server } from '@/api/servers';
 import { useServersPage, type ServerRow } from '@/features/servers/useServersPage';
@@ -19,7 +20,17 @@ import { useSiteTitle } from '@/features/settings/useSiteTitle';
 /** Table width: Id, Name, Url, three paths, Status, Monitors, four load cells, actions. */
 const COLUMN_COUNT = 13;
 
-/** Settings → Servers — Mission Control. */
+const heading = 'text-sm font-medium text-fg';
+const th = 'px-3 py-2 text-start text-xs font-medium text-fg-dim whitespace-nowrap';
+const thEnd = 'px-3 py-2 text-end text-xs font-medium text-fg-dim whitespace-nowrap';
+const iconBtn = 'p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors';
+
+/**
+ * Settings → Servers — the modern skin.
+ *
+ * The load columns are the only coloured thing here, and only past the
+ * legacy thresholds: a healthy cluster reads grey (docs/DESIGN.md).
+ */
 export default function SettingsServersPage() {
   const { t } = useTranslation();
   const s = useServersPage();
@@ -29,92 +40,98 @@ export default function SettingsServersPage() {
 
   return (
     <AppShell title={t('Servers')}>
-      <main className="flex-1 p-6 overflow-auto space-y-6">
-        <Panel title={t('Registered servers')} icon={<ServerIcon size={16} />} noPadding>
-          {s.statsError && (
-            <p role="alert" className="px-3 py-2 text-xs text-amber border-b border-border-subtle">
-              {t('Load columns unavailable: {{message}}', { message: s.statsError })}
-            </p>
-          )}
-          <QueryState
-            isLoading={s.isLoading}
-            isError={s.isError}
-            error={s.error}
-            onRetry={s.refetch}
-            empty={s.rows.length === 0}
-            emptyMessage={t('No servers registered. The default install is single-node.')}
-          >
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead className="bg-surface/70 border-b border-border-subtle text-[10px] uppercase tracking-wider text-text-muted">
-                  <tr>
-                    <th className="px-3 py-2 text-end">{t('Id')}</th>
-                    <th className="px-3 py-2 text-start">{t('Name')}</th>
-                    <th className="px-3 py-2 text-start">{t('Url')}</th>
-                    <th className="px-3 py-2 text-start">{t('Path to index')}</th>
-                    <th className="px-3 py-2 text-start">{t('Path to ZMS')}</th>
-                    <th className="px-3 py-2 text-start">{t('Path to API')}</th>
-                    <th className="px-3 py-2 text-start">{t('Status')}</th>
-                    <th className="px-3 py-2 text-end">{t('Monitors')}</th>
-                    <th className="px-3 py-2 text-end">{t('Load')}</th>
-                    <th className="px-3 py-2 text-end">{t('CPU')}</th>
-                    <th className="px-3 py-2 text-end">{t('Free mem')}</th>
-                    <th className="px-3 py-2 text-end">{t('Free swap')}</th>
-                    <th className="px-3 py-2 text-end"></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {s.rows.map((row) => (
-                    <ServerRows
-                      key={row.server.id}
-                      row={row}
-                      expanded={s.expandedId === row.server.id}
-                      onToggle={() => s.toggleDetail(row.server.id)}
-                      onEdit={() => s.startEdit(row.server)}
-                      onDelete={() => s.requestDelete(row.server)}
-                    />
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </QueryState>
-          {/* Said once for the whole page — see `UpdateServerRequest` in the OpenAPI spec. */}
-          <p className="px-3 py-2 text-[11px] text-text-muted border-t border-border-subtle">
-            {t('Only name, hostname, port and status are writable; the API does not accept the rest yet.')}
-          </p>
-        </Panel>
+      <main className="flex-1 p-6 overflow-auto">
+        <div className="mx-auto w-full max-w-[1500px] space-y-10">
+          <section className="space-y-3">
+            <h2 className={heading}>{t('Registered servers')}</h2>
 
-        <div className="grid grid-cols-12 gap-6 items-start">
-          <div className="col-span-5">
-            <RequirePerm feature="system" level="Edit">
-              <Panel
-                title={s.editing ? t('Edit server — {{name}}', { name: s.editing.name }) : t('New server')}
-                icon={s.editing ? <Pencil size={16} /> : <Plus size={16} />}
-                action={s.editing ? (
-                  <button
-                    onClick={s.cancelEdit}
-                    aria-label={t('Cancel edit')}
-                    className="p-1 rounded text-text-muted hover:text-text-primary hover:bg-surface transition-colors"
-                  >
-                    <X size={14} />
-                  </button>
-                ) : undefined}
+            {s.statsError && (
+              <p role="alert" className="text-xs text-warn">
+                {t('Load columns unavailable: {{message}}', { message: s.statsError })}
+              </p>
+            )}
+
+            <div className="rounded border border-border-subtle overflow-hidden">
+              <QueryState
+                isLoading={s.isLoading}
+                isError={s.isError}
+                error={s.error}
+                onRetry={s.refetch}
+                empty={s.rows.length === 0}
+                emptyMessage={t('No servers registered. The default install is single-node.')}
               >
-                <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} />
-              </Panel>
-            </RequirePerm>
-          </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-xs">
+                    <thead className="border-b border-border-subtle">
+                      <tr>
+                        <th className={thEnd}>{t('Id')}</th>
+                        <th className={th}>{t('Name')}</th>
+                        <th className={th}>{t('Url')}</th>
+                        <th className={th}>{t('Path to index')}</th>
+                        <th className={th}>{t('Path to ZMS')}</th>
+                        <th className={th}>{t('Path to API')}</th>
+                        <th className={th}>{t('Status')}</th>
+                        <th className={thEnd}>{t('Monitors')}</th>
+                        <th className={thEnd}>{t('Load')}</th>
+                        <th className={thEnd}>{t('CPU')}</th>
+                        <th className={thEnd}>{t('Free mem')}</th>
+                        <th className={thEnd}>{t('Free swap')}</th>
+                        <th className={thEnd}></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {s.rows.map((row) => (
+                        <ServerRows
+                          key={row.server.id}
+                          row={row}
+                          expanded={s.expandedId === row.server.id}
+                          onToggle={() => s.toggleDetail(row.server.id)}
+                          onEdit={() => s.startEdit(row.server)}
+                          onDelete={() => s.requestDelete(row.server)}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </QueryState>
+              {/* Said once for the whole page — see `UpdateServerRequest` in the OpenAPI spec. */}
+              <p className="px-3 py-2 text-xs text-fg-dim border-t border-border-subtle">
+                {t('Only name, hostname, port and status are writable; the API does not accept the rest yet.')}
+              </p>
+            </div>
+          </section>
 
-          {s.localLoad && (
-            <div className="col-span-7">
-              <Panel title={t('This host')} icon={<Activity size={16} />}>
-                <p className="text-[11px] text-text-muted mb-2">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start max-w-4xl">
+            <RequirePerm feature="system" level="Edit">
+              <section className="space-y-3">
+                <div className="flex items-center justify-between gap-2">
+                  <h2 className={heading}>
+                    {s.editing ? t('Edit server — {{name}}', { name: s.editing.name }) : t('New server')}
+                  </h2>
+                  {s.editing && (
+                    <button
+                      onClick={s.cancelEdit}
+                      aria-label={t('Cancel edit')}
+                      className={iconBtn}
+                    >
+                      <X size={14} />
+                    </button>
+                  )}
+                </div>
+                <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} />
+              </section>
+            </RequirePerm>
+
+            {s.localLoad && (
+              <section className="space-y-3">
+                <h2 className={heading}>{t('This host')}</h2>
+                <p className="text-xs text-fg-dim">
                   {t('Latest zmstats sample recorded without a server id — the single-node default.')}
                 </p>
                 <LoadCells load={s.localLoad} layout="inline" />
-              </Panel>
-            </div>
-          )}
+              </section>
+            )}
+          </div>
         </div>
       </main>
 
@@ -142,13 +159,13 @@ function ServerRows({ row, expanded, onToggle, onEdit, onDelete }: {
 }) {
   const { t } = useTranslation();
   const { server, monitorCount, load, url } = row;
-  const cell = 'px-3 py-1.5 font-mono text-text-secondary';
+  const cell = 'px-3 py-1.5 font-mono text-fg-muted';
 
   return (
     <>
-      <tr className="border-b border-border-subtle/40 hover:bg-surface/40">
+      <tr className="border-b border-border-subtle last:border-b-0 hover:bg-surface-2">
         <td className={clsx(cell, 'text-end tabular-nums')}>{server.id}</td>
-        <td className="px-3 py-1.5 text-text-primary font-medium">{server.name}</td>
+        <td className="px-3 py-1.5 text-fg font-medium">{server.name}</td>
         <td className={cell}>{url ?? '—'}</td>
         <td className={cell}>{server.path_to_index || '—'}</td>
         <td className={cell}>{server.path_to_zms || '—'}</td>
@@ -161,22 +178,22 @@ function ServerRows({ row, expanded, onToggle, onEdit, onDelete }: {
             onClick={onToggle}
             aria-expanded={expanded}
             aria-label={t('Details for {{name}}', { name: server.name })}
-            className="p-1 rounded text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors"
+            className={iconBtn}
           >
-            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+            {expanded ? <ChevronDown size={12} /> : <ChevronRight size={12} className="rtl:-scale-x-100" />}
           </button>
           <RequirePerm feature="system" level="Edit">
             <button
               onClick={onEdit}
               aria-label={t('Edit {{name}}', { name: server.name })}
-              className="p-1 rounded text-text-muted hover:text-cyan hover:bg-cyan/10 transition-colors"
+              className={iconBtn}
             >
               <Pencil size={12} />
             </button>
             <button
               onClick={onDelete}
               aria-label={t('Delete {{name}}', { name: server.name })}
-              className="p-1 rounded text-text-muted hover:text-crimson hover:bg-crimson/10 transition-colors"
+              className="p-1 rounded text-fg-dim hover:text-danger hover:bg-danger/10 transition-colors"
             >
               <Trash2 size={12} />
             </button>
@@ -184,7 +201,7 @@ function ServerRows({ row, expanded, onToggle, onEdit, onDelete }: {
         </td>
       </tr>
       {expanded && (
-        <tr className="border-b border-border-subtle/40 bg-surface/30">
+        <tr className="border-b border-border-subtle bg-surface-2">
           <td colSpan={COLUMN_COUNT} className="px-3 py-3">
             <ServerDetail row={row} />
           </td>
@@ -206,10 +223,10 @@ function ServerDetail({ row }: { row: ServerRow }) {
   };
 
   return (
-    <dl className="grid grid-cols-4 gap-x-6 gap-y-3 text-xs">
+    <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-xs">
       {daemons.map(({ daemon, enabled }) => (
         <DetailItem key={daemon} label={daemonLabels[daemon]}>
-          <span className={enabled ? 'text-emerald-400' : 'text-text-muted'}>
+          <span className={enabled ? 'text-fg' : 'text-fg-dim'}>
             {enabled ? t('Yes') : t('No')}
           </span>
         </DetailItem>
@@ -225,17 +242,18 @@ function ServerDetail({ row }: { row: ServerRow }) {
 function DetailItem({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div>
-      <dt className="text-[10px] uppercase tracking-wider text-text-muted">{label}</dt>
-      <dd className="font-mono text-text-secondary">{children}</dd>
+      <dt className="text-xs text-fg-dim">{label}</dt>
+      <dd className="font-mono text-fg-muted">{children}</dd>
     </div>
   );
 }
 
+/** A reading is only coloured once it is worth acting on. */
 const TONE_CLS: Record<LoadTone, string> = {
-  ok: 'text-text-secondary',
-  warn: 'text-amber',
-  error: 'text-crimson font-semibold',
-  none: 'text-text-muted',
+  ok: 'text-fg-muted',
+  warn: 'text-warn',
+  error: 'text-danger font-semibold',
+  none: 'text-fg-dim',
 };
 
 /** Load / CPU% / free mem% / free swap% — table cells, or one inline strip. Legacy thresholds colour them. */
@@ -256,11 +274,11 @@ function LoadCells({ load, layout }: { load: ServerLoadSummary | null; layout: '
   ];
   if (layout === 'inline') {
     return (
-      <dl className="grid grid-cols-4 gap-3 text-xs" title={title}>
+      <dl className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs" title={title}>
         {cells.map(([label, value, tone]) => (
           <div key={label}>
-            <dt className="text-[10px] uppercase tracking-wider text-text-muted">{label}</dt>
-            <dd className={clsx('font-mono', TONE_CLS[tone])} data-tone={tone}>{value}</dd>
+            <dt className="text-xs text-fg-dim">{label}</dt>
+            <dd className={clsx('font-mono tabular-nums', TONE_CLS[tone])} data-tone={tone}>{value}</dd>
           </div>
         ))}
       </dl>
@@ -281,16 +299,13 @@ function ServerStatusBadge({ status }: { status: string }) {
   const { t } = useTranslation();
   const tone = serverStatusTone(status);
   const cls = tone === 'ok'
-    ? 'bg-emerald-500/15 border-emerald-500/40 text-emerald-400'
+    ? 'bg-ok/12 text-ok'
     : tone === 'down'
-      ? 'bg-crimson/15 border-crimson/40 text-crimson'
-      : 'bg-text-muted/15 border-border-subtle text-text-muted';
+      ? 'bg-danger/12 text-danger'
+      : 'bg-surface-2 text-fg-dim';
   const label = tone === 'ok' ? t('Running') : tone === 'down' ? t('Not running') : t('Unknown');
   return (
-    <span className={clsx(
-      'inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono uppercase border',
-      cls,
-    )}>
+    <span className={clsx('inline-flex items-center px-1.5 py-0.5 rounded text-xs whitespace-nowrap', cls)}>
       {label}
     </span>
   );
@@ -299,7 +314,7 @@ function ServerStatusBadge({ status }: { status: string }) {
 function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () => void }) {
   const { t } = useTranslation();
   const f = useServerForm(editing, onSaved);
-  const input = 'flex-1 px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50';
+  const input = clsx(fieldClasses('sm'), 'flex-1');
 
   return (
     <form onSubmit={f.submit} className="space-y-3">
@@ -325,7 +340,7 @@ function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () 
           onChange={(e) => f.setPort(e.target.value)}
           placeholder={t('port')}
           aria-label={t('Port')}
-          className="w-20 px-2 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-text-primary focus:outline-none focus:border-cyan/50"
+          className={clsx(fieldClasses('sm'), 'w-20 font-mono')}
         />
       </Field>
       <Field label={t('Status')}>
@@ -341,17 +356,13 @@ function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () 
         </select>
       </Field>
       {f.error && (
-        <p role="alert" className="text-xs text-crimson">{t('Save failed: {{message}}', { message: f.error })}</p>
+        <p role="alert" className="text-xs text-danger">{t('Save failed: {{message}}', { message: f.error })}</p>
       )}
       <div className="flex justify-end">
-        <button
-          type="submit"
-          disabled={f.submitDisabled}
-          className="flex items-center gap-1 px-3 py-1.5 text-xs font-medium rounded border-2 border-cyan/60 bg-cyan/15 text-cyan hover:bg-cyan/25 transition-colors disabled:opacity-50"
-        >
-          {editing ? <Save size={12} /> : <Plus size={12} />}
+        <Button type="submit" variant="primary" size="sm" disabled={f.submitDisabled}>
+          {editing ? <Save size={12} aria-hidden /> : <Plus size={12} aria-hidden />}
           {editing ? t('Save') : t('Register')}
-        </button>
+        </Button>
       </div>
     </form>
   );
@@ -360,9 +371,7 @@ function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () 
 function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <span className="text-[10px] font-mono uppercase tracking-[0.18em] text-text-muted w-16">
-        {label}
-      </span>
+      <span className="w-16 shrink-0 text-xs text-fg-dim">{label}</span>
       {children}
     </div>
   );
