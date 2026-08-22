@@ -33,6 +33,28 @@ export default defineConfig(({ mode }) => {
       '@': path.resolve(__dirname, './src'),
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Split the framework out of the entry chunk. Pages are already lazy
+        // (one chunk each, hls.js its own), but everything shared still
+        // landed in one 540 kB entry that the login page had to download
+        // before it could render a username field. React and the TanStack
+        // trio change on their own release cadence, so as separate chunks
+        // they stay cached across our deploys instead of being invalidated
+        // by every application change.
+        // Matched on the resolved path, not the package name: the app
+        // imports `react-dom/client`, which the name form does not catch —
+        // it left 130 kB of react-dom in the entry chunk.
+        manualChunks(id) {
+          if (!id.includes('node_modules')) return;
+          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
+          if (id.includes('node_modules/@tanstack/')) return 'tanstack';
+          if (/node_modules\/(i18next|react-i18next)/.test(id)) return 'i18n';
+        },
+      },
+    },
+  },
   server: {
     proxy: {
       '/api': proxy,

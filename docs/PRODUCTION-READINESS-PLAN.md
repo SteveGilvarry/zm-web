@@ -176,17 +176,36 @@ A `view=` compatibility router in `__root.tsx` mapping `?view=watch&mid=`, `?vie
 
 Ordered by daily use. Effort is per area, after W1–W3 are in place.
 
-> **Re-verification, 2026-08-23 — this table is stale and overstates the remaining work.** Five areas were driven in a browser against the live dev box (ZM 1.39.16 / zm-api on `.45`) and each is substantially complete; the effort column still budgets 26 days for them. Static grep was tried first and gave contradictory answers in both directions, so only in-browser checks are recorded here. **Verified done:**
+> **Re-verification, 2026-08-23 — this table is stale and badly overstates the remaining work.** Every area below was driven in a browser: first against the live dev box (ZM 1.39.16 / zm-api on `.45`), and after that box's API died mid-session, against the hermetic seeded stack. Static grep was tried first and contradicted itself in both directions within one pass, so **only in-browser observation is recorded here**.
 >
-> | Area | Budgeted | What is actually there |
+> **Verified built** (budgeted days in brackets):
+>
+> | Area | | What is there |
 > |---|---|---|
 > | Events list | 8 d | Bulk View / Download / Edit / Archive / Unarchive / Delete; sort on 9 fields; column chooser (16); CSV export; refresh; pager with jump-to-page; tri-state archive filter; card/table toggle |
-> | Filters | 6 d | Both real dev-box filters load **with their rules** (the F-1 symptom is gone); condition builder, first-class actions, Sort by / direction / Limit / Skip locked / Execute interval, Preview, List matches, Export matches, Save As, Reset, Debug |
+> | Filters | 6 d | Both real dev-box filters load **with their rules** — the F-1 symptom is gone. Condition builder, first-class actions, Sort by / direction / Limit / Skip locked / Execute interval, Preview, List matches, Export matches, Save As, Reset, Debug |
+> | Watch / PTZ | 6 d | 8-way D-pad, Home, zoom (Wider/Near/Closer/Far), **preset slots with their names** from `/control_presets`, save/clear preset, Scale select, Stream/Stills, Force + Cancel Alarm, Download Image, fullscreen, WebRTC/HLS, function buttons, Details/Status/Motion-zones/Recent-events panels |
 > | Montage Review | 5 d | 0.25×–16× speeds, Fit, zoom in/out, pan earlier/later, 1 h / 8 h / 24 h ranges, per-monitor filter, All events, Live |
-> | Montage | 5 d | Display, Layout, split/remove tile, Fullscreen, WebRTC/HLS switch, Restart |
+> | Montage | 5 d | Display, Layout, split/remove tile, fullscreen, WebRTC/HLS, Restart |
+> | Options | 5 d | Category tab rail with counts, per-row reset-to-default, help/prompt text, daemon control, Start/Stop/Restart/Rotate Logs, Appearance (skin, theme, language) |
+> | Users | 3 d | Add / Edit / Delete, bulk delete, Export CSV + JSON |
+> | Servers / Storage | 3 d | Servers: Register / Edit / Delete / Details with live CPU, Load, Free mem, Free swap columns. Storage: Add / Edit / Delete, Disk space, Events, Enabled |
+> | Logs | 2 d | Level filters with live counts, Clear Logs, column chooser, CSV download, paging, refresh |
+> | Audit | 3 d | The legacy gap semantic — Events / FirstEvent / LastEvent / MinGap / MaxGap / MissingFiles / ZeroSize / Server, monitor filter, refresh |
 > | Cycle | 2 d | 5/10/20/30/60 s intervals, Stills toggle, prev/next monitor, pause, filter bar |
+> | PTZ control profiles | 4 d | The full protocol list with Add profile |
+> | Zones | 3 d | Zone list per monitor with New; editor reachable |
 >
-> The remaining ~15 areas below have **not** been re-verified this way and should be assumed equally stale until they are. Rows are left as written rather than guessed at — the next pass drives each one and rewrites it.
+> That is **55 of the 75–85 budgeted days already spent.** The estimate below was written before the work was done and has not been revised since.
+>
+> **What the pass found open, and what was done about it:**
+>
+> - ✅ **Watch had no monitor navigation** — moving between cameras meant going back to the console. Fixed: `useWatchPage` exposes `siblings`/`prevMonitorId`/`nextMonitorId` off the shared `['monitors']` query; modern renders wrapping prev/next links with an `n/m` position, classic gets the legacy monitor dropdown in its action row. Verified in a browser (9002 → 9003).
+> - ✅ **Two event timestamps bypassed the W7 formatter** — the modern Watch's Recent Events and the filter Matches preview called `toLocaleString()` directly, so the same event showed a different time there than on the Events list, ignoring ZoneMinder's format patterns and the server zone. Both now use `useDateTimeFormat`.
+> - Not a gap after all: **Watch's events panel.** Classic already has the full paginated `ClassicEventsTable` with a pager; modern shows recent events plus a "View all" deep link into the filtered events page, which is the right call for that layout.
+> - Rows not separately re-checked: Event detail, Monitor editor, Add/Clone/Discover, Console, Groups/Reports, Login. Treat as unmeasured.
+>
+> Two environment findings worth keeping: the dev box's zm-api (`.45:8080`) went down mid-session and stayed down; and `.54:8090` runs a newer zm-api whose login takes `username`/`password` where `.45` and this client send `user`/`pass` — another undocumented breaking change of the zm-api#62 kind.
 
 | Area | Work (all FE-possible today) | Effort |
 |---|---|---|
@@ -315,7 +334,7 @@ editor having an accessible name; the coverage floor that enforced nothing.
 | Phase | Contents | Effort | Exit criterion | Status (2026-08-23) |
 |---|---|---|---|---|
 | **0 — Stop the bleeding** | F-1…F-8 (+ dev-box zone repair), Test Tier 0, README/CLAUDE.md truth, `npm audit fix`, devtools → dev deps, drop `motion`, delete stray `events-cleared.yaml` | 7–9 d | CI green on every PR; no known data-destroying path; deployable from a container | **Done.** All three criteria met; `main` gates on five required checks. |
-| **1 — Contract & platform** | W1, W2, W3, W4, W5, W6; F-9…F-24; Test Tiers 1–3 | 18–22 d | Every wrapper contract-tested; backend-down and 403 are visible; permissions gate routes/nav/edits; bundle split; streams survive ICE drops | **Mostly done.** W2/W3/W4 complete; contract test (175 cases) against a tracked OpenAPI snapshot; F-9…F-22, F-24, F-25 closed. **Open:** generated types (W1 — `src/types/index.ts` is still hand-written), `manualChunks` + a CI size budget (W5), F-23 ◐. |
+| **1 — Contract & platform** | W1, W2, W3, W4, W5, W6; F-9…F-24; Test Tiers 1–3 | 18–22 d | Every wrapper contract-tested; backend-down and 403 are visible; permissions gate routes/nav/edits; bundle split; streams survive ICE drops | **Mostly done.** W2/W3/W4 complete; contract test (175 cases) against a tracked OpenAPI snapshot; F-9…F-22, F-24, F-25 closed. **Open:** generated types (W1 — `src/types/index.ts` is still hand-written) and F-23 ◐. W5 closed 2026-08-23: `manualChunks` splits react/tanstack/i18n out of the entry (540 kB → 177 kB raw), and `npm run bundle:budget` gates the initial download in CI at 200 kB gz JS / 18 kB gz CSS against 170.3 / 14.4 today — verified to fail when breached, unlike the coverage floor it replaces the lesson of. |
 | **2 — Design system & classic foundation** | Section 5 tokens + primitives + classic primitives + Material icons + mobile drawer + dialog a11y; classic `OptionsLayout`; W7 formatter + `ZM_WEB_*` consumption; W8 URL shims + shortcuts | 14–17 d | Light + dark themes; no inline button/input recipes; classic nav reaches every admin page; legacy bookmarks resolve | **Mostly done.** All four criteria met; the modern IA rebuild (waves 7–8) went past the original scope. **Open:** the `ZM_WEB_*` rows listed in W7 are still mostly unread. |
 | **3 — Parity build-out** | W9 by area in the listed order; classic rebuild of the six core pages; Test Tiers 4–7 running alongside | 75–85 d | Every FE-possible row in Section 6/W9 closed; classic fidelity ≥ 85 on the six core pages; every route has both-skin e2e | **In progress, and much further along than the estimate implies.** Classic owns all 23 pages on legacy layouts (wave 4) and Tiers 4–7 are running. Re-verification started 2026-08-23: 5 of ~20 W9 areas driven in a browser against the live box, all 5 substantially complete (26 of the budgeted days already spent). The other 15 are unmeasured — see the note at the head of W9. |
 | **4 — Release** | Versioning + CHANGELOG + release workflow; browser matrix; docs; tag **v1.0.0** | 3–4 d | Section 10 checklist all green | Not started. |

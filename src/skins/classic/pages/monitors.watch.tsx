@@ -1,5 +1,5 @@
 import { clsx } from 'clsx';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, Bell, BellOff, Camera, Image as ImageIcon, Maximize2, Pencil, Play,
@@ -33,6 +33,7 @@ import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
  */
 export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
   const { t, i18n } = useTranslation();
+  const navigate = useNavigate();
   const page = useWatchPage(monitorId);
   const { monitor, monitorLoading, runtime, alarm, ptzState, protocol, viewMode, stage } = page;
   const events = useMonitorEvents(monitorId, page.isAuthenticated && !!monitor);
@@ -82,6 +83,16 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           label={t('Watch actions')}
           end={<StageSizeSelects stage={stage} monitors={[monitor]} />}
         >
+          {/* Legacy Watch puts the monitor chooser first in this row, so
+              stepping through cameras never goes via the console. */}
+          {page.siblings.length > 1 && (
+            <ClassicSelect
+              label={t('Monitor')}
+              value={String(monitor.id)}
+              options={page.siblings.map((m) => ({ value: String(m.id), label: m.name }))}
+              onChange={(value) => { void navigate({ to: '/monitors/$monitorId', params: { monitorId: value } }); }}
+            />
+          )}
           <RequirePerm feature="monitors" level="Edit">
             <ClassicButton icon={<Pencil size={14} />} onClick={page.openEditor}>{t('Edit')}</ClassicButton>
             <ClassicButton

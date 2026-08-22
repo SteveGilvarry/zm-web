@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getMonitor, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
+import { getMonitor, getMonitors, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
 import { getAuthToken } from '@/api/client';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
@@ -101,6 +101,16 @@ export interface WatchPageState {
   /** Legacy "Download Image": save the current snapshot as a JPEG. */
   downloadImage: () => void;
   isDownloading: boolean;
+  /**
+   * Move between cameras without going back to the console — the legacy
+   * Watch page's monitor nav. `siblings` is every monitor in list order;
+   * `prevMonitorId` / `nextMonitorId` wrap, and are null while the list is
+   * loading or when this is the only monitor.
+   */
+  siblings: Monitor[];
+  siblingIndex: number;
+  prevMonitorId: number | null;
+  nextMonitorId: number | null;
 }
 
 /**
@@ -371,6 +381,23 @@ export function useWatchPage(monitorId: number): WatchPageState {
     }
   };
 
+  // Monitor navigation. Uses the console's list under the shared query key,
+  // so moving between cameras costs nothing once any page has loaded it.
+  const { data: monitorList } = useQuery({
+    queryKey: ['monitors'],
+    queryFn: () => getMonitors({ per_page: 1000 }),
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
+  const siblings = monitorList?.items ?? [];
+  const siblingIndex = siblings.findIndex((m) => m.id === id);
+  // Wrap, so the last camera's Next is the first — an operator stepping
+  // through a wall should not hit a dead end at either end.
+  const neighbour = (step: number): number | null => {
+    if (siblingIndex < 0 || siblings.length < 2) return null;
+    return siblings[(siblingIndex + step + siblings.length) % siblings.length].id;
+  };
+
   return {
     monitorId: id,
     isAuthenticated,
@@ -409,5 +436,9 @@ export function useWatchPage(monitorId: number): WatchPageState {
     stage,
     downloadImage: () => { void downloadImage(); },
     isDownloading,
+    siblings,
+    siblingIndex,
+    prevMonitorId: neighbour(-1),
+    nextMonitorId: neighbour(1),
   };
 }

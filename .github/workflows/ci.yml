@@ -30,6 +30,8 @@ jobs:
         run: npm run i18n:check
       - name: Production build
         run: npx vite build
+      - name: Bundle budget (initial download)
+        run: npm run bundle:budget
       - name: Dependency audit (production deps)
         run: npm audit --omit=dev --audit-level=high
       - uses: actions/upload-artifact@v4

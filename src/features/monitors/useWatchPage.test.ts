@@ -95,6 +95,17 @@ function stubMonitor(overrides: Partial<typeof monitor> = {}) {
         total: 1, per_page: 5, current_page: 1, last_page: 1,
       }),
     ),
+    // The monitor list behind the page's prev/next navigation.
+    http.get('/api/v3/monitors', () =>
+      HttpResponse.json({
+        items: [
+          { ...monitor, id: 5, name: 'Drive' },
+          { ...monitor, id: 7, name: 'Gate' },
+          { ...monitor, id: 9, name: 'Yard' },
+        ],
+        total: 3, per_page: 1000, current_page: 1, last_page: 1,
+      }),
+    ),
   );
 }
 
@@ -202,5 +213,33 @@ describe('useWatchPage', () => {
     expect(result.current.editorOpen).toBe(true);
     act(() => result.current.closeEditor());
     expect(result.current.editorOpen).toBe(false);
+  });
+  it('offers the neighbouring monitors in list order', async () => {
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.siblings).toHaveLength(3));
+    expect(result.current.siblingIndex).toBe(1);
+    expect(result.current.prevMonitorId).toBe(5);
+    expect(result.current.nextMonitorId).toBe(9);
+  });
+
+  it('wraps at both ends, so stepping through a wall never dead-ends', async () => {
+    stubMonitor({ id: 5 });
+    server.use(http.get('/api/v3/monitors/5', () => HttpResponse.json({ ...monitor, id: 5, name: 'Drive' })));
+    const { result } = renderHook(() => useWatchPage(5), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.siblingIndex).toBe(0));
+    // First camera's Previous is the last one.
+    expect(result.current.prevMonitorId).toBe(9);
+    expect(result.current.nextMonitorId).toBe(7);
+  });
+
+  it('offers no navigation when the monitor is the only one', async () => {
+    stubMonitor();
+    server.use(http.get('/api/v3/monitors', () =>
+      HttpResponse.json({ items: [{ ...monitor }], total: 1, per_page: 1000, current_page: 1, last_page: 1 })));
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.siblings).toHaveLength(1));
+    expect(result.current.prevMonitorId).toBeNull();
+    expect(result.current.nextMonitorId).toBeNull();
   });
 });

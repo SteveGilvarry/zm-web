@@ -1,3 +1,4 @@
+import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { clsx } from 'clsx';
@@ -37,6 +38,7 @@ interface MatchesPreviewProps {
  */
 export function MatchesPreview({ query, monitors, actions, reviewSearch, variant = 'modern' }: MatchesPreviewProps) {
   const { t } = useTranslation();
+  const { formatDateTime } = useDateTimeFormat();
   const qc = useQueryClient();
   const toast = useToast();
   const [open, setOpen] = useState(false);
@@ -213,12 +215,7 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
                   <span className="text-fg truncate flex-1">{e.name}</span>
                   <span className="text-fg-dim">{e.cause}</span>
                   <span className="font-mono tabular-nums text-fg-muted whitespace-nowrap">
-                    {e.start_date_time
-                      ? new Date(e.start_date_time).toLocaleString([], {
-                          month: 'short', day: '2-digit',
-                          hour: '2-digit', minute: '2-digit', hour12: false,
-                        })
-                      : ''}
+                    {e.start_date_time ? formatDateTime(e.start_date_time) : ''}
                   </span>
                   {e.archived === 1 && (
                     <span className="text-xs text-fg-dim">{t('archived')}</span>
