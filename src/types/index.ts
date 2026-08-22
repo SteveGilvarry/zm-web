@@ -217,6 +217,26 @@ export interface Monitor {
   analysis_source: string;
   analysis_image: string;
   recording: string;
+  /** 0 or 1 — the monitor is enabled at all. */
+  enabled?: number;
+  /** 0 or 1 — burn wall-clock time into the frame. */
+  wall_clock_timestamps?: number;
+  /** Legacy display selector for the montage caption. */
+  what_display?: string;
+  /** Sub-stream channel for the live view, blank for the default. */
+  stream_channel?: string;
+  /** 0 or 1 — serve this monitor through go2rtc. */
+  go2rtc_enabled?: number;
+  /** 0–100, how strongly the analysis image blends over the frame. */
+  analysis_image_opacity?: number;
+  /** Object-detection mode. */
+  object_detection?: string;
+  /** Model name, blank when detection is off. */
+  object_detection_model?: string;
+  /** Non-maximum-suppression threshold, 0–1. */
+  object_detection_nms_threshold?: number;
+  /** Confidence threshold, 0–1. */
+  object_detection_object_threshold?: number;
 }
 
 export interface MonitorRuntimeStatus {
@@ -499,6 +519,10 @@ export interface User {
   /** Phone is optional in the API response — `UserResponse` omits it but
    *  the underlying `Users` table stores it. Treated as optional client-side. */
   phone?: string | null;
+  /** 0 or 1 — may this user authenticate against the API at all. */
+  api_enabled?: number;
+  /** Route the operator lands on after signing in ('console', …). */
+  home_view?: string;
 }
 
 // Orientation values from API

@@ -141,6 +141,18 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     analysis_source: 'Primary',
     analysis_image: 'FullColour',
     recording: 'OnMotion',
+    // Fields the backend marks required in MonitorResponse. Kept here so
+    // fixtures stay a faithful sample of what a client really receives.
+    enabled: 1,
+    wall_clock_timestamps: 0,
+    what_display: 'Nothing',
+    stream_channel: '',
+    go2rtc_enabled: 0,
+    analysis_image_opacity: 100,
+    object_detection: 'None',
+    object_detection_model: '',
+    object_detection_nms_threshold: 0.45,
+    object_detection_object_threshold: 0.5,
     ...overrides,
   };
 }

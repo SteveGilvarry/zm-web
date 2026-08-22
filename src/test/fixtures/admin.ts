@@ -28,6 +28,10 @@ export function makeUser(overrides: Partial<User> = {}): User {
     // No `phone` — `UserResponse` does not declare one, even though the
     // underlying Users table has the column. Pass it explicitly if a test
     // needs it.
+    // Required in UserResponse.
+    api_enabled: 1,
+    home_view: 'console',
+    phone: '',
     ...overrides,
   };
 }
