@@ -39,11 +39,11 @@
     "test:e2e:live": "playwright test --project=chromium --project=webkit"
   },
   "dependencies": {
-    "@tailwindcss/vite": "^4.1.18",
+    "@tailwindcss/vite": "^4.3.3",
     "@tanstack/react-query": "^5.90.20",
     "@tanstack/react-router": "^1.157.18",
     "clsx": "^2.1.1",
-    "hls.js": "^1.6.15",
+    "hls.js": "^1.7.1",
     "i18next": "^26.4.0",
     "i18next-browser-languagedetector": "^8.2.1",
     "lucide-react": "^0.563.0",
@@ -51,7 +51,7 @@
     "react-dom": "^19.2.0",
     "react-i18next": "^17.0.12",
     "tailwindcss": "^4.1.18",
-    "zustand": "^5.0.11"
+    "zustand": "^5.0.15"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
