@@ -304,6 +304,17 @@ Milestones: **v0.9 beta** at the end of Phase 2 (correct, deployable, secure, bo
 
 ## 10. Release criteria for 1.0
 
+
+**Merge gating (2026-08-22).** Required status checks cannot be set: branch
+protection *and* rulesets both return `403 Upgrade to GitHub Pro or make this
+repository public` on a private Free-plan repo — the same wall as the CLA
+required check (`0bdcad4`). The consequence is not theoretical: `gh pr merge
+--auto` does not queue without required checks, so PR #1 merged with a red e2e
+and PR #2 merged with two jobs still running. Until the repo is public or on
+Pro, merge with `scripts/merge-when-green.sh <pr>`, which refuses unless every
+check has concluded and passed. Delete that script once the checks can be
+required — enforcement belongs on the server, not in a script someone has to
+remember to run.
 - Zero P0/P1 open in the gap register for FE-possible items; every BE-blocked item has a ticket number and a visible, honest UI state (disabled with reason), never a silent drop.
 - Every legacy `?view=` page has a dashboard home or a documented, deliberate omission (bandwidth, donate, 1.39-only tabs).
 - Every `src/api` wrapper passes the OpenAPI contract test; every MSW fixture validates against the schema.

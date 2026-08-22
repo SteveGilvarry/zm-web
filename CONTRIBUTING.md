@@ -92,3 +92,15 @@ relevant logs, console output, or screenshots (with any footage/credentials reda
 - [ ] `npm run lint`, `npm test`, and `npm run build` all pass.
 - [ ] The change works in both skins (Modern and Classic) where applicable.
 - [ ] The change is focused and documented where it isn't self-evident.
+
+## Merging
+
+Required status checks need GitHub Pro on a private repo, so nothing on the
+server stops a merge while CI is red or still running — and `gh pr merge
+--auto` merges immediately rather than queueing. Use:
+
+```bash
+scripts/merge-when-green.sh <pr-number>
+```
+
+It waits for every check to conclude and refuses if any of them did not pass.
