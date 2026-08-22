@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getMonitor, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
@@ -76,6 +76,9 @@ export interface WatchPageState {
   ptzState: PtzState;
   alarm: WatchAlarmState;
   isMuted: boolean;
+  /** Output volume, 0–1. Independent of `isMuted`, as on any player. */
+  volume: number;
+  setVolume: (v: number) => void;
   isFullscreen: boolean;
   /** Viewport is at least 1024px wide. */
   isWide: boolean;
@@ -117,6 +120,16 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
   const [fellBackToHls, setFellBackToHls] = useState(false);
   const [isMuted, setIsMuted] = useState(true);
+  // 0–1. Kept next to the mute flag rather than read off the element, so the
+  // slider stays put across a protocol switch (the <video> is re-attached).
+  const [volume, setVolumeState] = useState(1);
+  const setVolume = useCallback((v: number) => {
+    const clamped = Math.min(1, Math.max(0, v));
+    setVolumeState(clamped);
+    // Nudging the slider off zero is the same gesture as unmuting: a slider
+    // that moves while nothing comes out is a broken-feeling control.
+    if (clamped > 0) setIsMuted(false);
+  }, []);
   const [isFullscreen, setIsFullscreen] = useState(false);
   // `?edit=true` (legacy `?view=monitor&mid=`) opens the editor on load.
   const [editorOpen, setEditorOpen] = useState(() => searchFlag(search, 'edit'));
@@ -282,6 +295,13 @@ export function useWatchPage(monitorId: number): WatchPageState {
     if (container) container.requestFullscreen().catch(() => {});
   };
 
+  // The <video> is re-attached on a protocol switch, so the level is applied
+  // from state rather than read back off the element.
+  useEffect(() => {
+    const video = activeStream.videoRef.current;
+    if (video) video.volume = volume;
+  }, [volume, activeStream, isMuted]);
+
   const toggleMute = () => {
     const video = activeStream.videoRef.current;
     if (video) {
@@ -368,6 +388,8 @@ export function useWatchPage(monitorId: number): WatchPageState {
     ptzState,
     alarm,
     isMuted,
+    volume,
+    setVolume,
     isFullscreen,
     isWide,
     editorOpen,

@@ -13,7 +13,7 @@
  * connection state so the connecting / live / failed overlays are reachable.
  */
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { delay, http, HttpResponse } from 'msw';
 
@@ -696,5 +696,82 @@ describe('modern Watch page — PTZ capability gaps', () => {
     expect(screen.queryByRole('button', { name: /Go to preset/ })).toBeNull();
     // Focus is still advertised.
     expect(screen.getByRole('button', { name: /Near/ })).toBeInTheDocument();
+  });
+});
+
+describe('modern Watch page — digital zoom and volume', () => {
+  /**
+   * Zoom here is on the received picture, not the camera: PTZ is a separate
+   * control in the rail. The gesture maths has its own tests
+   * (features/events/usePinchZoom.test.ts); what matters at this level is
+   * that the surface exists over the video, that the readout and reset only
+   * appear once zoomed, and that resetting clears the transform.
+   */
+  it('zooms the stage on a trackpad pinch and offers a reset', async () => {
+    stream.state = 'connected';
+    const user = userEvent.setup();
+    const { container } = renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    const surface = container.querySelector('video')!.parentElement!;
+    expect(surface.style.transform).toBe('');
+    expect(screen.queryByRole('button', { name: 'Reset zoom' })).toBeNull();
+
+    // A trackpad pinch arrives as a ctrl-key wheel event.
+    fireEvent.wheel(surface, { deltaY: -300, ctrlKey: true, clientX: 200, clientY: 150 });
+
+    await waitFor(() => expect(surface.style.transform).toMatch(/scale\(/));
+    const reset = await screen.findByRole('button', { name: 'Reset zoom' });
+    expect(reset).toHaveTextContent(/×/);
+
+    await user.click(reset);
+    await waitFor(() => expect(surface.style.transform).toBe(''));
+  });
+
+  it('leaves a plain scroll alone, so the page still scrolls over the video', async () => {
+    stream.state = 'connected';
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    const surface = document.querySelector('video')!.parentElement!;
+    fireEvent.wheel(surface, { deltaY: -300, clientX: 200, clientY: 150 });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(surface.style.transform).toBe('');
+  });
+
+  it('shows a volume slider only when the stream carries audio', async () => {
+    stream.state = 'connected';
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+    expect(screen.queryByRole('slider', { name: 'Volume' })).toBeNull();
+
+    cleanup();
+    stream.hasAudio = true;
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+    expect(await screen.findByRole('slider', { name: 'Volume' })).toBeInTheDocument();
+  });
+
+  it('reads zero while muted, and unmutes when the slider is moved off zero', async () => {
+    stream.state = 'connected';
+    stream.hasAudio = true;
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    // The stage starts muted, so the slider reports silence whatever the
+    // remembered level is.
+    const slider = await screen.findByRole('slider', { name: 'Volume' });
+    expect(slider).toHaveValue('0');
+    expect(screen.getByRole('button', { name: 'Unmute' })).toBeInTheDocument();
+
+    fireEvent.change(slider, { target: { value: '0.6' } });
+
+    await waitFor(() => expect(slider).toHaveValue('0.6'));
+    expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
   });
 });
