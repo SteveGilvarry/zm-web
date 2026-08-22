@@ -92,3 +92,10 @@ relevant logs, console output, or screenshots (with any footage/credentials reda
 - [ ] `npm run lint`, `npm test`, and `npm run build` all pass.
 - [ ] The change works in both skins (Modern and Classic) where applicable.
 - [ ] The change is focused and documented where it isn't self-evident.
+
+## Merging
+
+`main` requires five checks to pass — `typecheck · unit tests · build`,
+`lint`, `e2e (seeded)`, `container image` and `cla` — so a red or unfinished
+PR cannot be merged. `gh pr merge <n> --auto --merge` queues the merge behind
+them; do that rather than watching and clicking.

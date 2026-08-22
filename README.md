@@ -29,6 +29,42 @@ the [`zm-api`](https://github.com/SteveGilvarry/zm-api) Rust backend.*
 </tr>
 </table>
 
+<details>
+<summary><strong>More of the interface</strong> — events, watch, montage, settings, light theme, classic events</summary>
+<br />
+
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/modern-events.png" alt="Events list: one query line, a dense sortable table, totals and pager in a status bar" /></td>
+<td width="50%"><img src="docs/screenshots/modern-watch.png" alt="Watch: the live stage with PTZ, details and recent events in a side rail" /></td>
+</tr>
+<tr>
+<td align="center">Events — the table is the page</td>
+<td align="center">Watch — stage plus rail</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/modern-montage.png" alt="Montage: a resizable mosaic of live cells with layout and display controls on one line" /></td>
+<td width="50%"><img src="docs/screenshots/modern-settings.png" alt="Settings: appearance, system overview and the ZoneMinder configuration editor" /></td>
+</tr>
+<tr>
+<td align="center">Montage — resizable mosaic</td>
+<td align="center">Settings — configuration editor</td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/screenshots/modern-light.png" alt="The same console in the light theme" /></td>
+<td width="50%"><img src="docs/screenshots/classic-events.png" alt="Classic events list with the legacy filter form and bootstrap-style table" /></td>
+</tr>
+<tr>
+<td align="center">Light theme — designed, not inverted</td>
+<td align="center">Classic events — the legacy layout</td>
+</tr>
+</table>
+
+</details>
+
+<sub>Camera images are blurred; the dev box watches a real house.
+Regenerate with <code>node scripts/screenshots.mjs</code>.</sub>
+
 </div>
 
 ---

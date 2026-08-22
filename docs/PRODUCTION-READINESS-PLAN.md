@@ -76,7 +76,7 @@ These are verified live, not inferred. Order within the list is severity.
 
 | # | Problem | Where | Effort |
 |---|---|---|---|
-| F-9 | **Event timestamps display ≈10 h ahead** (zm-api stamps server-local `DATETIME` values with `Z`; logs and monitor-status are correct UTC). Knock-ons: Montage Review shows "NO EVENT" in every cell, the Events "last hour" bound disagrees with the console, the date picker defaults to the UTC date. Backend root cause (**BT-00**); FE workaround is to treat event times as server-local using a server-TZ value (BT-23) or an offset probe. | `src/routes/events/index.tsx:78-80, 667, 779-784`; `src/features/montagereview/useReviewEvents.ts` | S (FE) |
+| F-9 | **Event timestamps display ≈10 h ahead** (zm_api stamps server-local `DATETIME` values with `Z`; logs and monitor-status are correct UTC). Knock-ons: Montage Review shows "NO EVENT" in every cell, the Events "last hour" bound disagrees with the console, the date picker defaults to the UTC date. Backend root cause (**BT-00**); FE workaround is to treat event times as server-local using a server-TZ value (BT-23) or an offset probe. | `src/routes/events/index.tsx:78-80, 667, 779-784`; `src/features/montagereview/useReviewEvents.ts` | S (FE) |
 | F-10 ✅ | _Fixed (ZoneMinder scale end to end; server `>=` semantics labelled honestly; zm-api#21 for the rest)._ Logs severity labels off by one (live: `0=INF, -1=WAR, -2=ERR`; UI says `-1=ERROR, 0=WARNING, 1=INFO`) and the "Errors only / Info+ / Debug+" tiers return the wrong rows because the backend `level` is a numeric `>=` bound. Two tests enshrine the wrong map. | `src/api/logs.ts:45-64`; `src/features/logs/filter.ts:68-80`; `src/routes/logs/index.tsx:73-79` | S (+BT-04) |
 | F-11 ✅ | _Fixed: time-bounded neighbour queries, verified live._ Event detail Prev/Next only works for the oldest 100 events of a monitor (page 1, id asc, no page targeting). | `src/routes/events/$eventId.tsx:136-156` | S |
 | F-12 ✅ | _Fixed._ Reports chart sums to zero: `length` arrives as a decimal string and `Number.isFinite` rejects it. Same stale `ZmEvent.length: number` type hides it elsewhere. | `src/features/reports/bucketEventsByHour.ts:41`; `src/types/index.ts:214` | S |
@@ -304,6 +304,19 @@ Milestones: **v0.9 beta** at the end of Phase 2 (correct, deployable, secure, bo
 
 ## 10. Release criteria for 1.0
 
+
+**Merge gating (2026-08-22).** `main` requires `typecheck · unit tests ·
+build`, `lint`, `e2e (seeded)`, `container image` and `cla`; force pushes and
+branch deletion are blocked and conversations must be resolved. This was not
+possible while the repo was private on the Free plan — branch protection *and*
+rulesets both 403'd with "Upgrade to GitHub Pro or make this repository
+public", the same wall as the CLA required check (`0bdcad4`) — and the gap
+cost two bad merges the same morning: PR #1 landed with a red e2e, PR #2 with
+two jobs still running, because `gh pr merge --auto` merges on the spot when
+no check is required. The repo went public and the checks are now enforced
+server-side. Admin override is deliberately left enabled (`enforce_admins:
+false`) so a genuine emergency is not blocked by a broken runner; using it
+should be rare enough to be memorable.
 - Zero P0/P1 open in the gap register for FE-possible items; every BE-blocked item has a ticket number and a visible, honest UI state (disabled with reason), never a silent drop.
 - Every legacy `?view=` page has a dashboard home or a documented, deliberate omission (bandwidth, donate, 1.39-only tabs).
 - Every `src/api` wrapper passes the OpenAPI contract test; every MSW fixture validates against the schema.
