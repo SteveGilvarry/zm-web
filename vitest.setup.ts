@@ -2,7 +2,20 @@
 import './src/i18n';
 import '@testing-library/jest-dom/vitest';
 import { afterEach } from 'vitest';
-import { cleanup } from '@testing-library/react';
+import { cleanup, configure } from '@testing-library/react';
+
+/**
+ * testing-library waits 1 s by default for `findBy*` and `waitFor`. That is
+ * generous on a laptop and marginal on a two-core CI runner: a route-level
+ * test mounts the real router, MSW and a lazy page chunk before it can assert
+ * anything, and two different tests have now failed on GitHub while passing
+ * locally — the watch snapshot download, and the events list's first row.
+ *
+ * This changes patience, not assertions: a genuine failure still fails, it
+ * just takes longer to say so. Individual tests can still pass their own
+ * timeout where they need more.
+ */
+configure({ asyncUtilTimeout: 5_000 });
 
 // React Testing Library unmounts and cleans up between tests so DOM
 // state and event listeners don't bleed across.

@@ -15,7 +15,7 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-require_zm-api
+require_zm_api
 command -v cargo >/dev/null 2>&1 || die "cargo not found; install a Rust toolchain to run zm-api."
 
 cd "$ZM_API_DIR"
@@ -45,4 +45,7 @@ for form in APP__ APP_; do
 done
 
 info "zm-api -> $DATABASE_URL, listening on $E2E_API_URL"
-exec cargo run --bin zm-api "$@"
+# No `--bin`: the crate renamed its binary zm_api -> zm-api (zm-api dccb8ef),
+# and a pinned name breaks against whichever checkout you do not have. Both
+# versions set `default-run`, so the bare form picks the right one.
+exec cargo run "$@"

@@ -32,7 +32,7 @@ info() { printf '\033[0;32m[e2e-seed]\033[0m %s\n' "$*"; }
 warn() { printf '\033[1;33m[e2e-seed]\033[0m %s\n' "$*" >&2; }
 die()  { printf '\033[0;31m[e2e-seed]\033[0m %s\n' "$*" >&2; exit 1; }
 
-require_zm-api() {
+require_zm_api() {
   [ -x "$ZM_API_DIR/scripts/db-manager.sh" ] \
     || die "zm-api checkout not found at '$ZM_API_DIR' (expected scripts/db-manager.sh). Set ZM_API_DIR."
 }

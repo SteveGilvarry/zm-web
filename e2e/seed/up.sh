@@ -12,7 +12,7 @@
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
-require_zm-api
+require_zm_api
 detect_runtime
 
 if container_running && schema_loaded; then
