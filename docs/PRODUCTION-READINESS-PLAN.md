@@ -193,6 +193,7 @@ Deliberately out of scope: bandwidth profiles (the stub "High" chip is gone from
 
 ## 7. Backend tickets for zm_api
 
+- **#52 — `POST /reports` 500s on a name longer than 30 characters** (filed 2026-08-22). `Reports.Name` is `varchar(30)`; the truncation surfaces as `DATABASE_ERROR` instead of a 400 naming the field. Both skins cap the input at 30 as a workaround; the same class of bug likely affects every fixed-width ZoneMinder column the API writes.
 Filed 2026-08-21 as issues #16–#39 on `SteveGilvarry/zm-api`. **The dev box was updated 2026-08-22 (766c1a7..1a13ff0) and most of them shipped.** Verified live and closed:
 
 | # | Was | Now |
