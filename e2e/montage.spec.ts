@@ -13,6 +13,8 @@ test.describe('Montage', () => {
   test('modern: presets change the cell count @route:montage', async ({ loggedInPage: page }) => {
     await gotoSkin(page, '/montage', 'modern');
 
+    // Presets and saved layouts live behind the toolbar's Layout disclosure.
+    await page.getByRole('button', { name: /^Layout$/ }).click();
     await page.getByRole('button', { name: /^2×2$/ }).click();
     await expect(page.getByText(/4 cells/i)).toBeVisible();
 
@@ -27,6 +29,7 @@ test.describe('Montage', () => {
   }) => {
     await gotoSkin(page, '/montage', 'modern');
 
+    await page.getByRole('button', { name: /^Layout$/ }).click();
     const layouts = page.getByLabel(/saved layouts/i).first();
     await expect(layouts).toBeVisible();
     await layouts.selectOption(String(SEED.montageLayout));

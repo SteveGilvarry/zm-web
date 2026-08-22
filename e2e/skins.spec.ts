@@ -9,9 +9,10 @@ import { test, expect } from './fixtures';
  */
 test.describe('Skin switching', () => {
   test('switch modern → classic, persist across reload, switch back @route:settings.options', async ({ loggedInPage: page }) => {
-    // Start from the modern Console — sidebar should be visible.
+    // Start from the modern Console — the sidebar should be visible. Scoped
+    // by name: the console also has an activity rail, which is an <aside>.
     await page.goto('/');
-    await expect(page.locator('aside')).toBeVisible();
+    await expect(page.getByRole('complementary', { name: 'Sidebar' })).toBeVisible();
 
     // Navigate to Settings (Appearance lives at the top of the settings page).
     await page.goto('/settings');
@@ -23,7 +24,7 @@ test.describe('Skin switching', () => {
     // Classic shell mounts: the legacy top nav has the amber "ZoneMinder"
     // brand and no <aside> sidebar.
     await expect(page.getByText('ZoneMinder', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('aside')).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Sidebar' })).toHaveCount(0);
 
     // Persistence check — Zustand persist stores under `zm-ui`.
     const stored = await page.evaluate(() => {
@@ -40,7 +41,7 @@ test.describe('Skin switching', () => {
     // Hard reload — classic should still be selected.
     await page.reload();
     await expect(page.getByText('ZoneMinder', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator('aside')).toHaveCount(0);
+    await expect(page.getByRole('complementary', { name: 'Sidebar' })).toHaveCount(0);
 
     // Switch back to Modern from the classic settings page.
     // The Appearance panel is still on /settings under the classic skin.
@@ -48,7 +49,8 @@ test.describe('Skin switching', () => {
     await page.getByRole('button', { name: /mission control/i }).click();
 
     // Modern shell remounts: the sidebar comes back.
-    await expect(page.locator('aside')).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole('complementary', { name: 'Sidebar' }))
+      .toBeVisible({ timeout: 10_000 });
   });
 
   // No cleanup needed: every test gets its own browser context, so the

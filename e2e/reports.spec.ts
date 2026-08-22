@@ -44,7 +44,9 @@ test.describe('Reports', () => {
     test(`${skin}: creating a report from the form @route:reports.list`, async ({
       loggedInPage: page,
     }, testInfo) => {
-      const name = `e2e-probe-${testInfo.project.name}-${skin}-${Date.now()}`;
+      // Reports.Name is varchar(30) and the API 500s past it, so keep the
+      // unique-per-worker probe name short.
+      const name = `e2e-${testInfo.project.name.slice(0, 4)}-${skin.slice(0, 3)}-${Date.now() % 1_000_000}`;
       await gotoSkin(page, '/reports', skin);
       await expect(page.getByText('e2e-Weekly motion').first()).toBeVisible();
 
@@ -56,7 +58,9 @@ test.describe('Reports', () => {
         (r) => r.url().endsWith('/api/v3/reports') && r.request().method() === 'POST',
         { timeout: 15_000 },
       );
-      await page.getByRole('button', { name: /^create report$/i }).click();
+      // Modern labels the submit "Create report"; classic's legacy form
+      // labels it "Save".
+      await page.getByRole('button', { name: /^(create report|save)$/i }).click();
       const createResp = await created;
       expect(createResp.status()).toBe(201);
 

@@ -19,19 +19,12 @@ import {
  */
 
 /** Select one event by id, whatever the row layout is. */
-async function selectEvent(page: Page, skin: Skin, id: number) {
-  if (skin === 'classic') {
-    await page.getByRole('checkbox', { name: `Select event ${id}` }).check();
-    return;
-  }
-  // Modern hides the per-card checkbox until hover; the row is the card that
-  // links to this event.
-  const card = page
-    .locator('div')
-    .filter({ has: page.locator(`a[href="/events/${id}"]`) })
-    .filter({ has: page.getByRole('button', { name: 'Select event' }) })
-    .last();
-  await card.getByRole('button', { name: 'Select event' }).click({ force: true });
+/**
+ * Both skins now list events as a table with a real per-row checkbox — the
+ * modern skin's default view stopped being hover-revealing cards.
+ */
+async function selectEvent(page: Page, _skin: Skin, id: number) {
+  await page.getByRole('checkbox', { name: `Select event ${id}` }).check();
 }
 
 test.describe('Bulk events', () => {

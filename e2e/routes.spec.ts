@@ -41,7 +41,9 @@ const ANCHORS: Record<PageKey, Anchor> = {
   montage: (p, skin) =>
     skin === 'classic'
       ? p.getByTestId(`montage-classic-cell-${SEED.monitors.frontDoor}`)
-      : p.getByRole('button', { name: '2×2' }),
+      // The presets moved behind the toolbar's Layout disclosure, so the
+      // anchor is the disclosure itself.
+      : p.getByRole('button', { name: 'Layout' }),
   montagereview: (p) => p.getByRole('button', { name: 'PLAY' }),
   cycle: (p) => p.getByRole('button', { name: /next monitor/i }),
   'events.list': (p) => p.locator(`a[href="/events/${SEED.events.open}"]`).first(),

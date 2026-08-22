@@ -181,6 +181,9 @@ export function EventsTable({
                     <Link
                       to="/events/$eventId"
                       params={{ eventId: String(event.id) }}
+                      // The image is decorative (the row names the event
+                      // twice already), so the link needs its own name.
+                      aria-label={t('Event {{id}}', { id: event.id })}
                       className="block w-10 h-10 overflow-hidden rounded bg-bg-sunken"
                     >
                       <img

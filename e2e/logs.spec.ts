@@ -44,7 +44,10 @@ test.describe('Logs', () => {
       const body = (await (await listed).json()) as { total: number };
       expect(body.total).toBe(SEED.logs.count);
 
-      await expect(page.getByText(String(SEED.logs.count)).first()).toBeVisible();
+      // Scoped: the bare number also appears as a per-page <option>, which
+      // is in the DOM but not visible.
+      await expect(page.getByText(new RegExp(`Total:\\s*${SEED.logs.count}`)).first())
+        .toBeVisible();
       await expect(page.locator('tbody tr').first()).toBeVisible();
       await expect(page.getByRole('button', { name: /download csv/i })).toBeVisible();
     });
