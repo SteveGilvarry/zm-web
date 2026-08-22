@@ -6,6 +6,7 @@ import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { MonitorsListLayout } from '../layouts/MonitorsListLayout';
 import { formatFps, runtimeTone, type MonitorRuntime, type RuntimeTone } from '@/features/monitors/useMonitorStatuses';
 import type { Monitor as MonitorType } from '@/types';
+import { isOrientationRotated } from '@/types';
 
 /** The status lamp beside a monitor's name. Colour is state, nothing else. */
 const LENS: Record<RuntimeTone, string> = {
@@ -49,7 +50,7 @@ export default function MonitorsListPage() {
     <MonitorsListLayout
       renderMonitors={({ filteredMonitors, liveSessions, runtimeById, viewMode, clone, requestDelete, busy }) =>
         viewMode === 'grid' ? (
-          <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]">
+          <div className="grid gap-3 items-start grid-cols-[repeat(auto-fill,minmax(17rem,1fr))]">
             {filteredMonitors.map((monitor) => (
               <MonitorCard
                 key={monitor.id}
@@ -127,13 +128,21 @@ function MonitorCard({
         'hover:border-accent transition-colors',
       )}
     >
-      <div className="aspect-video relative bg-bg-sunken">
+      {/* The card takes the camera's shape, not 16:9 — a portrait camera in
+          a landscape box is mostly black bars. */}
+      <div
+        className="relative bg-bg-sunken"
+        style={{ aspectRatio: `${displayAspect(monitor)}` }}
+      >
         <MonitorPreview
           monitorId={monitor.id}
           monitorName={monitor.name}
           orientation={monitor.orientation}
           isActive={isActive}
           enableLivePreview
+          // The card now carries the camera's shape, so a rotated frame
+          // should fill it rather than being scaled to fit a 16:9 box.
+          rotationFit="fill"
         />
 
         {isStreaming && <LiveMark label={t('LIVE')} />}
@@ -315,4 +324,15 @@ function ActionBtn({
       {children}
     </button>
   );
+}
+
+/**
+ * Width ÷ height as displayed: ZoneMinder stores a rotated camera's frame at
+ * the sensor's dimensions and rotates on the way out.
+ */
+function displayAspect(monitor: MonitorType): number {
+  const rotated = isOrientationRotated(monitor.orientation);
+  const w = monitor.width || 16;
+  const h = monitor.height || 9;
+  return rotated ? h / w : w / h;
 }
