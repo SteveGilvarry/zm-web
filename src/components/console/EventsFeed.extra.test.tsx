@@ -66,7 +66,9 @@ describe('EventsFeed — duration', () => {
 describe('EventsFeed — thumbnail loading', () => {
   it('reveals the image once it loads and hides it when it fails', () => {
     render(<EventsFeed events={[makeEvent({ name: 'Front Door' })]} />);
-    const img = screen.getByRole('img', { name: 'Front Door' });
+    // The thumbnail is decorative: the row's link already announces the
+    // event, so the image carries an empty alt and is found by test id.
+    const img = screen.getByTestId('feed-thumb');
 
     fireEvent.load(img);
     expect(img.style.visibility).toBe('visible');
