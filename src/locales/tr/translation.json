@@ -1548,6 +1548,7 @@
   "The requested event could not be found.": "",
   "The requested monitor could not be found.": "",
   "The scan failed. Check that the API server can reach the camera network.": "",
+  "The server is busy and asked us to slow down. Retrying shortly.": "",
   "Theme": "",
   "There are no monitors to view.": "",
   "There is no page at this address.": "",

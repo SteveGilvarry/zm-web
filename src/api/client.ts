@@ -19,18 +19,31 @@ export type ApiErrorKind =
   | 'forbidden'
   | 'unauthorized'
   | 'not_found'
+  | 'rate_limited'
   | 'client'
   | 'unknown';
 
 export class ApiClientError extends Error {
   status: number;
   details?: Record<string, string>[];
+  /**
+   * How long the server asked us to wait, in ms, from `Retry-After`. Only a
+   * 429 carries one. Unlike the rest of the 4xx family a 429 *does* get
+   * better by asking again, and the server says when.
+   */
+  retryAfterMs?: number;
 
-  constructor(message: string, status: number, details?: Record<string, string>[]) {
+  constructor(
+    message: string,
+    status: number,
+    details?: Record<string, string>[],
+    retryAfterMs?: number,
+  ) {
     super(message);
     this.name = 'ApiClientError';
     this.status = status;
     this.details = details;
+    this.retryAfterMs = retryAfterMs;
   }
 
   get kind(): ApiErrorKind {
@@ -61,6 +74,7 @@ function kindForStatus(status: number): ApiErrorKind {
   if (status === 403) return 'forbidden';
   if (status === 401) return 'unauthorized';
   if (status === 404) return 'not_found';
+  if (status === 429) return 'rate_limited';
   if (status >= 400) return 'client';
   return 'unknown';
 }
@@ -80,14 +94,43 @@ export function isBackendUnreachable(error: unknown): boolean {
 }
 
 /**
- * TanStack Query `retry` predicate: retry transient failures (network, 5xx)
- * up to `maxRetries` times, never a 4xx — a 403 or 422 will not get better
- * by asking again, and retrying only delays the error state.
+ * TanStack Query `retry` predicate: retry transient failures (network, 5xx,
+ * 429) up to `maxRetries` times, never another 4xx — a 403 or 422 will not
+ * get better by asking again, and retrying only delays the error state.
+ *
+ * 429 is the exception in that family. zm-api rate-limits and answers with
+ * `Retry-After`, so failing the query outright turns a two-second pause into
+ * an error page; see `retryDelayForError`.
  */
 export function shouldRetryQuery(failureCount: number, error: unknown, maxRetries = 2): boolean {
   if (failureCount >= maxRetries) return false;
   const kind = classifyApiError(error);
-  return kind === 'network' || kind === 'server' || kind === 'unknown';
+  return kind === 'network' || kind === 'server' || kind === 'unknown' || kind === 'rate_limited';
+}
+
+/**
+ * Backoff for a retry. Honours the server's `Retry-After` when it sent one,
+ * otherwise exponential with a ceiling. Coming back sooner than asked is how
+ * a rate limit turns into a rate-limit loop.
+ */
+export function retryDelayForError(failureCount: number, error: unknown): number {
+  if (error instanceof ApiClientError && error.retryAfterMs != null) {
+    return Math.min(error.retryAfterMs, 30_000);
+  }
+  return Math.min(1000 * 2 ** failureCount, 30_000);
+}
+
+/**
+ * `Retry-After` is either a delay in seconds or an HTTP date. zm-api sends
+ * seconds; the date form is parsed too because the spec allows it and a
+ * proxy in front may rewrite it.
+ */
+export function parseRetryAfter(header: string | null, now = Date.now()): number | undefined {
+  if (!header) return undefined;
+  const seconds = Number(header.trim());
+  if (Number.isFinite(seconds)) return Math.max(0, seconds * 1000);
+  const at = Date.parse(header);
+  return Number.isNaN(at) ? undefined : Math.max(0, at - now);
 }
 
 /** A human-readable message for any error the API layer can throw. */
@@ -95,6 +138,7 @@ export function apiErrorMessage(error: unknown): string {
   if (error instanceof ApiClientError) {
     if (error.kind === 'network') return i18next.t('Cannot reach the server.');
     if (error.kind === 'forbidden') return i18next.t('You do not have permission to do this.');
+    if (error.kind === 'rate_limited') return i18next.t('The server is busy and asked us to slow down. Retrying shortly.');
     return error.message;
   }
   if (error instanceof TypeError) return i18next.t('Cannot reach the server.');
@@ -116,7 +160,14 @@ async function handleResponse<T>(response: Response): Promise<T> {
       // Response wasn't JSON
     }
 
-    throw new ApiClientError(errorMessage, response.status, details);
+    throw new ApiClientError(
+      errorMessage,
+      response.status,
+      details,
+      response.status === 429
+        ? parseRetryAfter(response.headers.get('retry-after') ?? response.headers.get('x-ratelimit-after'))
+        : undefined,
+    );
   }
 
   // Handle 204 No Content
