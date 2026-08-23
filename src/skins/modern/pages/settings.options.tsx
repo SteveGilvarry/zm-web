@@ -51,6 +51,7 @@ export default function SettingsOptionsPage() {
   const { can } = usePerms();
   useSiteTitle(t('Settings'));
   const { systemStatus, versionData, stats, daemons, selectedCategory, confirmAction } = s;
+  const { updateNotice } = s;
   const canEdit = can('system', 'Edit');
 
   if (!s.isAuthenticated) return null;
@@ -98,6 +99,16 @@ export default function SettingsOptionsPage() {
                   <dt className="text-fg-dim">{t('DB:')}</dt>
                   <dd className="font-mono tabular-nums text-fg">{versionData.db_version}</dd>
                 </div>
+                {updateNotice && (
+                  <div className="flex items-baseline gap-2">
+                    {/* State, so it gets colour (docs/DESIGN.md) — and only
+                        ever appears when there is genuinely a newer release. */}
+                    <dt className="sr-only">{t('Update available')}</dt>
+                    <dd className="text-warn">
+                      {t('ZoneMinder {{latest}} is available', { latest: updateNotice.latest })}
+                    </dd>
+                  </div>
+                )}
               </dl>
             )}
 

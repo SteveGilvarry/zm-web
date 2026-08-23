@@ -119,6 +119,14 @@ export default function ClassicSettingsOptionsPage() {
                       </tbody>
                     </ClassicTable>
                   )}
+                  {selected === 'version' && s.updateNotice && (
+                    <p role="status" className="mt-2 px-3 py-2 border border-amber-300 bg-amber-50 text-amber-900 text-sm">
+                      {t('ZoneMinder {{latest}} is available. This system runs {{current}}.', {
+                        latest: s.updateNotice.latest,
+                        current: s.updateNotice.current,
+                      })}
+                    </p>
+                  )}
 
                   <QueryState
                     isLoading={s.configsLoading}

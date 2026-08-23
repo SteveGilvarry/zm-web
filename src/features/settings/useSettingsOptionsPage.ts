@@ -1,3 +1,5 @@
+import { useZmConfig } from '@/features/config/useZmConfig';
+import { updateNotice } from './updateNotice';
 import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -17,7 +19,6 @@ import { getConfigs, updateConfig } from '@/api/configs';
 import { useAuthStore } from '@/stores/auth';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/components/common/toastStore';
-import { useZmConfig } from '@/features/config/useZmConfig';
 import { configDefaultValue, configPatternError } from './configFormat';
 import { DISPLAY_TAB, buildOptionsTabs, visibleCategories } from './optionsTabs';
 import type { ZmConfig } from '@/types';
@@ -69,6 +70,17 @@ export function useSettingsOptionsPage() {
     queryKey: ['version'],
     queryFn: getVersion,
     enabled: isAuthenticated,
+  });
+
+  // `ZM_CHECK_FOR_UPDATES`: ZoneMinder's own updater records the newest
+  // release it has seen in `ZM_DYN_LAST_VERSION`; we only compare and show.
+  // No network call of ours, so an air-gapped install stays silent.
+  const checkForUpdates = useZmConfig('ZM_CHECK_FOR_UPDATES', false);
+  const lastVersion = useZmConfig('ZM_DYN_LAST_VERSION', '');
+  const notice = updateNotice({
+    enabled: checkForUpdates,
+    current: versionData?.version,
+    latest: lastVersion,
   });
 
   // Daemons
@@ -318,6 +330,7 @@ export function useSettingsOptionsPage() {
     // overview
     systemStatus,
     versionData,
+    updateNotice: notice,
     stats,
     memoryUsedPercent,
     // daemons
