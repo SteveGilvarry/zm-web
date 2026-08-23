@@ -45,8 +45,8 @@ describe('monitorSource', () => {
 
 describe('applyLocalFilters', () => {
   const runtime: Record<number, MonitorRuntime> = {
-    1: { monitorId: 1, status: 'Connected', captureFps: 10, analysisFps: 0, bandwidth: 0, updatedOn: '' },
-    2: { monitorId: 2, status: 'NotRunning', captureFps: 0, analysisFps: 0, bandwidth: 0, updatedOn: '' },
+    1: { monitorId: 1, status: 'Connected', captureFps: 10, analysisFps: 0, captureFpsRaw: '0', analysisFpsRaw: '0', bandwidth: 0, updatedOn: '' },
+    2: { monitorId: 2, status: 'NotRunning', captureFps: 0, analysisFps: 0, captureFpsRaw: '0', analysisFpsRaw: '0', bandwidth: 0, updatedOn: '' },
   };
   const list = [m({ id: 1, name: 'Front' }), m({ id: 2, name: 'Back', host: '10.0.0.2' }), m({ id: 3, name: 'Side' })];
 

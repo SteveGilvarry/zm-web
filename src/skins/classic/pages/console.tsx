@@ -18,9 +18,9 @@ import { CONSOLE_COLUMNS, consoleColumnLabel, type ConsoleColumnKey } from '@/fe
 import { functionLines, type ConsoleRow, type ConsoleSortKey } from '@/features/console/consoleTable';
 import { monitorSource } from '@/features/monitors/useMonitorFilterRow';
 import {
-  formatBandwidth, formatFps, runtimeTone, type RuntimeTone,
+  formatBandwidthLegacy, formatFpsLegacy, runtimeTone, type RuntimeTone,
 } from '@/features/monitors/useMonitorStatuses';
-import { formatBytes } from '@/lib/format';
+import { humanFilesize } from '@/lib/format';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicDropdown, ClassicFilterRow, ClassicIconButton, ClassicPage, ClassicPagination,
@@ -38,7 +38,7 @@ const LENS: Record<RuntimeTone, string> = {
 
 /** Console — classic skin: the legacy `?view=console` table, verb for verb. */
 export default function ClassicConsolePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   useDocumentTitle(t('Console'));
   const page = useClassicConsolePage();
   const [showFilters, setShowFilters] = useState(true);
@@ -224,7 +224,6 @@ export default function ClassicConsolePage() {
                   row={row}
                   page={page}
                   visible={visible}
-                  locale={i18n.language}
                   names={names}
                   dragEnabled={sortMode && canEdit}
                   isDragging={draggingId === row.monitor.id}
@@ -246,8 +245,8 @@ export default function ClassicConsolePage() {
                   <ClassicTd className="text-center whitespace-nowrap" data-testid="console-runtime-totals">
                     {hasRuntime && (
                       <>
-                        {formatBandwidth(runtimeTotals.bandwidth, i18n.language)}{' '}
-                        {formatFps(runtimeTotals.captureFps, i18n.language)} / {formatFps(runtimeTotals.analysisFps, i18n.language)}
+                        {formatBandwidthLegacy(runtimeTotals.bandwidth)}{' '}
+                        {formatFpsLegacy(runtimeTotals.captureFps)} / {formatFpsLegacy(runtimeTotals.analysisFps)}
                       </>
                     )}
                   </ClassicTd>
@@ -293,12 +292,11 @@ export default function ClassicConsolePage() {
 /* ------------------------------------------------------------------------ */
 
 function ConsoleTableRow({
-  row, page, visible, locale, names, dragEnabled, isDragging, onDragStart, onDragEnd, onDrop,
+  row, page, visible, names, dragEnabled, isDragging, onDragStart, onDragEnd, onDrop,
 }: {
   row: ConsoleRow;
   page: ClassicConsolePageState;
   visible: (k: ConsoleColumnKey) => boolean;
-  locale: string;
   names: ClassicConsolePageState['names'];
   dragEnabled: boolean;
   isDragging: boolean;
@@ -377,7 +375,7 @@ function ConsoleTableRow({
           {lines.map((l) => <div key={l}>{l}</div>)}
           {isActive && runtime && (
             <div className="text-[11px] text-zinc-600 mt-1 tabular-nums" data-testid={`console-runtime-${m.id}`}>
-              {formatFps(runtime.captureFps, locale)} {formatBandwidth(runtime.bandwidth, locale)}
+              {formatFpsLegacy(runtime.captureFpsRaw)} {formatBandwidthLegacy(runtime.bandwidth)}
             </div>
           )}
         </ClassicTd>
@@ -420,12 +418,13 @@ function CountCell({ monitorId, count, disk, archived }: { monitorId: number; co
       >
         {count}
       </Link>
-      {/* Yes, the literal string. ZoneMinder's own `human_filesize()`
-          returns 'null' for a null size (functions.php), and a monitor with
-          no events makes `SUM(DiskSpace)` NULL — so this is what the legacy
-          console prints in that cell. Faithful, not a bug: don't "fix" it to
-          0 B or an em dash without changing legacy too. */}
-      <div className="text-[11px] text-zinc-500">{count > 0 && disk > 0 ? formatBytes(disk) : 'null'}</div>
+      {/* `null` is the literal string ZoneMinder prints: `SUM(DiskSpace)` is
+          NULL for a monitor with no events and legacy interpolates it
+          straight in. Zero is a different case and prints `0.00B` — checked
+          on 1.39.16, where a monitor with 3 events and no bytes reads
+          `3 / 0.00B`. Faithful, not a bug: don't "fix" either to an em dash
+          without changing legacy too. */}
+      <div className="text-[11px] text-zinc-500">{humanFilesize(count > 0 ? disk : null)}</div>
     </ClassicTd>
   );
 }
@@ -434,7 +433,7 @@ function FootCount({ count, disk }: { count: number; disk: number }) {
   return (
     <ClassicTd numeric>
       <span className={classicLinkClass}>{count}</span>
-      <div className="text-[11px] font-normal text-zinc-500">{disk > 0 ? formatBytes(disk) : 'null'}</div>
+      <div className="text-[11px] font-normal text-zinc-500">{humanFilesize(count > 0 ? disk : null)}</div>
     </ClassicTd>
   );
 }

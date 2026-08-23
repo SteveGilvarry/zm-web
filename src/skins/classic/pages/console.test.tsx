@@ -265,8 +265,11 @@ describe('ClassicConsolePage — table', () => {
 
     const row1 = screen.getByTestId('console-row-1');
     expect(within(row1).getByRole('img', { name: 'Connected' })).toBeInTheDocument();
-    expect(within(row1).getByTestId('console-runtime-1')).toHaveTextContent('10.0 fps');
-    expect(within(row1).getByTestId('console-runtime-1')).toHaveTextContent('2.0 KB/s');
+    // ZoneMinder's formatting, not ours: the stored decimal echoed verbatim
+    // and `human_filesize()` with a rate suffix — two places, no space,
+    // lowercase k. Checked against 1.39.16 (`9.89 fps 1.43MB/s`).
+    expect(within(row1).getByTestId('console-runtime-1')).toHaveTextContent('10.00 fps');
+    expect(within(row1).getByTestId('console-runtime-1')).toHaveTextContent('2.00kB/s');
 
     // Garage is not capturing at all, so the lens reads Not Running.
     const row3 = screen.getByTestId('console-row-3');
@@ -286,11 +289,12 @@ describe('ClassicConsolePage — table', () => {
     expect(within(foot).getByText('Total: 3')).toBeInTheDocument();
     // 30 + 4 total events, 3 MB of disk between them.
     expect(within(foot).getByText('34')).toBeInTheDocument();
-    expect(within(foot).getByText('3.0 MB')).toBeInTheDocument();
+    expect(within(foot).getByText('3.00MB')).toBeInTheDocument();
     // Two footer cells read 3: archived events (3) and zones (2 + 1 + 0).
     expect(within(foot).getAllByText('3')).toHaveLength(2);
     // Runtime totals cell: aggregate bandwidth and fps.
-    expect(within(foot).getByTestId('console-runtime-totals')).toHaveTextContent('2.0 KB/s 10.0 fps / 5.0 fps');
+    // Summed fps prints as PHP would: trailing zeros dropped, so 5 not 5.00.
+    expect(within(foot).getByTestId('console-runtime-totals')).toHaveTextContent('2.00kB/s 10 fps / 5 fps');
   });
 
   it('sorts by a column header and flips direction on a second click', async () => {

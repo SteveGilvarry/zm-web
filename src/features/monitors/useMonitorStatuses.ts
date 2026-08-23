@@ -1,3 +1,4 @@
+import { humanFilesize } from '@/lib/format';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { getMonitorStatuses, type MonitorStatusRecord } from '@/api/monitorStatus';
@@ -13,6 +14,14 @@ export interface MonitorRuntime {
   status: string;
   captureFps: number;
   analysisFps: number;
+  /**
+   * The fps values exactly as the API sent them. ZoneMinder's console prints
+   * the stored decimal verbatim — `39.62 fps / 0 fps`, where the zero has no
+   * decimals because the column holds "0" — so the classic skin needs the
+   * string, not a re-formatted number.
+   */
+  captureFpsRaw: string;
+  analysisFpsRaw: string;
   /** Bytes per second. */
   bandwidth: number;
   updatedOn: string;
@@ -44,11 +53,14 @@ export function parseRuntime(row: MonitorStatusRecord): MonitorRuntime {
     const n = Number(s);
     return Number.isFinite(n) ? n : 0;
   };
+  const raw = (s: string | number | null | undefined) => (s == null ? '0' : String(s));
   return {
     monitorId: row.monitor_id,
     status: row.status,
     captureFps: num(row.capture_fps),
     analysisFps: num(row.analysis_fps),
+    captureFpsRaw: raw(row.capture_fps),
+    analysisFpsRaw: raw(row.analysis_fps),
     bandwidth: num(row.capture_bandwidth),
     updatedOn: row.updated_on,
   };
@@ -57,6 +69,26 @@ export function parseRuntime(row: MonitorStatusRecord): MonitorRuntime {
 /** `10.9 fps` — one decimal, locale-aware digits. */
 export function formatFps(fps: number, locale?: string): string {
   return `${fps.toLocaleString(locale, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} fps`;
+}
+
+/**
+ * ZoneMinder's `39.62 fps` / `0 fps`.
+ *
+ * Per monitor legacy echoes the stored decimal, so pass the raw string. For
+ * the footer it echoes a summed float, where PHP prints `39.62` and `0` —
+ * hence rounding to two places and letting `String` drop trailing zeros
+ * rather than a fixed `toFixed(2)`, which would render the zero column as
+ * `0.00 fps`. The round matters: summing the four cameras on the reference
+ * box gives 39.620000000000005 in IEEE arithmetic.
+ */
+export function formatFpsLegacy(value: string | number): string {
+  const text = typeof value === 'number' ? String(Math.round(value * 100) / 100) : value;
+  return `${text} fps`;
+}
+
+/** ZoneMinder's `166.47kB/s` — `human_filesize()` with a rate suffix. */
+export function formatBandwidthLegacy(bytesPerSec: number): string {
+  return `${humanFilesize(bytesPerSec)}/s`;
 }
 
 /** `1.4 MB/s` / `6.2 KB/s` / `0 B/s`. */

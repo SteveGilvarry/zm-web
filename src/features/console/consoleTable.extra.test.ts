@@ -141,7 +141,7 @@ describe('sortRows / searchRows / pageSlice edges', () => {
 
 describe('exportColumns — every value function', () => {
   const runtime: MonitorRuntime = {
-    monitorId: 1, status: 'Connected', captureFps: 10.5, analysisFps: 5, bandwidth: 2048, updatedOn: '',
+    monitorId: 1, status: 'Connected', captureFps: 10.5, analysisFps: 5, captureFpsRaw: '0', analysisFpsRaw: '5', bandwidth: 2048, updatedOn: '',
   };
   const full = row(
     { id: 7, name: 'Front', manufacturer_id: 1, model_id: 2, zone_count: 3, sequence: 4, width: 640, height: 480 },

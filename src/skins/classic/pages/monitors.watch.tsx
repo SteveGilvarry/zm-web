@@ -16,7 +16,7 @@ import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
 import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
 import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
 import { useMonitorEvents } from '@/features/monitors/useMonitorEvents';
-import { formatFps } from '@/features/monitors/useMonitorStatuses';
+import { formatFpsLegacy } from '@/features/monitors/useMonitorStatuses';
 import { useAvailableHeight } from '@/features/monitors/useStageFit';
 import { useWatchPage } from '@/features/monitors/useWatchPage';
 import { PtzControls } from '@/features/ptz/PtzControls';
@@ -34,7 +34,7 @@ import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
  * transport row, and the full paginated events table for this monitor.
  */
 export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const page = useWatchPage(monitorId);
   const [stageAreaRef, availableHeight] = useAvailableHeight<HTMLDivElement>();
@@ -219,8 +219,8 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                 {runtime
                   ? t('State: {{state}} {{capture}} {{analysis}}', {
                       state: runtime.status,
-                      capture: formatFps(runtime.captureFps, i18n.language),
-                      analysis: formatFps(runtime.analysisFps, i18n.language),
+                      capture: formatFpsLegacy(runtime.captureFpsRaw),
+                      analysis: formatFpsLegacy(runtime.analysisFpsRaw),
                     })
                   : t('State: {{state}}', { state: isStreaming ? t('Connected') : t('Idle') })}
               </span>

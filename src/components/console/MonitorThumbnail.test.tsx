@@ -69,7 +69,7 @@ describe('MonitorThumbnail — activity ribbon', () => {
 });
 
 describe('MonitorThumbnail — runtime status', () => {
-  const runtime = { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, bandwidth: 0, updatedOn: '' };
+  const runtime = { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, captureFpsRaw: '0', analysisFpsRaw: '0', bandwidth: 0, updatedOn: '' };
 
   it('colours the lens from the capture-process state, not the config', () => {
     renderWithProviders(<MonitorThumbnail monitor={m} runtime={runtime} />);
