@@ -4,6 +4,7 @@
  * confirm — plus the self-row rules (starred, never selectable).
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import type { ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
@@ -80,10 +81,7 @@ function seed(over: unknown[] = [], selfEdit = '0') {
   server.use(
     ...(over as never[]),
     http.get('/api/v3/configs/categories', () => HttpResponse.json([{ category: 'system', count: 2 }])),
-    http.get('/api/v3/configs/:name', ({ params }) => HttpResponse.json({
-      id: 0, name: params.name, type: 'string', category: 'web', readonly: 0,
-      value: params.name === 'ZM_USER_SELF_EDIT' ? selfEdit : '',
-    })),
+    configListHandler({ ZM_USER_SELF_EDIT: selfEdit }),
     http.get('/api/v3/users', () => HttpResponse.json(paged(USERS))),
     http.get('/api/v3/users/:id', ({ params }) =>
       HttpResponse.json(USERS.find((u) => u.id === Number(params.id)) ?? USERS[0])),

@@ -4,6 +4,7 @@
  * `ZM_OPT_X10` like legacy `options.php`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -34,8 +35,7 @@ function stub(x10: '0' | '1', categories: unknown[] = CATEGORIES) {
       categoryRequests += 1;
       return HttpResponse.json(categories);
     }),
-    http.get('/api/v3/configs/:name', ({ params }) =>
-      HttpResponse.json({ name: params.name, value: params.name === 'ZM_OPT_X10' ? x10 : '' })),
+    configListHandler({ ZM_OPT_X10: x10 }),
   );
 }
 
@@ -84,7 +84,7 @@ describe('useOptionsTabs', () => {
     server.use(
       http.get('/api/v3/configs/categories', () =>
         HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'config table locked' }, { status: 500 })),
-      http.get('/api/v3/configs/:name', ({ params }) => HttpResponse.json({ name: params.name, value: '0' })),
+      configListHandler({ ZM_OPT_X10: '0' }),
     );
     const { result } = renderHook(() => useOptionsTabs(), { wrapper: wrapper() });
     await new Promise((r) => setTimeout(r, 30));
@@ -97,7 +97,7 @@ describe('useOptionsTabs', () => {
   it('falls back to the page tabs when the backend is unreachable', async () => {
     server.use(
       http.get('/api/v3/configs/categories', () => HttpResponse.error()),
-      http.get('/api/v3/configs/:name', ({ params }) => HttpResponse.json({ name: params.name, value: '0' })),
+      configListHandler({ ZM_OPT_X10: '0' }),
     );
     const { result } = renderHook(() => useOptionsTabs(), { wrapper: wrapper() });
     await new Promise((r) => setTimeout(r, 30));

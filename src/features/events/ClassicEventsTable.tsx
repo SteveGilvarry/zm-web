@@ -7,10 +7,10 @@ import {
   type EventSortField,
   type SortDirection,
 } from '@/api/events';
-import { formatBytes } from '@/lib/format';
+import { humanFilesize } from '@/lib/format';
 import { ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead } from '@/skins/classic/components/events/primitives';
 import { classicLink } from '@/skins/classic/components/events/styles';
-import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import { useLegacyDateTimeFormat } from '@/features/config/useLegacyDateTimeFormat';
 import { formatDurationHms, sumEventDurations, sumEventDiskSpace } from './duration';
 import { useEventsColumnLabels } from './columnLabels';
 import { COLUMN_SORT_FIELD } from './sortColumns';
@@ -56,7 +56,7 @@ export function ClassicEventsTable({
   const { t } = useTranslation();
   const labels = useEventsColumnLabels();
   // ZoneMinder's own date/time patterns and server zone (see useDateTimeFormat).
-  const { formatDateTime } = useDateTimeFormat();
+  const { formatDateTime } = useLegacyDateTimeFormat();
   const fmtTime = (iso: string | null | undefined) => (iso ? formatDateTime(iso) || '—' : '—');
   const hidden = useEventsColumnsStore((s) => s.hidden);
   const visible: EventsColumnKey[] = EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
@@ -112,7 +112,7 @@ export function ClassicEventsTable({
       case 'storage':
         return storageName ? storageName(e.storage_id) : String(e.storage_id);
       case 'disk_space':
-        return e.disk_space != null ? formatBytes(e.disk_space) : '—';
+        return e.disk_space != null ? humanFilesize(e.disk_space) : '—';
     }
   };
 
@@ -122,7 +122,7 @@ export function ClassicEventsTable({
       return <ClassicTd key={key} numeric className="font-semibold" data-testid="events-total-duration">{formatDurationHms(totalDurationSec)}</ClassicTd>;
     }
     if (key === 'disk_space') {
-      return <ClassicTd key={key} numeric className="font-semibold" data-testid="events-total-disk-space">{formatBytes(totalDiskSpace)}</ClassicTd>;
+      return <ClassicTd key={key} numeric className="font-semibold" data-testid="events-total-disk-space">{humanFilesize(totalDiskSpace)}</ClassicTd>;
     }
     return <ClassicTd key={key} />;
   };

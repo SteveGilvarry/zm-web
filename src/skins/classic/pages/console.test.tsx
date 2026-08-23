@@ -5,6 +5,7 @@
  * filter row, paging and the footer totals.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -152,12 +153,7 @@ function stub(options: StubOptions = {}) {
     http.get('/api/v3/storage', () => HttpResponse.json(paged(storage))),
     http.get('/api/v3/manufacturers', () => HttpResponse.json(paged([{ id: 7, name: 'Hikvision' }], { per_page: 500 }))),
     http.get('/api/v3/models', () => HttpResponse.json(paged([{ id: 9, name: 'DS-2CD' }], { per_page: 500 }))),
-    http.get('/api/v3/configs/:name', ({ params }) => {
-      const name = String(params.name);
-      return name in cfg
-        ? HttpResponse.json({ name, value: cfg[name], type: 'string' })
-        : HttpResponse.json({ kind: 'NOT_FOUND', error_message: 'no such config' }, { status: 404 });
-    }),
+    configListHandler(cfg),
     // Mutations
     http.get('/api/v3/monitors/:id', ({ params }) => {
       const m = MONITORS.find((x) => x.id === Number(params.id));

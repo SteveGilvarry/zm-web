@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -98,12 +99,7 @@ function stub(
         items: events, total: events.length, per_page: 20, current_page: 1, last_page: 3,
       });
     }),
-    http.get('/api/v3/configs/:name', ({ params }) => {
-      const name = String(params.name);
-      return name in cfg
-        ? HttpResponse.json({ name, value: cfg[name], type: 'string' })
-        : HttpResponse.json({ kind: 'NOT_FOUND' }, { status: 404 });
-    }),
+    configListHandler(cfg),
     http.get('/api/v3/monitors', () =>
       HttpResponse.json({
         items: [{ id: 1, name: 'Front Door' }], total: 1, per_page: 100, current_page: 1, last_page: 1,

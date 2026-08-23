@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -59,8 +60,7 @@ const server = setupServer(
   http.get('/api/v3/groups-monitors', () => paged([])),
   http.get('/api/v3/servers', () => paged([{ id: 1, name: 'zm-a' }])),
   http.get('/api/v3/storage', () => paged([{ id: 1, name: 'Default' }])),
-  http.get('/api/v3/configs/:name', ({ params }) =>
-    HttpResponse.json({ name: params.name, value: params.name === 'ZM_WEB_EVENTS_PER_PAGE' ? '2' : '1' })),
+  configListHandler({ ZM_WEB_EVENTS_PER_PAGE: '2' }),
   http.patch('/api/v3/monitors/:id', async ({ params, request }) => {
     patched.push({ id: String(params.id), body: await request.json() });
     return HttpResponse.json({ id: Number(params.id) });

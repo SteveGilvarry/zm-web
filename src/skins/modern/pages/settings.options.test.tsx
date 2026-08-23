@@ -83,9 +83,17 @@ function setupHappyPath(x10 = '0') {
     })),
     http.get('/api/v3/host/getVersion', () => HttpResponse.json({ version: '1.37.0', api_version: '3.0' })),
     http.get('/api/v3/daemons', () => HttpResponse.json({ daemons: [] })),
-    http.get('/api/v3/configs', () => HttpResponse.json({
-      items: CONFIGS, total: CONFIGS.length, per_page: 500, current_page: 1, last_page: 1,
-    })),
+    // Two callers share this endpoint: the page lists the rows it renders,
+    // and `useZmConfig` reads the whole table in one go (`page_size=1000`)
+    // instead of one request per setting. Only the latter needs the gate
+    // row — adding it to the page's list would change the category counts.
+    http.get('/api/v3/configs', ({ request }) => {
+      const wholeTable = new URL(request.url).searchParams.get('page_size') === '1000';
+      const items = wholeTable
+        ? [...CONFIGS, { id: 100, name: 'ZM_OPT_X10', value: x10, type: 'boolean', category: 'x10', readonly: 0, help: '', hint: '' }]
+        : CONFIGS;
+      return HttpResponse.json({ items, total: items.length, per_page: 500, current_page: 1, last_page: 1 });
+    }),
   );
 }
 

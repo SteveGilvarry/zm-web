@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -20,8 +21,7 @@ const server = setupServer(
       total: 5, per_page: 2, current_page: page, last_page: 3,
     });
   }),
-  http.get('/api/v3/configs/:name', ({ params }) =>
-    HttpResponse.json({ name: params.name, value: params.name === 'ZM_WEB_EVENTS_PER_PAGE' ? '2' : '1' })),
+  configListHandler({ ZM_WEB_EVENTS_PER_PAGE: '2' }),
   http.delete('/api/v3/events/:id', ({ params }) => { deleted.push(String(params.id)); return new HttpResponse(null, { status: 204 }); }),
 );
 beforeAll(() => {

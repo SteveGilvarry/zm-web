@@ -565,6 +565,34 @@ const groups: HttpHandler[] = [
   http.delete(`${API}/groups-permissions/:id`, () => HttpResponse.json({ message: 'ok' })),
 ];
 
+/**
+ * A `GET /configs` handler for tests that need specific `ZM_*` values.
+ *
+ * `useZmConfig` reads the whole table through one shared query rather than
+ * fetching each row — a page reading five settings used to make five round
+ * trips, which trips zm-api's rate limiter on a real box. Tests therefore
+ * override the *list*, not `/configs/:name`.
+ *
+ * Overrides are merged over the seeded rows, so naming one value does not
+ * blank the rest of the table the way replacing the list wholesale would.
+ */
+export function configListHandler(overrides: Record<string, string>): HttpHandler {
+  return http.get(`${API}/configs`, ({ request }) => {
+    const rows = db.configs.map((c) =>
+      c.name in overrides ? { ...c, value: overrides[c.name] } : c,
+    );
+    for (const [name, value] of Object.entries(overrides)) {
+      if (!rows.some((r) => r.name === name)) {
+        rows.push({
+          id: rows.length + 1, name, value,
+          type: 'string', category: 'web', readonly: 0, private: 0, system: 0,
+        } as (typeof db.configs)[number]);
+      }
+    }
+    return HttpResponse.json(pageOf(request, rows));
+  });
+}
+
 const configs: HttpHandler[] = [
   http.get(`${API}/configs/categories`, () =>
     HttpResponse.json(

@@ -6,6 +6,7 @@
  * size / page URL round-trip and the outgoing `/frames` query are all real.
  */
 import { describe, expect, it } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -190,12 +191,7 @@ describe('EventFramesPage — modern skin', () => {
   it('honours ZM_WEB_EVENTS_PER_PAGE for the default page size', async () => {
     const urls = recordFrameQueries(() => HttpResponse.json(paginated(db.frames)));
     server.use(
-      http.get('/api/v3/configs/ZM_WEB_EVENTS_PER_PAGE', () =>
-        HttpResponse.json({
-          id: 9, name: 'ZM_WEB_EVENTS_PER_PAGE', value: '100',
-          type: 'integer', category: 'web',
-        }),
-      ),
+      configListHandler({ ZM_WEB_EVENTS_PER_PAGE: '100' }),
     );
     renderRoute('/events/101/frames');
     await screen.findByTestId('frames-table');

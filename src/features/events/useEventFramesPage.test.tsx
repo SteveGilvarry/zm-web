@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -73,6 +74,7 @@ function stub(
         current_page: Number(q.get('page') ?? 1), last_page: Math.ceil(total / per),
       });
     }),
+    configListHandler(configs),
     http.get('/api/v3/configs/:name', ({ params }) => {
       const name = String(params.name);
       return name in configs

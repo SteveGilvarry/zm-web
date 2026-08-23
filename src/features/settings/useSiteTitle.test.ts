@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { createElement, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -25,11 +25,7 @@ function wrapper({ children }: { children: ReactNode }) {
 
 function seed(values: Record<string, string>) {
   server.use(
-    http.get('/api/v3/configs/:name', ({ params }) => {
-      const name = String(params.name);
-      if (!(name in values)) return HttpResponse.json({ message: 'not found' }, { status: 404 });
-      return HttpResponse.json({ id: 1, name, value: values[name], type: 'string', category: 'web', readonly: 0, private: 0, system: 0 });
-    }),
+    configListHandler(values),
   );
 }
 

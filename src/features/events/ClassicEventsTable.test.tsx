@@ -153,7 +153,8 @@ describe('ClassicEventsTable — header', () => {
     expect(screen.getByText('Store 3')).toBeInTheDocument();
     expect(screen.getByText('00:01:05')).toBeInTheDocument();
     expect(screen.getByTestId('events-total-duration').textContent).toBe('00:01:10');
-    expect(screen.getByTestId('events-total-disk-space').textContent).toBe('3.0 KB');
+    // ZoneMinder's `human_filesize()`: two decimals, no space, lowercase k.
+    expect(screen.getByTestId('events-total-disk-space').textContent).toBe('3.00kB');
   });
 });
 

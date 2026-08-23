@@ -7,6 +7,7 @@
  * `ZM_USER_SELF_EDIT` letting a user open only their own row.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -79,8 +80,7 @@ const THREE = [user(1, 'admin'), user(3, 'zoe'), user(2, 'bob', { enabled: 0 })]
 function stubUsers(items: User[] = THREE, selfEdit = '0') {
   server.use(
     http.get('/api/v3/users', () => paged(items)),
-    http.get('/api/v3/configs/ZM_USER_SELF_EDIT', () =>
-      HttpResponse.json({ name: 'ZM_USER_SELF_EDIT', value: selfEdit })),
+    configListHandler({ ZM_USER_SELF_EDIT: selfEdit }),
   );
 }
 
@@ -190,8 +190,7 @@ describe('useUsersPage — error and permission states', () => {
     server.use(
       http.get('/api/v3/users', () =>
         HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'Users table locked' }, { status: 500 })),
-      http.get('/api/v3/configs/ZM_USER_SELF_EDIT', () =>
-        HttpResponse.json({ name: 'ZM_USER_SELF_EDIT', value: '0' })),
+      configListHandler({ ZM_USER_SELF_EDIT: '0' }),
     );
     const { result } = await mount();
 
@@ -204,8 +203,7 @@ describe('useUsersPage — error and permission states', () => {
     signIn(ADMIN_PERMS);
     server.use(
       http.get('/api/v3/users', () => HttpResponse.error()),
-      http.get('/api/v3/configs/ZM_USER_SELF_EDIT', () =>
-        HttpResponse.json({ name: 'ZM_USER_SELF_EDIT', value: '0' })),
+      configListHandler({ ZM_USER_SELF_EDIT: '0' }),
     );
     const { result } = await mount();
 
@@ -217,8 +215,7 @@ describe('useUsersPage — error and permission states', () => {
     let hits = 0;
     server.use(
       http.get('/api/v3/users', () => { hits += 1; return paged(THREE); }),
-      http.get('/api/v3/configs/ZM_USER_SELF_EDIT', () =>
-        HttpResponse.json({ name: 'ZM_USER_SELF_EDIT', value: '0' })),
+      configListHandler({ ZM_USER_SELF_EDIT: '0' }),
     );
     const { result } = await mount();
     await waitFor(() => expect(hits).toBe(1));
