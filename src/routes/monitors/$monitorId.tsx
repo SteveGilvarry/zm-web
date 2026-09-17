@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { SkinPage } from '@/skins/SkinPage';
+import { MonitorWatchRoute } from '@/features/nav/routeComponents';
 
 /** `?edit=true` — legacy `?view=monitor&mid=` — opens the editor on load. */
 interface WatchSearchParams {
@@ -12,8 +12,3 @@ export const Route = createFileRoute('/monitors/$monitorId')({
     edit: search.edit === true || search.edit === 'true' || search.edit === 1 || search.edit === '1' ? true : undefined,
   }),
 });
-
-function MonitorWatchRoute() {
-  const { monitorId } = Route.useParams();
-  return <SkinPage page="monitors.watch" monitorId={Number(monitorId)} />;
-}

@@ -386,13 +386,14 @@ export function useMontageReviewPage(): MontageReviewPageState {
   );
 
   // Default selection: all enabled monitors (once they load), unless the
-  // URL named one.
-  useEffect(() => {
-    if (selectedIds.size === 0 && enabled.length > 0) {
-      setSelectedIds(new Set(enabled.map((m) => m.id)));
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [enabled.length]);
+  // URL named one. Seeded during render, keyed on how many monitors were in
+  // play last time, so the first paint already shows the full wall and
+  // clearing the selection by hand is not undone on the next render.
+  const [seededAt, setSeededAt] = useState(0);
+  if (selectedIds.size === 0 && enabled.length > 0 && seededAt !== enabled.length) {
+    setSeededAt(enabled.length);
+    setSelectedIds(new Set(enabled.map((m) => m.id)));
+  }
 
   const selectedMonitors = enabled.filter((m) => selectedIds.has(m.id));
 

@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router';
-import { SkinPage } from '@/skins/SkinPage';
+import { EventFramesRoute } from '@/features/nav/routeComponents';
 
 export interface EventFramesSearchParams {
   page?: number;
@@ -29,8 +29,3 @@ export const Route = createFileRoute('/events/$eventId_/frames')({
     page_size: toPageSize(search.page_size),
   }),
 });
-
-function EventFramesRoute() {
-  const { eventId } = Route.useParams();
-  return <SkinPage page="events.frames" eventId={parseInt(eventId, 10)} />;
-}

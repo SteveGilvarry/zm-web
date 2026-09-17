@@ -1,4 +1,5 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type ReactNode, type ThHTMLAttributes } from 'react';
+import { useMirroredState } from '@/hooks/useMirroredState';
+import { type ButtonHTMLAttributes, type ReactNode, type ThHTMLAttributes } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 
@@ -231,8 +232,7 @@ export function ClassicPager({
 
 function JumpTo({ page, totalPages, onJump }: { page: number; totalPages: number; onJump: (n: number) => void }) {
   const { t } = useTranslation();
-  const [value, setValue] = useState(String(page));
-  useEffect(() => { setValue(String(page)); }, [page]);
+  const [value, setValue] = useMirroredState(String(page));
   const submit = () => {
     // Clamp rather than reject: legacy's GO takes you to the nearest valid
     // page. (`min`/`max` attributes here would make the browser block submit

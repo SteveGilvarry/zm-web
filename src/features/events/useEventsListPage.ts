@@ -1,3 +1,4 @@
+import { useMirroredState } from '@/hooks/useMirroredState';
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -278,10 +279,8 @@ export function useEventsListPage(): EventsListPageState {
 
   // Free-text boxes keep a local draft and commit to the URL shortly after
   // the operator stops typing, so every keystroke does not rewrite history.
-  const [searchDraft, setSearchDraft] = useState(search.q ?? '');
-  const [causeDraft, setCauseDraft] = useState(search.cause ?? '');
-  useEffect(() => { setSearchDraft(search.q ?? ''); }, [search.q]);
-  useEffect(() => { setCauseDraft(search.cause ?? ''); }, [search.cause]);
+  const [searchDraft, setSearchDraft] = useMirroredState(search.q ?? '');
+  const [causeDraft, setCauseDraft] = useMirroredState(search.cause ?? '');
   useEffect(() => {
     const id = setTimeout(() => {
       if ((search.q ?? '') !== searchDraft) setSearch({ q: searchDraft || undefined, page: undefined });

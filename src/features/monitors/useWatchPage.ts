@@ -129,6 +129,23 @@ export interface WatchPageState {
 }
 
 /**
+ * Volume and mute are DOM properties of the <video>, but the element itself
+ * sits in a ref that `useHlsStream`/`useWebRtcStream` own and return. Setting
+ * them through plain functions that take the element keeps the hook result
+ * itself untouched — which is the truth of it: only the element changes.
+ */
+function applyVolume(video: HTMLVideoElement | null, volume: number) {
+  if (video) video.volume = volume;
+}
+
+/** Flips the element's mute and reports the new value, or null if unmounted. */
+function flipMuted(video: HTMLVideoElement | null): boolean | null {
+  if (!video) return null;
+  video.muted = !video.muted;
+  return video.muted;
+}
+
+/**
  * Everything the Watch page needs for one monitor: the monitor record,
  * both stream hooks (only the selected protocol is started), PTZ
  * capabilities, runtime status, alarm control, recent events, mode
@@ -327,17 +344,12 @@ export function useWatchPage(monitorId: number): WatchPageState {
   // The <video> is re-attached on a protocol switch, so the level is applied
   // from state rather than read back off the element.
   useEffect(() => {
-    const video = activeStream.videoRef.current;
-    if (video) video.volume = volume;
+    applyVolume(activeStream.videoRef.current, volume);
   }, [volume, activeStream, isMuted]);
 
   const toggleMute = () => {
-    const video = activeStream.videoRef.current;
-    if (video) {
-      // Event handler toggling a DOM property on the <video>.
-      video.muted = !video.muted;
-      setIsMuted(video.muted);
-    }
+    const muted = flipMuted(activeStream.videoRef.current);
+    if (muted !== null) setIsMuted(muted);
   };
 
   // Legacy stops playback and puts up the "are you still watching" modal

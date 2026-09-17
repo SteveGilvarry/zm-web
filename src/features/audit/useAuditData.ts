@@ -69,6 +69,14 @@ export function useAuditData(monitors: Monitor[], min: string, max: string): Aud
     })),
   });
 
+  // `useQueries` hands back a fresh array every render, so the memo keys off a
+  // string built from the parts the rows actually read. (A spread dependency
+  // list is not an array literal, which the React Compiler rules reject — and
+  // it changes length as monitors load, which hooks may not do anyway.)
+  const rowsKey = eventQs
+    .map((q) => `${q.dataUpdatedAt}:${q.isLoading ? 1 : 0}:${q.errorUpdatedAt}`)
+    .join('|');
+
   const rows = useMemo<AuditRow[]>(
     () => monitors.map((monitor, i) => {
       const q = eventQs[i];
@@ -80,7 +88,7 @@ export function useAuditData(monitors: Monitor[], min: string, max: string): Aud
       };
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [monitors, ...eventQs.map((q) => q.data), ...eventQs.map((q) => q.isLoading), ...eventQs.map((q) => q.error)],
+    [monitors, rowsKey],
   );
 
   const truncatedMonitorIds = monitors.filter((_, i) => eventQs[i]?.data?.truncated).map((m) => m.id);

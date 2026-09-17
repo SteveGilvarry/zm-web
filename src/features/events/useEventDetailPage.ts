@@ -425,20 +425,21 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   //  3. otherwise, neighbours by time within the monitor scope.
   const listSearch: EventNavSearch = useSearch({ from: '/events/$eventId' });
   const urlMonitorIds = monitorIdsFromSearch(listSearch);
+  // Several monitors can only be listed through `/filters/preview`, which
+  // has no ordering guarantee to walk; those fall back to "all monitors".
+  const urlMonitorId = urlMonitorIds.length === 1 ? urlMonitorIds[0] : undefined;
+  // The list's Notes box is a multi-select; `/events` takes one substring,
+  // so a multi-type list narrows Prev/Next by its first type only.
+  const urlNote = notesFromSearch(listSearch)[0];
   /** The list filters this URL carries, as `/events` query params. */
   const urlFilters: EventQueryParams = useMemo(() => ({
-    // Several monitors can only be listed through `/filters/preview`, which
-    // has no ordering guarantee to walk; those fall back to "all monitors".
-    monitor_id: urlMonitorIds.length === 1 ? urlMonitorIds[0] : undefined,
+    monitor_id: urlMonitorId,
     archived: listSearch.archived,
     cause: listSearch.cause || undefined,
-    // The list's Notes box is a multi-select; `/events` takes one substring,
-    // so a multi-type list narrows Prev/Next by its first type only.
-    notes: notesFromSearch(listSearch)[0],
+    notes: urlNote,
     name: listSearch.q || undefined,
     tag_id: listSearch.tag != null ? String(listSearch.tag) : undefined,
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [urlMonitorIds.join(','), listSearch.archived, listSearch.cause, listSearch.notes, listSearch.q, listSearch.tag]);
+  }), [urlMonitorId, listSearch.archived, listSearch.cause, urlNote, listSearch.q, listSearch.tag]);
 
   // Page + sort is what makes a URL a *list position*; without both there is
   // nothing to take a row above/below from.
@@ -609,7 +610,11 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   //
   // "No more events" is legacy's overlay when Next has nowhere to go —
   // after the last event of a replay run, and after deleting the last one.
-  const [noMoreEvents, setNoMoreEvents] = useState(false);
+  // Keyed by event id so a new event clears it in the same render, with no
+  // reset effect: the overlay belongs to the event that ran out of neighbours.
+  const [noMoreFor, setNoMoreFor] = useState<number | null>(null);
+  const noMoreEvents = noMoreFor === id;
+  const setNoMoreEvents = (on: boolean) => setNoMoreFor(on ? id : null);
   // `all` waits the real gap between this event's end and the next one's
   // start, counting it down over the player (legacy `vjsReplay`).
   const [gapCountdown, setGapCountdown] = useState<string | null>(null);
@@ -619,10 +624,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     gapTimer.current = null;
     setGapCountdown(null);
   };
-  useEffect(() => {
-    setNoMoreEvents(false);
-    return stopGap;
-  }, [id]);
+  // A gap countdown belongs to the event it started on.
+  useEffect(() => stopGap, [id]);
 
   const handleVideoEnded = () => {
     setIsPlaying(false);
