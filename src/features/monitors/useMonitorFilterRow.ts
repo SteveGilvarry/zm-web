@@ -18,7 +18,17 @@ import type { MonitorRuntime } from './useMonitorStatuses';
 export type FilterRowField =
   | 'groupId' | 'name' | 'capturing' | 'analysing' | 'recording' | 'status' | 'source' | 'monitorId';
 
+/**
+ * One string per field. `monitorId` may hold several ids joined with commas
+ * (`"3,7"`): legacy's Monitor select is multi-select and SELECT on the console
+ * narrows to every checked row (`?MonitorId[]=3&MonitorId[]=7`).
+ */
 export type FilterRowValues = Record<FilterRowField, string>;
+
+/** `"3,7"` → `[3, 7]`; blanks and non-numbers are dropped. */
+export function parseIdList(value: string): number[] {
+  return value.split(',').map((v) => Number(v.trim())).filter((n) => Number.isInteger(n) && n > 0);
+}
 
 export const FILTER_ROW_FIELDS: readonly FilterRowField[] = [
   'groupId', 'name', 'capturing', 'analysing', 'recording', 'status', 'source', 'monitorId',
@@ -124,7 +134,7 @@ export function useMonitorFilterRow(
     capturing: store.capturing[0] ?? '',
     analysing: store.analysing[0] ?? '',
     recording: store.recording[0] ?? '',
-    monitorId: store.monitorIds[0] != null ? String(store.monitorIds[0]) : '',
+    monitorId: store.monitorIds.join(','),
     name: local.name,
     source: local.source,
     status: local.status,
@@ -150,7 +160,7 @@ export function useMonitorFilterRow(
       case 'capturing': store.setCapturing(list); break;
       case 'analysing': store.setAnalysing(list); break;
       case 'recording': store.setRecording(list); break;
-      case 'monitorId': store.setMonitorIds(list.map(Number)); break;
+      case 'monitorId': store.setMonitorIds(parseIdList(value)); break;
       default: setLocal((s) => ({ ...s, [field]: value }));
     }
   };

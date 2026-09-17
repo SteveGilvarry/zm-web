@@ -99,9 +99,11 @@ const SUMMARIES = [
   summary(2, { total_events: 4, total_event_disk_space: 1_048_576, hour_events: 0, day_events: 1 }),
 ];
 
+// Fresh stamps: a status row older than 90 s reads Offline, as in legacy.
+const FRESH = new Date().toISOString();
 const STATUSES = [
-  { monitor_id: 1, status: 'Connected', capture_fps: '10.00', analysis_fps: '5.00', capture_bandwidth: 2048, updated_on: '2026-08-21T00:00:00Z' },
-  { monitor_id: 2, status: 'Running', capture_fps: '0.00', analysis_fps: '0.00', capture_bandwidth: 0, updated_on: '2026-08-21T00:00:00Z' },
+  { monitor_id: 1, status: 'Connected', capture_fps: '10.00', analysis_fps: '5.00', capture_bandwidth: 2048, updated_on: FRESH },
+  { monitor_id: 2, status: 'Running', capture_fps: '0.00', analysis_fps: '0.00', capture_bandwidth: 0, updated_on: FRESH },
 ];
 
 const DEFAULT_CONFIGS: Record<string, string> = {
@@ -233,7 +235,7 @@ describe('ClassicConsolePage — table', () => {
     expect(row1).toHaveTextContent('Front Door');
     // Function cell: the legacy multi-line summary.
     expect(within(row1).getByText('Analysing: Always')).toBeInTheDocument();
-    expect(within(row1).getByText('Recording: On Motion')).toBeInTheDocument();
+    expect(within(row1).getByText('Recording: OnMotion')).toBeInTheDocument();
     // Source cell links to the editor and shows the resolved host + geometry.
     expect(within(row1).getByRole('link', { name: '10.0.0.11' }))
       .toHaveAttribute('href', '/monitors/1?edit=true');
@@ -241,13 +243,18 @@ describe('ClassicConsolePage — table', () => {
     // Server / Storage names resolved from the lookup queries.
     await waitFor(() => expect(within(row1).getByText('edge-01')).toBeInTheDocument());
     expect(within(row1).getByText('Default')).toBeInTheDocument();
-    // Events count links to a monitor-scoped events list; archived carries the flag.
+    // Events count links to a monitor-scoped events list; the period columns
+    // carry a start bound (legacy `StartDateTime >= -1 hour`), archived the flag.
     expect(within(row1).getByRole('link', { name: '30' })).toHaveAttribute('href', '/events?monitor_id=1');
+    const hourHref = within(row1).getByRole('link', { name: '7' }).getAttribute('href')!;
+    expect(hourHref).toMatch(/^\/events\?monitor_id=1&start=\d{4}-\d{2}-\d{2}T\d{2}%3A\d{2}%3A\d{2}Z$/);
+    const hourStart = Date.parse(decodeURIComponent(hourHref.split('start=')[1]));
+    expect(Math.abs(Date.now() - 3_600_000 - hourStart)).toBeLessThan(60_000);
     expect(within(row1).getByRole('link', { name: '3' })).toHaveAttribute('href', '/events?monitor_id=1&archived=true');
     // Zones cell links to the zone editor.
     expect(within(row1).getByRole('link', { name: '2' })).toHaveAttribute('href', '/monitors/1/zones');
 
-    // A capturing-off monitor reads "Offline" and gets no thumbnail link.
+    // A monitor with no status row reads "Offline" and gets no thumbnail link.
     const row3 = screen.getByTestId('console-row-3');
     expect(within(row3).getByText('Offline')).toBeInTheDocument();
     expect(within(row3).queryByRole('link', { name: /Watch Garage/ })).toBeNull();
@@ -264,10 +271,12 @@ describe('ClassicConsolePage — table', () => {
     // ZoneMinder's formatting, not ours: the stored decimal echoed verbatim
     // and `human_filesize()` with a rate suffix — two places, no space,
     // lowercase k. Checked against 1.39.16 (`9.89 fps 1.43MB/s`).
-    expect(within(row1).getByTestId('console-runtime-1')).toHaveTextContent('10.00 fps');
-    expect(within(row1).getByTestId('console-runtime-1')).toHaveTextContent('2.00kB/s');
+    // `CaptureFPS/AnalysisFPS fps bandwidth`, console.js:284-298.
+    expect(within(row1).getByTestId('console-runtime-1')).toHaveTextContent('10.00/5.00 fps 2.00kB/s');
 
-    // Garage is not capturing at all, so the lens reads Not Running.
+    // Driveway's process is up but produces no frames: legacy's errorText reason.
+    expect(within(screen.getByTestId('console-row-2')).getByRole('img', { name: 'No capture FPS' })).toBeInTheDocument();
+    // Garage has no status row, so the lens reads Not Running.
     const row3 = screen.getByTestId('console-row-3');
     expect(within(row3).getByRole('img', { name: 'Not Running' })).toBeInTheDocument();
 
@@ -288,6 +297,9 @@ describe('ClassicConsolePage — table', () => {
     expect(within(foot).getByText('3.00MB')).toBeInTheDocument();
     // Two footer cells read 3: archived events (3) and zones (2 + 1 + 0).
     expect(within(foot).getAllByText('3')).toHaveLength(2);
+    // Footer counts link like the cells do, scoped to every visible monitor.
+    expect(within(foot).getByRole('link', { name: '34' })).toHaveAttribute('href', '/events?');
+    expect(within(foot).getByRole('link', { name: '3' })).toHaveAttribute('href', '/events?archived=true');
     // Runtime totals cell: aggregate bandwidth and fps.
     // Summed fps prints as PHP would: trailing zeros dropped, so 5 not 5.00.
     expect(within(foot).getByTestId('console-runtime-totals')).toHaveTextContent('2.00kB/s 10 fps / 5 fps');
@@ -478,7 +490,7 @@ describe('ClassicConsolePage — verbs', () => {
     }
   });
 
-  it('clones the first selected monitor through GET + POST /monitors', async () => {
+  it('Clone opens the Add form prefilled from the source and saves nothing until Create', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
@@ -486,14 +498,17 @@ describe('ClassicConsolePage — verbs', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Select Front Door' }));
     await user.click(screen.getByRole('button', { name: 'Clone' }));
 
+    const dialog = await screen.findByRole('dialog', { name: 'Add monitor' });
+    expect(within(dialog).getByRole('status')).toHaveTextContent('Configuration cloned from Monitor: Front Door');
+    expect(within(dialog).getByDisplayValue('Clone of Front Door')).toBeInTheDocument();
+    expect(within(dialog).getByDisplayValue('rtsp://10.0.0.11/h264')).toBeInTheDocument();
+    expect(calls.some((c) => c.method === 'POST')).toBe(false);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Create monitor' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
     const post = calls.find((c) => c.method === 'POST')!;
-    expect(post.path).toBe('/monitors');
-    expect((post.body as { name: string }).name).toBe('Front Door (clone)');
-    // No <Toaster> is mounted in this unit test, so assert the toast the
-    // mutation queued rather than its rendered card.
-    await waitFor(() => expect(useToastStore.getState().toasts.map((x) => x.message))
-      .toContain('Cloned as "Front Door (clone)"'));
+    expect((post.body as { name: string; path: string }).name).toBe('Clone of Front Door');
+    expect((post.body as { name: string; path: string }).path).toBe('rtsp://10.0.0.11/h264');
   });
 
   it('routes Edit to the monitor editor for the first selected row', async () => {
@@ -508,22 +523,26 @@ describe('ClassicConsolePage — verbs', () => {
     });
   });
 
-  it('applies a bulk mode change through the Select dialog', async () => {
+  it('Select narrows the table to the checked monitors through the Monitor filter', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
     await user.click(screen.getByRole('checkbox', { name: 'Select Front Door' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select Garage' }));
     await user.click(screen.getByRole('button', { name: 'Select' }));
 
-    const dialog = await screen.findByRole('dialog');
-    await user.selectOptions(within(dialog).getByLabelText('Analysing'), 'None');
-    await user.click(within(dialog).getByRole('button', { name: /Apply/ }));
+    await waitFor(() => expect(screen.queryByTestId('console-row-2')).toBeNull());
+    expect(screen.getByTestId('console-row-1')).toBeInTheDocument();
+    expect(screen.getByTestId('console-row-3')).toBeInTheDocument();
+    // The filter row shows the set as one option; nothing was written.
+    expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveDisplayValue('2 monitors');
+    expect(calls).toEqual([]);
+    expect(screen.getByRole('checkbox', { name: 'Select Front Door' })).not.toBeChecked();
 
-    await waitFor(() => expect(calls.some((c) => c.method === 'PATCH')).toBe(true));
-    const patch = calls.find((c) => c.method === 'PATCH')!;
-    expect(patch.path).toBe('/monitors/1');
-    expect(patch.body).toEqual({ analysing: 'None' });
+    // Clearing the field brings every row back.
+    await user.click(screen.getByRole('button', { name: 'Clear monitor' }));
+    await waitFor(() => expect(screen.getByTestId('console-row-2')).toBeInTheDocument());
   });
 
   it('toggling Sort mode makes the rows draggable and renumbers on drop', async () => {

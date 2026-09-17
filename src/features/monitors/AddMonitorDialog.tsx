@@ -17,6 +17,8 @@ interface AddMonitorDialogProps {
   onClose: () => void;
   /** Values to start the form with — ONVIF discovery hands over a prefilled source. */
   initial?: Partial<MonitorCreateInput>;
+  /** Name of the monitor `initial` was copied from (legacy `dupId` notice). */
+  clonedFrom?: string;
   /** Called with the created monitor before the dialog closes. */
   onCreated?: (monitor: Monitor) => void;
 }
@@ -94,12 +96,12 @@ const DEFAULT_FORM: MonitorCreateInput = {
  * everything else uses the factory defaults from MONITOR_CREATE_DEFAULTS.
  * The full editor opens on the watch page once the row exists.
  */
-export function AddMonitorDialog({ open, onClose, initial, onCreated }: AddMonitorDialogProps) {
+export function AddMonitorDialog({ open, onClose, initial, clonedFrom, onCreated }: AddMonitorDialogProps) {
   if (!open) return null;
-  return <AddMonitorForm onClose={onClose} initial={initial} onCreated={onCreated} />;
+  return <AddMonitorForm onClose={onClose} initial={initial} clonedFrom={clonedFrom} onCreated={onCreated} />;
 }
 
-function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogProps, 'open'>) {
+function AddMonitorForm({ onClose, initial, clonedFrom, onCreated }: Omit<AddMonitorDialogProps, 'open'>) {
   const { t } = useTranslation();
   const { types, functions } = useMonitorOptions();
   const qc = useQueryClient();
@@ -183,6 +185,12 @@ function AddMonitorForm({ onClose, initial, onCreated }: Omit<AddMonitorDialogPr
         </header>
 
         <div className="p-4 space-y-2.5">
+          {clonedFrom && (
+            <p role="status" className="rounded bg-surface-2 border border-border-subtle px-3 py-2 text-label text-fg-muted">
+              {t('Configuration cloned from Monitor: {{name}}', { name: clonedFrom })}
+            </p>
+          )}
+
           {/* Presets */}
           <Row label={t('Preset')}>
             <PresetPicker

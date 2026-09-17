@@ -2,9 +2,10 @@ import { describe, expect, it } from 'vitest';
 import type { Monitor } from '@/types';
 import type { EventSummary } from '@/api/eventSummaries';
 import {
-  exportColumns, functionLines, pageSlice, rowsToCsv, rowsToJson, searchRows, sortRows, totalsFor,
-  type ConsoleRow,
+  exportColumns, functionLines, isOffline, pageSlice, periodStart, rowsToCsv, rowsToJson, runtimeLine, searchRows,
+  sortRows, sourceClass, totalsFor, type ConsoleRow,
 } from './consoleTable';
+import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 
 const summary = (monitor_id: number, over: Partial<EventSummary> = {}): EventSummary => ({
   monitor_id,
@@ -24,24 +25,73 @@ const monitor = (over: Partial<Monitor>): Monitor => ({
   ...over,
 } as unknown as Monitor);
 
+/** A status row fresh enough to count as online for the rows below. */
+const live = (monitorId: number): MonitorRuntime => ({
+  monitorId, status: 'Connected', captureFps: 10, analysisFps: 5, captureFpsRaw: '10.00', analysisFpsRaw: '5.00',
+  bandwidth: 2048, updatedOn: new Date().toISOString(),
+});
+
 const rows: ConsoleRow[] = [
-  { monitor: monitor({ id: 1, name: 'Front', sequence: 2, zone_count: 2 }), summary: summary(1, { total_events: 30, total_event_disk_space: 100, hour_events: 6 }), runtime: undefined },
+  { monitor: monitor({ id: 1, name: 'Front', sequence: 2, zone_count: 2 }), summary: summary(1, { total_events: 30, total_event_disk_space: 100, hour_events: 6 }), runtime: live(1) },
+  // No status row: reads Offline.
   { monitor: monitor({ id: 2, name: 'Back', sequence: 1, host: '10.0.0.2', capturing: 'None' }), summary: summary(2, { total_events: 5, total_event_disk_space: 10 }), runtime: undefined },
-  { monitor: monitor({ id: 3, name: 'Side', sequence: null, onvif_event_listener: 1, recording: 'Always' }), summary: summary(3, { total_events: 280 }), runtime: undefined },
+  { monitor: monitor({ id: 3, name: 'Side', sequence: null, onvif_event_listener: 1, onvif_alarm_text: 'MotionAlarm', recording: 'Always' }), summary: summary(3, { total_events: 280 }), runtime: live(3) },
 ];
 
-describe('functionLines — legacy Function cell', () => {
-  it('says Offline when not capturing', () => {
-    expect(functionLines(monitor({ capturing: 'None' }))).toEqual(['Offline']);
+const NOW = Date.parse('2026-09-16T10:00:00Z');
+const runtime = (over: Partial<MonitorRuntime> = {}): MonitorRuntime => ({
+  monitorId: 1, status: 'Connected', captureFps: 10, analysisFps: 5, captureFpsRaw: '10.00', analysisFpsRaw: '5.00',
+  bandwidth: 2048, updatedOn: '2026-09-16T09:59:30+00:00', ...over,
+});
+
+describe('functionLines — legacy Function cell (console.js:265-283)', () => {
+  it('says Offline when the status row is missing or older than 90 s', () => {
+    expect(functionLines(monitor({}), undefined, NOW)).toEqual(['Offline']);
+    expect(functionLines(monitor({}), runtime({ updatedOn: '2026-09-16T09:58:29Z' }), NOW)).toEqual(['Offline']);
+    expect(functionLines(monitor({}), runtime({ updatedOn: 'garbage' }), NOW)).toEqual(['Offline']);
+    expect(isOffline(runtime({ updatedOn: '2026-09-16T09:58:31Z' }), NOW)).toBe(false);
   });
-  it('prefers the ONVIF line over plain analysing, then the recording mode', () => {
-    expect(functionLines(monitor({ onvif_event_listener: 1, recording: 'Always' })))
-      .toEqual(["Use ONVIF 'MotionAlarm'", 'Recording: Always']);
-    expect(functionLines(monitor({ analysing: 'Always', recording: 'OnMotion' })))
-      .toEqual(['Analysing: Always', 'Recording: On Motion']);
+  it('prints Analysing, the ONVIF alarm text and Recording verbatim, in that order', () => {
+    expect(functionLines(monitor({ onvif_event_listener: 1, onvif_alarm_text: 'MotionAlarm', recording: 'Always' }), runtime(), NOW))
+      .toEqual(['Analysing: Always', "Use ONVIF 'MotionAlarm'", 'Recording: Always']);
+    expect(functionLines(monitor({ analysing: 'Always', recording: 'OnMotion' }), runtime(), NOW))
+      .toEqual(['Analysing: Always', 'Recording: OnMotion']);
+    // Listener on but no alarm text: legacy's `if (row.ONVIF_Event_Listener)` is falsy.
+    expect(functionLines(monitor({ onvif_event_listener: 1, onvif_alarm_text: '', analysing: 'None', recording: 'None' }), runtime(), NOW))
+      .toEqual([]);
   });
-  it('never returns an empty cell', () => {
-    expect(functionLines(monitor({ analysing: 'None', recording: 'None' }))).toEqual(['Capturing']);
+});
+
+describe('runtimeLine — the fps/bandwidth sub-line', () => {
+  it('adds the analysis fps only while analysing and the bandwidth only when non-zero', () => {
+    expect(runtimeLine(monitor({}), runtime())).toBe('10.00/5.00 fps 2.00kB/s');
+    expect(runtimeLine(monitor({ analysing: 'None' }), runtime({ bandwidth: 0 }))).toBe('10.00 fps');
+  });
+});
+
+describe('sourceClass — lens dot and Source colour (console.js:210-232)', () => {
+  it('follows the status row, not the configured mode', () => {
+    expect(sourceClass(monitor({}), undefined)).toEqual({ cls: 'error', reason: 'Not Running' });
+    expect(sourceClass(monitor({}), runtime({ status: 'NotRunning' }))).toEqual({ cls: 'error', reason: 'Not Running' });
+    expect(sourceClass(monitor({ type: 'WebSite' }), undefined)).toEqual({ cls: 'info', reason: '' });
+    expect(sourceClass(monitor({}), runtime({ captureFpsRaw: '0.00' }))).toEqual({ cls: 'error', reason: 'No capture FPS' });
+    expect(sourceClass(monitor({}), runtime({ analysisFps: 0 }))).toEqual({ cls: 'warn', reason: 'No analysis FPS' });
+    expect(sourceClass(monitor({ analysing: 'None' }), runtime({ analysisFps: 0 }))).toEqual({ cls: 'info', reason: '' });
+    expect(sourceClass(monitor({ deleted: 1 } as Partial<Monitor>), runtime())).toEqual({ cls: 'error', reason: 'Deleted' });
+  });
+});
+
+describe('periodStart — the events-list lower bound', () => {
+  const now = new Date('2026-03-31T12:00:00Z');
+  it('mirrors MySQL -1 hour / -1 day / -7 day / -1 month', () => {
+    expect(periodStart('hour', now)).toBe('2026-03-31T11:00:00Z');
+    expect(periodStart('day', now)).toBe('2026-03-30T12:00:00Z');
+    expect(periodStart('week', now)).toBe('2026-03-24T12:00:00Z');
+    // Calendar month, clamped like MySQL: 31 March − 1 month → 28 February… JS
+    // rolls 31 Feb over to 3 March; either way it is a month back, not 30 days.
+    expect(periodStart('month', now)).toMatch(/^2026-0[23]-/);
+    expect(periodStart('events', now)).toBeUndefined();
+    expect(periodStart('archived', now)).toBeUndefined();
   });
 });
 

@@ -84,7 +84,14 @@ export function ClassicFilterRow({ monitors, state, className, tone = 'light' }:
       <TextField label={t('Source')} field="source" value={values.source} set={set} />
       <SelectField
         label={t('Monitor')} field="monitorId" value={values.monitorId} set={set} clear={clear} wide
-        options={monitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
+        options={[
+          // A comma-joined set (from SELECT on the console) is one option of
+          // its own; picking a single monitor replaces it.
+          ...(values.monitorId.includes(',')
+            ? [{ value: values.monitorId, label: t('{{count}} monitors', { count: values.monitorId.split(',').length }) }]
+            : []),
+          ...monitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` })),
+        ]}
       />
     </div>
   );

@@ -9,7 +9,7 @@ import type { Monitor } from '@/types';
 import type { EventSummary } from '@/api/eventSummaries';
 import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import {
-  compareRows, downloadText, exportColumns, functionLines, pageSlice, rowsToCsv, rowsToJson,
+  compareRows, downloadText, exportColumns, pageSlice, rowsToCsv, rowsToJson,
   searchRows, sortRows, totalsFor, type ConsoleRow, type ConsoleSortKey,
 } from './consoleTable';
 
@@ -67,8 +67,12 @@ describe('compareRows — every sort key', () => {
   });
 
   it('orders the Function column by its rendered text', () => {
-    // 'Analysing: Always …' sorts ahead of 'Offline'.
-    expect(sign(row({ id: 1 }), row({ id: 2, capturing: 'None' }), 'function')).toBe(-1);
+    // 'Analysing: Always …' sorts ahead of 'Offline' (no status row).
+    const live: MonitorRuntime = {
+      monitorId: 1, status: 'Connected', captureFps: 10, analysisFps: 5, captureFpsRaw: '10.00', analysisFpsRaw: '5.00',
+      bandwidth: 0, updatedOn: new Date().toISOString(),
+    };
+    expect(sign(row({ id: 1 }, {}, live), row({ id: 2 }), 'function')).toBe(-1);
   });
 
   it('orders Source by the resolved host / device / path', () => {
@@ -96,17 +100,6 @@ describe('compareRows — every sort key', () => {
     // Without a lookup both sides read as '' and compare equal.
     expect(sign(row({ id: 1, model_id: 1 }), row({ id: 2, model_id: 2 }), 'model')).toBe(0);
     expect(sign(row({ id: 1, manufacturer_id: 1 }), row({ id: 2, manufacturer_id: 2 }), 'manufacturer')).toBe(0);
-  });
-});
-
-describe('functionLines — remaining branches', () => {
-  it('labels on-demand capture and falls back to plain "Capturing"', () => {
-    expect(functionLines(monitor({ capturing: 'Ondemand', analysing: 'None', recording: 'None' })))
-      .toEqual(['Capturing: On Demand']);
-    // Capturing but neither analysing nor recording: the fallback line.
-    expect(functionLines(monitor({ analysing: 'None', recording: 'None' }))).toEqual(['Capturing']);
-    // `capturing` absent entirely reads as offline.
-    expect(functionLines(monitor({ capturing: undefined }))).toEqual(['Offline']);
   });
 });
 
@@ -141,7 +134,8 @@ describe('sortRows / searchRows / pageSlice edges', () => {
 
 describe('exportColumns — every value function', () => {
   const runtime: MonitorRuntime = {
-    monitorId: 1, status: 'Connected', captureFps: 10.5, analysisFps: 5, captureFpsRaw: '0', analysisFpsRaw: '5', bandwidth: 2048, updatedOn: '',
+    monitorId: 1, status: 'Connected', captureFps: 10.5, analysisFps: 5, captureFpsRaw: '0', analysisFpsRaw: '5', bandwidth: 2048,
+    updatedOn: new Date().toISOString(),
   };
   const full = row(
     { id: 7, name: 'Front', manufacturer_id: 1, model_id: 2, zone_count: 3, sequence: 4, width: 640, height: 480 },
@@ -163,7 +157,7 @@ describe('exportColumns — every value function', () => {
       name: 'Front',
       manufacturer: 'Axis',
       model: 'P3245',
-      function: 'Analysing: Always Recording: On Motion',
+      function: 'Analysing: Always Recording: OnMotion',
       status: 'Connected',
       capture_fps: 10.5,
       source: '10.0.0.1',
