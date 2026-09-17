@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from 'react';
+import { useMirroredState } from '@/hooks/useMirroredState';
+import { useRef } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -431,9 +432,8 @@ export default function EventsListPage() {
  */
 function JumpToPage({ page, totalPages, onJump }: { page: number; totalPages: number; onJump: (n: number) => void }) {
   const { t } = useTranslation();
-  const [value, setValue] = useState(String(page));
+  const [value, setValue] = useMirroredState(String(page));
   const inputRef = useRef<HTMLInputElement | null>(null);
-  useEffect(() => { setValue(String(page)); }, [page]);
 
   const submit = () => {
     const n = Number(value);

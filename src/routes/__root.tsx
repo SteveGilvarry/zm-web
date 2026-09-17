@@ -1,10 +1,8 @@
-import { createRootRoute, Outlet, redirect, useNavigate, useLocation } from '@tanstack/react-router';
-import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
-import { useEffect } from 'react';
+import { createRootRoute, redirect } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { planRootNavigation } from '@/features/nav/rootNavigation';
-import { redirectParamFor } from '@/features/auth/redirect';
+import { RootComponent } from '@/features/nav/routeComponents';
 
 export const Route = createRootRoute({
   /**
@@ -29,31 +27,3 @@ export const Route = createRootRoute({
   component: RootComponent,
 });
 
-function RootComponent() {
-  const isAuthenticated = useAuthStore((s) => s.isAuthenticated);
-  const navigate = useNavigate();
-  const location = useLocation();
-
-  // `beforeLoad` guards navigations; this covers the session ending while
-  // the operator sits on a page (refresh token rejected, logout elsewhere).
-  useEffect(() => {
-    if (!isAuthenticated && location.pathname !== '/login') {
-      const expired = useAuthStore.getState().sessionExpired;
-      void navigate({
-        to: '/login',
-        search: {
-          redirect: redirectParamFor(location.pathname, location.searchStr),
-          ...(expired ? { reason: 'expired' as const } : {}),
-        },
-        replace: true,
-      });
-    }
-  }, [isAuthenticated, location.pathname, location.searchStr, navigate]);
-
-  return (
-    <>
-      <Outlet />
-      {import.meta.env.DEV && <TanStackRouterDevtools position="bottom-right" toggleButtonProps={{ style: { transform: 'translateX(-4rem)' } }} />}
-    </>
-  );
-}

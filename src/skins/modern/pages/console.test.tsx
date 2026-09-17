@@ -51,6 +51,23 @@ async function reading(label: string): Promise<HTMLElement> {
   return within(line).getByText(label).parentElement as HTMLElement;
 }
 
+/**
+ * Waits for one status-line reading to settle on `value`.
+ *
+ * The line paints its labels as soon as the page mounts, each with a zero
+ * placeholder, and fills them in from eight independent queries. Asserting
+ * the moment the heading appears catches the placeholder on a slow runner —
+ * which is what the UTC+14 job, running the whole suite in one slow lane,
+ * kept doing to the camera count.
+ */
+async function expectReading(label: string, value: string): Promise<HTMLElement> {
+  let found: HTMLElement | undefined;
+  await waitFor(async () => {
+    found = within(await reading(label)).getByText(value);
+  });
+  return found as HTMLElement;
+}
+
 /** The camera wall. */
 function wall(): HTMLElement {
   return screen.getByRole('region', { name: 'Cameras' });
@@ -81,13 +98,13 @@ describe('Console — renders with data', () => {
     await renderConsole();
 
     // Two seeded monitors, both capturing; only Front Door records.
-    expect(within(await reading('Cameras')).getByText('2')).toBeInTheDocument();
-    expect(within(await reading('Recording')).getByText('1')).toBeInTheDocument();
-    expect(within(await reading('Events (24h)')).getByText('3')).toBeInTheDocument();
-    expect(within(await reading('Alarms')).getByText('0')).toBeInTheDocument();
+    await expectReading('Cameras', '2');
+    await expectReading('Recording', '1');
+    await expectReading('Events (24h)', '3');
+    await expectReading('Alarms', '0');
 
     // 500 GB of 1 TB used — under the 75% mark, so no colour.
-    const disk = within(await reading('Disk')).getByText('50%');
+    const disk = await expectReading('Disk', '50%');
     expect(disk).not.toHaveClass('text-warn');
     expect(disk).not.toHaveClass('text-danger');
   });
@@ -201,7 +218,7 @@ describe('Console — empty and error states', () => {
     await renderConsole();
 
     // No stats to report: an em dash where the percentage would be.
-    expect(within(await reading('Disk')).getByText('—')).toBeInTheDocument();
+    await expectReading('Disk', '—');
   });
 });
 
@@ -273,7 +290,7 @@ describe('Console — monitor filter bar', () => {
       expect(screen.getByText('No monitors match the current filter')).toBeInTheDocument(),
     );
     // The readings follow the filter too, and the button counts it.
-    expect(within(await reading('Cameras')).getByText('0/2')).toBeInTheDocument();
+    await expectReading('Cameras', '0/2');
     expect(screen.getByRole('button', { name: /^Filters/ })).toHaveTextContent('1');
 
     await user.click(screen.getByRole('button', { name: 'Reset all filters' }));
@@ -316,7 +333,7 @@ describe('Console — live session badges', () => {
     });
     await renderConsole();
 
-    const disk = within(await reading('Disk')).getByText('93%');
+    const disk = await expectReading('Disk', '93%');
     expect(disk).toBeInTheDocument();
     // Past 90%: the reading itself is the message, so it takes the danger tone.
     expect(disk).toHaveClass('text-danger');

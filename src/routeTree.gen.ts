@@ -9,88 +9,38 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
-import { Route as LoginRouteImport } from './routes/login'
 import { Route as IndexRouteImport } from './routes/index'
-import { Route as SettingsIndexRouteImport } from './routes/settings/index'
-import { Route as ReportsIndexRouteImport } from './routes/reports/index'
-import { Route as MontagereviewIndexRouteImport } from './routes/montagereview/index'
-import { Route as MontageIndexRouteImport } from './routes/montage/index'
-import { Route as MonitorsIndexRouteImport } from './routes/monitors/index'
-import { Route as LogsIndexRouteImport } from './routes/logs/index'
-import { Route as GroupsIndexRouteImport } from './routes/groups/index'
-import { Route as FiltersIndexRouteImport } from './routes/filters/index'
-import { Route as EventsIndexRouteImport } from './routes/events/index'
-import { Route as CycleIndexRouteImport } from './routes/cycle/index'
+import { Route as LoginRouteImport } from './routes/login'
 import { Route as AuditIndexRouteImport } from './routes/audit/index'
-import { Route as SettingsUsersRouteImport } from './routes/settings/users'
-import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
-import { Route as SettingsStateRouteImport } from './routes/settings/state'
-import { Route as SettingsServersRouteImport } from './routes/settings/servers'
-import { Route as SettingsPtzControlsRouteImport } from './routes/settings/ptz-controls'
-import { Route as ReportsReportIdRouteImport } from './routes/reports/$reportId'
-import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
+import { Route as CycleIndexRouteImport } from './routes/cycle/index'
+import { Route as EventsIndexRouteImport } from './routes/events/index'
 import { Route as EventsEventIdRouteImport } from './routes/events/$eventId'
-import { Route as MonitorsMonitorIdZonesRouteImport } from './routes/monitors/$monitorId_.zones'
+import { Route as FiltersIndexRouteImport } from './routes/filters/index'
+import { Route as GroupsIndexRouteImport } from './routes/groups/index'
+import { Route as LogsIndexRouteImport } from './routes/logs/index'
+import { Route as MonitorsIndexRouteImport } from './routes/monitors/index'
+import { Route as MonitorsMonitorIdRouteImport } from './routes/monitors/$monitorId'
+import { Route as MontageIndexRouteImport } from './routes/montage/index'
+import { Route as MontagereviewIndexRouteImport } from './routes/montagereview/index'
+import { Route as ReportsIndexRouteImport } from './routes/reports/index'
+import { Route as ReportsReportIdRouteImport } from './routes/reports/$reportId'
+import { Route as SettingsIndexRouteImport } from './routes/settings/index'
+import { Route as SettingsPtzControlsRouteImport } from './routes/settings/ptz-controls'
+import { Route as SettingsServersRouteImport } from './routes/settings/servers'
+import { Route as SettingsStateRouteImport } from './routes/settings/state'
+import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
+import { Route as SettingsUsersRouteImport } from './routes/settings/users'
 import { Route as EventsEventIdFramesRouteImport } from './routes/events/$eventId_.frames'
+import { Route as MonitorsMonitorIdZonesRouteImport } from './routes/monitors/$monitorId_.zones'
 
-const LoginRoute = LoginRouteImport.update({
-  id: '/login',
-  path: '/login',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsIndexRoute = SettingsIndexRouteImport.update({
-  id: '/settings/',
-  path: '/settings/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsIndexRoute = ReportsIndexRouteImport.update({
-  id: '/reports/',
-  path: '/reports/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MontagereviewIndexRoute = MontagereviewIndexRouteImport.update({
-  id: '/montagereview/',
-  path: '/montagereview/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MontageIndexRoute = MontageIndexRouteImport.update({
-  id: '/montage/',
-  path: '/montage/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MonitorsIndexRoute = MonitorsIndexRouteImport.update({
-  id: '/monitors/',
-  path: '/monitors/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const LogsIndexRoute = LogsIndexRouteImport.update({
-  id: '/logs/',
-  path: '/logs/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GroupsIndexRoute = GroupsIndexRouteImport.update({
-  id: '/groups/',
-  path: '/groups/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FiltersIndexRoute = FiltersIndexRouteImport.update({
-  id: '/filters/',
-  path: '/filters/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const EventsIndexRoute = EventsIndexRouteImport.update({
-  id: '/events/',
-  path: '/events/',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const CycleIndexRoute = CycleIndexRouteImport.update({
-  id: '/cycle/',
-  path: '/cycle/',
+const LoginRoute = LoginRouteImport.update({
+  id: '/login',
+  path: '/login',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AuditIndexRoute = AuditIndexRouteImport.update({
@@ -98,39 +48,14 @@ const AuditIndexRoute = AuditIndexRouteImport.update({
   path: '/audit/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsUsersRoute = SettingsUsersRouteImport.update({
-  id: '/settings/users',
-  path: '/settings/users',
+const CycleIndexRoute = CycleIndexRouteImport.update({
+  id: '/cycle/',
+  path: '/cycle/',
   getParentRoute: () => rootRouteImport,
 } as any)
-const SettingsStorageRoute = SettingsStorageRouteImport.update({
-  id: '/settings/storage',
-  path: '/settings/storage',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsStateRoute = SettingsStateRouteImport.update({
-  id: '/settings/state',
-  path: '/settings/state',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsServersRoute = SettingsServersRouteImport.update({
-  id: '/settings/servers',
-  path: '/settings/servers',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const SettingsPtzControlsRoute = SettingsPtzControlsRouteImport.update({
-  id: '/settings/ptz-controls',
-  path: '/settings/ptz-controls',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
-  id: '/reports/$reportId',
-  path: '/reports/$reportId',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const MonitorsMonitorIdRoute = MonitorsMonitorIdRouteImport.update({
-  id: '/monitors/$monitorId',
-  path: '/monitors/$monitorId',
+const EventsIndexRoute = EventsIndexRouteImport.update({
+  id: '/events/',
+  path: '/events/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsEventIdRoute = EventsEventIdRouteImport.update({
@@ -138,14 +63,89 @@ const EventsEventIdRoute = EventsEventIdRouteImport.update({
   path: '/events/$eventId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const MonitorsMonitorIdZonesRoute = MonitorsMonitorIdZonesRouteImport.update({
-  id: '/monitors/$monitorId_/zones',
-  path: '/monitors/$monitorId/zones',
+const FiltersIndexRoute = FiltersIndexRouteImport.update({
+  id: '/filters/',
+  path: '/filters/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GroupsIndexRoute = GroupsIndexRouteImport.update({
+  id: '/groups/',
+  path: '/groups/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LogsIndexRoute = LogsIndexRouteImport.update({
+  id: '/logs/',
+  path: '/logs/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitorsIndexRoute = MonitorsIndexRouteImport.update({
+  id: '/monitors/',
+  path: '/monitors/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitorsMonitorIdRoute = MonitorsMonitorIdRouteImport.update({
+  id: '/monitors/$monitorId',
+  path: '/monitors/$monitorId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MontageIndexRoute = MontageIndexRouteImport.update({
+  id: '/montage/',
+  path: '/montage/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MontagereviewIndexRoute = MontagereviewIndexRouteImport.update({
+  id: '/montagereview/',
+  path: '/montagereview/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsIndexRoute = ReportsIndexRouteImport.update({
+  id: '/reports/',
+  path: '/reports/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ReportsReportIdRoute = ReportsReportIdRouteImport.update({
+  id: '/reports/$reportId',
+  path: '/reports/$reportId',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsIndexRoute = SettingsIndexRouteImport.update({
+  id: '/settings/',
+  path: '/settings/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsPtzControlsRoute = SettingsPtzControlsRouteImport.update({
+  id: '/settings/ptz-controls',
+  path: '/settings/ptz-controls',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsServersRoute = SettingsServersRouteImport.update({
+  id: '/settings/servers',
+  path: '/settings/servers',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsStateRoute = SettingsStateRouteImport.update({
+  id: '/settings/state',
+  path: '/settings/state',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsStorageRoute = SettingsStorageRouteImport.update({
+  id: '/settings/storage',
+  path: '/settings/storage',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsUsersRoute = SettingsUsersRouteImport.update({
+  id: '/settings/users',
+  path: '/settings/users',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsEventIdFramesRoute = EventsEventIdFramesRouteImport.update({
   id: '/events/$eventId_/frames',
   path: '/events/$eventId/frames',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MonitorsMonitorIdZonesRoute = MonitorsMonitorIdZonesRouteImport.update({
+  id: '/monitors/$monitorId_/zones',
+  path: '/monitors/$monitorId/zones',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -331,13 +331,6 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/login': {
-      id: '/login'
-      path: '/login'
-      fullPath: '/login'
-      preLoaderRoute: typeof LoginRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/': {
       id: '/'
       path: '/'
@@ -345,74 +338,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/': {
-      id: '/settings/'
-      path: '/settings'
-      fullPath: '/settings/'
-      preLoaderRoute: typeof SettingsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports/': {
-      id: '/reports/'
-      path: '/reports'
-      fullPath: '/reports/'
-      preLoaderRoute: typeof ReportsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/montagereview/': {
-      id: '/montagereview/'
-      path: '/montagereview'
-      fullPath: '/montagereview/'
-      preLoaderRoute: typeof MontagereviewIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/montage/': {
-      id: '/montage/'
-      path: '/montage'
-      fullPath: '/montage/'
-      preLoaderRoute: typeof MontageIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/monitors/': {
-      id: '/monitors/'
-      path: '/monitors'
-      fullPath: '/monitors/'
-      preLoaderRoute: typeof MonitorsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/logs/': {
-      id: '/logs/'
-      path: '/logs'
-      fullPath: '/logs/'
-      preLoaderRoute: typeof LogsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/groups/': {
-      id: '/groups/'
-      path: '/groups'
-      fullPath: '/groups/'
-      preLoaderRoute: typeof GroupsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/filters/': {
-      id: '/filters/'
-      path: '/filters'
-      fullPath: '/filters/'
-      preLoaderRoute: typeof FiltersIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/events/': {
-      id: '/events/'
-      path: '/events'
-      fullPath: '/events/'
-      preLoaderRoute: typeof EventsIndexRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/cycle/': {
-      id: '/cycle/'
-      path: '/cycle'
-      fullPath: '/cycle/'
-      preLoaderRoute: typeof CycleIndexRouteImport
+    '/login': {
+      id: '/login'
+      path: '/login'
+      fullPath: '/login'
+      preLoaderRoute: typeof LoginRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/audit/': {
@@ -422,53 +352,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AuditIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/users': {
-      id: '/settings/users'
-      path: '/settings/users'
-      fullPath: '/settings/users'
-      preLoaderRoute: typeof SettingsUsersRouteImport
+    '/cycle/': {
+      id: '/cycle/'
+      path: '/cycle'
+      fullPath: '/cycle/'
+      preLoaderRoute: typeof CycleIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/settings/storage': {
-      id: '/settings/storage'
-      path: '/settings/storage'
-      fullPath: '/settings/storage'
-      preLoaderRoute: typeof SettingsStorageRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings/state': {
-      id: '/settings/state'
-      path: '/settings/state'
-      fullPath: '/settings/state'
-      preLoaderRoute: typeof SettingsStateRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings/servers': {
-      id: '/settings/servers'
-      path: '/settings/servers'
-      fullPath: '/settings/servers'
-      preLoaderRoute: typeof SettingsServersRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/settings/ptz-controls': {
-      id: '/settings/ptz-controls'
-      path: '/settings/ptz-controls'
-      fullPath: '/settings/ptz-controls'
-      preLoaderRoute: typeof SettingsPtzControlsRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/reports/$reportId': {
-      id: '/reports/$reportId'
-      path: '/reports/$reportId'
-      fullPath: '/reports/$reportId'
-      preLoaderRoute: typeof ReportsReportIdRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/monitors/$monitorId': {
-      id: '/monitors/$monitorId'
-      path: '/monitors/$monitorId'
-      fullPath: '/monitors/$monitorId'
-      preLoaderRoute: typeof MonitorsMonitorIdRouteImport
+    '/events/': {
+      id: '/events/'
+      path: '/events'
+      fullPath: '/events/'
+      preLoaderRoute: typeof EventsIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events/$eventId': {
@@ -478,11 +373,109 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsEventIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/monitors/$monitorId_/zones': {
-      id: '/monitors/$monitorId_/zones'
-      path: '/monitors/$monitorId/zones'
-      fullPath: '/monitors/$monitorId/zones'
-      preLoaderRoute: typeof MonitorsMonitorIdZonesRouteImport
+    '/filters/': {
+      id: '/filters/'
+      path: '/filters'
+      fullPath: '/filters/'
+      preLoaderRoute: typeof FiltersIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/groups/': {
+      id: '/groups/'
+      path: '/groups'
+      fullPath: '/groups/'
+      preLoaderRoute: typeof GroupsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/logs/': {
+      id: '/logs/'
+      path: '/logs'
+      fullPath: '/logs/'
+      preLoaderRoute: typeof LogsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitors/': {
+      id: '/monitors/'
+      path: '/monitors'
+      fullPath: '/monitors/'
+      preLoaderRoute: typeof MonitorsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitors/$monitorId': {
+      id: '/monitors/$monitorId'
+      path: '/monitors/$monitorId'
+      fullPath: '/monitors/$monitorId'
+      preLoaderRoute: typeof MonitorsMonitorIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/montage/': {
+      id: '/montage/'
+      path: '/montage'
+      fullPath: '/montage/'
+      preLoaderRoute: typeof MontageIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/montagereview/': {
+      id: '/montagereview/'
+      path: '/montagereview'
+      fullPath: '/montagereview/'
+      preLoaderRoute: typeof MontagereviewIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/': {
+      id: '/reports/'
+      path: '/reports'
+      fullPath: '/reports/'
+      preLoaderRoute: typeof ReportsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/reports/$reportId': {
+      id: '/reports/$reportId'
+      path: '/reports/$reportId'
+      fullPath: '/reports/$reportId'
+      preLoaderRoute: typeof ReportsReportIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/': {
+      id: '/settings/'
+      path: '/settings'
+      fullPath: '/settings/'
+      preLoaderRoute: typeof SettingsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/ptz-controls': {
+      id: '/settings/ptz-controls'
+      path: '/settings/ptz-controls'
+      fullPath: '/settings/ptz-controls'
+      preLoaderRoute: typeof SettingsPtzControlsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/servers': {
+      id: '/settings/servers'
+      path: '/settings/servers'
+      fullPath: '/settings/servers'
+      preLoaderRoute: typeof SettingsServersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/state': {
+      id: '/settings/state'
+      path: '/settings/state'
+      fullPath: '/settings/state'
+      preLoaderRoute: typeof SettingsStateRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/storage': {
+      id: '/settings/storage'
+      path: '/settings/storage'
+      fullPath: '/settings/storage'
+      preLoaderRoute: typeof SettingsStorageRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/settings/users': {
+      id: '/settings/users'
+      path: '/settings/users'
+      fullPath: '/settings/users'
+      preLoaderRoute: typeof SettingsUsersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events/$eventId_/frames': {
@@ -490,6 +483,13 @@ declare module '@tanstack/react-router' {
       path: '/events/$eventId/frames'
       fullPath: '/events/$eventId/frames'
       preLoaderRoute: typeof EventsEventIdFramesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/monitors/$monitorId_/zones': {
+      id: '/monitors/$monitorId_/zones'
+      path: '/monitors/$monitorId/zones'
+      fullPath: '/monitors/$monitorId/zones'
+      preLoaderRoute: typeof MonitorsMonitorIdZonesRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
