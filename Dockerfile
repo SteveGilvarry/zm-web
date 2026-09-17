@@ -19,7 +19,7 @@ ARG VITE_API_BASE=
 ENV VITE_BASE=$VITE_BASE VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 LABEL org.opencontainers.image.source="https://github.com/SteveGilvarry/zm-web" \
       org.opencontainers.image.licenses="AGPL-3.0"
 # Runtime env:
