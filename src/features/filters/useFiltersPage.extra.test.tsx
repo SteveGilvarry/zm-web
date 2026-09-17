@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useFiltersPage, termsFromSearch } from './useFiltersPage';
+import type { Filter as FilterModel } from '@/api/filters';
 import { PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW } from './liveFixtures';
 
 let mockSearch: Record<string, unknown> = {};
@@ -30,6 +31,10 @@ const unreadableRow = {
   query_json: JSON.stringify({ rules: [{ field: 'cause', operator: 'contains', value: 'x' }] }),
   filter: undefined,
 };
+
+/** The list is sorted by name now, so tests pick a row by name, not index. */
+const row = (result: { current: { filters: FilterModel[] } }, name: string) =>
+  result.current.filters.find((f) => f.name === name)!;
 
 let posted: unknown[] = [];
 let put: Array<{ id: string; body: unknown }> = [];
@@ -77,6 +82,19 @@ function stub(items: unknown[] = [PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW, un
       HttpResponse.json({ items: [{ id: 1, username: 'admin' }], total: 1, per_page: 100, current_page: 1, last_page: 1 })),
     http.get('/api/v3/storage', () =>
       HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 })),
+    // `useFiltersPage` reads the ZM_OPT_* rows (option gating) and /me (who
+    // owns the filter). Everything on, so the whole form is exercised.
+    http.get('/api/v3/configs', () => HttpResponse.json({
+      items: [
+        { name: 'ZM_WEB_ID_ON_FILTER', value: '0' },
+        { name: 'ZM_OPT_FFMPEG', value: '1' },
+        { name: 'ZM_OPT_UPLOAD', value: '1' },
+        { name: 'ZM_OPT_EMAIL', value: '1' },
+        { name: 'ZM_OPT_MESSAGE', value: '1' },
+      ],
+      total: 5, per_page: 1000, current_page: 1, last_page: 1,
+    })),
+    http.get('/api/v3/me', () => HttpResponse.json({ user: { id: 1, username: 'admin', system: 'Edit', events: 'Edit' } })),
   );
 }
 
@@ -169,7 +187,7 @@ describe('useFiltersPage — selection writes the URL', () => {
     stub();
     const { result } = await mounted();
 
-    act(() => result.current.startEditing(result.current.filters[0]));
+    act(() => result.current.startEditing(row(result, 'PurgeWhenFull')));
     expect(result.current.selectedId).toBe(1);
     const [selectArg] = mockNavigate.mock.calls.at(-1)!;
     expect(selectArg).toMatchObject({ replace: true });
@@ -187,7 +205,7 @@ describe('useFiltersPage — Save As / Reset / Delete', () => {
   it('Save As POSTs a copy under the new name and selects it', async () => {
     stub();
     const { result } = await mounted();
-    act(() => result.current.startEditing(result.current.filters[0]));
+    act(() => result.current.startEditing(row(result, 'PurgeWhenFull')));
 
     await act(async () => { result.current.saveAs('  PurgeWhenFull copy  '); });
     await waitFor(() => expect(posted).toHaveLength(1));
@@ -210,7 +228,7 @@ describe('useFiltersPage — Save As / Reset / Delete', () => {
   it('Reset puts the saved row back into the editor', async () => {
     stub();
     const { result } = await mounted();
-    act(() => result.current.startEditing(result.current.filters[0]));
+    act(() => result.current.startEditing(row(result, 'PurgeWhenFull')));
     act(() => { result.current.setDraftName('scratch'); result.current.toggleFlag('auto_email'); });
     expect(result.current.draftColumns.auto_email).toBe(1);
 
@@ -231,7 +249,7 @@ describe('useFiltersPage — Save As / Reset / Delete', () => {
   it('Delete removes the row and drops back to a blank form', async () => {
     stub();
     const { result } = await mounted();
-    act(() => result.current.startEditing(result.current.filters[0]));
+    act(() => result.current.startEditing(row(result, 'PurgeWhenFull')));
 
     await act(async () => { result.current.remove(1); });
     await waitFor(() => expect(deleted).toEqual(['1']));
@@ -244,7 +262,7 @@ describe('useFiltersPage — Save As / Reset / Delete', () => {
     server.use(http.delete('/api/v3/filters/:id', () =>
       HttpResponse.json({ kind: 'FORBIDDEN', error_message: 'not yours' }, { status: 403 })));
     const { result } = await mounted();
-    act(() => result.current.startEditing(result.current.filters[0]));
+    act(() => result.current.startEditing(row(result, 'PurgeWhenFull')));
 
     await act(async () => { result.current.remove(1); });
     await waitFor(() =>
@@ -265,7 +283,7 @@ describe('useFiltersPage — debug', () => {
   it('prefers the backend AST for a saved row that carries one', async () => {
     stub();
     const { result } = await mounted();
-    act(() => result.current.startEditing(result.current.filters[1])); // UPDATE_DISK_SPACE_ROW has `filter`
+    act(() => result.current.startEditing(row(result, 'Update DiskSpace'))); // UPDATE_DISK_SPACE_ROW has `filter`
     expect(result.current.debug).toMatchObject({ source: 'backend', ast: null });
     expect(result.current.debug?.backendAst).toBeTruthy();
   });
@@ -314,6 +332,10 @@ describe('useFiltersPage — error paths', () => {
   it('an operator without events:Edit cannot save, and users are not fetched without system:View', async () => {
     useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'viewer', perms: { events: 'View' } } as never });
     stub();
+    // `/me` outranks the token's claim, so it has to agree for this to be a
+    // view-only operator.
+    server.use(http.get('/api/v3/me', () =>
+      HttpResponse.json({ user: { id: 2, username: 'viewer', events: 'View', system: 'None' } })));
     const { result } = await mounted();
     act(() => result.current.setDraftName('anything'));
     expect(result.current.canEdit).toBe(false);

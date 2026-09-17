@@ -55,7 +55,7 @@ describe('evaluateFilter — attribute coverage', () => {
   it.each<[string, FilterTerm]>([
     ['Id',                 { attr: 'Id', op: '=', val: '1' }],
     ['MonitorId',          { attr: 'MonitorId', op: '=', val: '1' }],
-    ['Monitor',            { attr: 'Monitor', op: '=', val: 'front door' }],
+    ['Monitor',            { attr: 'Monitor', op: '=', val: '1' }],
     ['MonitorName',        { attr: 'MonitorName', op: 'LIKE', val: 'Front' }],
     ['Name',               { attr: 'Name', op: '=', val: 'event' }],
     ['Cause',              { attr: 'Cause', op: '=', val: 'Motion' }],

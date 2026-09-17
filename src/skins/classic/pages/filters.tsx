@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { FILTER_SORT_FIELDS, type FilterColumns } from '@/api/filters';
 import { RuleBuilder } from '@/features/filters/RuleBuilder';
@@ -32,20 +33,15 @@ export default function ClassicFiltersPage() {
   const {
     filters, monitors, storage, users, selectedId, selectedFilter, startEditing,
     draftName, setDraftName, draftQuery, setDraftQuery, unreadable,
-    draftColumns: c, setColumn, toggleFlag, canSave,
+    draftColumns: c, setColumn, toggleFlag, canSave, features, idOnFilter,
   } = s;
 
   if (!s.isAuthenticated) return null;
 
   const flag = (key: FlagKey) => c[key] === 1;
-  const onSave = () => {
-    if (s.deleteEverythingRisk && !confirm(t('This filter has no conditions and deletes its matches. Once the daemon runs it, every event will be deleted. Save anyway?'))) return;
-    if (selectedId) s.save();
-    else s.create();
-  };
   const onSaveAs = () => {
     const name = prompt(t('Save filter as'), draftName ? t('{{name}} copy', { name: draftName }) : '');
-    if (name) s.saveAs(name);
+    if (name) s.requestSaveAs(name);
   };
 
   const check = (id: string, label: string, flagKey: FlagKey) => (
@@ -69,22 +65,38 @@ export default function ClassicFiltersPage() {
                 <option value="">{t('Choose Filter')}</option>
                 {filters.map((f) => (
                   <option key={f.id} value={f.id}>
-                    {f.name}{f.background === 1 ? '*' : ''}{f.concurrent === 1 ? '&' : ''}
+                    {idOnFilter ? `${f.id} ${f.name}` : f.name}
+                    {f.background === 1 ? '*' : ''}{f.concurrent === 1 ? '&' : ''}
                   </option>
                 ))}
               </select>
+              {selectedFilter && (selectedFilter.background === 1 || selectedFilter.concurrent === 1) && (
+                <>
+                  <span />
+                  <span className="text-sm text-zinc-700">
+                    {selectedFilter.background === 1 ? t('[background]') : ''}
+                    {selectedFilter.background === 1 && selectedFilter.concurrent === 1 ? ' ' : ''}
+                    {selectedFilter.concurrent === 1 ? t('[concurrent]') : ''}
+                  </span>
+                </>
+              )}
+              {selectedFilter && (
+                <>
+                  <span className="text-end text-sm text-zinc-700">{t('Id')}</span>
+                  <span className="text-sm text-zinc-900 font-mono">{selectedFilter.id}</span>
+                </>
+              )}
               <label htmlFor="filter-name" className="text-end text-sm text-zinc-700">{t('Name')}</label>
               <input id="filter-name" value={draftName} onChange={(e) => setDraftName(e.target.value)} className={clsx(classicInput, 'w-full')} />
               <label htmlFor="filter-user" className="text-end text-sm text-zinc-700">{t('User to run filter as')}</label>
               <select
                 id="filter-user"
-                value={c.user_id ?? ''}
+                value={String(s.draftUserId ?? '')}
                 onChange={(e) => setColumn('user_id', e.target.value === '' ? null : Number(e.target.value))}
                 className={clsx(classicSelect, 'w-40')}
                 disabled={users.length === 0}
                 title={users.length === 0 ? t('Listing users needs System view permission.') : undefined}
               >
-                <option value="">{t('— none —')}</option>
                 {users.map((u) => <option key={u.id} value={u.id}>{u.username}</option>)}
               </select>
             </div>
@@ -136,16 +148,11 @@ export default function ClassicFiltersPage() {
                   <span />
                   {check('f-disk', t('Update used disk space'), 'update_disk_space')}
                   <span />
-                  {check('f-video', t('Create video for all matches'), 'auto_video')}
-                  <span />
-                  {check('f-upload', t('Upload all matches'), 'auto_upload')}
-                  <span />
-                  {check('f-email', t('Email details of all matches'), 'auto_email')}
-                  <span />
-                  {check('f-message', t('Message details of all matches'), 'auto_message')}
-                  <span />
-                  {check('f-execute', t('Execute command on all matches'), 'auto_execute')}
-                  <span />
+                  {features.video && <>{check('f-video', t('Create video for all matches'), 'auto_video')}<span /></>}
+                  {features.upload && <>{check('f-upload', t('Upload all matches'), 'auto_upload')}<span /></>}
+                  {features.email && <>{check('f-email', t('Email details of all matches'), 'auto_email')}<span /></>}
+                  {features.message && <>{check('f-message', t('Message details of all matches'), 'auto_message')}<span /></>}
+                  {features.executeCmd && <>{check('f-execute', t('Execute command on all matches'), 'auto_execute')}<span /></>}
                   {check('f-delete', t('Delete all matches'), 'auto_delete')}
                   <span />
                   {check('f-copy', t('Copy all matches'), 'auto_copy')}
@@ -154,7 +161,7 @@ export default function ClassicFiltersPage() {
                   <span />
                 </div>
               </div>
-              {flag('auto_execute') && (
+              {flag('auto_execute') && features.executeCmd && (
                 <input aria-label={t('Command')} value={c.auto_execute_cmd ?? ''} onChange={(e) => setColumn('auto_execute_cmd', e.target.value)} placeholder="/usr/local/bin/notify.sh %EI%" className={clsx(classicInput, 'w-full mt-2 font-mono')} />
               )}
               {flag('auto_email') && (
@@ -166,6 +173,7 @@ export default function ClassicFiltersPage() {
                     <option value="Individual">{t('Individual (one email per event)')}</option>
                     <option value="Summary">{t('Summary (one email per run)')}</option>
                   </select>
+                  <input aria-label={t('Email server')} value={c.email_server ?? ''} onChange={(e) => setColumn('email_server', e.target.value || null)} placeholder={t('Email server')} className={clsx(classicInput, 'w-full')} />
                 </div>
               )}
               {(flag('auto_copy') || flag('auto_move')) && (
@@ -211,12 +219,12 @@ export default function ClassicFiltersPage() {
               />
             )}
             <RequirePerm feature="events" level="Edit">
-              <button type="button" onClick={onSave} disabled={!canSave || s.savePending || s.createPending} className={grey}>{t('Save')}</button>
-              <button type="button" onClick={onSaveAs} disabled={!draftQuery || s.createPending} className={grey}>{t('Save As')}</button>
+              <button type="button" onClick={s.requestSave} disabled={!canSave || s.savePending || s.createPending} className={grey}>{t('Save')}</button>
+              <button type="button" onClick={onSaveAs} disabled={!draftQuery || !s.canWeEdit || s.createPending} className={grey}>{t('Save As')}</button>
               <button
                 type="button"
-                onClick={() => { if (selectedFilter && confirm(t('Delete filter "{{name}}"?', { name: selectedFilter.name }))) s.remove(selectedFilter.id); }}
-                disabled={!selectedFilter}
+                onClick={() => { if (selectedFilter) s.requestDelete(selectedFilter); }}
+                disabled={!s.canDelete}
                 className={grey}
               >
                 {t('Delete')}
@@ -233,6 +241,18 @@ export default function ClassicFiltersPage() {
           )}
         </QueryState>
       </main>
+
+      {s.confirm && (
+        <ConfirmDialog
+          isOpen
+          onClose={s.confirm.cancel}
+          onConfirm={s.confirm.accept}
+          title={s.confirm.title}
+          message={s.confirm.message}
+          confirmText={s.confirm.confirmText}
+          variant={s.confirm.variant}
+        />
+      )}
     </AppShell>
   );
 }
@@ -248,13 +268,14 @@ function FlagCheck({ id, label, checked, onToggle }: { id: string; label: string
 
 function StorageSelect({ label, value, storage, onChange }: {
   label: string; value: FilterColumns['auto_copy_to']; storage: Array<{ id: number; name: string; path: string }>;
-  onChange: (v: number) => void;
+  onChange: (v: number | null) => void;
 }) {
   const { t } = useTranslation();
   return (
     <label className="flex items-center gap-2 text-sm text-zinc-700">
       {label}
-      <select value={String(value ?? 0)} onChange={(e) => onChange(parseInt(e.target.value, 10) || 0)} className={classicSelect}>
+      <select value={value == null ? '' : String(value)} onChange={(e) => onChange(e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)} className={classicSelect}>
+        <option value="">{t('NULL Unspecified')}</option>
         <option value="0">{t('Zero (unspecified)')}</option>
         {storage.map((st) => <option key={st.id} value={String(st.id)}>{st.name} — {st.path}</option>)}
       </select>

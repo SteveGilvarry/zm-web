@@ -29,10 +29,13 @@ export interface FilterColumns {
   auto_execute_cmd: string | null;
   auto_delete: number;
   auto_move: number;
-  /** Storage id; 0 = the legacy "Zero" sentinel. */
-  auto_move_to: number;
+  /**
+   * Storage id. 0 is the legacy "Zero" sentinel; `null` is ZoneMinder's
+   * "NULL Unspecified" option, which `Update/CreateFilterRequest` accepts.
+   */
+  auto_move_to: number | null;
   auto_copy: number;
-  auto_copy_to: number;
+  auto_copy_to: number | null;
   update_disk_space: number;
   background: number;
   concurrent: number;

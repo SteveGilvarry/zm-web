@@ -9,6 +9,7 @@ import {
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { FILTER_SORT_FIELDS, type FilterColumns } from '@/api/filters';
 import { RuleBuilder } from '@/features/filters/RuleBuilder';
@@ -29,9 +30,9 @@ export default function FiltersPage() {
   useDocumentTitle(t('Filters'));
   const sortLabels = useFilterSortFieldLabels();
   const {
-    filters, monitors, storage, selectedId, selectedFilter, startEditing,
+    filters, monitors, storage, users, selectedId, selectedFilter, startEditing,
     draftName, setDraftName, draftQuery, setDraftQuery, unreadable,
-    draftColumns: c, setColumn, toggleFlag, composeQueryJson, canSave,
+    draftColumns: c, setColumn, toggleFlag, composeQueryJson, canSave, features,
   } = s;
 
   if (!s.isAuthenticated) return null;
@@ -40,16 +41,9 @@ export default function FiltersPage() {
   const input = 'px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg placeholder:text-fg-faint focus:outline-none focus:border-accent transition-colors';
   const flag = (key: FlagKey) => c[key] === 1;
 
-  const onSave = () => {
-    if (s.deleteEverythingRisk && !confirm(t('This filter has no conditions and deletes its matches. Once the daemon runs it, every event will be deleted. Save anyway?'))) {
-      return;
-    }
-    if (selectedId) s.save();
-    else s.create();
-  };
   const onSaveAs = () => {
     const name = prompt(t('Save filter as'), draftName ? t('{{name}} copy', { name: draftName }) : '');
-    if (name) s.saveAs(name);
+    if (name) s.requestSaveAs(name);
   };
   const smallBtn = 'shrink-0 flex items-center gap-1.5 px-2 py-1 rounded text-xs transition-colors disabled:opacity-50';
 
@@ -90,7 +84,7 @@ export default function FiltersPage() {
               {t('Save As')}
             </button>
             <button
-              onClick={onSave}
+              onClick={s.requestSave}
               disabled={!canSave || s.savePending || s.createPending}
               className={clsx(smallBtn, 'bg-accent text-accent-fg font-medium hover:bg-accent-dim')}
             >
@@ -144,9 +138,7 @@ export default function FiltersPage() {
                         </button>
                         <RequirePerm feature="events" level="Edit">
                           <button
-                            onClick={() => {
-                              if (confirm(t('Delete filter "{{name}}"?', { name: f.name }))) s.remove(f.id);
-                            }}
+                            onClick={() => s.requestDelete(f)}
                             className="p-1 rounded text-fg-dim hover:text-danger hover:bg-danger/10 transition-colors"
                             aria-label={t('Delete {{name}}', { name: f.name })}
                           >
@@ -180,6 +172,21 @@ export default function FiltersPage() {
                     className={clsx(input, 'flex-1 text-sm')}
                   />
                 </div>
+
+                {/* Who the filter runs as — legacy `filter.php`'s UserId row. */}
+                {users.length > 0 && (
+                  <div className="flex items-center gap-3">
+                    <label htmlFor="filter-user" className={clsx(label, 'w-20')}>{t('User to run filter as')}</label>
+                    <select
+                      id="filter-user"
+                      value={String(s.draftUserId ?? '')}
+                      onChange={(e) => setColumn('user_id', e.target.value === '' ? null : Number(e.target.value))}
+                      className={clsx(input, 'w-56')}
+                    >
+                      {users.map((u) => <option key={u.id} value={String(u.id)}>{u.username}</option>)}
+                    </select>
+                  </div>
+                )}
 
                 {/* Conditions */}
                 <div>
@@ -267,11 +274,11 @@ export default function FiltersPage() {
                     <ActionToggle icon={<Archive size={11} />} label={t('Archive all matches')} active={flag('auto_archive')} onClick={() => toggleFlag('auto_archive')} />
                     <ActionToggle icon={<ArchiveRestore size={11} />} label={t('Unarchive all matches')} active={flag('auto_unarchive')} onClick={() => toggleFlag('auto_unarchive')} />
                     <ActionToggle icon={<HardDrive size={11} />} label={t('Update used disk space')} active={flag('update_disk_space')} onClick={() => toggleFlag('update_disk_space')} />
-                    <ActionToggle icon={<Video size={11} />} label={t('Create video for all matches')} active={flag('auto_video')} onClick={() => toggleFlag('auto_video')} />
-                    <ActionToggle icon={<Upload size={11} />} label={t('Upload all matches')} active={flag('auto_upload')} onClick={() => toggleFlag('auto_upload')} />
-                    <ActionToggle icon={<Mail size={11} />} label={t('Email details of all matches')} active={flag('auto_email')} onClick={() => toggleFlag('auto_email')} />
-                    <ActionToggle icon={<MessageSquare size={11} />} label={t('Message details of all matches')} active={flag('auto_message')} onClick={() => toggleFlag('auto_message')} />
-                    <ActionToggle icon={<Terminal size={11} />} label={t('Execute command on all matches')} active={flag('auto_execute')} onClick={() => toggleFlag('auto_execute')} />
+                    {features.video && <ActionToggle icon={<Video size={11} />} label={t('Create video for all matches')} active={flag('auto_video')} onClick={() => toggleFlag('auto_video')} />}
+                    {features.upload && <ActionToggle icon={<Upload size={11} />} label={t('Upload all matches')} active={flag('auto_upload')} onClick={() => toggleFlag('auto_upload')} />}
+                    {features.email && <ActionToggle icon={<Mail size={11} />} label={t('Email details of all matches')} active={flag('auto_email')} onClick={() => toggleFlag('auto_email')} />}
+                    {features.message && <ActionToggle icon={<MessageSquare size={11} />} label={t('Message details of all matches')} active={flag('auto_message')} onClick={() => toggleFlag('auto_message')} />}
+                    {features.executeCmd && <ActionToggle icon={<Terminal size={11} />} label={t('Execute command on all matches')} active={flag('auto_execute')} onClick={() => toggleFlag('auto_execute')} />}
                     <ActionToggle icon={<Trash size={11} />} label={t('Delete all matches')} tone="danger" active={flag('auto_delete')} onClick={() => toggleFlag('auto_delete')} />
                     <ActionToggle icon={<Copy size={11} />} label={t('Copy all matches')} active={flag('auto_copy')} onClick={() => toggleFlag('auto_copy')} />
                     <ActionToggle icon={<Move size={11} />} label={t('Move all matches')} active={flag('auto_move')} onClick={() => toggleFlag('auto_move')} />
@@ -284,7 +291,7 @@ export default function FiltersPage() {
                     </p>
                   )}
 
-                  {flag('auto_execute') && (
+                  {flag('auto_execute') && features.executeCmd && (
                     <div className="mt-2 flex items-center gap-2">
                       <label htmlFor="filter-cmd" className={clsx(label, 'w-20')}>{t('Command')}</label>
                       <input
@@ -410,6 +417,18 @@ export default function FiltersPage() {
           </div>
         </div>
       </main>
+
+      {s.confirm && (
+        <ConfirmDialog
+          isOpen
+          onClose={s.confirm.cancel}
+          onConfirm={s.confirm.accept}
+          title={s.confirm.title}
+          message={s.confirm.message}
+          confirmText={s.confirm.confirmText}
+          variant={s.confirm.variant}
+        />
+      )}
     </AppShell>
   );
 }
@@ -478,7 +497,7 @@ function StorageField({
   label: string;
   value: FilterColumns['auto_copy_to'];
   storage: ZmStorage[];
-  onChange: (v: number) => void;
+  onChange: (v: number | null) => void;
 }) {
   const { t } = useTranslation();
   return (
@@ -488,10 +507,11 @@ function StorageField({
       </label>
       <select
         id={id}
-        value={String(value ?? 0)}
-        onChange={(e) => onChange(parseInt(e.target.value, 10) || 0)}
+        value={value == null ? '' : String(value)}
+        onChange={(e) => onChange(e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)}
         className="w-72 px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors cursor-pointer"
       >
+        <option value="">{t('NULL Unspecified')}</option>
         <option value="0">{t('Zero (unspecified)')}</option>
         {storage.map((s) => (
           <option key={s.id} value={String(s.id)}>{s.name} — {s.path}</option>

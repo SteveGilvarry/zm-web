@@ -5,6 +5,8 @@ import { useTranslation } from 'react-i18next';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { usePerms } from '@/features/auth/usePerms';
+import { useMe } from '@/features/auth/useMe';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import { getMonitors } from '@/api/monitors';
 import { getStorageList } from '@/api/storage';
 import { getUsers } from '@/api/users';
@@ -16,6 +18,8 @@ import {
 import type { Monitor, User, ZmStorage } from '@/types';
 import { normaliseTerms } from './terms';
 import { termsToAst, type AstResult } from './toAst';
+import { buildTermTree } from './tree';
+import { validateDraft } from './validate';
 import { reviewSearchFromQuery, type ReviewSearch } from './reviewLink';
 
 /** A `query_json` the editor refused to interpret (and will never overwrite). */
@@ -54,9 +58,26 @@ export interface FiltersPageState {
   setColumn: <K extends keyof FilterColumns>(key: K, value: FilterColumns[K]) => void;
   toggleFlag: (key: FlagKey) => void;
 
+  /** `ZM_WEB_ID_ON_FILTER` — prefix the chooser's options with the filter id. */
+  idOnFilter: boolean;
+  /** Option gating, straight off the `ZM_OPT_*` config rows. */
+  features: FilterFeatures;
+  /** The signed-in operator's id, or null when `/me` has not answered. */
+  currentUserId: number | null;
+  /** Who the filter runs as: the draft column, defaulting to the operator. */
+  draftUserId: number | null;
+
   /** Serialised query JSON as it would be sent (empty when unreadable). */
   composeQueryJson: () => string;
+  /**
+   * Legacy `canWeEdit`: System edit, or you own the filter, or it is new.
+   * Anyone may build a filter; only those three may save over a stored one.
+   */
+  canWeEdit: boolean;
   canSave: boolean;
+  canDelete: boolean;
+  /** Brackets in the draft's terms open and close evenly. */
+  balanced: boolean;
   /** Any auto-* action on — drives the "only fires once saved" note. */
   anyActionOn: boolean;
   /** Auto-delete is on and there are no conditions: would delete every event. */
@@ -72,10 +93,36 @@ export interface FiltersPageState {
   /** Legacy "Reset": back to the saved row (or a blank form). */
   reset: () => void;
   remove: (id: number) => void;
+  /** Validate first, then save (or raise a confirm / notice). */
+  requestSave: () => void;
+  requestSaveAs: (name: string) => void;
+  requestDelete: (f: FilterModel) => void;
+  /** The pending question, for `<ConfirmDialog>`; null when nothing is asked. */
+  confirm: PendingConfirm | null;
   /** Legacy "Debug": the backend's AST for the saved row, or ours for the draft. */
   debug: { source: 'backend' | 'draft'; ast: AstResult | null; backendAst: unknown } | null;
   /** Legacy "View Matches": Montage Review framed by the draft's terms. */
   reviewSearch: ReviewSearch;
+}
+
+/** Which optional ZoneMinder subsystems are switched on for this install. */
+export interface FilterFeatures {
+  video: boolean;
+  upload: boolean;
+  email: boolean;
+  message: boolean;
+  /** Only `canEdit('System')` may set the command a filter shells out to. */
+  executeCmd: boolean;
+}
+
+/** A question the page has to put to the operator before it can go ahead. */
+export interface PendingConfirm {
+  title: string;
+  message: string;
+  confirmText: string;
+  variant: 'danger' | 'warning';
+  accept: () => void;
+  cancel: () => void;
 }
 
 export type FlagKey =
@@ -133,6 +180,7 @@ export function useFiltersPage(): FiltersPageState {
   const { isAuthenticated } = useAuthStore();
   const { can } = usePerms();
   const canEdit = can('events', 'Edit');
+  const canEditSystem = can('system', 'Edit');
   const canListUsers = can('system', 'View');
   const qc = useQueryClient();
   const toast = useToast();
@@ -160,7 +208,26 @@ export function useFiltersPage(): FiltersPageState {
     enabled: isAuthenticated && canListUsers,
     staleTime: 5 * 60_000,
   });
-  const filters = useMemo(() => filtersQ.data?.items ?? [], [filtersQ.data]);
+  const me = useMe();
+  const claimedUid = useAuthStore((st) => st.user?.uid ?? null);
+  const currentUserId = me.data?.id ?? claimedUid ?? null;
+
+  // Legacy sorts the chooser by lower(Name) and gates the optional actions
+  // on the same `ZM_OPT_*` rows the PHP form reads.
+  const filters = useMemo(
+    () => [...(filtersQ.data?.items ?? [])]
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())),
+    [filtersQ.data],
+  );
+  const idOnFilter = useZmConfig('ZM_WEB_ID_ON_FILTER', false);
+  const features: FilterFeatures = {
+    // ZoneMinder ships with ZM_OPT_FFMPEG on; the other three default off.
+    video: useZmConfig('ZM_OPT_FFMPEG', true),
+    upload: useZmConfig('ZM_OPT_UPLOAD', false),
+    email: useZmConfig('ZM_OPT_EMAIL', false),
+    message: useZmConfig('ZM_OPT_MESSAGE', false),
+    executeCmd: canEditSystem,
+  };
   const monitors = monitorsQ.data?.items ?? [];
   const storage = storageQ.data?.items ?? [];
   const users = usersQ.data?.items ?? [];
@@ -173,6 +240,7 @@ export function useFiltersPage(): FiltersPageState {
   });
   const [unreadable, setUnreadable] = useState<UnreadableQuery | null>(null);
   const [draftColumns, setDraftColumns] = useState<FilterColumns>({ ...FILTER_FLAG_DEFAULTS });
+  const [confirm, setConfirm] = useState<PendingConfirm | null>(null);
 
   const selectedFilter = useMemo(
     () => filters.find((f) => f.id === selectedId) ?? null,
@@ -234,6 +302,7 @@ export function useFiltersPage(): FiltersPageState {
         name: name.trim(),
         query_json: composeQueryJson(),
         ...draftColumns,
+        user_id: draftUserId,
       }),
     onSuccess: (f) => {
       invalidate();
@@ -253,6 +322,7 @@ export function useFiltersPage(): FiltersPageState {
         name: draftName.trim(),
         query_json: serializeFilterQuery(draftQuery),
         ...draftColumns,
+        user_id: draftUserId,
       });
     },
     onSuccess: () => {
@@ -270,7 +340,13 @@ export function useFiltersPage(): FiltersPageState {
     onError: toast.apiError,
   });
 
-  const canSave = canEdit && draftName.trim().length > 0 && draftQuery != null;
+  const draftUserId = draftColumns.user_id ?? currentUserId;
+  const canWeEdit = canEditSystem
+    || selectedFilter == null
+    || (currentUserId != null && selectedFilter.user_id === currentUserId);
+  const canSave = canEdit && canWeEdit && draftName.trim().length > 0 && draftQuery != null;
+  const canDelete = canEdit && canWeEdit && selectedId != null;
+  const balanced = buildTermTree(draftQuery?.terms ?? []).balanced;
   const anyActionOn = ACTION_FLAGS.some((k) => draftColumns[k] === 1);
   const deleteEverythingRisk = draftColumns.auto_delete === 1 && (draftQuery?.terms.length ?? 0) === 0;
 
@@ -279,6 +355,40 @@ export function useFiltersPage(): FiltersPageState {
     if (selectedFilter?.filter) return { source: 'backend' as const, ast: null, backendAst: selectedFilter.filter };
     return { source: 'draft' as const, ast: draftQuery ? termsToAst(draftQuery) : null, backendAst: null };
   }, [draftQuery, selectedFilter]);
+
+  /**
+   * Legacy `validateForm()`: a hard error stops the save, a confirm asks
+   * first, and a notice is shown but does not stand in the way.
+   */
+  const guard = (go: () => void) => {
+    const { errors, confirms, notices } = validateDraft(draftQuery, draftColumns, t);
+    if (errors.length > 0) {
+      toast.error(errors[0]);
+      return;
+    }
+    for (const n of notices) toast.info(n);
+    if (confirms.length > 0) {
+      setConfirm({
+        title: t('Save this filter?'),
+        message: confirms[0],
+        confirmText: t('Save anyway'),
+        variant: 'warning',
+        accept: () => { setConfirm(null); go(); },
+        cancel: () => setConfirm(null),
+      });
+      return;
+    }
+    go();
+  };
+
+  const requestDelete = (f: FilterModel) => setConfirm({
+    title: t('Delete filter'),
+    message: t('Delete the filter "{{name}}"? This cannot be undone.', { name: f.name }),
+    confirmText: t('Delete'),
+    variant: 'danger',
+    accept: () => { setConfirm(null); deleteMutation.mutate(f.id); },
+    cancel: () => setConfirm(null),
+  });
 
   const reviewSearch = useMemo(() => (draftQuery ? reviewSearchFromQuery(draftQuery) : {}), [draftQuery]);
 
@@ -307,8 +417,16 @@ export function useFiltersPage(): FiltersPageState {
     setColumn: (key, value) => setDraftColumns((c) => ({ ...c, [key]: value })),
     toggleFlag: (key) => setDraftColumns((c) => ({ ...c, [key]: c[key] === 1 ? 0 : 1 })),
 
+    idOnFilter,
+    features,
+    currentUserId,
+    draftUserId,
+
     composeQueryJson,
+    canWeEdit,
     canSave,
+    canDelete,
+    balanced,
     anyActionOn,
     deleteEverythingRisk,
 
@@ -320,6 +438,10 @@ export function useFiltersPage(): FiltersPageState {
     saveAs: (name: string) => { if (name.trim()) createMutation.mutate(name); },
     reset: () => startEditing(selectedFilter),
     remove: (id: number) => deleteMutation.mutate(id),
+    requestSave: () => guard(() => { if (selectedId) updateMutation.mutate(); else createMutation.mutate(draftName); }),
+    requestSaveAs: (name: string) => { if (name.trim()) guard(() => createMutation.mutate(name)); },
+    requestDelete,
+    confirm,
     debug,
     reviewSearch,
   };

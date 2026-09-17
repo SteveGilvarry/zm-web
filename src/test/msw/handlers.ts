@@ -151,6 +151,12 @@ function seed(): MockDb {
         category: 'system',
         hint: 'yes|no',
       }),
+      // The filter editor gates its optional actions on these; on for tests
+      // so every action is reachable (a real box usually has the last three off).
+      makeConfig({ id: 3, name: 'ZM_OPT_FFMPEG', value: '1', type: 'boolean', category: 'images' }),
+      makeConfig({ id: 4, name: 'ZM_OPT_EMAIL', value: '1', type: 'boolean', category: 'mail' }),
+      makeConfig({ id: 5, name: 'ZM_OPT_MESSAGE', value: '1', type: 'boolean', category: 'mail' }),
+      makeConfig({ id: 6, name: 'ZM_OPT_UPLOAD', value: '1', type: 'boolean', category: 'upload' }),
     ],
     storage: [makeStorage({ id: 1 })],
     servers: [makeServer({ id: 1 })],
