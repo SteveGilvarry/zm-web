@@ -6,7 +6,6 @@ import type { ZmEvent } from '@/types';
 import { useEventsColumnsStore, EVENTS_COLUMNS, type EventsColumnKey } from '@/stores/eventsColumns';
 export { WATCH_EVENT_COLUMNS } from '@/stores/eventsColumns';
 import {
-  getEventThumbnailUrl,
   type EventSortField,
   type SortDirection,
 } from '@/api/events';
@@ -14,6 +13,9 @@ import { humanFilesize } from '@/lib/format';
 import { ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead } from '@/skins/classic/components/events/primitives';
 import { classicLink } from '@/skins/classic/components/events/styles';
 import { useLegacyDateTimeFormat } from '@/features/config/useLegacyDateTimeFormat';
+import { useZmConfig } from '@/features/config/useZmConfig';
+import { EventCauseCell, EventNotesCell } from './EventCauseCell';
+import { EventThumbnail } from './EventThumbnail';
 import { formatDurationHms, sumEventDurations, sumEventDiskSpace } from './duration';
 import { useEventsColumnLabels } from './columnLabels';
 import { COLUMN_SORT_FIELD } from './sortColumns';
@@ -66,7 +68,7 @@ const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
  * Legacy `?view=events` table: the same columns in the same order as
  * ZoneMinder 1.39 (Thumbnail, Id, Name, Archived, Emailed, Monitor, Cause, Tags,
  * Start Time, End Time, Duration, Frames, Alarm Frames, Total/Avg/Max Score,
- * Storage, DiskSpace), cell deep-links (Id/Name → event, Monitor → watch,
+ * Storage, DiskSpace), cell deep-links (Id/Name/Monitor → event,
  * Frames/Alarm Frames/Max Score → frames view), and the footer totals row.
  * Column visibility comes from `useEventsColumnsStore` (persisted, like the
  * legacy `zmEventsTable` cookie).
@@ -82,6 +84,8 @@ export function ClassicEventsTable({
   const { formatDateTime } = useLegacyDateTimeFormat();
   const fmtTime = (iso: string | null | undefined) => (iso ? formatDateTime(iso) || '—' : '—');
   const hidden = useEventsColumnsStore((s) => s.hidden);
+  // `ZM_WEB_ANIMATE_THUMBS` — hover plays the event, as in 1.39.
+  const animateThumbs = useZmConfig('ZM_WEB_ANIMATE_THUMBS', true);
   const visible: EventsColumnKey[] = columns ?? EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
   const thumbsFirst = showThumbs && !thumbsAtEnd;
   const thumbsLast = showThumbs && thumbsAtEnd;
@@ -103,19 +107,35 @@ export function ClassicEventsTable({
       case 'id':
         return <Link {...eventLink} className={classicLink}>{e.id}</Link>;
       case 'name':
-        return <Link {...eventLink} className={classicLink}>{e.name}</Link>;
+        // Legacy prints "Archived"/"Emailed" in small muted type under the
+        // name as well as in their own columns (events.js:97).
+        return (
+          <>
+            <Link {...eventLink} className={classicLink}>{e.name}</Link>
+            {(e.archived === 1 || e.emailed === 1) && (
+              <div className="text-xs text-zinc-500">
+                {[e.archived === 1 ? t('Archived') : null, e.emailed === 1 ? t('Emailed') : null]
+                  .filter(Boolean)
+                  .join(' ')}
+              </div>
+            )}
+          </>
+        );
       case 'archived':
         return e.archived === 1 ? t('Yes') : t('No');
       case 'emailed':
         return e.emailed === 1 ? t('Yes') : t('No');
       case 'monitor':
+        // Legacy links the monitor name to the *event*, not to the watch
+        // page (events.js:99).
         return (
-          <Link to="/monitors/$monitorId" params={{ monitorId: String(e.monitor_id) }} className={classicLink}>
+          <Link {...eventLink} className={classicLink}>
             {monitorLookup[e.monitor_id] ?? t('Monitor {{id}}', { id: e.monitor_id })}
           </Link>
         );
       case 'cause':
-        return e.cause ?? '';
+        // The watch table has a Notes column, so the cause does not repeat them.
+        return <EventCauseCell event={e} showNotes={!visible.includes('notes')} />;
       case 'tags':
         return (e.tags ?? []).map((tag) => tag.name).join(', ');
       case 'time':
@@ -139,22 +159,14 @@ export function ClassicEventsTable({
       case 'disk_space':
         return e.disk_space != null ? humanFilesize(e.disk_space) : '—';
       case 'notes':
-        return <span className="text-xs text-zinc-500">{e.notes ?? ''}</span>;
+        return <EventNotesCell event={e} />;
     }
   };
 
   const thumbCell = (e: ZmEvent) => (
-    <ClassicTd center>
+    <ClassicTd center className="colThumbnail">
       <Link to="/events/$eventId" params={{ eventId: String(e.id) }} search={detailSearch}>
-        <img
-          src={getEventThumbnailUrl(e.id, token ?? undefined)}
-          alt={t('Thumbnail for event {{id}}', { id: e.id })}
-          width={thumbWidth}
-          style={{ width: thumbWidth }}
-          className="inline-block h-auto max-w-none"
-          loading="lazy"
-          onError={(ev) => { ev.currentTarget.style.visibility = 'hidden'; }}
-        />
+        <EventThumbnail eventId={e.id} token={token} width={thumbWidth} animate={animateThumbs} />
       </Link>
     </ClassicTd>
   );
@@ -214,7 +226,16 @@ export function ClassicEventsTable({
           </tr>
         )}
         {events.map((e) => (
-          <tr key={e.id} className={selectedIds.has(e.id) ? '!bg-[#dbeafe]' : undefined}>
+          <tr
+            key={e.id}
+            // bootstrap-table's `data-click-to-select`: a click anywhere in
+            // the row that is not itself a control toggles the checkbox.
+            onClick={onDeleteRow ? undefined : (ev) => {
+              if ((ev.target as HTMLElement).closest('a, button, input, select, textarea, label')) return;
+              onToggleSelected(e.id);
+            }}
+            className={selectedIds.has(e.id) ? '!bg-[#dbeafe]' : undefined}
+          >
             {onDeleteRow ? (
               <ClassicTd center>
                 <button

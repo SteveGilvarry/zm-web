@@ -44,7 +44,10 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { EventEditForm } from '@/features/events/EventEditForm';
-import { useRateOptions, useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
+import {
+  useCodecOptions, useRateOptions, useReplayModeOptions, useScaleOptions,
+} from '@/features/events/playbackOptions';
+import { PlayerOverlayControls } from '@/features/events/PlayerOverlayControls';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 import { TagChips } from '@/features/events/TagChips';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
@@ -63,11 +66,13 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
   const replayModeOptions = useReplayModeOptions();
   const scaleOptions = useScaleOptions();
   const rateOptions = useRateOptions();
+  const codecOptions = useCodecOptions();
   // Event stamps render through ZoneMinder's own patterns / server zone.
   const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
   // Pinch / trackpad-pinch / drag to inspect a detail in the frame.
-  const { ref: zoomRef, style: zoomStyle } = usePinchZoom<HTMLDivElement>();
+  const { ref: zoomRef, style: zoomStyle, scale: zoomScale, zoomIn, zoomOut } =
+    usePinchZoom<HTMLDivElement>(true, true);
   const {
     event, monitor, eventLoading,
     videoRef, playbackMode, playbackError,
@@ -215,6 +220,23 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
               </select>
             </label>
 
+            <label
+              className="shrink-0 flex items-center gap-1.5 text-xs text-fg-dim"
+              title={t('Source codec: {{codec}}', { codec: codecHint })}
+            >
+              {t('Codec')}
+              <select
+                aria-label={t('Codec')}
+                value={s.codec}
+                onChange={(e) => s.setCodec(e.target.value as typeof s.codec)}
+                className="px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors cursor-pointer"
+              >
+                {codecOptions.map((o) => (
+                  <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
+                ))}
+              </select>
+            </label>
+
             <span className="ms-auto" />
 
             {/* Zones are a System-permission view in legacy. */}
@@ -261,7 +283,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 <div
                   ref={playerRef}
                   dir="ltr"
-                  className="relative w-full h-full bg-black overflow-hidden"
+                  className="group relative w-full h-full bg-black overflow-hidden"
                 >
                   {/* Gesture surface: pinch, trackpad-pinch and drag-to-pan
                       transform the picture — video, still and zone overlay
@@ -318,6 +340,17 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     />
                   )}
                   </div>
+
+                  {/* Legacy's hover controls over the picture. */}
+                  {event.monitor_id > 0 && (
+                    <PlayerOverlayControls
+                      monitorId={event.monitor_id}
+                      scale={zoomScale}
+                      onZoomIn={zoomIn}
+                      onZoomOut={zoomOut}
+                      onFullscreen={s.handleToggleFullscreen}
+                    />
+                  )}
 
                   {/* Legacy's `.vjsMessage`: the replay run has nowhere left
                       to go, or is waiting out the real gap to the next event. */}
@@ -470,6 +503,17 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 </div>
               </FitBox>
 
+              {/* Legacy's `#replayStatus` line. */}
+              <p
+                data-testid="event-replay-status"
+                className="flex flex-wrap items-center gap-4 text-xs text-fg-dim font-mono tabular-nums"
+              >
+                <span>{t('Mode')}: <span className="text-fg">{isPlaying ? t('Replay') : t('Paused')}</span></span>
+                <span>{t('Rate')}: <span className="text-fg">{rateOptions.find((o) => o.value === rate)?.label}</span></span>
+                <span>{t('Progress')}: <span className="text-fg">{Math.floor(currentTime)}</span>s</span>
+                <span>{t('Zoom')}: <span className="text-fg">{zoomScale.toFixed(1)}</span>x</span>
+              </p>
+
               {/* Stats panel — collapsible per-event diagnostics. Pulled
                   from the existing event payload, no extra fetch. */}
               {showStats && (
@@ -520,6 +564,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     durationSec={duration || Number(event.length) || 0}
                     currentTimeSec={currentTime}
                     onSeek={s.seekTo}
+                    startTime={startTime}
                   />
                 </Panel>
               </div>
@@ -688,7 +733,28 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     </p>
                   )}
                 >
-                  <TagChips eventId={event.id} currentTags={event.tags ?? []} />
+                  <TagChips eventId={event.id} currentTags={event.tags ?? []} apiRef={s.tagApiRef} />
+                  {/* Legacy `tagPrevBtn` / `tagNextBtn`: tag this one, move on. */}
+                  <div className="mt-2 flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={s.tagAndPrev}
+                      disabled={prevEventId == null}
+                      className="flex items-center gap-1 px-2 py-1 rounded border border-border-subtle text-xs text-fg-muted hover:text-fg hover:border-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      <ChevronsLeft size={12} className="rtl:-scale-x-100" aria-hidden />
+                      {t('Tag & Prev')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={s.tagAndNext}
+                      disabled={nextEventId == null}
+                      className="flex items-center gap-1 px-2 py-1 rounded border border-border-subtle text-xs text-fg-muted hover:text-fg hover:border-border transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {t('Tag & Next')}
+                      <ChevronsRight size={12} className="rtl:-scale-x-100" aria-hidden />
+                    </button>
+                  </div>
                 </RequirePerm>
               </Panel>
 

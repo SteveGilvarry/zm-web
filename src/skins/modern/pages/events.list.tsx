@@ -22,6 +22,7 @@ import { EventsSortBar } from '@/features/events/EventsSortBar';
 import { formatBytes } from '@/lib/format';
 import { formatDuration } from '@/features/events/duration';
 import { useEventsListPage } from '@/features/events/useEventsListPage';
+import { useNoteTypeOptions } from '@/features/events/noteTypes';
 import { Chip } from '@/features/monitors/MonitorFilterBar';
 import { EventCard } from '../components/EventCard';
 import { EventsTable } from '../components/EventsTable';
@@ -51,7 +52,7 @@ export default function EventsListPage() {
   const {
     isAuthenticated, isLoading, error, refetch, accessToken,
     events, total, monitors, groups, tags, causes, totals,
-    searchQuery, setSearchQuery, notesQuery, setNotesQuery,
+    searchQuery, setSearchQuery, notesFilter, setNotesFilter,
     monitorFilter, setMonitorFilter, groupFilter, setGroupFilter,
     causeFilter, setCauseFilter, tagFilter, setTagFilter,
     archivedFilter, setArchivedFilter,
@@ -62,6 +63,7 @@ export default function EventsListPage() {
     selectedIds, toggleSelected, clearSelection, showThumbs, monitorLookup,
     filterLinkSearch, exportCsv, detailSearch,
   } = state;
+  const noteTypes = useNoteTypeOptions();
   const view = useEventsColumnsStore((st) => st.view);
   const setView = useEventsColumnsStore((st) => st.setView);
 
@@ -77,7 +79,7 @@ export default function EventsListPage() {
   // button shows, so a filter set from a deep link is never invisible.
   const activeFilters = [
     groupFilter !== 'all', causeFilter !== '', dateInputValue !== '',
-    endInputValue !== '', notesQuery !== '', tagFilter !== 'all',
+    endInputValue !== '', notesFilter.length > 0, tagFilter !== 'all',
   ].filter(Boolean).length;
 
   return (
@@ -184,17 +186,18 @@ export default function EventsListPage() {
                 />
               </label>
 
-              <label className="flex flex-col gap-1 text-xs text-fg-dim">
-                {t('Notes contain')}
-                <input
-                  type="text"
-                  aria-label={t('Notes contain')}
-                  placeholder={t('Notes contain…')}
-                  value={notesQuery}
-                  onChange={(e) => setNotesQuery(e.target.value)}
-                  className={clsx(field, 'px-2 py-1 text-sm')}
+              {/* Legacy's Notes term is a fixed list of event types, ORed
+                  as `Notes LIKE %type%` — not a free-text box. */}
+              <div className="flex flex-col gap-1 text-xs text-fg-dim">
+                {t('Event Type')}
+                <Chip
+                  label={t('Event Type')}
+                  emptyLabel={t('Any')}
+                  options={noteTypes}
+                  selected={notesFilter}
+                  onChange={setNotesFilter}
                 />
-              </label>
+              </div>
 
               <label className="flex flex-col gap-1 text-xs text-fg-dim">
                 {t('Tag')}

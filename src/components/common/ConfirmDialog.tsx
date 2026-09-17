@@ -1,3 +1,4 @@
+import { useEffect, useRef } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2 } from 'lucide-react';
 import { Button } from './Button';
@@ -25,6 +26,23 @@ export function ConfirmDialog({
   isLoading = false,
 }: ConfirmDialogProps) {
   const { t } = useTranslation();
+
+  // Enter confirms, as it does in the legacy modals. Focus lands on Cancel
+  // when the dialog opens, so this has to pre-empt that button's own default
+  // action rather than wait for it.
+  const confirmRef = useRef(onConfirm);
+  useEffect(() => { confirmRef.current = onConfirm; }, [onConfirm]);
+  useEffect(() => {
+    if (!isOpen || isLoading) return;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Enter' || e.defaultPrevented || e.isComposing) return;
+      e.preventDefault();
+      confirmRef.current();
+    };
+    document.addEventListener('keydown', onKeyDown);
+    return () => document.removeEventListener('keydown', onKeyDown);
+  }, [isOpen, isLoading]);
+
   return (
     <Modal isOpen={isOpen} onClose={onClose} title={title}>
       <p className="text-sm text-fg-muted mb-6">{message}</p>

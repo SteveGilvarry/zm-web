@@ -9,6 +9,7 @@ import {
   Archive,
   Tag as TagIcon,
   Download,
+  Mail,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { getEventThumbnailUrl, getEventVideoUrl } from '@/api/events';
@@ -123,6 +124,12 @@ export function EventCard({
             <span className="flex items-center gap-1 text-xs text-fg-dim">
               <Archive size={12} aria-hidden />
               {t('Archived')}
+            </span>
+          )}
+          {event.emailed === 1 && (
+            <span className="flex items-center gap-1 text-xs text-fg-dim">
+              <Mail size={12} aria-hidden />
+              {t('Emailed')}
             </span>
           )}
         </div>

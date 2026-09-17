@@ -15,6 +15,7 @@ import { render } from '@testing-library/react';
 import { useAuthStore } from '@/stores/auth';
 import { useEventsColumnsStore } from '@/stores/eventsColumns';
 import { useEventPlaybackStore } from '@/stores/eventPlayback';
+import { useUiStore } from '@/stores/ui';
 
 /* ---------------------------------------------------------------- router */
 
@@ -155,6 +156,7 @@ afterEach(() => {
   initialSearch = {};
   useEventsColumnsStore.getState().resetDefaults();
   useEventPlaybackStore.setState({});
+  useUiStore.setState({ classicEventsFilterBarOpen: true });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
@@ -195,8 +197,9 @@ describe('ClassicEventsListPage — rendering', () => {
     expect(eventLink.getAttribute('href')).toMatch(/^\/events\/2\?/);
     expect(eventLink.getAttribute('href')).toContain('sort=start_time');
     expect(eventLink.getAttribute('href')).toContain('page=1');
-    expect(screen.getAllByRole('link', { name: 'Front Door' })[0])
-      .toHaveAttribute('href', '/monitors/1');
+    // Legacy links the Monitor cell to the event, not to the watch page.
+    expect(screen.getAllByRole('link', { name: 'Front Door' })[0].getAttribute('href'))
+      .toMatch(/^\/events\/1\?/);
     expect(screen.getByText('Continuous')).toBeInTheDocument();
     expect(screen.getByText('Showing 1 to 2 of 2 rows')).toBeInTheDocument();
   });
@@ -205,9 +208,9 @@ describe('ClassicEventsListPage — rendering', () => {
     stub();
     await mountAndSettle();
 
-    expect(within(screen.getByLabelText(/Group/)).getByRole('option', { name: 'Front Yard' })).toBeInTheDocument();
-    expect(within(screen.getByLabelText(/Monitor =/)).getByRole('option', { name: 'Driveway' })).toBeInTheDocument();
-    expect(within(screen.getByLabelText(/Tags/)).getByRole('option', { name: 'person' })).toBeInTheDocument();
+    expect(within(screen.getByLabelText(/^Group/)).getByRole('option', { name: 'Front Yard' })).toBeInTheDocument();
+    expect(within(screen.getByLabelText(/^Monitor =/)).getByRole('option', { name: 'Driveway' })).toBeInTheDocument();
+    expect(within(screen.getByLabelText(/^Tags/)).getByRole('option', { name: 'person' })).toBeInTheDocument();
     const archived = screen.getByLabelText(/Archive Status/);
     expect(within(archived).getByRole('option', { name: 'Unarchived Only' })).toBeInTheDocument();
     expect(within(archived).getByRole('option', { name: 'Archived Only' })).toBeInTheDocument();
@@ -216,7 +219,7 @@ describe('ClassicEventsListPage — rendering', () => {
   it('hides the Group field when the install has no groups', async () => {
     stub({ groups: [] });
     await mountAndSettle();
-    expect(screen.queryByLabelText(/Group/)).toBeNull();
+    expect(screen.queryByLabelText(/^Group/)).toBeNull();
   });
 
   it('shows the last-hour hint and clears it on demand', async () => {
@@ -237,7 +240,7 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/Monitor =/), '2');
+    await user.selectOptions(screen.getByLabelText(/^Monitor =/), '2');
     await waitFor(() =>
       expect(eventRequests.at(-1)?.get('monitor_id')).toBe('2'));
   });
@@ -262,13 +265,44 @@ describe('ClassicEventsListPage — filters', () => {
     expect(screen.queryByText(/within this page/)).toBeNull();
   });
 
-  it('sends the notes substring to the backend', async () => {
+  it('sends one picked event type as the notes substring', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    await user.type(screen.getByLabelText(/Notes/), 'parcel');
-    await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('parcel'));
+    // Legacy's Notes box is a fixed multi-select, not a free-text field.
+    const notes = screen.getByLabelText(/^Notes/);
+    expect(within(notes).getByRole('option', { name: 'Any Object' })).toBeInTheDocument();
+    await user.selectOptions(notes, ['detected']);
+    await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('detected'));
+  });
+
+  it('ORs several picked event types through /filters/preview', async () => {
+    const user = userEvent.setup();
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      previewBody = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json(paged([event(9)], { total: 1 }));
+    }));
+    await mountAndSettle();
+
+    await user.selectOptions(screen.getByLabelText(/^Notes/), ['Motion', 'Linked']);
+    await waitFor(() => expect(previewBody).not.toBeNull());
+    expect(JSON.stringify(previewBody)).toContain('%Motion%');
+    expect(JSON.stringify(previewBody)).toContain('%Linked%');
+    expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
+  });
+
+  it('clears one term from its own clear button', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+
+    await user.selectOptions(screen.getByLabelText(/^Notes/), ['Motion']);
+    await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('Motion'));
+    await user.click(screen.getByRole('button', { name: 'Clear Notes' }));
+    await waitFor(() => expect(eventRequests.at(-1)?.has('notes')).toBe(false));
   });
 
   it('sends the cause substring to the backend', async () => {
@@ -285,11 +319,11 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/Monitor =/), '2');
-    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue(['2']));
+    await user.selectOptions(screen.getByLabelText(/^Monitor =/), '2');
+    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue(['2']));
 
     await user.click(screen.getByRole('button', { name: 'Reset filters' }));
-    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue([]));
+    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue([]));
   });
 
   it('keeps two picked monitors in the search and lists them through /filters/preview', async () => {
@@ -302,8 +336,8 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/Monitor =/), ['1', '2']);
-    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue(['1', '2']));
+    await user.selectOptions(screen.getByLabelText(/^Monitor =/), ['1', '2']);
+    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue(['1', '2']));
 
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(previewBody).toMatchObject({
@@ -324,7 +358,7 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/Group/), '3');
+    await user.selectOptions(screen.getByLabelText(/^Group/), '3');
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(JSON.stringify(previewBody)).toContain('monitor_id');
     expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
@@ -335,7 +369,7 @@ describe('ClassicEventsListPage — filters', () => {
     stub({ events: [event(1, { tags: [] }), event(2, { tags: [{ id: 5, name: 'person' }] })] });
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/Tags/), '5');
+    await user.selectOptions(screen.getByLabelText(/^Tags/), '5');
     await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5'));
   });
 
@@ -483,5 +517,54 @@ describe('ClassicEventsListPage — selection and failure states', () => {
     stub();
     const { container } = await mount();
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('ClassicEventsListPage — legacy chrome', () => {
+  it('hides and shows the filter strip, and remembers the choice', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+
+    expect(screen.getByTestId('events-filter-bar')).toHaveClass('flex');
+    await user.click(screen.getByRole('button', { name: 'Hide filter bar' }));
+    expect(screen.getByTestId('events-filter-bar')).toHaveClass('hidden');
+    // `fbflip` is a cookie in legacy; here it is the persisted UI store.
+    expect(useUiStore.getState().classicEventsFilterBarOpen).toBe(false);
+
+    await user.click(screen.getByRole('button', { name: 'Show filter bar' }));
+    expect(screen.getByTestId('events-filter-bar')).toHaveClass('flex');
+  });
+
+  it('disables Back when the page was not reached from another one', async () => {
+    stub();
+    await mountAndSettle();
+    // jsdom leaves document.referrer empty, as a fresh tab does.
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+  });
+
+  it('drops the pager and loads the lot when pagination is switched off', async () => {
+    const user = userEvent.setup();
+    stub({ total: 400, lastPage: 16 });
+    await mountAndSettle();
+    expect(screen.getByLabelText('Rows per page')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Hide pagination' }));
+    await waitFor(() => expect(eventRequests.at(-1)?.get('page_size')).toBe('1000'));
+    expect(screen.queryByLabelText('Rows per page')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Show pagination' }));
+    await waitFor(() => expect(eventRequests.at(-1)?.get('page_size')).toBe('25'));
+  });
+
+  it('puts the table into fullscreen', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    const requestFullscreen = vi.fn();
+    Element.prototype.requestFullscreen = requestFullscreen;
+
+    await user.click(screen.getByRole('button', { name: 'Toggle fullscreen' }));
+    expect(requestFullscreen).toHaveBeenCalled();
   });
 });

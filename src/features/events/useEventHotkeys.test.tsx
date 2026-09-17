@@ -34,6 +34,21 @@ describe('useEventHotkeys', () => {
     expect(onLeft).toHaveBeenCalledTimes(1);
   });
 
+  it('binds the Ctrl chord separately from the plain key', async () => {
+    const plain = vi.fn();
+    const chord = vi.fn();
+    renderHook(() => useEventHotkeys({ ArrowDown: plain, 'Ctrl+ArrowDown': chord }));
+    const user = userEvent.setup();
+
+    await user.keyboard('{ArrowDown}');
+    expect(plain).toHaveBeenCalledTimes(1);
+    expect(chord).not.toHaveBeenCalled();
+
+    await user.keyboard('{Control>}{ArrowDown}{/Control}');
+    expect(chord).toHaveBeenCalledTimes(1);
+    expect(plain).toHaveBeenCalledTimes(1);
+  });
+
   it('leaves keystrokes aimed at inputs alone', async () => {
     const onLeft = vi.fn();
     function Page() {

@@ -1,5 +1,7 @@
 import { useTranslation } from 'react-i18next';
-import { PLAYBACK_RATES, type PlaybackScale, type ReplayMode } from '@/stores/eventPlayback';
+import {
+  PLAYBACK_RATES, type PlaybackCodec, type PlaybackScale, type ReplayMode,
+} from '@/stores/eventPlayback';
 
 /**
  * Translated option lists for the event player's Replay / Scale / Rate
@@ -44,4 +46,24 @@ function rateLabel(rate: number): string {
   if (abs === 0.25) return `${sign}1/4x`;
   if (abs === 0.5) return `${sign}1/2x`;
   return `${sign}${abs}x`;
+}
+
+/**
+ * Legacy's Codec select. `Auto` follows the backend's recommendation; the
+ * other two force the container. MJPEG is listed but unselectable: legacy
+ * replays an event as JPEGs through `nph-zms`, and zm-api serves no
+ * equivalent (there is no MJPEG endpoint for a recorded event).
+ */
+export function useCodecOptions(): ReadonlyArray<{
+  value: PlaybackCodec | 'mjpeg';
+  label: string;
+  disabled?: boolean;
+}> {
+  const { t } = useTranslation();
+  return [
+    { value: 'auto',   label: t('Auto') },
+    { value: 'mp4',    label: t('MP4') },
+    { value: 'mp4hls', label: t('MP4 HLS') },
+    { value: 'mjpeg',  label: t('MJPEG (not served by the API)'), disabled: true },
+  ];
 }

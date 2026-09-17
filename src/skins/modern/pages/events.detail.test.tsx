@@ -8,7 +8,7 @@
  * stats panel, and the Download Video tooltip.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -860,5 +860,56 @@ describe('EventDetailPage — transport and toolbar parity', () => {
 
     expect(screen.queryByRole('button', { name: /show zones/i })).toBeNull();
     useAuthStore.setState({ user: { user: 'admin', iat: 0, exp: 0 } as never });
+  });
+});
+
+describe('EventDetailPage — overlay, status line and codec', () => {
+  it('puts the legacy hover controls over the picture', async () => {
+    const user = userEvent.setup();
+    stubBase();
+    await mount();
+    await screen.findByText('Event 100');
+
+    const overlay = screen.getByTestId('player-overlay-controls');
+    expect(within(overlay).getByRole('link', { name: 'Open watch page' }))
+      .toHaveAttribute('href', '/monitors/1');
+    expect(within(overlay).getByRole('button', { name: 'Zoom OUT' })).toBeDisabled();
+
+    await user.click(within(overlay).getByRole('button', { name: 'Zoom IN' }));
+    expect(screen.getByTestId('event-replay-status')).toHaveTextContent('Zoom: 1.3x');
+  });
+
+  it('reads Mode and Progress off the transport', async () => {
+    stubBase();
+    await mount();
+    await screen.findByText('Event 100');
+    const video = document.querySelector('video')!;
+
+    expect(screen.getByTestId('event-replay-status')).toHaveTextContent('Mode: Paused');
+
+    Object.defineProperty(video, 'duration', { value: 60, configurable: true });
+    fireEvent.loadedMetadata(video);
+    video.currentTime = 7;
+    fireEvent.timeUpdate(video);
+    fireEvent.play(video);
+
+    await waitFor(() => {
+      const status = screen.getByTestId('event-replay-status');
+      expect(status).toHaveTextContent('Mode: Replay');
+      expect(status).toHaveTextContent('Progress: 7s');
+    });
+  });
+
+  it('forces the container from the Codec select', async () => {
+    const user = userEvent.setup();
+    stubBase();
+    await mount();
+    await screen.findByText('Event 100');
+
+    const select = screen.getByLabelText('Codec') as HTMLSelectElement;
+    expect(screen.getByRole('option', { name: /MJPEG/ })).toBeDisabled();
+
+    await user.selectOptions(select, 'mp4hls');
+    expect(useEventPlaybackStore.getState().codec).toBe('mp4hls');
   });
 });

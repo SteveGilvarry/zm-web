@@ -267,7 +267,8 @@ describe('ClassicEventsTable — archived / emailed', () => {
     expect(screen.getByText('Emailed')).toBeInTheDocument();
     const row = screen.getAllByRole('row')[1];
     const cells = within(row).getAllByRole('cell').map((td) => td.textContent);
-    expect(cells.slice(1, 5)).toEqual(['1', 'Event-0001', 'Yes', 'No']);
+    // Legacy repeats the flags in small type under the name (events.js:97).
+    expect(cells.slice(1, 5)).toEqual(['1', 'Event-0001Archived', 'Yes', 'No']);
   });
 });
 
@@ -307,7 +308,10 @@ describe('ClassicEventsTable — fixed column set (legacy watch table)', () => {
         columns={WATCH_EVENT_COLUMNS}
       />,
     );
-    expect(screen.getByText('Forced Web: alarm')).toBeInTheDocument();
+    // Also under the Cause, the way legacy prints it (events.js:104).
+    const row = screen.getAllByRole('row')[1];
+    const cells = within(row).getAllByRole('cell');
+    expect(cells.some((td) => td.textContent === 'Forced Web: alarm')).toBe(true);
   });
 
   it('leaves the Notes cell empty when the event has none', () => {
@@ -400,5 +404,43 @@ describe('ClassicEventsTable — per-row delete', () => {
     await user.click(screen.getByRole('button', { name: 'Delete event 1' }));
     await user.keyboard('{/Shift}');
     expect(onDeleteRow).toHaveBeenLastCalledWith(1, true);
+  });
+});
+
+describe('ClassicEventsTable — click to select', () => {
+  it('toggles the row when the row itself is clicked', async () => {
+    const user = userEvent.setup();
+    const onToggleSelected = vi.fn();
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 4 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={onToggleSelected}
+      />,
+    );
+    // bootstrap-table's `data-click-to-select`.
+    const row = screen.getAllByRole('row')[1];
+    await user.click(within(row).getAllByRole('cell').at(-1)!);
+    expect(onToggleSelected).toHaveBeenCalledWith(4);
+  });
+
+  it('leaves a click on a link or a control alone', async () => {
+    const user = userEvent.setup();
+    const onToggleSelected = vi.fn();
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 4 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={onToggleSelected}
+      />,
+    );
+    await user.click(screen.getByRole('link', { name: 'Event-0001' }));
+    expect(onToggleSelected).not.toHaveBeenCalled();
+
+    // The checkbox still toggles, once, through its own handler.
+    await user.click(screen.getByRole('checkbox', { name: 'Select event 4' }));
+    expect(onToggleSelected).toHaveBeenCalledTimes(1);
   });
 });

@@ -25,6 +25,8 @@ import { eventsToCsv } from './eventsCsv';
 import {
   monitorIdsFromSearch,
   monitorIdsToSearch,
+  notesFromSearch,
+  notesToSearch,
   termsFromEventsSearch,
   type EventNavSearch,
   type EventsSearchParams,
@@ -125,8 +127,12 @@ export interface EventsListPageState {
 
   searchQuery: string;
   setSearchQuery: (v: string) => void;
-  notesQuery: string;
-  setNotesQuery: (v: string) => void;
+  /**
+   * Event types picked in the Notes box (legacy's fixed multi-select);
+   * empty means "any note".
+   */
+  notesFilter: string[];
+  setNotesFilter: (values: string[]) => void;
   /** Selected monitor ids; empty means every monitor (legacy's multi-select). */
   monitorFilter: number[];
   setMonitorFilter: (ids: number[]) => void;
@@ -201,25 +207,38 @@ export interface EventsListPageState {
  * passes them as an `id in (…)` rule.
  */
 export function groupEventsAst(opts: {
-  monitorIds: number[];
+  /** Omitted (or empty) means every monitor the user can see. */
+  monitorIds?: number[];
   archived?: boolean;
   startTime?: string;
   endTime?: string;
   name?: string;
   cause?: string;
-  notes?: string;
+  /** One substring, or several ORed together (legacy's Notes multi-select). */
+  notes?: string | string[];
   eventIds?: number[];
   storageId?: number;
   sort: EventSortField;
   dir: SortDirection;
 }): { where: FilterAstExpr; sort: { field: EventSortField; dir: SortDirection } } {
-  const rules: FilterAstExpr[] = [{ field: 'monitor_id', op: 'in', value: opts.monitorIds }];
+  const rules: FilterAstExpr[] = [];
+  if (opts.monitorIds && opts.monitorIds.length > 0) {
+    rules.push({ field: 'monitor_id', op: 'in', value: opts.monitorIds });
+  }
   if (opts.archived !== undefined) rules.push({ field: 'archived', op: 'eq', value: opts.archived ? 1 : 0 });
   if (opts.startTime) rules.push({ field: 'start_time', op: 'gte', value: opts.startTime });
   if (opts.endTime) rules.push({ field: 'end_time', op: 'lte', value: opts.endTime });
   if (opts.name) rules.push({ field: 'name', op: 'like', value: `%${opts.name}%` });
   if (opts.cause) rules.push({ field: 'cause', op: 'like', value: `%${opts.cause}%` });
-  if (opts.notes) rules.push({ field: 'notes', op: 'like', value: `%${opts.notes}%` });
+  const notes = typeof opts.notes === 'string' ? [opts.notes] : opts.notes ?? [];
+  if (notes.length === 1) rules.push({ field: 'notes', op: 'like', value: `%${notes[0]}%` });
+  else if (notes.length > 1) {
+    // Legacy ORs one `Notes LIKE %type%` per picked event type.
+    rules.push({
+      match: 'any',
+      rules: notes.map((n) => ({ field: 'notes' as const, op: 'like' as const, value: `%${n}%` })),
+    });
+  }
   if (opts.eventIds) rules.push({ field: 'id', op: 'in', value: opts.eventIds });
   if (opts.storageId != null) rules.push({ field: 'storage_id', op: 'eq', value: opts.storageId });
   return { where: { match: 'all', rules }, sort: { field: opts.sort, dir: opts.dir } };
@@ -260,10 +279,8 @@ export function useEventsListPage(): EventsListPageState {
   // Free-text boxes keep a local draft and commit to the URL shortly after
   // the operator stops typing, so every keystroke does not rewrite history.
   const [searchDraft, setSearchDraft] = useState(search.q ?? '');
-  const [notesDraft, setNotesDraft] = useState(search.notes ?? '');
   const [causeDraft, setCauseDraft] = useState(search.cause ?? '');
   useEffect(() => { setSearchDraft(search.q ?? ''); }, [search.q]);
-  useEffect(() => { setNotesDraft(search.notes ?? ''); }, [search.notes]);
   useEffect(() => { setCauseDraft(search.cause ?? ''); }, [search.cause]);
   useEffect(() => {
     const id = setTimeout(() => {
@@ -272,13 +289,6 @@ export function useEventsListPage(): EventsListPageState {
     return () => clearTimeout(id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchDraft]);
-  useEffect(() => {
-    const id = setTimeout(() => {
-      if ((search.notes ?? '') !== notesDraft) setSearch({ notes: notesDraft || undefined, page: undefined });
-    }, 350);
-    return () => clearTimeout(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [notesDraft]);
   useEffect(() => {
     const id = setTimeout(() => {
       if ((search.cause ?? '') !== causeDraft) setSearch({ cause: causeDraft || undefined, page: undefined });
@@ -306,6 +316,7 @@ export function useEventsListPage(): EventsListPageState {
 
   const rawMonitorId = search.monitor_id;
   const monitorFilter = useMemo(() => monitorIdsFromSearch({ monitor_id: rawMonitorId }), [rawMonitorId]);
+  const notesFilter = useMemo(() => notesFromSearch({ notes: search.notes }), [search.notes]);
   const groupFilter: number | 'all' = search.group ?? 'all';
   // Set by the Storage list's Events link; there is no picker for it.
   const storageFilter = search.storage;
@@ -394,13 +405,15 @@ export function useEventsListPage(): EventsListPageState {
   // resolved to its event ids first (`/tags/{id}` already pages the events
   // carrying it).
   const searchQuery = (search.q ?? '').trim();
-  const notesQuery = (search.notes ?? '').trim();
   const causeQuery = causeFilter.trim();
 
   const monitorScope = monitorFilter.length > 0 ? monitorFilter : groupMonitorIds;
   // A group keeps its preview path even with one monitor, as before.
-  const usePreviewPath = monitorScope !== null
+  const monitorNeedsPreview = monitorScope !== null
     && (monitorScope.length !== 1 || monitorFilter.length === 0);
+  // `/events` takes one `notes` substring; several event types have to be
+  // ORed, which only `/filters/preview` can do (legacy's Notes multi-select).
+  const usePreviewPath = monitorNeedsPreview || notesFilter.length > 1;
   const needTagIds = usePreviewPath && tagFilter !== 'all';
   const { data: tagDetail } = useQuery({
     queryKey: ['tag-events', tagFilter],
@@ -415,21 +428,21 @@ export function useEventsListPage(): EventsListPageState {
     queryKey: [
       'events', page, pageSize, monitorScope, archivedFilter,
       dateFilter, endFilter, sortField, sortDir,
-      searchQuery, causeQuery, notesQuery, tagFilter, tagDetail?.events.length ?? null,
+      searchQuery, causeQuery, notesFilter, tagFilter, tagDetail?.events.length ?? null,
       storageFilter ?? null,
     ],
     queryFn: async (): Promise<PaginatedResponse<ZmEvent>> => {
       const archived = archivedFilter === 'all' ? undefined : archivedFilter === 'archived';
       if (usePreviewPath) {
-        if (monitorScope!.length === 0) {
+        if (monitorScope !== null && monitorScope.length === 0) {
           return { items: [], total: 0, current_page: 1, per_page: pageSize, last_page: 1 };
         }
         return previewFilter(groupEventsAst({
-          monitorIds: monitorScope!, archived,
+          monitorIds: monitorScope ?? undefined, archived,
           startTime: dateFilter || undefined, endTime: endFilter || undefined,
           name: searchQuery || undefined,
           cause: causeQuery || undefined,
-          notes: notesQuery || undefined,
+          notes: notesFilter,
           eventIds: needTagIds ? (tagDetail?.events ?? []).map((e) => e.id) : undefined,
           storageId: storageFilter,
           sort: sortField, dir: sortDir,
@@ -447,7 +460,7 @@ export function useEventsListPage(): EventsListPageState {
         end_time: endFilter || undefined,
         name: searchQuery || undefined,
         cause: causeQuery || undefined,
-        notes: notesQuery || undefined,
+        notes: notesFilter[0],
         tag_id: tagFilter === 'all' ? undefined : String(tagFilter),
         sort: sortField,
         direction: sortDir,
@@ -504,6 +517,8 @@ export function useEventsListPage(): EventsListPageState {
   // Every filter change resets to page 1, as the old inline handlers did.
   const setMonitorFilter = (ids: number[]) =>
     setSearch({ monitor_id: monitorIdsToSearch(ids), page: undefined });
+  const setNotesFilter = (values: string[]) =>
+    setSearch({ notes: notesToSearch(values), page: undefined });
   const setGroupFilter = (v: number | 'all') =>
     setSearch({ group: v === 'all' ? undefined : v, page: undefined });
   const setTagFilter = (v: number | 'all') => setSearch({ tag: v === 'all' ? undefined : v, page: undefined });
@@ -568,7 +583,7 @@ export function useEventsListPage(): EventsListPageState {
       archived: archivedFilter === 'all' ? undefined : archivedFilter === 'archived',
       start: dateFilter || undefined,
       end: endFilter || undefined,
-      notes: search.notes || undefined,
+      notes: notesToSearch(notesFilter),
       tag: tagFilter === 'all' ? undefined : tagFilter,
       q: search.q || undefined,
       page,
@@ -582,7 +597,7 @@ export function useEventsListPage(): EventsListPageState {
     return out;
   }, [
     monitorFilter, causeFilter, archivedFilter, dateFilter, endFilter,
-    search.notes, tagFilter, search.q, page, pageSize, sortField, sortDir,
+    notesFilter, tagFilter, search.q, page, pageSize, sortField, sortDir,
   ]);
 
   const hidden = useEventsColumnsStore((s) => s.hidden);
@@ -618,8 +633,8 @@ export function useEventsListPage(): EventsListPageState {
 
     searchQuery: searchDraft,
     setSearchQuery: setSearchDraft,
-    notesQuery: notesDraft,
-    setNotesQuery: setNotesDraft,
+    notesFilter,
+    setNotesFilter,
     monitorFilter,
     setMonitorFilter,
     groupFilter,

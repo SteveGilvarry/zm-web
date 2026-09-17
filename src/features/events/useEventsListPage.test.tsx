@@ -184,9 +184,40 @@ describe('useEventsListPage', () => {
     expect(result.current.events).toHaveLength(2);
 
     act(() => result.current.setSearchQuery(''));
-    act(() => result.current.setNotesQuery('parcel'));
-    await waitFor(() => expect(eventRequests.at(-1)!.get('notes')).toBe('parcel'));
+    await waitFor(() => expect(eventRequests.at(-1)!.has('name')).toBe(false));
+    // One event type is a plain `notes` substring on /events.
+    act(() => result.current.setNotesFilter(['Motion']));
+    await waitFor(() => expect(eventRequests.at(-1)!.get('notes')).toBe('Motion'));
     expect(eventRequests.at(-1)!.has('name')).toBe(false);
+  });
+
+  it('ORs several event types through /filters/preview, as legacy does', async () => {
+    stub();
+    let body: unknown = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      body = await request.json();
+      return HttpResponse.json({
+        items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1,
+      });
+    }));
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events).toHaveLength(2));
+
+    act(() => result.current.setNotesFilter(['detected', 'aplr']));
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    expect(result.current.notesFilter).toEqual(['detected', 'aplr']);
+    const rules = (body as { where: { match: string; rules: unknown[] } }).where.rules;
+    expect((body as { where: { match: string } }).where.match).toBe('all');
+    expect(rules).toContainEqual({
+      match: 'any',
+      rules: [
+        { field: 'notes', op: 'like', value: '%detected%' },
+        { field: 'notes', op: 'like', value: '%aplr%' },
+      ],
+    });
+    // No monitor is picked, so the preview carries no monitor rule — only
+    // the seeded last hour and the notes group.
+    expect(rules.some((r) => (r as { field?: string }).field === 'monitor_id')).toBe(false);
   });
 
   it('sends the tag filter as tag_id', async () => {

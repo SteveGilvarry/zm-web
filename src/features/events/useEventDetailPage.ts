@@ -21,13 +21,15 @@ import { useEventVideo } from '@/hooks/useEventVideo';
 import { useToast } from '@/components/common/toastStore';
 import { useAuthStore } from '@/stores/auth';
 import {
-  useEventPlaybackStore, scaleToMaxWidth, isPlaybackScale, PLAYBACK_RATES, type PlaybackScale,
+  useEventPlaybackStore, scaleToMaxWidth, isPlaybackScale, PLAYBACK_RATES,
+  type PlaybackCodec, type PlaybackScale,
 } from '@/stores/eventPlayback';
 import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from '@/types';
 import type { Monitor, ZmEvent } from '@/types';
 import { toLocalDatetime } from '@/features/reports/datetime';
 import { useEventHotkeys } from './useEventHotkeys';
-import { monitorIdsFromSearch, toApiTimestamp, toZmDateTime, type EventNavSearch } from './eventsSearch';
+import type { TagChipsApi } from './TagChips';
+import { notesFromSearch, monitorIdsFromSearch, toApiTimestamp, toZmDateTime, type EventNavSearch } from './eventsSearch';
 
 export function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -157,6 +159,9 @@ export interface EventDetailPageState {
   rate: number;
   setRate: (rate: number) => void;
   rateOptions: readonly number[];
+  /** Forced container (legacy `&codec=`); `auto` follows the backend. */
+  codec: PlaybackCodec;
+  setCodec: (codec: PlaybackCodec) => void;
   /** Rewind / Fast Forward: one step down / up the rate list (legacy `streamFastRev` / `streamFastFwd`). */
   scanBack: () => void;
   scanForward: () => void;
@@ -180,6 +185,15 @@ export interface EventDetailPageState {
   noMoreEvents: boolean;
   /** `HH:MM:SS` left of the real gap before the next event (`all` replay). */
   gapCountdown: string | null;
+
+  /**
+   * Hand to `TagChips` so ↓ / Ctrl+↓ and the tag-and-move buttons can reach
+   * the editor. Null while the operator has no Edit rights on events.
+   */
+  tagApiRef: RefObject<TagChipsApi | null>;
+  /** Legacy `tagAndPrev` / `tagAndNext`: apply the first free tag, then move. */
+  tagAndPrev: () => void;
+  tagAndNext: () => void;
 
   handleVideoEnded: () => void;
   handlePlayPause: () => void;
@@ -259,6 +273,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     showZones, setShowZones,
     showStats, setShowStats,
     rate, setRate,
+    codec, setCodec,
     navScope,
   } = useEventPlaybackStore();
 
@@ -334,6 +349,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     videoRef,
     id,
     videoInfo,
+    codec,
   );
 
   // Seed the scrubber length from /info up front; the precise duration from
@@ -416,7 +432,9 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     monitor_id: urlMonitorIds.length === 1 ? urlMonitorIds[0] : undefined,
     archived: listSearch.archived,
     cause: listSearch.cause || undefined,
-    notes: listSearch.notes || undefined,
+    // The list's Notes box is a multi-select; `/events` takes one substring,
+    // so a multi-type list narrows Prev/Next by its first type only.
+    notes: notesFromSearch(listSearch)[0],
     name: listSearch.q || undefined,
     tag_id: listSearch.tag != null ? String(listSearch.tag) : undefined,
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -788,6 +806,18 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     el.play();
   }, [navScope?.autoplay, playbackMode, id, event?.id]);
 
+  // ----- Tags --------------------------------------------------------------
+
+  const tagApiRef = useRef<TagChipsApi | null>(null);
+  const tagAndPrev = () => {
+    tagApiRef.current?.addFirst();
+    navPrev();
+  };
+  const tagAndNext = () => {
+    tagApiRef.current?.addFirst();
+    navNext();
+  };
+
   // ----- Keyboard ----------------------------------------------------------
   // Off while a dialog is open so Space / Delete cannot act behind it.
   useEventHotkeys(
@@ -796,6 +826,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
       ArrowRight: navNext,
       ' ': handlePlayPause,
       Delete: (e) => requestDelete(e.shiftKey),
+      ArrowDown: () => tagApiRef.current?.focus(),
+      'Ctrl+ArrowDown': () => tagApiRef.current?.addFirst(),
     },
     !!event && !editOpen && !deleteOpen,
   );
@@ -939,6 +971,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     rate,
     setRate,
     rateOptions: PLAYBACK_RATES,
+    codec,
+    setCodec,
     scanBack,
     scanForward,
     canScan,
@@ -954,6 +988,10 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     navNext,
     noMoreEvents,
     gapCountdown,
+
+    tagApiRef,
+    tagAndPrev,
+    tagAndNext,
 
     handleVideoEnded,
     handlePlayPause,

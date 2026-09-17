@@ -13,11 +13,15 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { EventEditForm } from '@/features/events/EventEditForm';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
+import { PlayerOverlayControls } from '@/features/events/PlayerOverlayControls';
 import { TagChips } from '@/features/events/TagChips';
 import { ZonesOverlay } from '@/features/events/ZonesOverlay';
-import { useRateOptions, useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
+import { usePinchZoom } from '@/features/events/usePinchZoom';
+import {
+  useCodecOptions, useRateOptions, useReplayModeOptions, useScaleOptions,
+} from '@/features/events/playbackOptions';
 import { formatDurationHms } from '@/features/events/duration';
-import { formatTime, useEventDetailPage } from '@/features/events/useEventDetailPage';
+import { useEventDetailPage } from '@/features/events/useEventDetailPage';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { formatBytes } from '@/lib/format';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
@@ -39,11 +43,16 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
   const replayModeOptions = useReplayModeOptions();
   const scaleOptions = useScaleOptions();
   const rateOptions = useRateOptions();
+  const codecOptions = useCodecOptions();
   // Event stamps render through ZoneMinder's own patterns / server zone.
   const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
-  // Pull the ref out so the remaining `s.*` reads are plain values.
-  const { event, monitor, videoRef } = s;
+  // Click, pinch or trackpad-pinch to zoom into the picture, as legacy's
+  // panzoom does; the overlay buttons drive the same state.
+  const { ref: zoomRef, style: zoomStyle, scale: zoomScale, zoomIn, zoomOut } =
+    usePinchZoom<HTMLDivElement>(true, true);
+  // Pull the refs out so the remaining `s.*` reads are plain values.
+  const { event, monitor, videoRef, playerRef, tagApiRef } = s;
   useDocumentTitle(event ? t('Event {{id}}', { id: event.id }) : t('Event'));
 
   if (!s.isAuthenticated) return null;
@@ -87,11 +96,15 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
             </label>
             <label className="flex items-center gap-1" title={t('Source codec: {{codec}}', { codec: s.codecHint })}>
               <span className="font-semibold">{t('Codec')}</span>
-              <select aria-label={t('Codec')} disabled value={s.playbackMode ?? 'auto'} className={barSelect}>
-                <option value="auto">{t('Auto')}</option>
-                <option value="direct">MP4 ({s.codecHint})</option>
-                <option value="hls">HLS ({s.codecHint})</option>
-                <option value="unsupported">{t('Unsupported')}</option>
+              <select
+                aria-label={t('Codec')}
+                value={s.codec}
+                onChange={(e) => s.setCodec(e.target.value as typeof s.codec)}
+                className={barSelect}
+              >
+                {codecOptions.map((o) => (
+                  <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
+                ))}
               </select>
             </label>
             <label className="flex items-center gap-1">
@@ -167,7 +180,23 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-zinc-600">{t('Tags')}</span>
                 <RequirePerm feature="events" level="Edit" fallback={<span>{(event.tags ?? []).map((tag) => tag.name).join(', ') || t('No tags')}</span>}>
-                  <TagChips eventId={event.id} currentTags={event.tags ?? []} />
+                  <TagChips eventId={event.id} currentTags={event.tags ?? []} apiRef={tagApiRef} />
+                  <ClassicButton
+                    onClick={s.tagAndPrev}
+                    disabled={s.prevEventId == null}
+                    title={t('Apply the last tag, then play the previous event')}
+                  >
+                    <ChevronsLeft size={14} className="rtl:-scale-x-100" />
+                    {t('Tag & Prev')}
+                  </ClassicButton>
+                  <ClassicButton
+                    onClick={s.tagAndNext}
+                    disabled={s.nextEventId == null}
+                    title={t('Apply the last tag, then play the next event')}
+                  >
+                    {t('Tag & Next')}
+                    <ChevronsRight size={14} className="rtl:-scale-x-100" />
+                  </ClassicButton>
                 </RequirePerm>
               </div>
 
@@ -209,26 +238,40 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                 {/* Player */}
                 <div className="flex-1 min-w-0 space-y-1">
                   <div
+                    ref={playerRef}
                     dir="ltr"
-                    className="relative bg-black mx-auto"
+                    className="group relative bg-black mx-auto overflow-hidden"
                     style={{ aspectRatio: `${s.videoContainerW} / ${s.videoContainerH}`, maxWidth: s.playerMaxWidth }}
                   >
-                    <video
-                      ref={videoRef}
-                      poster={s.thumbnailUrl}
-                      className={s.useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
-                      style={s.videoElementStyle}
-                      onTimeUpdate={(e) => s.setCurrentTime(e.currentTarget.currentTime)}
-                      onLoadedMetadata={(e) => {
-                        const d = e.currentTarget.duration;
-                        if (Number.isFinite(d) && d > 0) s.setDuration(d);
-                      }}
-                      onPlay={() => s.setIsPlaying(true)}
-                      onPause={() => s.setIsPlaying(false)}
-                      onEnded={s.handleVideoEnded}
-                    />
-                    {s.showZones && event.monitor_id > 0 && (
-                      <ZonesOverlay monitorId={event.monitor_id} monitorWidth={event.width || 1920} monitorHeight={event.height || 1080} />
+                    {/* Everything that is the picture zooms together; the
+                        controls over it stay where they are. */}
+                    <div ref={zoomRef} style={zoomStyle} className="absolute inset-0">
+                      <video
+                        ref={videoRef}
+                        poster={s.thumbnailUrl}
+                        className={s.useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
+                        style={s.videoElementStyle}
+                        onTimeUpdate={(e) => s.setCurrentTime(e.currentTarget.currentTime)}
+                        onLoadedMetadata={(e) => {
+                          const d = e.currentTarget.duration;
+                          if (Number.isFinite(d) && d > 0) s.setDuration(d);
+                        }}
+                        onPlay={() => s.setIsPlaying(true)}
+                        onPause={() => s.setIsPlaying(false)}
+                        onEnded={s.handleVideoEnded}
+                      />
+                      {s.showZones && event.monitor_id > 0 && (
+                        <ZonesOverlay monitorId={event.monitor_id} monitorWidth={event.width || 1920} monitorHeight={event.height || 1080} />
+                      )}
+                    </div>
+                    {event.monitor_id > 0 && (
+                      <PlayerOverlayControls
+                        monitorId={event.monitor_id}
+                        scale={zoomScale}
+                        onZoomIn={zoomIn}
+                        onZoomOut={zoomOut}
+                        onFullscreen={s.handleToggleFullscreen}
+                      />
                     )}
                     {/* Legacy's `.vjsMessage`: the replay run has nowhere
                         left to go, or is waiting out the real gap. */}
@@ -254,6 +297,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                       durationSec={s.duration || Number(event.length) || 0}
                       currentTimeSec={s.currentTime}
                       onSeek={s.seekTo}
+                      startTime={s.startTime}
                     />
                   </div>
 
@@ -277,11 +321,14 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   </div>
 
                   {/* Replay status */}
-                  <p className="flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-700">
-                    <span>{t('Mode')}: <b>{replayModeOptions.find((o) => o.value === s.replayMode)?.label}</b></span>
+                  <p data-testid="event-replay-status" className="flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-700">
+                    {/* Legacy's `#replayStatus`: Mode is the transport, not the
+                        replay-mode select next to it. */}
+                    <span>{t('Mode')}: <b>{s.isPlaying ? t('Replay') : t('Paused')}</b></span>
                     <span>{t('Rate')}: <b>{rateOptions.find((o) => o.value === s.rate)?.label}</b></span>
-                    <span>{t('Progress')}: <b>{formatTime(s.currentTime)}</b> / {formatTime(s.duration)}</span>
+                    <span>{t('Progress')}: <b>{Math.floor(s.currentTime)}</b>s</span>
                     <span>{t('Time')}: <b>{s.startTime ? new Date(s.startTime.getTime() + s.currentTime * 1000).toLocaleTimeString() : '—'}</b></span>
+                    <span>{t('Zoom')}: <b>{zoomScale.toFixed(1)}</b>x</span>
                   </p>
                 </div>
               </div>

@@ -24,8 +24,13 @@ export interface EventsSearchParams {
   start?: string;
   /** Start ≤ (sent as the API's `end_time` bound, see `useEventsListPage`). */
   end?: string;
-  /** Substring match on Notes (the API's `notes` param). */
-  notes?: string;
+  /**
+   * Event types to match on Notes. Legacy's strip Notes box is a fixed
+   * multi-select (`Motion`, `ONVIF`, `detected`, …) whose picks are ORed as
+   * `Notes LIKE %value%`; one value serialises as a bare string so old
+   * links keep working. See `notesFromSearch`.
+   */
+  notes?: string | string[];
   tag?: number;
   /** Substring match on Name (the API's `name` param). */
   q?: string;
@@ -57,6 +62,25 @@ export function monitorIdsToSearch(ids: number[]): number | number[] | undefined
   return ids.length === 1 ? ids[0] : ids;
 }
 
+/** `'a'`, `'a,b'` or `['a','b']` → `['a','b']`; blanks are dropped. */
+function strList(v: unknown): string[] {
+  const raw = Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : [];
+  return Array.from(new Set(
+    raw.map((x) => (typeof x === 'string' ? x.trim() : '')).filter((x) => x !== ''),
+  ));
+}
+
+/** The Notes filter as a list of event types; empty means "any note". */
+export function notesFromSearch(s: Pick<EventsSearchParams, 'notes'>): string[] {
+  return strList(s.notes);
+}
+
+/** The inverse: bare string for one type, nothing for none. */
+export function notesToSearch(values: string[]): string | string[] | undefined {
+  if (values.length === 0) return undefined;
+  return values.length === 1 ? values[0] : values;
+}
+
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v !== '' ? v : undefined;
 }
@@ -78,7 +102,7 @@ export function parseEventsSearch(search: Record<string, unknown>): EventsSearch
     archived: bool(search.archived),
     start: str(search.start),
     end: str(search.end),
-    notes: str(search.notes),
+    notes: notesToSearch(strList(search.notes)),
     tag: int(search.tag),
     q: str(search.q),
     page: int(search.page),
@@ -117,7 +141,10 @@ export function termsFromEventsSearch(s: EventsSearchParams): FilterTerm[] {
   if (s.start) push('StartDateTime', '>=', toZmDateTime(s.start));
   if (s.end) push('StartDateTime', '<=', toZmDateTime(s.end));
   if (s.cause) push('Cause', 'LIKE', s.cause);
-  if (s.notes) push('Notes', 'LIKE', s.notes);
+  // Legacy's Notes box is a multi-select whose value is the comma list its
+  // `decode_multi` reads back (Filter.php:1169).
+  const notes = notesFromSearch(s);
+  if (notes.length) push('Notes', 'LIKE', notes.join(','));
   if (s.q) push('Name', 'LIKE', s.q);
   if (s.tag != null) push('Tags', '=', String(s.tag));
   if (s.archived !== undefined) push('Archived', '=', s.archived ? '1' : '0');

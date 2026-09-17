@@ -217,16 +217,33 @@ describe('EventsListPage — modern skin', () => {
     );
   });
 
-  it('sends the notes substring to the server and shows only what came back', async () => {
+  it('sends one picked event type as the notes substring', async () => {
     const urls = recordEventQueries();
-    renderRoute('/events?notes=delivery');
+    renderRoute('/events?notes=detected');
     await screen.findByRole('link', { name: 'Download video for event 103' });
 
     await openFilters(userEvent.setup());
-    expect(screen.getByRole('textbox', { name: 'Notes contain' })).toHaveValue('delivery');
-    await waitFor(() => expect(urls.at(-1)!.searchParams.get('notes')).toBe('delivery'));
+    // Legacy's Notes term is a fixed list of event types, not free text.
+    expect(screen.getByRole('button', { name: 'Event Type filter, 1 selected' })).toBeInTheDocument();
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('notes')).toBe('detected'));
     // No "within this page" caveat: the total is the filtered total.
     expect(screen.queryByText(/within this page/)).toBeNull();
+  });
+
+  it('picks several event types, which the URL keeps as a list', async () => {
+    const user = userEvent.setup();
+    recordEventQueries();
+    const { router } = renderRoute('/events');
+    await rows();
+
+    await openFilters(user);
+    await user.click(screen.getByRole('button', { name: 'Event Type filter' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Motion' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Linked' }));
+    await waitFor(
+      () => expect(router.state.location.search).toMatchObject({ notes: ['Motion', 'Linked'] }),
+      { timeout: 3000 },
+    );
   });
 
   it('sends the tag filter as tag_id', async () => {
@@ -450,9 +467,10 @@ describe('EventsListPage — modern skin', () => {
     );
 
     await openFilters(user);
-    await user.type(screen.getByRole('textbox', { name: 'Notes contain' }), 'van');
+    await user.click(screen.getByRole('button', { name: 'Event Type filter' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Motion' }));
     await waitFor(
-      () => expect(router.state.location.search).toMatchObject({ q: 'Event-102', notes: 'van' }),
+      () => expect(router.state.location.search).toMatchObject({ q: 'Event-102', notes: 'Motion' }),
       { timeout: 3000 },
     );
   });
@@ -610,6 +628,27 @@ describe('EventsListPage — modern skin', () => {
 
     await user.click(bar.getByRole('button', { name: 'Clear selection' }));
     expect(screen.queryByRole('region', { name: 'Bulk event actions' })).toBeNull();
+  });
+
+  it('selects a row when the row itself is clicked', async () => {
+    const user = userEvent.setup();
+    renderRoute('/events');
+    await rows();
+
+    // Legacy's `data-click-to-select`: the row, not just the checkbox.
+    await user.click(row(101).getAllByRole('cell').at(-2)!);
+    expect(row(101).getByRole('checkbox', { name: /^Select event/ })).toBeChecked();
+
+    // A second click on the same cell clears it again.
+    await user.click(row(101).getAllByRole('cell').at(-2)!);
+    expect(row(101).getByRole('checkbox', { name: /^Select event/ })).not.toBeChecked();
+  });
+
+  it('flags an emailed event under its name', async () => {
+    db.events = [makeEvent({ id: 101, monitor_id: 1, emailed: 1 })];
+    renderRoute('/events');
+    await rows();
+    expect(row(101).getByLabelText('Emailed')).toBeInTheDocument();
   });
 
   it('archives the selection one PATCH at a time', async () => {

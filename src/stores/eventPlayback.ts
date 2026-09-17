@@ -39,6 +39,15 @@ export const PLAYBACK_RATES: readonly number[] = [
 ];
 
 /**
+ * Which container the player is forced to use (legacy's `&codec=`):
+ * `auto` follows the backend's `recommended_mode`, the other two force the
+ * progressive MP4 or the HLS playlist. Legacy also offers MJPEG, which
+ * zm-api does not serve for a recorded event.
+ */
+export type PlaybackCodec = 'auto' | 'mp4' | 'mp4hls';
+export const PLAYBACK_CODECS: readonly PlaybackCodec[] = ['auto', 'mp4', 'mp4hls'];
+
+/**
  * Which events Prev / Next on the detail page walk through when the URL
  * carries no list context. Written by the events list whenever its monitor
  * filter changes: a monitor id, or `null` for "every monitor". Before the
@@ -60,12 +69,14 @@ interface EventPlaybackState {
   showStats: boolean;
   /** One of `PLAYBACK_RATES`. */
   rate: number;
+  codec: PlaybackCodec;
   navScope: EventNavScope | null;
   setReplayMode: (mode: ReplayMode) => void;
   setScale: (monitorId: number, scale: PlaybackScale) => void;
   setShowZones: (show: boolean) => void;
   setShowStats: (show: boolean) => void;
   setRate: (rate: number) => void;
+  setCodec: (codec: PlaybackCodec) => void;
   setNavScope: (scope: EventNavScope) => void;
 }
 
@@ -84,6 +95,7 @@ export const useEventPlaybackStore = create<EventPlaybackState>()(
       // Legacy `zmEventStats` cookie defaults to on.
       showStats: true,
       rate: 1,
+      codec: 'auto',
       navScope: null,
       setReplayMode: (mode) => set({ replayMode: REPLAY_MODES.includes(mode) ? mode : 'none' }),
       setScale: (monitorId, scale) =>
@@ -91,6 +103,7 @@ export const useEventPlaybackStore = create<EventPlaybackState>()(
       setShowZones: (show) => set({ showZones: show }),
       setShowStats: (show) => set({ showStats: show }),
       setRate: (rate) => set({ rate: PLAYBACK_RATES.includes(rate) ? rate : 1 }),
+      setCodec: (codec) => set({ codec: PLAYBACK_CODECS.includes(codec) ? codec : 'auto' }),
       setNavScope: (scope) =>
         set((s) => (JSON.stringify(s.navScope) === JSON.stringify(scope) ? {} : { navScope: scope })),
     }),

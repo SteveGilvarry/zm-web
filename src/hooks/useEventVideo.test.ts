@@ -252,3 +252,57 @@ describe('useEventVideo — Safari native HLS', () => {
     }
   });
 });
+
+/* -------------------------------------------------------------------------- */
+
+describe('useEventVideo — the operator forces a container', () => {
+  it('plays the mp4 file directly even when the backend recommends HLS', () => {
+    const video = makeVideo();
+    const { result } = renderHook(() => useEventVideo(refTo(video), 42, HLS_INFO, 'mp4'));
+
+    expect(result.current.mode).toBe('direct');
+    expect(video.getAttribute('src')).toBe(`/api/v3/events/42/stream/video.mp4?token=${ENCODED}`);
+    expect(hlsState.instances).toHaveLength(0);
+  });
+
+  it('plays the playlist even when the backend recommends the mp4', () => {
+    const video = makeVideo();
+    const { result } = renderHook(() => useEventVideo(refTo(video), 42, info(), 'mp4hls'));
+
+    expect(result.current.mode).toBe('hls');
+    expect(hlsState.instances).toHaveLength(1);
+    expect(hlsState.instances[0].loadSource).toHaveBeenCalledWith(
+      `/api/v3/events/42/stream/playlist.m3u8?token=${ENCODED}`,
+    );
+  });
+
+  it('says so rather than falling back when HLS is forced and undecodable', () => {
+    hlsState.supported = false;
+    const video = makeVideo();
+    const { result } = renderHook(() => useEventVideo(refTo(video), 42, info(), 'mp4hls'));
+
+    expect(result.current.mode).toBe('unsupported');
+    expect(result.current.error).toBeTruthy();
+    expect(video.hasAttribute('src')).toBe(false);
+  });
+
+  it('does not wait on /info when the container is forced', () => {
+    const video = makeVideo();
+    renderHook(() => useEventVideo(refTo(video), 42, undefined, 'mp4'));
+    expect(video.getAttribute('src')).toBe(`/api/v3/events/42/stream/video.mp4?token=${ENCODED}`);
+  });
+
+  it('gives a forced container its own go at playing after a fatal HLS error', () => {
+    const video = makeVideo();
+    const { result, rerender } = renderHook(
+      ({ codec }: { codec: 'auto' | 'mp4' | 'mp4hls' }) => useEventVideo(refTo(video), 42, HLS_INFO, codec),
+      { initialProps: { codec: 'auto' } as { codec: 'auto' | 'mp4' | 'mp4hls' } },
+    );
+
+    act(() => hlsState.instances[0].fire('hlsError', { fatal: true }));
+    expect(result.current.mode).toBe('unsupported');
+
+    rerender({ codec: 'mp4' });
+    expect(result.current.mode).toBe('direct');
+  });
+});

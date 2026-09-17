@@ -172,7 +172,10 @@ describe('ClassicEventDetailPage — chrome', () => {
     expect(screen.getByLabelText('Scale')).toBeInTheDocument();
     // Stream quality and Codec are informational only on recorded playback.
     expect(screen.getByLabelText('Stream quality')).toBeDisabled();
-    expect(screen.getByLabelText('Codec')).toBeDisabled();
+    // Codec forces the container (legacy `&codec=`); MJPEG is listed but
+    // unselectable because zm-api serves no such endpoint.
+    expect(screen.getByLabelText('Codec')).toHaveValue('auto');
+    expect(screen.getByRole('option', { name: /MJPEG/ })).toBeDisabled();
     expect(screen.getByLabelText('Playback speed')).toHaveValue('1');
   });
 
@@ -396,8 +399,12 @@ describe('ClassicEventDetailPage — DVR transport', () => {
     const video = document.querySelector('video')!;
     const play = vi.spyOn(video, 'play').mockResolvedValue(undefined);
     const pause = vi.spyOn(video, 'pause').mockImplementation(() => {});
+    // Fullscreen takes the player frame, not the <video>, so the zoom
+    // transform and the overlays go with it.
     const requestFullscreen = vi.fn().mockResolvedValue(undefined);
-    Object.defineProperty(video, 'requestFullscreen', { value: requestFullscreen, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      value: requestFullscreen, configurable: true, writable: true,
+    });
 
     await user.click(screen.getByRole('button', { name: 'Play' }));
     expect(play).toHaveBeenCalled();
@@ -415,7 +422,10 @@ describe('ClassicEventDetailPage — DVR transport', () => {
     fireEvent.loadedMetadata(video);
     video.currentTime = 12;
     fireEvent.timeUpdate(video);
-    await waitFor(() => expect(screen.getByText('0:12')).toBeInTheDocument());
+    // Legacy's status line reads the progress in whole seconds.
+    await waitFor(() =>
+      expect(within(screen.getByTestId('event-replay-status')).getByText('12')).toBeInTheDocument(),
+    );
 
     fireEvent.play(video);
     expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument();
@@ -683,5 +693,121 @@ describe('ClassicEventDetailPage — permissions', () => {
     await mountAndSettle();
     expect(screen.queryByRole('button', { name: 'Zones' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Stats' })).toBeInTheDocument();
+  });
+});
+
+describe('ClassicEventDetailPage — the picture and its overlay', () => {
+  it('offers zoom, fullscreen, watch and edit over the player', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+
+    const overlay = screen.getByTestId('player-overlay-controls');
+    expect(within(overlay).getByRole('link', { name: 'Open watch page' }))
+      .toHaveAttribute('href', '/monitors/1');
+    expect(within(overlay).getByRole('link', { name: 'Edit monitor' }))
+      .toHaveAttribute('href', '/monitors/1?edit=true');
+
+    // Zoom Out is unavailable until there is something to zoom back out of.
+    expect(within(overlay).getByRole('button', { name: 'Zoom OUT' })).toBeDisabled();
+    await user.click(within(overlay).getByRole('button', { name: 'Zoom IN' }));
+    expect(within(overlay).getByRole('button', { name: 'Zoom OUT' })).toBeEnabled();
+
+    const status = screen.getByTestId('event-replay-status');
+    expect(status).toHaveTextContent('Zoom: 1.3x');
+
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      value: requestFullscreen, configurable: true, writable: true,
+    });
+    await user.click(within(overlay).getByRole('button', { name: 'Open full screen' }));
+    expect(requestFullscreen).toHaveBeenCalled();
+  });
+
+  it('hides Edit monitor without monitor edit rights', async () => {
+    signIn({ iat: 0, exp: 0, user: 'op', perms: { events: 'Edit', monitors: 'View', system: 'Edit' } });
+    stub();
+    await mountAndSettle();
+
+    const overlay = screen.getByTestId('player-overlay-controls');
+    expect(within(overlay).getByRole('link', { name: 'Open watch page' })).toBeInTheDocument();
+    expect(within(overlay).queryByRole('link', { name: 'Edit monitor' })).toBeNull();
+  });
+
+  it('reads Mode from the transport, not from the replay-mode select', async () => {
+    stub();
+    await mountAndSettle();
+    const { fireEvent } = await import('@testing-library/react');
+    const video = document.querySelector('video')!;
+
+    const status = screen.getByTestId('event-replay-status');
+    expect(status).toHaveTextContent('Mode: Paused');
+
+    fireEvent.play(video);
+    await waitFor(() => expect(screen.getByTestId('event-replay-status')).toHaveTextContent('Mode: Replay'));
+  });
+});
+
+describe('ClassicEventDetailPage — codec', () => {
+  it('forces the container the operator picks', async () => {
+    const user = userEvent.setup();
+    stub({ recommendedMode: 'hls' });
+    await mountAndSettle();
+
+    const select = screen.getByLabelText('Codec') as HTMLSelectElement;
+    expect(select.value).toBe('auto');
+    await user.selectOptions(select, 'mp4');
+
+    expect(useEventPlaybackStore.getState().codec).toBe('mp4');
+    await waitFor(() =>
+      expect(document.querySelector('video')!.getAttribute('src'))
+        .toContain('/api/v3/events/4242/stream/video.mp4'),
+    );
+  });
+});
+
+describe('ClassicEventDetailPage — tag shortcuts', () => {
+  it('attaches the first free tag then moves to the next event', async () => {
+    const user = userEvent.setup();
+    let attached: unknown = null;
+    stub({ neighbours: [{ ...EVENT, id: 4243, start_date_time: '2026-08-21T12:10:00Z' }] });
+    server.use(
+      http.post('/api/v3/events-tags', async ({ request }) => {
+        attached = await request.json();
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    await mountAndSettle();
+    await waitFor(() => expect(screen.getByRole('button', { name: /Tag & Next/ })).toBeEnabled());
+
+    await user.click(screen.getByRole('button', { name: /Tag & Next/ }));
+
+    // `person` is already on the event, so `vehicle` is the first free tag.
+    await waitFor(() => expect(attached).toEqual({ event_id: 4242, tag_id: 6 }));
+    expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({
+      to: '/events/$eventId', params: { eventId: '4243' },
+    }));
+  });
+
+  it('puts the caret in the tag box on ArrowDown and tags on Ctrl+ArrowDown', async () => {
+    const user = userEvent.setup();
+    let attached: unknown = null;
+    stub();
+    server.use(
+      http.post('/api/v3/events-tags', async ({ request }) => {
+        attached = await request.json();
+        return HttpResponse.json({ ok: true });
+      }),
+    );
+    await mountAndSettle();
+    await screen.findByTestId('tag-input');
+
+    await user.keyboard('{ArrowDown}');
+    expect(screen.getByTestId('tag-input')).toHaveFocus();
+
+    // Typing targets are exempt from the shortcuts, so step back off first.
+    await user.click(document.body);
+    await user.keyboard('{Control>}{ArrowDown}{/Control}');
+    await waitFor(() => expect(attached).toEqual({ event_id: 4242, tag_id: 6 }));
   });
 });
