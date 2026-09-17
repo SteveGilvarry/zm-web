@@ -5,6 +5,7 @@ import { ArrowLeft, ChevronLeft, ChevronRight, Download, RefreshCw } from 'lucid
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import type { Frame } from '@/api/frames';
+import { FrameThumbnail } from '@/features/events/FrameThumbnail';
 import { FramesColumnChooser } from '@/features/events/FramesColumnChooser';
 import { FRAMES_ALL_PAGE_SIZE, useEventFramesPage } from '@/features/events/useEventFramesPage';
 import { useFramesColumnLabels } from '@/features/events/columnLabels';
@@ -124,7 +125,15 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                 </thead>
                 <tbody>
                   {s.frames.map((f) => (
-                    <FrameRow key={f.id} frame={f} maxScore={s.maxScore} isVisible={s.isVisible} />
+                    <FrameRow
+                      key={f.id}
+                      frame={f}
+                      maxScore={s.maxScore}
+                      isVisible={s.isVisible}
+                      showThumbs={s.showThumbs}
+                      thumbWidth={s.thumbWidth}
+                      token={s.token}
+                    />
                   ))}
                 </tbody>
               </table>
@@ -213,14 +222,16 @@ function PagerBtn({
 }
 
 function FrameRow({
-  frame: f, maxScore, isVisible,
+  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token,
 }: {
   frame: Frame;
   maxScore: number;
   isVisible: (key: FramesColumnKey) => boolean;
+  showThumbs: boolean;
+  thumbWidth: number;
+  token: string | null;
 }) {
   const { formatDateTime } = useDateTimeFormat();
-  const { t } = useTranslation();
   // An alarm frame is state, so it keeps its colour; everything else is grey.
   const alarm = f.type === 'Alarm';
   const pct = maxScore > 0 ? Math.round((f.score / maxScore) * 100) : 0;
@@ -268,11 +279,16 @@ function FrameRow({
       </td>
       )}
       {isVisible('thumbnail') && (
-        <td
-          className="px-3 py-1 text-fg-faint italic whitespace-nowrap"
-          title={t('Per-frame images are not served by the API yet.')}
-        >
-          {t('needs zm-api#26')}
+        <td className="px-3 py-1 whitespace-nowrap">
+          {showThumbs && (
+            <FrameThumbnail
+              frameId={f.id}
+              frameNumber={f.frame_id}
+              token={token}
+              width={thumbWidth}
+              className="rounded-sm"
+            />
+          )}
         </td>
       )}
     </tr>

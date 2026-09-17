@@ -1,7 +1,9 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
-import { listFrames, getAllFramesForEvent, type Frame } from './frames';
+import {
+  listFrames, getAllFramesForEvent, getFrameImageUrl, getEventFrameImageUrl, type Frame,
+} from './frames';
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
@@ -90,5 +92,29 @@ describe('getAllFramesForEvent', () => {
     const out = await getAllFramesForEvent(1);
     expect(calls).toBe(1);
     expect(out).toEqual([]);
+  });
+});
+
+describe('frame image URLs', () => {
+  it('addresses a frame by its Frames row id, like legacy\'s ?view=image&fid=', () => {
+    expect(getFrameImageUrl(2068973)).toBe('/api/v3/frames/2068973/image');
+  });
+
+  it('carries the token in the query, since an <img> cannot send a header', () => {
+    expect(getFrameImageUrl(5, 'abc.def')).toBe('/api/v3/frames/5/image?token=abc.def');
+    // A raw token stays readable; only the characters that need it are escaped.
+    expect(getFrameImageUrl(5, 'a/b')).toBe('/api/v3/frames/5/image?token=a%2Fb');
+  });
+
+  it('takes a frame number or one of ZoneMinder\'s names for the event route', () => {
+    expect(getEventFrameImageUrl(42, 1)).toBe('/api/v3/events/42/frames/1/image');
+    expect(getEventFrameImageUrl(42, 'alarm')).toBe('/api/v3/events/42/frames/alarm/image');
+    expect(getEventFrameImageUrl(42, 'snapshot', 't')).toBe(
+      '/api/v3/events/42/frames/snapshot/image?token=t',
+    );
+  });
+
+  it('omits the query when there is no token', () => {
+    expect(getEventFrameImageUrl(1, 'alarm', null)).toBe('/api/v3/events/1/frames/alarm/image');
   });
 });

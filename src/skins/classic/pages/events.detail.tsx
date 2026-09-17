@@ -11,6 +11,7 @@ import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { EventKeyFrames } from '@/features/events/EventKeyFrames';
 import { EventEditForm } from '@/features/events/EventEditForm';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
 import { PlayerOverlayControls } from '@/features/events/PlayerOverlayControls';
@@ -201,38 +202,41 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
               </div>
 
               <div className="flex flex-col lg:flex-row gap-3">
-                {/* Stats table */}
+                {/* Stats table, with legacy's two stills under it */}
                 {s.showStats && (
-                  <table className="text-sm lg:w-80 shrink-0 self-start" data-testid="event-stats-panel">
-                    <tbody className="[&>tr>th]:text-end [&>tr>th]:pe-3 [&>tr>th]:py-0.5 [&>tr>th]:font-semibold [&>tr>th]:text-zinc-600 [&>tr>td]:py-0.5 [&>tr>td]:tabular-nums">
-                      <tr><th scope="row">{t('Id')}</th><td>{event.id}</td></tr>
-                      <tr><th scope="row">{t('Name')}</th><td>{event.name}</td></tr>
-                      <tr>
-                        <th scope="row">{t('Monitor')}</th>
-                        <td>
-                          <Link to="/monitors/$monitorId" params={{ monitorId: String(event.monitor_id) }} className={classicLink}>
-                            {monitor?.name ?? t('Monitor {{id}}', { id: event.monitor_id })}
-                          </Link>
-                        </td>
-                      </tr>
-                      <tr><th scope="row">{t('Cause')}</th><td>{event.cause ?? '—'}</td></tr>
-                      {event.notes && <tr><th scope="row">{t('Notes')}</th><td className="whitespace-pre-wrap">{event.notes}</td></tr>}
-                      <tr><th scope="row">{t('Start')}</th><td>{s.startTime ? formatDateTime(s.startTime) : '—'}</td></tr>
-                      <tr><th scope="row">{t('End')}</th><td>{s.endTime ? formatDateTime(s.endTime) : '—'}</td></tr>
-                      <tr><th scope="row">{t('Duration')}</th><td>{formatDurationHms(event.length)}</td></tr>
-                      <tr><th scope="row">{t('Frames')}</th><td>{event.frames ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Alarm Frames')}</th><td>{event.alarm_frames ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Total Score')}</th><td>{event.tot_score ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Avg. Score')}</th><td>{event.avg_score ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Max. Score')}</th><td>{event.max_score ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Disk Space')}</th><td>{formatBytes(event.disk_space ?? 0)}</td></tr>
-                      <tr><th scope="row">{t('Storage')}</th><td data-testid="event-storage">{s.storageName ?? t('ID: {{id}}', { id: event.storage_id })}</td></tr>
-                      <tr><th scope="row">{t('Archived')}</th><td>{event.archived === 1 ? t('Yes') : t('No')}</td></tr>
-                      <tr><th scope="row">{t('Emailed')}</th><td>{event.emailed === 1 ? t('Yes') : t('No')}</td></tr>
-                      <tr><th scope="row">{t('Resolution')}</th><td>{event.width}x{event.height}</td></tr>
-                      <tr><th scope="row">{t('Codec')}</th><td>{s.codecHint}</td></tr>
-                    </tbody>
-                  </table>
+                  <div className="lg:w-80 shrink-0 self-start space-y-2">
+                    <table className="text-sm w-full" data-testid="event-stats-panel">
+                      <tbody className="[&>tr>th]:text-end [&>tr>th]:pe-3 [&>tr>th]:py-0.5 [&>tr>th]:font-semibold [&>tr>th]:text-zinc-600 [&>tr>td]:py-0.5 [&>tr>td]:tabular-nums">
+                        <tr><th scope="row">{t('Id')}</th><td>{event.id}</td></tr>
+                        <tr><th scope="row">{t('Name')}</th><td>{event.name}</td></tr>
+                        <tr>
+                          <th scope="row">{t('Monitor')}</th>
+                          <td>
+                            <Link to="/monitors/$monitorId" params={{ monitorId: String(event.monitor_id) }} className={classicLink}>
+                              {monitor?.name ?? t('Monitor {{id}}', { id: event.monitor_id })}
+                            </Link>
+                          </td>
+                        </tr>
+                        <tr><th scope="row">{t('Cause')}</th><td>{event.cause ?? '—'}</td></tr>
+                        {event.notes && <tr><th scope="row">{t('Notes')}</th><td className="whitespace-pre-wrap">{event.notes}</td></tr>}
+                        <tr><th scope="row">{t('Start')}</th><td>{s.startTime ? formatDateTime(s.startTime) : '—'}</td></tr>
+                        <tr><th scope="row">{t('End')}</th><td>{s.endTime ? formatDateTime(s.endTime) : '—'}</td></tr>
+                        <tr><th scope="row">{t('Duration')}</th><td>{formatDurationHms(event.length)}</td></tr>
+                        <tr><th scope="row">{t('Frames')}</th><td>{event.frames ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Alarm Frames')}</th><td>{event.alarm_frames ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Total Score')}</th><td>{event.tot_score ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Avg. Score')}</th><td>{event.avg_score ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Max. Score')}</th><td>{event.max_score ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Disk Space')}</th><td>{formatBytes(event.disk_space ?? 0)}</td></tr>
+                        <tr><th scope="row">{t('Storage')}</th><td data-testid="event-storage">{s.storageName ?? t('ID: {{id}}', { id: event.storage_id })}</td></tr>
+                        <tr><th scope="row">{t('Archived')}</th><td>{event.archived === 1 ? t('Yes') : t('No')}</td></tr>
+                        <tr><th scope="row">{t('Emailed')}</th><td>{event.emailed === 1 ? t('Yes') : t('No')}</td></tr>
+                        <tr><th scope="row">{t('Resolution')}</th><td>{event.width}x{event.height}</td></tr>
+                        <tr><th scope="row">{t('Codec')}</th><td>{s.codecHint}</td></tr>
+                      </tbody>
+                    </table>
+                    <EventKeyFrames eventId={event.id} />
+                  </div>
                 )}
 
                 {/* Player */}

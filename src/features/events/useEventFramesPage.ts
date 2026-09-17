@@ -52,6 +52,13 @@ export interface EventFramesPageState {
   resetColumns: () => void;
   /** Export the rows on screen as CSV. */
   exportCsv: () => void;
+
+  /** `ZM_WEB_LIST_THUMBS` — legacy skips the thumbnail images when it is off. */
+  showThumbs: boolean;
+  /** `ZM_WEB_LIST_THUMB_WIDTH`. */
+  thumbWidth: number;
+  /** Access token for the `<img>` URLs, which cannot send a header. */
+  token: string | null;
 }
 
 /**
@@ -65,10 +72,13 @@ export interface EventFramesPageState {
  * whole event, which is what legacy's bootstrap-table does too.
  */
 export function useEventFramesPage(eventId: number): EventFramesPageState {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, accessToken } = useAuthStore();
   const search = useSearch({ from: '/events/$eventId_/frames' });
   const navigate = useNavigate({ from: '/events/$eventId/frames' });
   const defaultPageSize = useZmConfig('ZM_WEB_EVENTS_PER_PAGE', 25);
+  const showThumbs = useZmConfig('ZM_WEB_LIST_THUMBS', true);
+  const configThumbWidth = useZmConfig('ZM_WEB_LIST_THUMB_WIDTH', 48);
+  const thumbWidth = configThumbWidth > 0 ? configThumbWidth : 48;
 
   const page = search.page ?? 1;
   const pageSize = search.page_size ?? defaultPageSize;
@@ -165,5 +175,8 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
     )),
     resetColumns: () => setHiddenColumns([...FRAMES_DEFAULT_HIDDEN]),
     exportCsv: () => downloadCsv(`event-${eventId}-frames.csv`, framesToCsv(frames, visibleColumns)),
+    showThumbs,
+    thumbWidth,
+    token: accessToken,
   };
 }

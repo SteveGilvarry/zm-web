@@ -1,12 +1,12 @@
+import type { TFunction } from 'i18next';
 import type { Server } from '@/api/servers';
 
 /**
  * Read-only projections of a `Servers` row for the legacy cluster table.
  *
- * `ServerResponse` carries the whole row since zm-api#25; `UpdateServerRequest`
- * still takes only name/hostname/port/status, so everything below is display
- * only. A zm-api older than #25 sends just those five fields and these
- * helpers render blanks — there is deliberately no fallback for it.
+ * `ServerResponse` carries the whole row since zm-api#25. A zm-api older than
+ * that sends only name/hostname/port/status and these helpers render blanks —
+ * there is deliberately no fallback for it.
  */
 
 /** Ports the scheme already implies, which legacy leaves out of the Url. */
@@ -71,4 +71,18 @@ export function serverCoords(server: Pick<Server, 'latitude' | 'longitude'>): st
   const lon = coordNumber(server.longitude);
   if (lat == null || lon == null) return null;
   return `${lat}, ${lon}`;
+}
+
+/**
+ * Legacy's labels for the daemon flags (RunStats / RunAudit / RunTrigger /
+ * RunEventNotification) and for the three path fields, so the table header,
+ * the detail list and both skins' forms all say the same thing.
+ */
+export function serverDaemonLabels(t: TFunction): Record<ServerDaemon, string> {
+  return {
+    zmstats: t('Run stats'),
+    zmaudit: t('Run audit'),
+    zmtrigger: t('Run trigger'),
+    zmeventnotification: t('Run event notification'),
+  };
 }

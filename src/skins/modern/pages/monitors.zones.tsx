@@ -16,7 +16,7 @@ import { useDocumentTitle } from '../layouts/useDocumentTitle';
  * Zones — the modern skin.
  *
  * A breadcrumb line at the top, then the polygon editor filling the frame
- * and scrolling inside it. The editor is the page; the read-only motion
+ * and scrolling inside it. The editor is the page; the stored-settings
  * settings follow it (docs/DESIGN.md).
  */
 export default function MonitorZonesPage({ monitorId }: PagePropsMap['monitors.zones']) {
@@ -96,14 +96,14 @@ export default function MonitorZonesPage({ monitorId }: PagePropsMap['monitors.z
 
                 {selectedZone && (
                   <Panel
-                    title={t('Motion settings')}
+                    title={t('Stored settings')}
                     icon={<Lock size={16} />}
                     action={<span className="text-xs text-fg-dim">{selectedZone.name}</span>}
                   >
                     <p className="text-xs text-fg-dim mb-3">
-                      {t('Motion settings are read-only: the API accepts only the zone name and polygon.')}
+                      {t('The zone as the backend has it — the form beside the canvas is what changes it.')}
                     </p>
-                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8">
+                    <dl className="grid grid-cols-1 sm:grid-cols-2 gap-x-8" data-testid="zone-stored-settings">
                       {zoneSettingRows(selectedZone, t).map((row) => (
                         <div
                           key={row.key}

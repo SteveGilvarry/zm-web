@@ -2,7 +2,7 @@
  * Integration-style tests for the legacy `?view=frames` page (classic skin).
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -10,7 +10,10 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 
 const mockNavigate = vi.fn();
+/** Whether the router has an entry behind this page — legacy's `document.referrer`. */
+let canGoBack = true;
 vi.mock('@tanstack/react-router', () => ({
+  useCanGoBack: () => canGoBack,
   useSearch: () => ({}),
   useNavigate: () => mockNavigate,
   Link: ({
@@ -111,16 +114,43 @@ describe('EventFramesPage — classic skin', () => {
     expect(normalRow.className).not.toMatch(/f8d7da/);
   });
 
-  it('marks every thumbnail cell as blocked on zm-api#26', async () => {
+  it('greys Back when there is nowhere to go back to, as legacy does', async () => {
+    canGoBack = false;
+    try {
+      stubEndpoints();
+      await mount();
+      await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+    } finally {
+      canGoBack = true;
+    }
+  });
+
+  it('draws a thumbnail per row from /frames/{id}/image', async () => {
     stubEndpoints();
     await mount();
     await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
 
-    const notes = screen.getAllByText('needs zm-api#26');
-    expect(notes).toHaveLength(3);
-    expect(notes[0].closest('td')?.getAttribute('title')).toBe(
-      'Per-frame images are not served by the API yet.',
+    // Legacy keys the image off the `Frames` row id, not the frame number.
+    const thumbs = screen.getAllByTestId(/^frame-thumb-/);
+    expect(thumbs).toHaveLength(3);
+    expect(thumbs[0]).toHaveAttribute(
+      'src', '/api/v3/frames/1001/image?token=test',
     );
+    expect(thumbs[0]).toHaveAttribute('alt', 'Frame 1');
+  });
+
+  it('falls back to a dash when the frame has no stored image', async () => {
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    // jsdom never loads images, so drive the same error the 404 would.
+    const thumb = screen.getAllByTestId(/^frame-thumb-/)[0];
+    const cell = thumb.closest('td')!;
+    fireEvent.error(thumb);
+    await waitFor(() => expect(within(cell).queryByTestId(/^frame-thumb-/)).toBeNull());
+    expect(cell).toHaveTextContent('—');
   });
 
   it('pages through the URL', async () => {

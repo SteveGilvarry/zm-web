@@ -4,7 +4,9 @@
  */
 import { describe, expect, it } from 'vitest';
 import { makeZone } from '@/test/fixtures';
-import { alarmRgbToHex, zoneCheckMethodLabel, zoneSettingRows } from './zoneSettings';
+import {
+  alarmRgbToHex, hexToAlarmRgb, zoneCheckMethodLabel, zoneFieldEnabled, zoneSettingRows,
+} from './zoneSettings';
 
 /** The tests read English keys straight back, like i18n does with no catalogue. */
 const t = ((key: string) => key) as unknown as Parameters<typeof zoneSettingRows>[1];
@@ -119,5 +121,61 @@ describe('zoneSettingRows', () => {
 
   it('prints the backend\'s stored area', () => {
     expect(rows(makeZone({ area: 9926 })).area).toBe('9,926');
+  });
+});
+
+describe('hexToAlarmRgb', () => {
+  it('round-trips the packed column', () => {
+    expect(hexToAlarmRgb('#ff0000')).toBe(16711680);
+    expect(hexToAlarmRgb('00ff00')).toBe(65280);
+    expect(hexToAlarmRgb('#0000FF')).toBe(255);
+  });
+
+  it('rejects anything that is not six hex digits', () => {
+    expect(hexToAlarmRgb('')).toBeNull();
+    expect(hexToAlarmRgb('#fff')).toBeNull();
+    expect(hexToAlarmRgb('red')).toBeNull();
+  });
+});
+
+describe('zoneFieldEnabled', () => {
+  it('turns everything off for a zone that detects nothing', () => {
+    for (const type of ['Inactive', 'Privacy']) {
+      const on = zoneFieldEnabled(type, 'Blobs');
+      expect(Object.values(on).some(Boolean)).toBe(false);
+    }
+  });
+
+  it('reveals the filter rows only from FilteredPixels on', () => {
+    expect(zoneFieldEnabled('Active', 'AlarmedPixels').filter_x).toBe(false);
+    expect(zoneFieldEnabled('Active', 'FilteredPixels').filter_x).toBe(true);
+    expect(zoneFieldEnabled('Active', 'Blobs').filter_x).toBe(true);
+  });
+
+  it('reveals the blob rows only for Blobs', () => {
+    expect(zoneFieldEnabled('Active', 'FilteredPixels').min_blobs).toBe(false);
+    expect(zoneFieldEnabled('Active', 'FilteredPixels').min_blob_pixels).toBe(false);
+    expect(zoneFieldEnabled('Active', 'Blobs').min_blobs).toBe(true);
+    expect(zoneFieldEnabled('Active', 'Blobs').max_blob_pixels).toBe(true);
+  });
+
+  it('drops the alarm colour for Preclusive and gives it Extend Alarm Frames', () => {
+    const pre = zoneFieldEnabled('Preclusive', 'Blobs');
+    expect(pre.alarm_rgb).toBe(false);
+    expect(pre.extend_alarm_frames).toBe(true);
+
+    const active = zoneFieldEnabled('Active', 'Blobs');
+    expect(active.alarm_rgb).toBe(true);
+    // Legacy disables it for every other type (`zone.js:158`).
+    expect(active.extend_alarm_frames).toBe(false);
+  });
+
+  it('always leaves the pixel thresholds and overload count on', () => {
+    for (const type of ['Active', 'Inclusive', 'Exclusive', 'Preclusive']) {
+      const on = zoneFieldEnabled(type, 'AlarmedPixels');
+      expect(on.min_pixel_threshold).toBe(true);
+      expect(on.max_alarm_pixels).toBe(true);
+      expect(on.overload_frames).toBe(true);
+    }
   });
 });

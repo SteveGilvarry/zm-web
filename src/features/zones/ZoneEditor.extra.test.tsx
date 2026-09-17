@@ -63,6 +63,10 @@ afterAll(() => {
 const quad = {
   id: 7, monitor_id: 1, name: 'Driveway', type: 'Active', units: 'Pixels',
   coords: '100,100 500,100 500,400 100,400', num_coords: 4,
+  check_method: 'AlarmedPixels', alarm_rgb: 16711680,
+  min_pixel_threshold: 25, max_pixel_threshold: null,
+  min_alarm_pixels: 100, max_alarm_pixels: null,
+  overload_frames: 0, extend_alarm_frames: 0, area: 120000,
 };
 
 function stubZones(items: unknown[] = [quad]) {
@@ -99,8 +103,23 @@ describe('ZoneEditor — saving an existing zone', () => {
     await waitFor(() => expect(sent).not.toBeNull());
     expect(sent!).toEqual({
       url: '/api/v3/zones/7',
-      // Only name + polygon are sent — the update endpoint takes nothing else.
-      body: { name: 'Driveway West', polygon: '100,100 500,100 500,400 100,400' },
+      // Name, geometry and every motion setting the zone's type and check
+      // method leave enabled. An AlarmedPixels zone has no filter or blob
+      // rows, so those keys are absent rather than nulled.
+      body: {
+        name: 'Driveway West',
+        type: 'Active',
+        units: 'Pixels',
+        coords: '100,100 500,100 500,400 100,400',
+        check_method: 'AlarmedPixels',
+        alarm_rgb: 16711680,
+        min_pixel_threshold: 25,
+        max_pixel_threshold: null,
+        min_alarm_pixels: 100,
+        max_alarm_pixels: null,
+        overload_frames: 0,
+        // Only a Preclusive zone can set this one (`applyZoneType`).
+      },
     });
     // Success clears the draft, so the vertex caption disappears.
     await waitFor(() => expect(screen.queryByText(/4 vertices/i)).toBeNull());
@@ -217,8 +236,8 @@ describe('ZoneEditor — vertex handles', () => {
     fireEvent(window, new MouseEvent('pointerup', { bubbles: true }));
 
     await user.click(screen.getByRole('button', { name: /save/i }));
-    await waitFor(() => expect(body.polygon).toBeDefined());
-    expect(body.polygon).toBe('800,500 500,100 500,400 100,400');
+    await waitFor(() => expect(body.coords).toBeDefined());
+    expect(body.coords).toBe('800,500 500,100 500,400 100,400');
   });
 
   it('clamps a drag that leaves the frame to the frame bounds', async () => {
@@ -246,8 +265,8 @@ describe('ZoneEditor — vertex handles', () => {
     fireEvent(window, new MouseEvent('pointerup', { bubbles: true }));
 
     await user.click(screen.getByRole('button', { name: /save/i }));
-    await waitFor(() => expect(body.polygon).toBeDefined());
-    expect(body.polygon).toBe('1920,1080 500,100 500,400 100,400');
+    await waitFor(() => expect(body.coords).toBeDefined());
+    expect(body.coords).toBe('1920,1080 500,100 500,400 100,400');
   });
 
   it('Alt-clicking a vertex removes it, but never below three', async () => {

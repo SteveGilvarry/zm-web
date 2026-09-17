@@ -5,11 +5,13 @@ import { ArrowLeft, Download, RefreshCw, Search } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import type { Frame } from '@/api/frames';
+import { FrameThumbnail } from '@/features/events/FrameThumbnail';
 import { FramesColumnChooser } from '@/features/events/FramesColumnChooser';
 import { FRAMES_ALL_PAGE_SIZE, useEventFramesPage } from '@/features/events/useEventFramesPage';
 import { useFramesColumnLabels } from '@/features/events/columnLabels';
 import { FRAMES_COLUMNS, type FramesSortKey } from '@/features/events/framesTable';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import { useCanGoBack } from '@/features/nav/useCanGoBack';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicPageTitle, ClassicPager, ClassicTable, ClassicTbody, ClassicTd, ClassicThead,
@@ -27,6 +29,8 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
   const { t } = useTranslation();
   const s = useEventFramesPage(eventId);
   const labels = useFramesColumnLabels();
+  // Legacy `views/js/frames.js` greys Back when there is nowhere to go back to.
+  const canGoBack = useCanGoBack();
   const title = t('Frames — Event {{id}}', { id: eventId });
   useDocumentTitle(title);
 
@@ -42,7 +46,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
           <ClassicPageTitle
             actions={
               <div className="flex flex-wrap items-center gap-2">
-                <ClassicButton onClick={() => window.history.back()} title={t('Back')} aria-label={t('Back')}>
+                <ClassicButton onClick={() => window.history.back()} disabled={!canGoBack} title={t('Back')} aria-label={t('Back')}>
                   <ArrowLeft size={14} className="rtl:-scale-x-100" />
                   {t('Back')}
                 </ClassicButton>
@@ -117,7 +121,15 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
               </ClassicThead>
               <ClassicTbody>
                 {s.frames.map((f) => (
-                  <FrameRow key={f.id} frame={f} maxScore={s.maxScore} isVisible={s.isVisible} />
+                  <FrameRow
+                    key={f.id}
+                    frame={f}
+                    maxScore={s.maxScore}
+                    isVisible={s.isVisible}
+                    showThumbs={s.showThumbs}
+                    thumbWidth={s.thumbWidth}
+                    token={s.token}
+                  />
                 ))}
               </ClassicTbody>
             </ClassicTable>
@@ -141,14 +153,16 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
 }
 
 function FrameRow({
-  frame: f, maxScore, isVisible,
+  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token,
 }: {
   frame: Frame;
   maxScore: number;
   isVisible: (key: (typeof FRAMES_COLUMNS)[number]['key']) => boolean;
+  showThumbs: boolean;
+  thumbWidth: number;
+  token: string | null;
 }) {
   const { formatDateTime } = useDateTimeFormat();
-  const { t } = useTranslation();
   const alarm = f.type === 'Alarm';
   const pct = maxScore > 0 ? Math.round((f.score / maxScore) * 100) : 0;
   return (
@@ -183,12 +197,15 @@ function FrameRow({
         </ClassicTd>
       )}
       {isVisible('thumbnail') && (
-        <ClassicTd
-          center
-          className="text-zinc-400 italic whitespace-nowrap"
-          title={t('Per-frame images are not served by the API yet.')}
-        >
-          {t('needs zm-api#26')}
+        <ClassicTd center className="whitespace-nowrap">
+          {showThumbs && (
+            <FrameThumbnail
+              frameId={f.id}
+              frameNumber={f.frame_id}
+              token={token}
+              width={thumbWidth}
+            />
+          )}
         </ClassicTd>
       )}
     </tr>

@@ -171,18 +171,24 @@ export default function ClassicSettingsStoragePage() {
           <input id="cst-url" value={formData.url} onChange={(e) => st.setField('url', e.target.value)} className={clsx(input, 'font-mono')} placeholder={t('s3://bucket/prefix (optional)')} />
           <label htmlFor="cst-enabled" className="text-text-secondary">{t('Enabled')}</label>
           <input id="cst-enabled" type="checkbox" checked={formData.enabled === 1} onChange={st.toggleFormEnabled} className="justify-self-start" />
-          {/* DoDelete is in StorageResponse but in neither write schema — read-only. */}
-          {editingStorage && (
-            <>
-              <span className="text-text-secondary">{t('Auto-delete')}</span>
-              <span>
-                {editingStorage.do_delete === 1 ? t('Yes') : t('No')}
-                <span className="block text-[11px] text-text-muted">
-                  {t('Set by ZoneMinder; the API cannot change it yet.')}
-                </span>
-              </span>
-            </>
-          )}
+          {/* Legacy's StorageDoDelete radio (ajax/modals/storage.php:85-90). Only
+              `CreateStorageRequest` carries it, so an edit shows the stored value
+              and says why it is fixed rather than pretending to save it. */}
+          <label htmlFor="cst-dodelete" className="text-text-secondary">{t('Delete events')}</label>
+          <span className="justify-self-start">
+            <input
+              id="cst-dodelete"
+              type="checkbox"
+              checked={formData.do_delete === 1}
+              onChange={st.toggleFormDoDelete}
+              disabled={st.doDeleteLocked}
+            />
+            <span className="block text-xs text-text-muted">
+              {st.doDeleteLocked
+                ? t('Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.')
+                : t('Deleting an event may remove its media from here.')}
+            </span>
+          </span>
         </div>
         {st.saveError && <p role="alert" className="mt-2 text-xs text-crimson">{t('Save failed: {{message}}', { message: st.saveError })}</p>}
         <div className="flex items-center justify-end gap-2 pt-4">

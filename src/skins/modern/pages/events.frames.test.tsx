@@ -64,13 +64,10 @@ describe('EventFramesPage — modern skin', () => {
     expect(normal).toHaveAttribute('data-frame-type', 'Normal');
     expect(within(normal).getByText('0.00')).toBeVisible();
 
-    // Thumbnails are still blocked on the API — one note per row.
-    const notes = table.getAllByText('needs zm-api#26');
-    expect(notes).toHaveLength(3);
-    expect(notes[0].closest('td')).toHaveAttribute(
-      'title',
-      'Per-frame images are not served by the API yet.',
-    );
+    // One thumbnail per row, keyed off the `Frames` row id like legacy.
+    const thumbs = table.getAllByTestId(/^frame-thumb-/);
+    expect(thumbs).toHaveLength(3);
+    expect(thumbs[0].getAttribute('src')).toMatch(/^\/api\/v3\/frames\/\d+\/image\?token=/);
   });
 
   it('asks the API only for this event, one page at a time', async () => {

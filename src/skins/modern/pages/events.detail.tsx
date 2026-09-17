@@ -38,6 +38,7 @@ import {
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import { FitBox } from '@/components/common/FitBox';
+import { EventKeyFrames } from '@/features/events/EventKeyFrames';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { getOrientationStyle, getOrientationFillStyle, isOrientationRotated } from '@/types';
 import { QueryState } from '@/components/common/QueryState';
@@ -553,6 +554,8 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                       value={event.archived === 1 ? t('Yes') : t('No')}
                     />
                   </div>
+                  {/* Legacy's two stills under the stats table. */}
+                  <EventKeyFrames eventId={event.id} className="mt-3" />
                 </Panel>
               )}
 

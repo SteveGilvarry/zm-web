@@ -8,13 +8,17 @@ import {
   listZonesForMonitor, createZone, updateZone, deleteZone,
   listZonePresets,
   parseCoords, serializeCoords, insertMidpoint,
-  type Zone, type ZoneType, type Point,
+  type Zone, type ZoneType, type Point, type ZoneSettingsPayload,
 } from '@/api/zones';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { useToast } from '@/components/common/toastStore';
 import { useRefreshingSnapshot } from '@/hooks/useRefreshingSnapshot';
 import { zoneArea } from './zoneArea';
 import { isSelfIntersecting } from './selfIntersects';
+import {
+  alarmRgbToHex, hexToAlarmRgb, zoneCheckMethodLabel, zoneFieldEnabled,
+  type ZoneFieldEnabled, type ZoneSettingField,
+} from './zoneSettings';
 
 interface ZoneEditorProps {
   monitorId: number;
@@ -32,12 +36,45 @@ interface ZoneEditorProps {
 /** The zone the editor has open: an id, a not-yet-created zone, or nothing. */
 export type ZoneSelection = number | 'new' | null;
 
+/** Every motion setting except the two that are not plain numbers. */
+type ZoneNumField = Exclude<ZoneSettingField, 'check_method' | 'alarm_rgb'>;
+
+const ZONE_NUM_FIELDS: readonly ZoneNumField[] = [
+  'min_pixel_threshold', 'max_pixel_threshold',
+  'min_alarm_pixels', 'max_alarm_pixels',
+  'filter_x', 'filter_y',
+  'min_filter_pixels', 'max_filter_pixels',
+  'min_blob_pixels', 'max_blob_pixels',
+  'min_blobs', 'max_blobs',
+  'overload_frames', 'extend_alarm_frames',
+];
+
+/** Form state, so a half-typed or deliberately empty box stays empty. */
+type ZoneNums = Record<ZoneNumField, string>;
+
+const CHECK_METHODS = ['AlarmedPixels', 'FilteredPixels', 'Blobs'] as const;
+
+/** ZoneMinder's default alarm colour for a new zone (`zone.php:75`). */
+const DEFAULT_ALARM_HEX = '#ff0000';
+
 interface ZoneDraft {
   id: number | null;
   name: string;
   type: string;
   units: 'Pixels' | 'Percent';
   points: Point[];
+  checkMethod: string;
+  /** `#rrggbb`, or '' when the row has no colour stored. */
+  alarmHex: string;
+  nums: ZoneNums;
+}
+
+function numString(v: number | null | undefined): string {
+  return v == null || !Number.isFinite(v) ? '' : String(v);
+}
+
+function emptyNums(): ZoneNums {
+  return Object.fromEntries(ZONE_NUM_FIELDS.map((f) => [f, ''])) as ZoneNums;
 }
 
 function draftFromZone(z: Zone): ZoneDraft {
@@ -47,10 +84,19 @@ function draftFromZone(z: Zone): ZoneDraft {
     type: z.type,
     units: z.units === 'Percent' ? 'Percent' : 'Pixels',
     points: parseCoords(z.coords),
+    checkMethod: z.check_method || 'AlarmedPixels',
+    alarmHex: alarmRgbToHex(z.alarm_rgb) ?? '',
+    nums: Object.fromEntries(
+      ZONE_NUM_FIELDS.map((f) => [f, numString(z[f])]),
+    ) as ZoneNums,
   };
 }
 
-/** A fresh zone starts as the middle 60% of the frame, like legacy's default. */
+/**
+ * A fresh zone starts as the middle 60% of the frame, like legacy's default.
+ * Its settings start blank with `Blobs` selected and the red alarm colour,
+ * which is what `zone.php` seeds a new zone with.
+ */
 function newZoneDraft(width: number, height: number, name: string): ZoneDraft {
   const m = 0.2;
   return {
@@ -64,7 +110,29 @@ function newZoneDraft(width: number, height: number, name: string): ZoneDraft {
       { x: width * (1 - m), y: height * (1 - m) },
       { x: width * m,       y: height * (1 - m) },
     ],
+    checkMethod: 'Blobs',
+    alarmHex: DEFAULT_ALARM_HEX,
+    nums: emptyNums(),
   };
+}
+
+/**
+ * The settings half of the save body. A field the current Type / Check Method
+ * disables is left out entirely, so the column keeps its stored value — the
+ * same thing legacy gets from not submitting a disabled input. A field that
+ * is on but empty goes out as `null`, which clears it.
+ */
+function settingsPayload(draft: ZoneDraft, enabled: ZoneFieldEnabled): ZoneSettingsPayload {
+  const out: ZoneSettingsPayload = {};
+  if (enabled.check_method) out.check_method = draft.checkMethod;
+  if (enabled.alarm_rgb) out.alarm_rgb = draft.alarmHex ? hexToAlarmRgb(draft.alarmHex) : null;
+  for (const field of ZONE_NUM_FIELDS) {
+    if (!enabled[field]) continue;
+    const raw = draft.nums[field].trim();
+    const n = Number(raw);
+    out[field] = raw !== '' && Number.isFinite(n) ? n : null;
+  }
+  return out;
 }
 
 const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string }> = {
@@ -199,6 +267,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
       name: p.name,
       type: p.type,
       units: (p.units === 'Percent' ? 'Percent' : 'Pixels') as 'Pixels' | 'Percent',
+      checkMethod: p.check_method || draft.checkMethod,
     });
   };
 
@@ -208,6 +277,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
     mutationFn: async () => {
       if (!draft) throw new Error('no draft');
       const coords = serializeCoords(draft.points);
+      const settings = settingsPayload(draft, zoneFieldEnabled(draft.type, draft.checkMethod));
       if (draft.id == null) {
         await createZone(monitorId, {
           name: draft.name,
@@ -215,9 +285,16 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
           units: draft.units,
           coords,
           num_coords: draft.points.length,
+          ...settings,
         });
       } else {
-        await updateZone(draft.id, { name: draft.name, polygon: coords });
+        await updateZone(draft.id, {
+          name: draft.name,
+          type: draft.type,
+          units: draft.units,
+          coords,
+          ...settings,
+        });
       }
       // Returned, not read off `draft`: by the time this settles the
       // selection has moved on.
@@ -319,6 +396,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
 
             <Field label={t('Name')}>
               <input
+                aria-label={t('Name')}
                 value={draft.name}
                 onChange={(e) => setDraft({ ...draft, name: e.target.value })}
                 className={clsx('flex-1', fieldClasses('sm'))}
@@ -326,6 +404,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
             </Field>
             <Field label={t('Type')}>
               <select
+                aria-label={t('Type')}
                 value={draft.type}
                 onChange={(e) => setDraft({ ...draft, type: e.target.value })}
                 className={clsx('flex-1', fieldClasses('sm'))}
@@ -383,6 +462,11 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
               {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}
             </div>
 
+            <ZoneSettingsFields
+              draft={draft}
+              onChange={setDraft}
+            />
+
             <PointTable
               points={draft.points}
               maxX={width}
@@ -423,6 +507,166 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/**
+ * Legacy's zone settings table (`views/zone.php:288-340`), which rows enable
+ * and disable exactly as `applyZoneType` / `applyCheckMethod` do: an Inactive
+ * or Privacy zone detects nothing so everything is off, Preclusive drops the
+ * alarm colour and is the only type with Extend Alarm Frames, and the check
+ * method reveals the filter and then the blob rows in turn.
+ *
+ * A disabled field is not sent on save, so its column keeps whatever it has —
+ * the same as legacy, where the browser skips disabled inputs.
+ */
+function ZoneSettingsFields({ draft, onChange }: {
+  draft: ZoneDraft;
+  onChange: (next: ZoneDraft) => void;
+}) {
+  const { t } = useTranslation();
+  const enabled = zoneFieldEnabled(draft.type, draft.checkMethod);
+  // The area thresholds are read in the zone's own units, which is how
+  // ZoneMinder's analyser reads them back (`zm_zone.cpp:1015-1034`).
+  const areaSuffix = draft.units === 'Percent' ? '%' : t('px');
+  const areaMax = draft.units === 'Percent' ? 100 : undefined;
+
+  const setNum = (field: ZoneNumField, value: string) =>
+    onChange({ ...draft, nums: { ...draft.nums, [field]: value } });
+
+  return (
+    <div className="space-y-2 pt-1 border-t border-border-subtle">
+      <span className="text-label text-fg-dim">{t('Motion settings')}</span>
+
+      <SettingRow label={t('Alarm Colour')}>
+        <input
+          type="color"
+          value={draft.alarmHex || DEFAULT_ALARM_HEX}
+          disabled={!enabled.alarm_rgb}
+          onChange={(e) => onChange({ ...draft, alarmHex: e.target.value })}
+          aria-label={t('Alarm Colour')}
+          className="h-6 w-10 rounded border border-border-subtle bg-surface disabled:opacity-40"
+        />
+      </SettingRow>
+
+      <SettingRow label={t('Check Method')}>
+        <select
+          value={draft.checkMethod}
+          disabled={!enabled.check_method}
+          onChange={(e) => onChange({ ...draft, checkMethod: e.target.value })}
+          aria-label={t('Check Method')}
+          className={clsx('w-full', fieldClasses('sm'), 'disabled:opacity-40')}
+        >
+          {CHECK_METHODS.map((m) => (
+            <option key={m} value={m}>{zoneCheckMethodLabel(m, t)}</option>
+          ))}
+        </select>
+      </SettingRow>
+
+      <NumPair
+        label={t('Min/Max Pixel Threshold')}
+        min={0} max={255}
+        fields={['min_pixel_threshold', 'max_pixel_threshold']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+      <NumPair
+        label={t('Filter Width/Height')}
+        min={0}
+        fields={['filter_x', 'filter_y']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+      <NumPair
+        label={t('Min/Max Alarmed Area')}
+        min={0} max={areaMax} step="any" suffix={areaSuffix}
+        fields={['min_alarm_pixels', 'max_alarm_pixels']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+      <NumPair
+        label={t('Min/Max Filtered Area')}
+        min={0} max={areaMax} step="any" suffix={areaSuffix}
+        fields={['min_filter_pixels', 'max_filter_pixels']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+      <NumPair
+        label={t('Min/Max Blob Area')}
+        min={0} max={areaMax} step="any" suffix={areaSuffix}
+        fields={['min_blob_pixels', 'max_blob_pixels']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+      <NumPair
+        label={t('Min/Max Blobs')}
+        min={0}
+        fields={['min_blobs', 'max_blobs']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+      <NumPair
+        label={t('Overload Frame Ignore Count')}
+        min={0}
+        fields={['overload_frames']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+      <NumPair
+        label={t('Extend Alarm Frame Count')}
+        min={0}
+        fields={['extend_alarm_frames']}
+        draft={draft} enabled={enabled} onNum={setNum}
+      />
+    </div>
+  );
+}
+
+/** One settings row: its label and the one or two numbers legacy puts on it. */
+function NumPair({ label, fields, draft, enabled, onNum, min, max, step, suffix }: {
+  label: string;
+  fields: readonly ZoneNumField[];
+  draft: ZoneDraft;
+  enabled: ZoneFieldEnabled;
+  onNum: (field: ZoneNumField, value: string) => void;
+  min?: number;
+  max?: number;
+  step?: string;
+  suffix?: string;
+}) {
+  const { t } = useTranslation();
+  // "Min/Max Blobs" → "Min Blobs" / "Max Blobs" for the two boxes' labels.
+  const boxLabel = (i: number) =>
+    fields.length === 1 ? label : t('{{label}} ({{which}})', { label, which: i === 0 ? t('min') : t('max') });
+
+  return (
+    <SettingRow label={label}>
+      <span className="flex flex-1 items-center gap-1">
+        {fields.map((field, i) => (
+          <input
+            key={field}
+            type="number"
+            inputMode="decimal"
+            min={min}
+            max={max}
+            step={step}
+            value={draft.nums[field]}
+            disabled={!enabled[field]}
+            aria-label={boxLabel(i)}
+            onChange={(e) => onNum(field, e.target.value)}
+            className={clsx('w-full min-w-0 tabular-nums', fieldClasses('sm'), 'disabled:opacity-40')}
+          />
+        ))}
+        {suffix && <span className="text-xs text-fg-dim">{suffix}</span>}
+      </span>
+    </SettingRow>
+  );
+}
+
+/**
+ * A settings row: the label above its controls. Legacy lays these out as a
+ * three-column table, which does not fit an 18rem sidebar — "Overload Frame
+ * Ignore Count" alone is wider than the label column would be.
+ */
+function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
+  return (
+    <div className="space-y-0.5">
+      <span className="text-label text-fg-dim block">{label}</span>
+      <div className="flex items-center gap-1">{children}</div>
     </div>
   );
 }

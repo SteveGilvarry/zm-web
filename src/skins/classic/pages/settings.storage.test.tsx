@@ -228,7 +228,7 @@ describe('ClassicSettingsStoragePage', () => {
       path: '/storage',
       body: {
         name: 'Warm', path: '/mnt/warm', type: 's3fs', enabled: 1,
-        scheme: 'Deep', server_id: 3, url: null,
+        scheme: 'Deep', server_id: 3, url: null, do_delete: 1,
       },
     });
   });
@@ -260,7 +260,7 @@ describe('ClassicSettingsStoragePage', () => {
     });
   });
 
-  it('shows DoDelete as a read-only fact with its reason', async () => {
+  it('shows DoDelete as stored and locked while editing', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
@@ -268,11 +268,29 @@ describe('ClassicSettingsStoragePage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Cold archive' }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Auto-delete')).toBeInTheDocument();
-    expect(within(dialog).getByText('No')).toBeInTheDocument();
-    expect(within(dialog).getByText('Set by ZoneMinder; the API cannot change it yet.')).toBeInTheDocument();
-    // Neither CreateStorageRequest nor UpdateStorageRequest carries do_delete.
-    expect(within(dialog).getAllByRole('checkbox')).toHaveLength(1);
+    const doDelete = within(dialog).getByLabelText('Delete events');
+    expect(doDelete).not.toBeChecked();
+    // `UpdateStorageRequest` has no `do_delete`, so an edit cannot change it.
+    expect(doDelete).toBeDisabled();
+    expect(within(dialog).getByText(
+      'Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.',
+    )).toBeInTheDocument();
+  });
+
+  it('offers DoDelete on create, and sends it', async () => {
+    signIn();
+    seed();
+    const user = userEvent.setup();
+    await mount();
+
+    await user.click(await screen.findByRole('button', { name: 'Add New Storage' }));
+    const dialog = await screen.findByRole('dialog');
+    const doDelete = within(dialog).getByLabelText('Delete events');
+    // `CreateStorageRequest` defaults to 1.
+    expect(doDelete).toBeChecked();
+    expect(doDelete).toBeEnabled();
+    await user.click(doDelete);
+    expect(doDelete).not.toBeChecked();
   });
 
   it('Cancel closes the modal without a request', async () => {

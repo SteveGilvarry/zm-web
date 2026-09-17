@@ -19,6 +19,8 @@ export interface StorageFormData {
   scheme: string;
   server_id: number | null;
   url: string;
+  /** Legacy's StorageDoDelete radio. Create-time only — see `toStorageCreatePayload`. */
+  do_delete: number;
 }
 
 /** One list row plus everything the skins would otherwise derive themselves. */
@@ -44,6 +46,8 @@ function normalizeServerId(id: number | null | undefined): number | null {
 
 const EMPTY_FORM: StorageFormData = {
   name: '', path: '', type: 'local', enabled: 1, scheme: 'Medium', server_id: null, url: '',
+  // `CreateStorageRequest` defaults to 1 when omitted; say so out loud.
+  do_delete: 1,
 };
 
 /** The install-time row ZoneMinder itself falls back to; never deletable here. */
@@ -62,6 +66,15 @@ export function toStoragePayload(form: StorageFormData) {
     server_id: form.server_id,
     url: form.url.trim() || null,
   };
+}
+
+/**
+ * Create body: everything above plus `do_delete`, which only
+ * `CreateStorageRequest` carries. A PATCH that includes it answers 200 and
+ * leaves the column alone, so the update path deliberately never sends it.
+ */
+export function toStorageCreatePayload(form: StorageFormData) {
+  return { ...toStoragePayload(form), do_delete: form.do_delete };
 }
 
 /**
@@ -158,6 +171,8 @@ export function useStoragePage() {
       scheme: storage.scheme || EMPTY_FORM.scheme,
       server_id: normalizeServerId(storage.server_id),
       url: storage.url ?? '',
+      // Older zm-api builds omit the column; 1 is what the schema defaults to.
+      do_delete: storage.do_delete ?? 1,
     });
     setModalOpen(true);
   };
@@ -239,12 +254,14 @@ export function useStoragePage() {
   const toggleFormEnabled = () =>
     setFormData((f) => ({ ...f, enabled: f.enabled === 1 ? 0 : 1 }));
 
+  const toggleFormDoDelete = () =>
+    setFormData((f) => ({ ...f, do_delete: f.do_delete === 1 ? 0 : 1 }));
+
   const submitForm = () => {
-    const payload = toStoragePayload(formData);
     if (editingStorage) {
-      updateMutation.mutate({ id: editingStorage.id, data: payload });
+      updateMutation.mutate({ id: editingStorage.id, data: toStoragePayload(formData) });
     } else {
-      createMutation.mutate(payload);
+      createMutation.mutate(toStorageCreatePayload(formData));
     }
   };
 
@@ -294,6 +311,9 @@ export function useStoragePage() {
     formData,
     setField,
     toggleFormEnabled,
+    toggleFormDoDelete,
+    /** True while editing: `UpdateStorageRequest` has no `do_delete`. */
+    doDeleteLocked: editingStorage !== null,
     openCreate,
     openEdit,
     closeModal,

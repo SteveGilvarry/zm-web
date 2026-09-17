@@ -138,7 +138,7 @@ describe('Storage page', () => {
 
     await waitFor(() => expect(body).toEqual({
       name: 'Fast', path: '/mnt/fast', type: 'local', enabled: 1,
-      scheme: 'Medium', server_id: null, url: null,
+      scheme: 'Medium', server_id: null, url: null, do_delete: 1,
     }));
   });
 
@@ -218,7 +218,7 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     await user.click(screen.getByRole('button', { name: /create storage/i }));
     await waitFor(() => expect(body).toEqual({
       name: 'Bulk', path: '/mnt/bulk', type: 'local', enabled: 1,
-      scheme: 'Deep', server_id: 4, url: 's3://bucket/zm',
+      scheme: 'Deep', server_id: 4, url: 's3://bucket/zm', do_delete: 1,
     }));
   });
 
@@ -247,7 +247,7 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     });
   });
 
-  it('shows DoDelete read-only, with why it cannot be changed', async () => {
+  it('shows DoDelete as stored and locked while editing', async () => {
     seedStorage();
     const user = userEvent.setup();
     renderWithProviders(<StoragePage />);
@@ -255,12 +255,35 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     await user.click(screen.getByRole('button', { name: /edit archive/i }));
 
     const dialog = screen.getByRole('dialog');
-    expect(within(dialog).getByText('Auto-delete')).toBeInTheDocument();
-    expect(within(dialog).getByText('No')).toBeInTheDocument();
-    expect(within(dialog).getByText('Set by ZoneMinder; the API cannot change it yet.')).toBeInTheDocument();
-    // Neither write schema carries do_delete, so there is nothing to click.
-    expect(within(dialog).queryByRole('switch', { name: /auto-delete/i })).not.toBeInTheDocument();
-    expect(within(dialog).queryByRole('checkbox', { name: /auto-delete/i })).not.toBeInTheDocument();
+    const doDelete = within(dialog).getByRole('switch', { name: 'Delete events' });
+    expect(doDelete).toHaveAttribute('aria-checked', 'false');
+    // `UpdateStorageRequest` has no `do_delete`; the PATCH would be ignored.
+    expect(doDelete).toBeDisabled();
+    expect(within(dialog).getByText(
+      'Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.',
+    )).toBeInTheDocument();
+  });
+
+  it('lets create choose DoDelete and sends it', async () => {
+    seedStorage();
+    let body: unknown = null;
+    server.use(http.post('/api/v3/storage', async ({ request }) => {
+      body = await request.json();
+      return HttpResponse.json(makeStorage({ id: 3, name: 'Cold', path: '/mnt/cold' }));
+    }));
+    const user = userEvent.setup();
+    renderWithProviders(<StoragePage />);
+    await waitFor(() => expect(screen.getByText('Default')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: /add storage/i }));
+
+    const doDelete = screen.getByRole('switch', { name: 'Delete events' });
+    expect(doDelete).toHaveAttribute('aria-checked', 'true');
+    await user.click(doDelete);
+    fireEvent.change(screen.getByPlaceholderText('Storage name'), { target: { value: 'Cold' } });
+    fireEvent.change(screen.getByPlaceholderText('/var/cache/zoneminder'), { target: { value: '/mnt/cold' } });
+    await user.click(screen.getByRole('button', { name: /create storage/i }));
+
+    await waitFor(() => expect(body).toMatchObject({ do_delete: 0 }));
   });
 });
 

@@ -157,13 +157,14 @@ describe('ClassicSettingsServersPage', () => {
     // Three unset paths plus four missing stat cells.
     expect(within(edge02).getAllByText('—')).toHaveLength(7);
 
-    // The read-only caveat is stated once for the page, not per field.
-    expect(screen.getAllByText(
-      'Only name, hostname, port and status are writable; the API does not accept the rest yet.',
-    )).toHaveLength(1);
+    // Legacy's four daemon columns, as yes/no (`_options_servers.php:74-77`).
+    const flags = (row: HTMLElement) =>
+      within(row).getAllByText(/^(yes|no)$/).map((el) => el.textContent);
+    expect(flags(edge01)).toEqual(['yes', 'yes', 'no', 'no']);
+    expect(flags(edge02)).toEqual(['no', 'no', 'yes', 'yes']);
   });
 
-  it('expands a row to the read-only daemon flags, run state and coordinates', async () => {
+  it('expands a row to what the table has no column for', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
@@ -174,18 +175,17 @@ describe('ClassicSettingsServersPage', () => {
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
+    // Scoped to the detail row: the form below has a Protocol field too.
+    const detail = screen.getByText('Run state').closest('dl')!;
     const value = (label: string) =>
-      screen.getByText(label).closest('div')!.querySelector('dd')!.textContent;
-    expect(value('Run stats')).toBe('No');
-    expect(value('Run audit')).toBe('No');
-    expect(value('Run trigger')).toBe('Yes');
-    expect(value('Run event notification')).toBe('Yes');
+      within(detail).getByText(label).closest('div')!.querySelector('dd')!.textContent;
     expect(value('Protocol')).toBe('—');
+    expect(value('Hostname')).toBe('10.0.0.4');
     expect(value('Run state')).toBe('2');
     expect(value('Coordinates')).toBe('-37.81, 144.96');
 
     await user.click(toggle);
-    expect(screen.queryByText('Run stats')).toBeNull();
+    expect(screen.queryByText('Run state')).toBeNull();
   });
 
   it('offers the detail toggle without system Edit', async () => {
@@ -194,7 +194,7 @@ describe('ClassicSettingsServersPage', () => {
     const user = userEvent.setup();
     await mount();
     await user.click(await screen.findByRole('button', { name: 'Details for edge-01' }));
-    expect(screen.getByText('Run stats')).toBeInTheDocument();
+    expect(screen.getByText('Run state')).toBeInTheDocument();
   });
 
   it('shows the "this host" row when stats are recorded without a server id', async () => {
@@ -243,17 +243,27 @@ describe('ClassicSettingsServersPage', () => {
     await screen.findByRole('button', { name: 'edge-01' });
 
     await user.type(screen.getByLabelText('Name'), '  edge-03  ');
-    await user.type(screen.getByLabelText('Host'), ' 10.0.0.9 ');
+    await user.selectOptions(screen.getByLabelText('Protocol'), 'https');
+    await user.type(screen.getByLabelText('Hostname'), ' 10.0.0.9 ');
     // Port strips non-digits.
     await user.type(screen.getByLabelText('Port'), '80a80');
+    await user.type(screen.getByLabelText('Path to index'), '/zm/index.php');
     await user.selectOptions(screen.getByLabelText('Status'), 'Running');
+    await user.click(screen.getByLabelText('Run trigger'));
     await user.click(screen.getByRole('button', { name: 'Register' }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
       method: 'POST',
       path: '/servers',
-      body: { name: 'edge-03', hostname: '10.0.0.9', port: 8080, status: 'Running' },
+      body: {
+        name: 'edge-03', protocol: 'https', hostname: '10.0.0.9', port: 8080,
+        path_to_index: '/zm/index.php', path_to_zms: null, path_to_api: null,
+        latitude: null, longitude: null,
+        // The daemon flags go out as JSON booleans, which is what the schema says.
+        zmstats: false, zmaudit: false, zmtrigger: true, zmeventnotification: false,
+        status: 'Running',
+      },
     });
   });
 
@@ -284,7 +294,13 @@ describe('ClassicSettingsServersPage', () => {
     expect(sent[0]).toEqual({
       method: 'PATCH',
       path: '/servers/3',
-      body: { name: 'edge-01b', hostname: '10.0.0.3', port: 8080, status: 'Running' },
+      body: {
+        name: 'edge-01b', protocol: 'http', hostname: '10.0.0.3', port: 8080,
+        path_to_index: '/zm/index.php', path_to_zms: '/zm/cgi-bin/nph-zms', path_to_api: '/zm/api',
+        latitude: null, longitude: null,
+        zmstats: true, zmaudit: true, zmtrigger: false, zmeventnotification: false,
+        status: 'Running',
+      },
     });
     // onSaved clears `editing`, so the form goes back to the register variant.
     await waitFor(() => expect(screen.getByText('New server')).toBeInTheDocument());

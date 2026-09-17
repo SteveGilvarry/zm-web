@@ -98,10 +98,6 @@ describe('Servers page', () => {
     expect(within(row3).getByText('Unknown')).toBeInTheDocument();
     expect(within(row3).getAllByText('—')).toHaveLength(8);
 
-    // The read-only caveat is stated once for the page, not per field.
-    expect(screen.getAllByText(
-      'Only name, hostname, port and status are writable; the API does not accept the rest yet.',
-    )).toHaveLength(1);
   });
 
   it('expands a row to the read-only daemon flags, run state and coordinates', async () => {
@@ -115,8 +111,10 @@ describe('Servers page', () => {
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');
 
+    // Scoped to the detail list: the form below has the same labels.
+    const detail = screen.getByText('Run state').closest('dl')!;
     const value = (label: string) =>
-      screen.getByText(label).closest('div')!.querySelector('dd')!.textContent;
+      within(detail).getByText(label).closest('div')!.querySelector('dd')!.textContent;
     expect(value('Run stats')).toBe('No');
     expect(value('Run audit')).toBe('No');
     expect(value('Run trigger')).toBe('Yes');
@@ -128,10 +126,10 @@ describe('Servers page', () => {
     // One row at a time.
     await user.click(screen.getByRole('button', { name: 'Details for zm-edge-01' }));
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByText('Run stats')).toBeInTheDocument();
+    expect(screen.getByText('Run state')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Details for zm-edge-01' }));
-    expect(screen.queryByText('Run stats')).toBeNull();
+    expect(screen.queryByText('Run state')).toBeNull();
   });
 
   it('shows the single-node hint plus the host sample when no servers exist', async () => {
@@ -160,10 +158,17 @@ describe('Servers page', () => {
     const nameInput = screen.getByPlaceholderText('e.g. zm-edge-01');
     await user.type(nameInput, 'edge-9');
     await user.type(screen.getByPlaceholderText('port'), '80x80');
+    await user.selectOptions(screen.getByLabelText('Protocol'), 'http');
+    await user.type(screen.getByLabelText('Latitude'), '-37.81');
     await user.click(screen.getByRole('button', { name: /register/i }));
 
     await waitFor(() => expect(body).toEqual({
-      name: 'edge-9', hostname: null, port: 8080, status: 'Unknown',
+      name: 'edge-9', protocol: 'http', hostname: null, port: 8080,
+      path_to_index: null, path_to_zms: null, path_to_api: null,
+      // Longitude alone is half a coordinate, so it stays null.
+      latitude: -37.81, longitude: null,
+      zmstats: false, zmaudit: false, zmtrigger: false, zmeventnotification: false,
+      status: 'Unknown',
     }));
     await waitFor(() => expect(nameInput).toHaveValue(''));
   });
@@ -188,10 +193,15 @@ describe('Servers page', () => {
     await user.clear(host);
     await user.type(host, '10.0.0.7');
     await user.selectOptions(screen.getByLabelText('Status'), 'NotRunning');
+    await user.click(screen.getByLabelText('Run audit'));
     await user.click(screen.getByRole('button', { name: /^save$/i }));
 
-    await waitFor(() => expect(patched).toEqual({
-      id: '1', body: { name: 'zm-edge-01', hostname: '10.0.0.7', port: 8080, status: 'NotRunning' },
+    await waitFor(() => expect(patched).toMatchObject({
+      id: '1',
+      body: {
+        name: 'zm-edge-01', hostname: '10.0.0.7', port: 8080, status: 'NotRunning',
+        zmaudit: false, zmstats: true,
+      },
     }));
     await waitFor(() => expect(screen.getByText('New server')).toBeInTheDocument());
   });
