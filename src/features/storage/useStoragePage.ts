@@ -123,8 +123,20 @@ export function useStoragePage() {
   const [editingStorage, setEditingStorage] = useState<ZmStorage | null>(null);
   const [formData, setFormData] = useState<StorageFormData>(EMPTY_FORM);
 
-  // Delete confirm
-  const [deleteTarget, setDeleteTarget] = useState<ZmStorage | null>(null);
+  // Marked rows (legacy's Mark column) — the Delete button acts on these.
+  const [marked, setMarked] = useState<Set<number>>(new Set());
+  const toggleMark = (id: number) =>
+    setMarked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  // Delete confirm. A queue, so the Delete button can act on several marked
+  // rows while each one still gets the event-count guard below in turn.
+  const [deleteTargets, setDeleteTargets] = useState<ZmStorage[]>([]);
+  const deleteTarget = deleteTargets[0] ?? null;
 
   const openCreate = () => {
     createMutation.reset();
@@ -194,8 +206,13 @@ export function useStoragePage() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteStorage,
-    onSuccess: () => {
-      setDeleteTarget(null);
+    onSuccess: (_data, id) => {
+      setDeleteTargets((ts) => ts.slice(1));
+      setMarked((prev) => {
+        const next = new Set(prev);
+        next.delete(id);
+        return next;
+      });
       invalidateStorage();
     },
     onError: (err) => toast.apiError(err),
@@ -233,7 +250,15 @@ export function useStoragePage() {
 
   const requestDelete = (storage: ZmStorage) => {
     if (isProtectedStorage(storage)) return;
-    setDeleteTarget(storage);
+    setDeleteTargets([storage]);
+  };
+
+  /** Legacy's Delete button: queue every marked row, guard each in turn. */
+  const deleteMarked = () => {
+    const targets = rows
+      .map((r) => r.storage)
+      .filter((s) => marked.has(s.id) && !isProtectedStorage(s));
+    if (targets.length) setDeleteTargets(targets);
   };
 
   const confirmDelete = () => {
@@ -278,9 +303,13 @@ export function useStoragePage() {
     listError,
     submitDisabled,
     servers,
+    marked,
+    toggleMark,
+    canDeleteMarked: marked.size > 0,
+    deleteMarked,
     deleteTarget,
     setDeleteTarget: requestDelete,
-    clearDeleteTarget: () => setDeleteTarget(null),
+    clearDeleteTarget: () => setDeleteTargets([]),
     deleteUsage,
     deleteBlocked,
     confirmDelete,

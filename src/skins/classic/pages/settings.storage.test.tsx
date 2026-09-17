@@ -108,14 +108,24 @@ describe('ClassicSettingsStoragePage', () => {
     const row = (await screen.findByRole('button', { name: 'Default' })).closest('tr')!;
     expect(within(row).getByText('/var/cache/zoneminder/events')).toBeInTheDocument();
     expect(within(row).getByText('local')).toBeInTheDocument();
-    // enabled === 1 → the toggle is ticked and offers to disable.
-    expect(within(row).getByRole('checkbox', { name: 'Disable Default' })).toBeChecked();
-    // "Default" is the install row: never deletable.
-    expect(within(row).getByRole('button', { name: 'Delete Default' })).toBeDisabled();
+    // "Default" is the install row: never deletable, so never markable.
+    expect(within(row).getByRole('checkbox', { name: 'Mark Default' })).toBeDisabled();
 
     const cold = screen.getByRole('button', { name: 'Cold archive' }).closest('tr')!;
-    expect(within(cold).getByRole('checkbox', { name: 'Enable Cold archive' })).not.toBeChecked();
-    expect(within(cold).getByRole('button', { name: 'Delete Cold archive' })).toBeEnabled();
+    const mark = within(cold).getByRole('checkbox', { name: 'Mark Cold archive' });
+    expect(mark).toBeEnabled();
+    expect(mark).not.toBeChecked();
+    // Legacy has no Enabled column and no per-row verbs.
+    expect(within(cold).queryByRole('button', { name: 'Edit Cold archive' })).toBeNull();
+  });
+
+  it('the Events cell links to the events list filtered by this area', async () => {
+    signIn();
+    seed();
+    await mount();
+
+    const cold = (await screen.findByRole('button', { name: 'Cold archive' })).closest('tr')!;
+    expect(within(cold).getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/events');
   });
 
   it('carries the legacy Id / Scheme / Server / Disk Space columns', async () => {
@@ -178,16 +188,18 @@ describe('ClassicSettingsStoragePage', () => {
     expect(screen.getByRole('status')).toHaveTextContent('No matching records found');
   });
 
-  it('the enable checkbox PATCHes the flag as a 0/1 int', async () => {
+  it('the toolbar Delete stays disabled until a row is marked', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('checkbox', { name: 'Enable Cold archive' }));
-    await waitFor(() => expect(sent).toEqual([
-      { method: 'PATCH', path: '/storage/2', body: { enabled: 1 } },
-    ]));
+    await screen.findByRole('button', { name: 'Cold archive' });
+    const deleteBtn = screen.getByRole('button', { name: 'Delete' });
+    expect(deleteBtn).toBeDisabled();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Mark Cold archive' }));
+    expect(deleteBtn).toBeEnabled();
   });
 
   it('Add New Storage POSTs the whole payload with blanks nulled out', async () => {
@@ -227,7 +239,7 @@ describe('ClassicSettingsStoragePage', () => {
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('button', { name: 'Edit Cold archive' }));
+    await user.click(await screen.findByRole('button', { name: 'Cold archive' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByLabelText('Name')).toHaveValue('Cold archive');
     expect(within(dialog).getByLabelText('Path')).toHaveValue('/mnt/cold');
@@ -254,7 +266,7 @@ describe('ClassicSettingsStoragePage', () => {
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('button', { name: 'Edit Cold archive' }));
+    await user.click(await screen.findByRole('button', { name: 'Cold archive' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Auto-delete')).toBeInTheDocument();
     expect(within(dialog).getByText('No')).toBeInTheDocument();
@@ -268,7 +280,7 @@ describe('ClassicSettingsStoragePage', () => {
     seed();
     const user = userEvent.setup();
     await mount();
-    await user.click(await screen.findByRole('button', { name: 'Edit Default' }));
+    await user.click(await screen.findByRole('button', { name: 'Default' }));
     const dialog = await screen.findByRole('dialog');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -300,12 +312,42 @@ describe('ClassicSettingsStoragePage', () => {
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('button', { name: 'Delete Cold archive' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Mark Cold archive' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
     const dialog = await screen.findByRole('dialog');
     await waitFor(() =>
       expect(dialog).toHaveTextContent('No events reference "Cold archive". Delete it? This cannot be undone.'));
     await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(sent).toEqual([{ method: 'DELETE', path: '/storage/2', body: null }]));
+  });
+
+  it('deletes several marked areas, guarding each one in turn', async () => {
+    signIn();
+    seed([http.get('/api/v3/storage', () => HttpResponse.json(paged([
+      makeStorage({ id: 2, name: 'Cold archive', path: '/mnt/cold' }),
+      makeStorage({ id: 3, name: 'Warm', path: '/mnt/warm' }),
+    ])))]);
+    const user = userEvent.setup();
+    await mount();
+
+    await user.click(await screen.findByRole('checkbox', { name: 'Mark Cold archive' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Mark Warm' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    let dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(dialog).toHaveTextContent('No events reference "Cold archive".'));
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    // The queue advances to the second marked area rather than closing.
+    dialog = await screen.findByRole('dialog');
+    await waitFor(() => expect(dialog).toHaveTextContent('No events reference "Warm".'));
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(sent).toEqual([
+      { method: 'DELETE', path: '/storage/2', body: null },
+      { method: 'DELETE', path: '/storage/3', body: null },
+    ]));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('delete is blocked while events still live on the area', async () => {
@@ -315,12 +357,14 @@ describe('ClassicSettingsStoragePage', () => {
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('button', { name: 'Delete Cold archive' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Mark Cold archive' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() =>
       expect(screen.getByRole('dialog')).toHaveTextContent(
         '"Cold archive" still holds 12 events. Move or delete those events before removing the storage area.'));
     // Only an OK button — no way to force it through.
     expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Delete' })).toBeNull();
+    sent = [];
     await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }));
     expect(sent).toHaveLength(0);
   });
@@ -334,7 +378,8 @@ describe('ClassicSettingsStoragePage', () => {
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('button', { name: 'Delete Cold archive' }));
+    await user.click(await screen.findByRole('checkbox', { name: 'Mark Cold archive' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
     await waitFor(() =>
       expect(screen.getByRole('dialog')).toHaveTextContent(
         'Could not count events on "Cold archive" (preview unavailable). Delete anyway? This cannot be undone.'));
@@ -396,7 +441,7 @@ describe('ClassicSettingsStoragePage', () => {
     expect(await screen.findByRole('button', { name: 'Default' })).toBeInTheDocument();
   });
 
-  it('read-only without system Edit: plain names, Yes/No, no verbs', async () => {
+  it('read-only without system Edit: plain names, frozen marks, no verbs', async () => {
     signIn(VIEWER);
     seed();
     await mount();
@@ -404,9 +449,8 @@ describe('ClassicSettingsStoragePage', () => {
     await waitFor(() => expect(screen.getByText('Cold archive')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Cold archive' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Add New Storage' })).toBeNull();
-    expect(screen.queryByRole('checkbox')).toBeNull();
-    expect(screen.getByText('Yes')).toBeInTheDocument();
-    expect(screen.getByText('No')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.getByRole('checkbox', { name: 'Mark Cold archive' })).toBeDisabled();
   });
 
   it('renders nothing when signed out', async () => {

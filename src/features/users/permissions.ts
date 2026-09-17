@@ -3,8 +3,8 @@ import i18next from '@/i18n';
 
 /**
  * The eight top-level permission keys ZoneMinder grades a user on.
- * Order matches the legacy UI so the read-only display lines up with
- * what operators expect after migrating from the PHP skin.
+ * Order matches the legacy UI so the grid lines up with what operators
+ * expect after migrating from the PHP skin.
  */
 export const PERMISSION_NAMES = [
   'stream',
@@ -74,11 +74,7 @@ export interface PermissionMatrixRow {
   trailing?: ReactNode;
 }
 
-/**
- * Build the rows for the top-level 8-permission grid from a `UserResponse`.
- * Used as a read-only display today because `CreateUserRequest` /
- * `UpdateUserRequest` don't accept these fields (see CLAUDE.md / users.md).
- */
+/** Build the rows for the top-level 8-permission grid from a `UserResponse`. */
 export function buildTopLevelRows(
   user: { stream: string; events: string; control: string; monitors: string;
           groups: string; devices: string; snapshots: string; system: string },

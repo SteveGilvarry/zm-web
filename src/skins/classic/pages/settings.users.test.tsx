@@ -69,7 +69,7 @@ const mkUser = (over: Partial<Record<string, unknown>>) => ({
 });
 
 const USERS = [
-  mkUser({ id: 1, username: 'admin', name: 'Site Admin', email: 'admin@example.com', system: 'Edit', monitors: 'Edit' }),
+  mkUser({ id: 1, username: 'admin', name: 'Site Admin', email: 'admin@example.com', system: 'Edit', monitors: 'Edit', language: 'de_de', api_enabled: 0 }),
   mkUser({ id: 2, username: 'ops', name: 'Ops Team', email: 'ops@example.com', enabled: 0, system: 'View' }),
   mkUser({ id: 3, username: 'guest', name: 'Guest', email: 'guest@example.com' }),
 ];
@@ -118,7 +118,19 @@ describe('ClassicSettingsUsersPage', () => {
     expect(within(row).getByRole('checkbox', { name: 'Mark admin' })).toBeDisabled();
     // Own enable toggle is not offered — the cell falls back to Yes/No.
     expect(within(row).queryByRole('checkbox', { name: /able admin/ })).toBeNull();
-    expect(within(row).getByText('Yes')).toBeInTheDocument();
+    // Legacy column order: … Email, Language, Enabled, …perms…, API Enabled.
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(headers.slice(1)).toEqual([
+      'Username', 'Name', 'Email', 'Language', 'Enabled',
+      'Stream', 'Events', 'Control', 'Monitors', 'Groups', 'Snapshots', 'System', 'Devices', 'API Enabled',
+    ]);
+    const cells = within(row).getAllByRole('cell').map((c) => c.textContent);
+    expect(cells[4]).toBe('de_de');        // Language
+    expect(cells[5]).toBe('Yes');          // Enabled, own row
+    expect(cells.at(-1)).toBe('No');       // API Enabled
+    const ops = screen.getByText('Ops Team').closest('tr')!;
+    expect(within(ops).getAllByRole('cell').map((c) => c.textContent)[4]).toBe('default');
+    expect(within(ops).getAllByRole('cell').map((c) => c.textContent).at(-1)).toBe('Yes');
 
     // Sorted by username: guest, then admin/ops around it.
     const usernames = screen.getAllByRole('row').slice(1).map((r) => r.querySelector('td:nth-child(2)')?.textContent);

@@ -41,7 +41,8 @@ export default function ClassicSettingsStoragePage() {
             <div className="flex-1 min-w-0 space-y-3">
               <ClassicToolbar end={<ClassicSearch value={st.searchQuery} onChange={st.setSearchQuery} placeholder={t('Search')} />}>
                 <RequirePerm feature="system" level="Edit">
-                  <ClassicButton tone="primary" onClick={st.openCreate}>{t('Add New Storage')}</ClassicButton>
+                  <ClassicButton tone="primary" onClick={st.openCreate}>{t('Add New Storage')}</ClassicButton>{' '}
+                  <ClassicButton tone="danger" onClick={st.deleteMarked} disabled={!st.canDeleteMarked}>{t('Delete')}</ClassicButton>
                 </RequirePerm>
               </ClassicToolbar>
               {st.listError && (
@@ -65,9 +66,8 @@ export default function ClassicSettingsStoragePage() {
                       <th className={classicTh}>{t('Scheme')}</th>
                       <th className={classicTh}>{t('Server')}</th>
                       <th className={classicTh}>{t('Disk Space')}</th>
-                      <th className={classicTh}>{t('Enabled')}</th>
                       <th className={classicTh}>{t('Events')}</th>
-                      <th className={clsx(classicTh, 'text-end')}>{t('Actions')}</th>
+                      <th className={classicTh}>{t('Mark')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -109,37 +109,20 @@ export default function ClassicSettingsStoragePage() {
                             </span>
                           )}
                         </td>
-                        <td className={classicTd}>
-                          {canEdit ? (
-                            <input
-                              type="checkbox"
-                              checked={storage.enabled === 1}
-                              onChange={() => st.toggleEnabled(storage)}
-                              aria-label={storage.enabled === 1 ? t('Disable {{name}}', { name: storage.name }) : t('Enable {{name}}', { name: storage.name })}
-                            />
-                          ) : (storage.enabled === 1 ? t('Yes') : t('No'))}
-                        </td>
                         <td className={clsx(classicTd, 'text-xs')}>
-                          <Link
-                            to="/events"
-                            className={classicLink}
-                            title={t('The events list cannot be pre-filtered by storage area yet; this opens the full list.')}
-                          >
+                          <Link to="/events" search={{ storage: storage.id }} className={classicLink}>
                             {t('Events')}
                           </Link>
                         </td>
-                        <td className={clsx(classicTd, 'text-end whitespace-nowrap')}>
-                          <RequirePerm feature="system" level="Edit">
-                            <ClassicButton onClick={() => st.openEdit(storage)} aria-label={t('Edit {{name}}', { name: storage.name })}>{t('Edit')}</ClassicButton>{' '}
-                            <ClassicButton
-                              onClick={() => st.setDeleteTarget(storage)}
-                              disabled={st.isProtected(storage)}
-                              title={st.isProtected(storage) ? t('The Default storage area cannot be deleted') : undefined}
-                              aria-label={t('Delete {{name}}', { name: storage.name })}
-                            >
-                              {t('Delete')}
-                            </ClassicButton>
-                          </RequirePerm>
+                        <td className={classicTd}>
+                          <input
+                            type="checkbox"
+                            checked={st.marked.has(storage.id)}
+                            onChange={() => st.toggleMark(storage.id)}
+                            disabled={!canEdit || st.isProtected(storage)}
+                            title={st.isProtected(storage) ? t('The Default storage area cannot be deleted') : undefined}
+                            aria-label={t('Mark {{name}}', { name: storage.name })}
+                          />
                         </td>
                       </tr>
                     ))}

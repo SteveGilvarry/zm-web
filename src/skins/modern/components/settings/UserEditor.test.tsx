@@ -1,9 +1,7 @@
 /**
- * The user create/edit dialog. Four tabs, but only two of them save on this
- * backend: Account (email + enabled, see zm-api#23) and the per-group /
- * per-monitor grids. These tests pin the request each control emits, the
- * fields the editor refuses to pretend it can save, and the self-edit mode
- * a non-admin gets on their own row.
+ * The user create/edit dialog: the Account tab, the global permission grid
+ * and the per-group / per-monitor grids. These tests pin the request each
+ * control emits and the self-edit mode a non-admin gets on their own row.
  */
 import { describe, expect, it, afterEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -97,6 +95,8 @@ describe('UserEditor — create', () => {
       email: 'newop@example.test',
       enabled: 1,
       phone: '555-0100',
+      home_view: 'console',
+      api_enabled: 1,
     }));
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
@@ -112,7 +112,7 @@ describe('UserEditor — create', () => {
     await user.click(screen.getByRole('button', { name: 'Create User' }));
 
     await waitFor(() => expect(seen.body).toEqual({
-      username: 'newop', password: 'secret', name: '', email: '', enabled: 1,
+      username: 'newop', password: 'secret', name: '', email: '', enabled: 1, home_view: 'console', api_enabled: 1,
     }));
   });
 
@@ -167,35 +167,37 @@ describe('UserEditor — create', () => {
 });
 
 describe('UserEditor — edit (admin)', () => {
-  it('titles itself after the user, fixes the username and locks the fields the API drops', () => {
+  it('titles itself after the user, fixes the username and frees everything else', () => {
     mount(OPS);
     expect(screen.getByRole('dialog', { name: 'Edit ops' })).toBeInTheDocument();
     expect(field('username')).toBeDisabled();
-    expect(field('Not editable yet')).toBeDisabled();
-    expect(field('Confirm password')).toBeDisabled();
-    expect(field('Full name')).toBeDisabled();
-    expect(field('Phone')).toBeDisabled();
+    expect(field('Leave blank to keep')).toBeEnabled();
+    expect(field('Confirm password')).toBeEnabled();
+    expect(field('Full name')).toBeEnabled();
+    expect(field('Phone')).toBeEnabled();
     expect(field('user@example.com')).toBeEnabled();
-    expect(field('Not editable yet')).toHaveAttribute(
-      'title',
-      'Not editable on this zm-api build — see zm-api#23',
-    );
-    expect(screen.getByRole('link', { name: 'zm-api#23' })).toHaveAttribute(
-      'href',
-      'https://github.com/SteveGilvarry/zm-api/issues/23',
-    );
+    expect(screen.getByLabelText('Language')).toHaveValue('');
+    expect(screen.getByLabelText('Home View')).toHaveValue('console');
+    expect(screen.getByRole('switch', { name: 'API Enabled' })).toHaveAttribute('aria-checked', 'true');
   });
 
-  it('PUTs only email + enabled', async () => {
+  it('PUTs only the fields that changed', async () => {
     const user = userEvent.setup();
     const seen = capture('put', '/api/v3/users/:id');
     const { onClose } = mount(OPS);
 
     await user.clear(field('user@example.com'));
     await user.type(field('user@example.com'), 'ops2@example.test');
+    await user.type(field('Leave blank to keep'), 'hunter22');
+    await user.type(field('Confirm password'), 'hunter22');
+    await user.selectOptions(screen.getByLabelText('Language'), 'de_de');
+    await user.selectOptions(screen.getByLabelText('Home View'), 'montage');
+    await user.click(screen.getByRole('switch', { name: 'API Enabled' }));
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
-    await waitFor(() => expect(seen.body).toEqual({ email: 'ops2@example.test', enabled: 1 }));
+    await waitFor(() => expect(seen.body).toEqual({
+      email: 'ops2@example.test', password: 'hunter22', language: 'de_de', home_view: 'montage', api_enabled: 0,
+    }));
     expect(seen.url).toContain('/api/v3/users/2');
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
   });
@@ -211,7 +213,7 @@ describe('UserEditor — edit (admin)', () => {
     expect(toggle).toHaveAttribute('aria-checked', 'false');
 
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
-    await waitFor(() => expect(seen.body).toEqual({ email: 'ops@example.test', enabled: 0 }));
+    await waitFor(() => expect(seen.body).toEqual({ enabled: 0 }));
   });
 
   it('shows the backend error and keeps the dialog open when the save fails', async () => {
@@ -220,6 +222,7 @@ describe('UserEditor — edit (admin)', () => {
       HttpResponse.json({ error_message: 'user is read-only' }, { status: 500 })));
     const { onClose } = mount(OPS);
 
+    await user.type(field('Full name'), '!');
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
     expect(await screen.findByText('user is read-only')).toBeInTheDocument();
     expect(onClose).not.toHaveBeenCalled();
@@ -227,42 +230,75 @@ describe('UserEditor — edit (admin)', () => {
 });
 
 describe('UserEditor — self edit', () => {
-  it('offers the account fields only, with no tabs and no enable switch', () => {
+  it('offers password, language and home view; the rest is admin-only', () => {
     mount(OPS, 'self');
     expect(screen.queryByRole('button', { name: 'Global Permissions' })).not.toBeInTheDocument();
     expect(screen.getByText(/You are editing your own account/)).toBeInTheDocument();
-    const toggle = screen.getByRole('switch', { name: 'Enabled' });
-    expect(toggle).toBeDisabled();
-    expect(toggle).toHaveAttribute('title', 'Only an administrator can enable or disable accounts');
+    expect(screen.queryByRole('switch', { name: 'Enabled' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('switch', { name: 'API Enabled' })).not.toBeInTheDocument();
+    expect(field('Leave blank to keep')).toBeEnabled();
+    expect(screen.getByLabelText('Language')).toBeEnabled();
+    expect(screen.getByLabelText('Home View')).toBeEnabled();
+    for (const f of ['Full name', 'user@example.com', 'Phone']) {
+      expect(field(f)).toBeDisabled();
+      expect(field(f)).toHaveAttribute('title', 'Only an administrator can change this');
+    }
   });
 
-  it('PUTs the email alone — enabled is not the user’s to change', async () => {
+  it('PUTs the language and home view alone', async () => {
     const user = userEvent.setup();
     const seen = capture('put', '/api/v3/users/:id');
     mount(OPS, 'self');
 
-    await user.clear(field('user@example.com'));
-    await user.type(field('user@example.com'), 'me@example.test');
+    await user.selectOptions(screen.getByLabelText('Language'), 'fr_fr');
+    await user.selectOptions(screen.getByLabelText('Home View'), 'watch');
     await user.click(screen.getByRole('button', { name: 'Save Changes' }));
 
-    await waitFor(() => expect(seen.body).toEqual({ email: 'me@example.test' }));
+    await waitFor(() => expect(seen.body).toEqual({ language: 'fr_fr', home_view: 'watch' }));
   });
 });
 
 describe('UserEditor — Global Permissions tab', () => {
-  it('renders the eight levels read-only, checked from the user record', async () => {
+  it('renders the eight levels editable, checked from the user record', async () => {
     const user = userEvent.setup();
     mount(OPS);
     await user.click(tab('Global Permissions'));
 
-    expect(screen.getByText(/does not yet accept/)).toBeInTheDocument();
     expect(screen.getByRole('radio', { name: 'Monitors: View' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'System: None' })).toBeChecked();
     expect(screen.getByRole('radio', { name: 'Stream: View' })).toBeChecked();
-    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeDisabled();
+    for (const radio of screen.getAllByRole('radio')) expect(radio).toBeEnabled();
     // `monitors` is the only permission with a Create column.
     expect(screen.getByRole('radio', { name: 'Monitors: Create' })).toBeInTheDocument();
     expect(screen.queryByRole('radio', { name: 'System: Create' })).not.toBeInTheDocument();
+  });
+
+  it('PUTs the one level that changed and keeps it once the backend confirms', async () => {
+    const user = userEvent.setup();
+    const bodies: unknown[] = [];
+    server.use(http.put('/api/v3/users/:id', async ({ request }) => {
+      const body = await request.json() as Record<string, string>;
+      bodies.push(body);
+      return HttpResponse.json({ ...OPS, ...body });
+    }));
+    mount(OPS);
+    await user.click(tab('Global Permissions'));
+
+    await user.click(screen.getByRole('radio', { name: 'Monitors: Create' }));
+    await waitFor(() => expect(bodies).toEqual([{ monitors: 'Create' }]));
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'Monitors: Create' })).toBeChecked());
+  });
+
+  it('snaps the radio back when the backend refuses the level', async () => {
+    const user = userEvent.setup();
+    server.use(http.put('/api/v3/users/:id', () =>
+      HttpResponse.json({ error_message: 'bad level' }, { status: 422 })));
+    mount(OPS);
+    await user.click(tab('Global Permissions'));
+
+    await user.click(screen.getByRole('radio', { name: 'System: Edit' }));
+    await waitFor(() => expect(screen.getByRole('radio', { name: 'System: None' })).toBeChecked());
+    expect(useToastStore.getState().toasts[0]?.tone).toBe('error');
   });
 });
 

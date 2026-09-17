@@ -5,6 +5,7 @@ import { Users, X, Save, Loader2 } from 'lucide-react';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { getValidParentOptions } from './tree';
 import type { Group } from '@/api/groups';
+import type { Monitor } from '@/types';
 
 export interface GroupEditDialogProps {
   /** When set, controls visibility. Always renders nothing when false. */
@@ -24,7 +25,15 @@ export interface GroupEditDialogProps {
    *
    * `parentId` is `null` for "no parent".
    */
-  onSubmit: (input: { name: string; parentId: number | null }) => void;
+  onSubmit: (input: { name: string; parentId: number | null; monitorIds?: number[] }) => void;
+  /**
+   * Every monitor, for legacy's `MonitorIds[]` multi-select. Passing this is
+   * what renders the field at all — a skin that edits membership elsewhere
+   * leaves it out and gets the Name/Parent form it always had.
+   */
+  monitors?: Monitor[];
+  /** Monitors already in the group, seeding the multi-select. */
+  initialMonitorIds?: number[];
   /** When true, disables the submit button + shows a spinner. */
   pending?: boolean;
   /** Optional error message shown above the buttons. */
@@ -39,9 +48,9 @@ export interface GroupEditDialogProps {
  *   - Parent    — select. Excludes the editing group + its descendants
  *                 (cycle prevention).
  *
- * Monitor membership is intentionally NOT here — the existing main
- * route keeps that on its right panel for the selected group, which
- * sidesteps the round-trip-per-toggle UX a chip control would force.
+ *   - Monitors  — legacy's `MonitorIds[]` multi-select, rendered only when
+ *                 the caller passes `monitors`. The modern page edits
+ *                 membership on its own panel and leaves it out.
  *
  * The form is keyed on the editing target and unmounted while closed, so
  * every open (and every switch between groups) starts from fresh state
@@ -61,10 +70,13 @@ function GroupEditForm({
   onSubmit,
   pending = false,
   error = null,
+  monitors,
+  initialMonitorIds = [],
 }: GroupEditFormProps) {
   const { t } = useTranslation();
   const [name, setName] = useState(editing?.name ?? '');
   const [parentId, setParentId] = useState<number | null>(editing?.parent_id ?? null);
+  const [monitorIds, setMonitorIds] = useState<number[]>(initialMonitorIds);
 
   const options = getValidParentOptions(groups, editing?.id ?? null);
 
@@ -72,7 +84,7 @@ function GroupEditForm({
     e.preventDefault();
     const trimmed = name.trim();
     if (!trimmed) return;
-    onSubmit({ name: trimmed, parentId });
+    onSubmit({ name: trimmed, parentId, monitorIds: monitors ? monitorIds : undefined });
   };
 
   const title = editing ? t('Group — {{name}}', { name: editing.name }) : t('New group');
@@ -146,6 +158,30 @@ function GroupEditForm({
               ))}
             </select>
           </div>
+
+          {monitors ? (
+            <div className="flex items-start gap-3">
+              <label
+                htmlFor="group-monitors"
+                className="text-label text-fg-dim w-24 flex-shrink-0 pt-1"
+              >
+                {t('Monitors')}
+              </label>
+              <select
+                id="group-monitors"
+                multiple
+                size={Math.min(Math.max(monitors.length, 3), 10)}
+                value={monitorIds.map(String)}
+                onChange={(e) =>
+                  setMonitorIds(Array.from(e.target.selectedOptions, (o) => Number(o.value)))}
+                className={clsx('flex-1', fieldClasses('sm'), 'h-auto')}
+              >
+                {monitors.map((m) => (
+                  <option key={m.id} value={m.id}>{m.name}</option>
+                ))}
+              </select>
+            </div>
+          ) : null}
 
           {error ? (
             <div

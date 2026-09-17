@@ -523,6 +523,10 @@ export interface User {
   api_enabled?: number;
   /** Route the operator lands on after signing in ('console', …). */
   home_view?: string;
+  /** ZoneMinder language file (`en_gb`, …); null/empty means the site default. */
+  language?: string | null;
+  /** Bandwidth profile name; null when unset. Not edited here (see MEMORY.md). */
+  max_bandwidth?: string | null;
 }
 
 // Orientation values from API
