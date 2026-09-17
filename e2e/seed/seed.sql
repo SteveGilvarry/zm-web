@@ -94,9 +94,11 @@ VALUES
 -- ---------------------------------------------------------------------------
 -- PTZ control profile: a copy of the stock Ffmpeg/Pelco-D row (positional
 -- VALUES, same column order as zm_create.sql.in) with our own id and name.
+-- Positional, so every column ZoneMinder adds to Controls has to be added
+-- here too — the four audio columns at the end are the most recent.
 -- ---------------------------------------------------------------------------
 INSERT INTO Controls VALUES
-  (9001,'e2e-PTZ Dome (Pelco-D)','Ffmpeg','PelcoD',1,1,0,0,1,1,0,0,1,NULL,NULL,NULL,NULL,1,0,3,1,1,0,0,1,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,0,0,0,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,1,20,1,1,1,1,0,0,0,1,1,NULL,NULL,NULL,NULL,1,0,63,1,254,1,NULL,NULL,NULL,NULL,1,0,63,1,254,0,0);
+  (9001,'e2e-PTZ Dome (Pelco-D)','Ffmpeg','PelcoD',1,1,0,0,1,1,0,0,1,NULL,NULL,NULL,NULL,1,0,3,1,1,0,0,1,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,0,0,0,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,1,20,1,1,1,1,0,0,0,1,1,NULL,NULL,NULL,NULL,1,0,63,1,254,1,NULL,NULL,NULL,NULL,1,0,63,1,254,0,0,0,NULL,NULL,0);
 
 -- ---------------------------------------------------------------------------
 -- Monitors. Four Ffmpeg cameras; 9002 is ROTATE_90 and 9003 is ROTATE_270 for
@@ -111,7 +113,7 @@ INSERT INTO Monitors
    SaveJPEGs, VideoWriter, OutputCodecName, OutputContainer, RecordAudio,
    EventPrefix, LabelFormat, LabelX, LabelY, LabelSize,
    ImageBufferCount, MaxImageBufferCount, WarmupCount, PreEventCount, PostEventCount,
-   AlarmFrameCount, SectionLength, MinSectionLength, FrameSkip, MotionFrameSkip,
+   AlarmFrameCount, SectionLength, MinSectionLength, MotionFrameSkip,
    AnalysisFPSLimit, MaxFPS, AlarmMaxFPS, FPSReportInterval, RefBlendPerc, AlarmRefBlendPerc,
    Controllable, ControlId, ControlDevice, ControlAddress, AutoStopTimeout, TrackMotion, ReturnLocation,
    DefaultRate, DefaultScale, DefaultCodec, SignalCheckPoints, SignalCheckColour, WebColour,
@@ -125,7 +127,7 @@ VALUES
    0, 1, 'auto', 'mp4', 0,
    'Event-', '%N - %d/%m/%y %H:%M:%S', 0, 0, 1,
    5, 0, 0, 5, 5,
-   1, 600, 10, 0, 0,
+   1, 600, 10, 0,
    5.00, NULL, NULL, 250, 6, 6,
    0, NULL, NULL, NULL, NULL, 0, -1,
    100, '0', 'auto', 0, '#0000BE', '#00d4ff',
@@ -138,7 +140,7 @@ VALUES
    0, 1, 'auto', 'mp4', 0,
    'Event-', '%N - %d/%m/%y %H:%M:%S', 0, 0, 1,
    5, 0, 0, 5, 5,
-   1, 600, 10, 0, 0,
+   1, 600, 10, 0,
    5.00, NULL, NULL, 250, 6, 6,
    0, NULL, NULL, NULL, NULL, 0, -1,
    100, '0', 'auto', 0, '#0000BE', '#ffb000',
@@ -151,7 +153,7 @@ VALUES
    0, 1, 'auto', 'mp4', 1,
    'Event-', '%N - %d/%m/%y %H:%M:%S', 0, 0, 1,
    5, 0, 0, 5, 5,
-   1, 600, 10, 0, 0,
+   1, 600, 10, 0,
    NULL, NULL, NULL, 250, 6, 6,
    0, NULL, NULL, NULL, NULL, 0, -1,
    100, '0', 'auto', 0, '#0000BE', '#10b981',
@@ -164,7 +166,7 @@ VALUES
    0, 1, 'auto', 'mp4', 0,
    'Event-', '%N - %d/%m/%y %H:%M:%S', 0, 0, 1,
    5, 0, 0, 5, 5,
-   1, 600, 10, 0, 0,
+   1, 600, 10, 0,
    5.00, NULL, NULL, 250, 6, 6,
    1, 9001, '/dev/ttyUSB0', '192.0.2.14:80', 1.00, 0, -1,
    100, '0', 'auto', 0, '#0000BE', '#dc2626',
