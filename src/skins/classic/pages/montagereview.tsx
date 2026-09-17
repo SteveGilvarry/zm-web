@@ -55,6 +55,8 @@ export default function ClassicMontageReviewPage() {
   const filter = useMonitorFilterRow(page.allMonitors, runtimeById);
   useDocumentTitle(t('Montage Review'));
   const { clock, isLive, preset } = page;
+  // Legacy prints the playback multiplier, two decimal places, then " x".
+  const speedLabel = t('{{speed}} x', { speed: clock.speed.toFixed(2) });
 
   // Filter row survivors ∩ chip selection (the chip row is the modern
   // page's; here the Monitor select in the filter row plays that role).
@@ -138,10 +140,13 @@ export default function ClassicMontageReviewPage() {
               value={reviewSpeedIndex(clock.speed)}
               onChange={(e) => clock.setSpeed(REVIEW_SPEEDS[Number(e.target.value)])}
               aria-label={t('Speed')}
-              aria-valuetext={t('{{speed}} fps', { speed: clock.speed })}
+              aria-valuetext={speedLabel}
             />
+            {/* `montagereview.js:963` — a playback multiplier to two places
+                ("1.00 x"), not a frame rate. The `N fps` in the PHP is the
+                pre-JS server render, overwritten by `setSpeed` on load. */}
             <span className="tabular-nums w-16" data-testid="review-speed">
-              {t('{{speed}} fps', { speed: clock.speed })}
+              {speedLabel}
             </span>
           </label>
         </div>

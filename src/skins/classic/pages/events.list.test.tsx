@@ -31,6 +31,8 @@ const SearchCtx = createContext<{ search: Record<string, unknown>; set: (u: Sear
 let initialSearch: Record<string, unknown> = {};
 
 vi.mock('@tanstack/react-router', () => ({
+  // Legacy greys Back when nothing links here; the router has no entry behind us.
+  useCanGoBack: () => false,
   useSearch: () => useContext(SearchCtx).search,
   useNavigate: () => {
     const { set } = useContext(SearchCtx);
@@ -539,7 +541,8 @@ describe('ClassicEventsListPage — legacy chrome', () => {
   it('disables Back when the page was not reached from another one', async () => {
     stub();
     await mountAndSettle();
-    // jsdom leaves document.referrer empty, as a fresh tab does.
+    // The router has nothing behind it and jsdom's history has one entry,
+    // which is what a fresh tab looks like.
     expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
   });
 

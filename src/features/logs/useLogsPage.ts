@@ -1,5 +1,5 @@
 import { useMirroredState } from '@/hooks/useMirroredState';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/auth';
@@ -53,6 +53,13 @@ export const LOGS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50, 100, 200, 
 
 /** Legacy's `$defaultPageSize` fallback (`log.php:27`). */
 export const LOGS_DEFAULT_PAGE_SIZE = 25;
+
+/**
+ * Pause after the last keystroke before the message search reaches the API.
+ * Legacy's bootstrap-table search filters as you type; this is the same
+ * behaviour without a request per character.
+ */
+export const LOGS_SEARCH_DEBOUNCE_MS = 350;
 
 const COLUMN_PREF_KEY = 'zm-web.logs.columns';
 const PAGE_SIZE_PREF_KEY = 'zm-web.logs.pageSize';
@@ -121,7 +128,7 @@ export interface LogsPageState {
   /** Time-column order: `desc` (newest first) unless the header flips it. */
   sort: LogSort;
   toggleSort: () => void;
-  /** Local mirror of the search box; committed to the URL on Enter/blur. */
+  /** Local mirror of the search box; committed to the URL after a pause, or at once on Enter/blur. */
   searchDraft: string;
   setSearchDraft: (v: string) => void;
   commitSearchDraft: () => void;
@@ -198,7 +205,7 @@ export function useLogsPage(): LogsPageState {
     } catch { /* quota / private mode — ignore */ }
   }, [visibleColumns]);
 
-  const setSearch = (patch: Partial<LogsSearchParams>) => {
+  const setSearch = useCallback((patch: Partial<LogsSearchParams>) => {
     navigate({
       search: (prev) => {
         const next: Partial<LogsSearchParams> = { ...prev, ...patch };
@@ -212,7 +219,19 @@ export function useLogsPage(): LogsPageState {
       },
       replace: true,
     });
-  };
+  }, [navigate]);
+
+  // Typing is the whole gesture: commit the draft once the operator stops.
+  // Without this the search box only reached the API on Enter or blur, so a
+  // typed query looked ignored (`/logs?page=1&page_size=25&sort=desc`).
+  useEffect(() => {
+    if (searchDraft === messageQuery) return;
+    const id = window.setTimeout(
+      () => setSearch({ q: searchDraft || undefined, page: undefined }),
+      LOGS_SEARCH_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [searchDraft, messageQuery, setSearch]);
 
   const setPageSize = (n: number) => {
     if (!LOGS_PAGE_SIZE_OPTIONS.includes(n)) return;
@@ -330,7 +349,7 @@ export function useLogsPage(): LogsPageState {
     toggleSort: () => setSearch({ sort: sort === 'desc' ? 'asc' : undefined, page: undefined }),
     searchDraft,
     setSearchDraft,
-    commitSearchDraft: () => setSearch({ q: searchDraft || undefined }),
+    commitSearchDraft: () => setSearch({ q: searchDraft || undefined, page: undefined }),
     setSearch,
 
     allComponents,

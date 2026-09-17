@@ -203,7 +203,6 @@ export function useWatchPage(monitorId: number): WatchPageState {
   // Streaming hooks — both always mounted, only active one gets start() called
   const webrtc = useWebRtcStream(id);
   const hls = useHlsStream(id);
-  const ptzState = usePtzCapabilities(id, isAuthenticated && !isNaN(id));
   const runtime = useMonitorStatus(id, isAuthenticated && !isNaN(id));
 
   const activeStream = protocol === 'webrtc' ? webrtc : hls;
@@ -218,6 +217,14 @@ export function useWatchPage(monitorId: number): WatchPageState {
     enabled: isAuthenticated && !isNaN(id),
     refetchInterval: 30000,
   });
+
+  // Only controllable cameras have capabilities to fetch; asking for the rest
+  // is a guaranteed 400 on every watch page load.
+  const ptzState = usePtzCapabilities(
+    id,
+    isAuthenticated && !isNaN(id),
+    monitor ? monitor.controllable === 1 : null,
+  );
 
   // Fetch live stats when streaming
   const { data: liveStats } = useQuery({

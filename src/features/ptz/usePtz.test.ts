@@ -142,4 +142,43 @@ describe('usePtzCapabilities — enabled gating', () => {
     expect(hits).toBe(0);
     expect(result.current.status).toBe('loading');
   });
+
+  it('asks nothing for a camera that is not controllable, and says so', async () => {
+    let hits = 0;
+    server.use(
+      http.get('/api/v3/ptz/monitors/5/capabilities', () => {
+        hits += 1;
+        return HttpResponse.json(minimalCaps);
+      }),
+    );
+    const { result } = renderHook(
+      () => usePtzCapabilities(5, true, /* controllable */ false),
+      { wrapper: makeWrapper() },
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(hits).toBe(0);
+    expect(result.current.status).toBe('no-ptz');
+  });
+
+  it('waits rather than guessing while the monitor row is still loading', async () => {
+    let hits = 0;
+    server.use(
+      http.get('/api/v3/ptz/monitors/6/capabilities', () => {
+        hits += 1;
+        return HttpResponse.json(minimalCaps);
+      }),
+    );
+    const { result, rerender } = renderHook(
+      ({ controllable }: { controllable: boolean | null }) =>
+        usePtzCapabilities(6, true, controllable),
+      { wrapper: makeWrapper(), initialProps: { controllable: null as boolean | null } },
+    );
+    await new Promise((r) => setTimeout(r, 30));
+    expect(hits).toBe(0);
+    expect(result.current.status).toBe('loading');
+
+    rerender({ controllable: true });
+    await waitFor(() => expect(result.current.status).toBe('ready'));
+    expect(hits).toBe(1);
+  });
 });

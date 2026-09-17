@@ -15,6 +15,7 @@ import {
   useEventsListPage, EVENTS_PAGE_SIZE_MAX, type ArchivedFilter,
 } from '@/features/events/useEventsListPage';
 import { useNoteTypeOptions } from '@/features/events/noteTypes';
+import { useCanGoBack } from '@/features/nav/useCanGoBack';
 import { useUiStore } from '@/stores/ui';
 import { ClassicButton, ClassicClearableInput, ClassicFilterField, ClassicPager } from '@/skins/classic/components/events/primitives';
 import { classicSelect } from '@/skins/classic/components/events/styles';
@@ -55,7 +56,7 @@ export default function ClassicEventsListPage() {
     else void tableRef.current?.requestFullscreen?.();
   };
   // Legacy disables Back when there is no page to go back to.
-  const canGoBack = typeof document !== 'undefined' && document.referrer !== '';
+  const canGoBack = useCanGoBack();
 
   if (!s.isAuthenticated) return null;
 

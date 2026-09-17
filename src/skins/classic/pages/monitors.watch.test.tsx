@@ -20,6 +20,9 @@ vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
   useSearch: () => ({}),
   useParams: () => ({}),
+  // jsdom starts with a single history entry, so Back is greyed as legacy
+  // greys it on a page nothing linked to.
+  useCanGoBack: () => false,
   Link: ({ children, to, search, ...rest }: {
     children: ReactNode; to?: string; search?: Record<string, unknown>; [k: string]: unknown;
   }) => {
@@ -159,7 +162,10 @@ function stubOk(opts: {
   /** Extra monitors for the cycle sidebar's rotation. */
   monitors?: unknown[];
 } = {}) {
-  const { ptz = 'none', events = [EVENT], monitor = MONITOR, configs = {} } = opts;
+  const { ptz = 'none', events = [EVENT], configs = {} } = opts;
+  // `Monitors.Controllable` is what the page gates the capability request on,
+  // exactly as legacy gates its control panel, so it tracks `ptz` here.
+  const monitor = { controllable: ptz === 'ready' ? 1 : 0, ...(opts.monitor ?? MONITOR) };
   const monitors = opts.monitors ?? [monitor];
   server.use(
     http.get('/api/v3/configs', () => HttpResponse.json(paged(

@@ -24,6 +24,7 @@ import { useAvailableHeight } from '@/features/monitors/useStageFit';
 import { useWatchPage } from '@/features/monitors/useWatchPage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useWatchCycle } from '@/features/cycle/useWatchCycle';
+import { useCanGoBack } from '@/features/nav/useCanGoBack';
 import { Modal } from '@/components/common/Modal';
 import { useUiStore } from '@/stores/ui';
 import { PtzControls } from '@/features/ptz/PtzControls';
@@ -53,6 +54,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   const navigate = useNavigate();
   const { can } = usePerms();
   const page = useWatchPage(monitorId);
+  const canGoBack = useCanGoBack();
   // Legacy watch.php includes `_monitor_filters.php` behind the `#mfbflip`
   // chevron, and the cycle sidebar's visibility lives in `zmCycleShow`.
   const [showFilters, setShowFilters] = useState(false);
@@ -97,7 +99,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
         <ClassicHeader
           title={t('Monitor - {{id}} - {{name}}', { id: monitor.id, name: monitor.name })}
           // Legacy: `history.back()`, greyed when there is no page to go back to.
-          backDisabled={!document.referrer}
+          backDisabled={!canGoBack}
           onRefresh={page.refresh}
           end={
             <>

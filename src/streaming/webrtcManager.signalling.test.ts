@@ -395,6 +395,21 @@ describe('webrtcManager — server-reported problems', () => {
     expect(webrtcManager.getSnapshot(MID).error).toMatch(/^Failed to start WebRTC stream, retrying/);
   });
 
+  it('opens the conventional socket when /start reports the stream already running', async () => {
+    // A 409 is mapped to `already_running` by `startLiveStream`; the body
+    // carries no `webrtc_signaling`, so the manager must fall back to the
+    // conventional path rather than treat it as a failure. MEMORY.md: the
+    // POST still has to happen before the socket opens.
+    startLiveStream.mockResolvedValueOnce({ monitor_id: MID, status: 'already_running' });
+    webrtcManager.acquire(MID);
+    await settle();
+
+    expect(startLiveStream).toHaveBeenCalledWith(MID, { enable_webrtc: true });
+    expect(transports.sockets).toHaveLength(1);
+    expect(transports.sockets[0].url).toContain(`/api/v3/live/${MID}/webrtc`);
+    expect(webrtcManager.getSnapshot(MID).error).toBeNull();
+  });
+
   it('does not resurrect a session torn down while /start was in flight', async () => {
     let release!: (v: unknown) => void;
     startLiveStream.mockImplementationOnce(() => new Promise((res) => { release = res; }));

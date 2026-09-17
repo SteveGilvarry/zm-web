@@ -284,13 +284,13 @@ describe('ClassicMontageReviewPage', () => {
     const speed = await screen.findByRole('slider', { name: 'Speed' });
     // 13 steps (0 … 50), opening at 1× — index 5.
     expect(speed).toHaveAttribute('max', '12');
-    expect(screen.getByTestId('review-speed')).toHaveTextContent('1 fps');
+    expect(screen.getByTestId('review-speed')).toHaveTextContent('1.00 x');
 
     fireEvent.change(speed, { target: { value: '0' } });
-    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('0 fps'));
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('0.00 x'));
 
     fireEvent.change(speed, { target: { value: '12' } });
-    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('50 fps'));
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('50.00 x'));
   });
 
   it('In + narrows the window and < Pan slides it back', async () => {
@@ -319,7 +319,7 @@ describe('ClassicMontageReviewPage', () => {
     await screen.findByTestId('review-classic-grid');
     const speed = screen.getByRole('slider', { name: 'Speed' });
     fireEvent.change(speed, { target: { value: '7' } }); // 2×
-    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('2 fps'));
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('2.00 x'));
 
     const scale = screen.getByRole('slider', { name: 'Scale' });
     expect(scale).toHaveAttribute('aria-valuetext', '1.00 x');
