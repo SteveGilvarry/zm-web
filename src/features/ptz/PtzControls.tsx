@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ButtonHTMLAttributes, type PointerEvent, type ReactNode } from 'react';
+import { useEffect, useState, type ButtonHTMLAttributes, type PointerEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
@@ -43,21 +43,23 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
   const [speed, setSpeed] = useState(50);
   const [presetSlot, setPresetSlot] = useState(1);
   const [presetName, setPresetName] = useState('');
-  const [error, setError] = useState<string | null>(null);
-  const errorTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Wrapped in an object so two identical failures in a row still count as
+  // a new error and restart the countdown below.
+  const [error, setError] = useState<{ text: string } | null>(null);
 
-  useEffect(() => () => { if (errorTimer.current) clearTimeout(errorTimer.current); }, []);
+  // The countdown belongs to whichever error is on screen: a fresh one
+  // cancels the previous timer, and unmounting cancels the last.
+  useEffect(() => {
+    if (!error) return;
+    const id = setTimeout(() => setError(null), ERROR_TTL_MS);
+    return () => clearTimeout(id);
+  }, [error]);
 
   /** Run a PTZ command; surface the failure inline. */
   const run = (label: string, command: Promise<unknown>) => {
     command.catch((err: unknown) => {
       const detail = err instanceof Error && err.message ? err.message : t('command failed');
-      setError(t('{{command}}: {{detail}}', { command: label, detail }));
-      if (errorTimer.current) clearTimeout(errorTimer.current);
-      errorTimer.current = setTimeout(() => {
-        errorTimer.current = null;
-        setError(null);
-      }, ERROR_TTL_MS);
+      setError({ text: t('{{command}}: {{detail}}', { command: label, detail }) });
     });
   };
 
@@ -150,7 +152,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
           className="flex items-center gap-2 px-2.5 py-1.5 rounded border border-danger/30 bg-danger/12 text-danger text-xs"
         >
           <AlertTriangle size={12} className="flex-shrink-0" />
-          <span className="truncate">{error}</span>
+          <span className="truncate">{error.text}</span>
         </div>
       )}
 

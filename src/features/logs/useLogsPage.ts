@@ -1,3 +1,4 @@
+import { useMirroredState } from '@/hooks/useMirroredState';
 import { useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
@@ -173,8 +174,7 @@ export function useLogsPage(): LogsPageState {
   const sort: LogSort = search.sort === 'asc' ? 'asc' : 'desc';
 
   // Local mirror of the search box so each keystroke doesn't push history.
-  const [searchDraft, setSearchDraft] = useState(messageQuery);
-  useEffect(() => { setSearchDraft(messageQuery); }, [messageQuery]);
+  const [searchDraft, setSearchDraft] = useMirroredState(messageQuery);
 
   const [showColumns, setShowColumns] = useState(false);
   const [visibleColumns, setVisibleColumns] = useState<LogColumnKey[]>(loadColumnPrefs);

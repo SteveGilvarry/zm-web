@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
@@ -126,19 +126,21 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
   const diffCount = Object.keys(diff).length + (groupsDirty ? 1 : 0);
 
   // Re-validate live once the operator has seen errors, so fixing a field
-  // clears its message without another Save click.
-  useEffect(() => {
-    setFieldErrors((prev) => {
-      if (Object.keys(prev).length === 0) return prev;
+  // clears its message without another Save click. Adjusting state during
+  // render rather than in an effect means the message clears in the same
+  // frame as the keystroke that fixed it.
+  const [validatedDraft, setValidatedDraft] = useState(draft);
+  if (validatedDraft !== draft) {
+    setValidatedDraft(draft);
+    if (Object.keys(fieldErrors).length > 0) {
       const next = validateDraft(tabs, draft, t);
       // Keep backend messages for keys the client cannot judge.
-      for (const [k, msg] of Object.entries(prev)) {
+      for (const [k, msg] of Object.entries(fieldErrors)) {
         if (!(k in next) && k in diff) next[k] = msg;
       }
-      return next;
-    });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [draft]);
+      setFieldErrors(next);
+    }
+  }
 
   const jumpToFirstError = (errors: FieldErrors) => {
     const first = Object.keys(errors)[0];
