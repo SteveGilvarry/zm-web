@@ -5,10 +5,10 @@ import {
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
   ChevronLeft, ChevronRight,
-  Home, Plus, Minus, Focus as FocusIcon, Save, Trash2, AlertTriangle,
+  Home, Plus, Minus, Focus as FocusIcon, Save, Trash2, AlertTriangle, Aperture,
 } from 'lucide-react';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
-import { ptz, type PtzCapabilities, type PtzDirection } from '@/api/ptz';
+import { ptz, type PtzCapabilities, type PtzDirection, type PtzPowerAction } from '@/api/ptz';
 import { useControlPresets } from './useControlPresets';
 
 interface PtzControlsProps {
@@ -62,6 +62,8 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
   };
 
   const pt = caps.pan_tilt;
+  const power = caps.power;
+  const hasPower = power.can_wake || power.can_sleep || power.can_reset || power.can_reboot;
   const presetSlots = Math.min(caps.presets.num_presets ?? 0, 16);
   // Names from `/control_presets`; slots without one show their number.
   const presetLabels = useControlPresets(monitorId, caps.presets.has_presets && presetSlots > 0);
@@ -102,6 +104,24 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
     onPointerUp: () => { if (caps.focus.can_con) run(t('Stop'), ptz.stopFocus(monitorId)); },
     onPointerCancel: () => { if (caps.focus.can_con) run(t('Stop'), ptz.stopFocus(monitorId)); },
   });
+
+  // The iris endpoints take no speed: hold-to-drive when the camera can
+  // (`can_con`, stop on release), a single step otherwise — legacy
+  // `controlIris` binds mousedown/mouseup vs click the same way.
+  const holdIris = (dir: 'open' | 'close') => ({
+    onPointerDown: (e: PointerEvent<HTMLButtonElement>) => {
+      e.currentTarget.setPointerCapture(e.pointerId);
+      run(t('Iris'), ptz.iris(monitorId, dir));
+    },
+    onPointerUp: () => { if (caps.iris.can_con) run(t('Stop'), ptz.stopIris(monitorId)); },
+    onPointerCancel: () => { if (caps.iris.can_con) run(t('Stop'), ptz.stopIris(monitorId)); },
+  });
+
+  const powerButton = (action: PtzPowerAction, label: string) => (
+    <RockerBtn key={action} onClick={() => run(label, ptz.power(monitorId, action))}>
+      <span>{label}</span>
+    </RockerBtn>
+  );
 
   return (
     <div className="space-y-4">
@@ -216,6 +236,52 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
               <span>{t('Far')}</span>
               <ChevronRight size={14} strokeWidth={2.5} />
             </RockerBtn>
+          </div>
+        </Section>
+      )}
+
+      {/* Iris — legacy `controlIris`: Close / Iris (stop, continuous only) /
+          Open, plus Auto when the control has it. Legacy also offers "Man";
+          zm-api has no manual-iris endpoint, so it is not drawn. */}
+      {caps.iris.can && (
+        <Section label={t('Iris')}>
+          <div className="flex gap-2" dir="ltr">
+            <RockerBtn className="flex-1" {...holdIris('close')}>
+              <Minus size={14} strokeWidth={2.5} />
+              <span>{t('Close')}</span>
+            </RockerBtn>
+            {caps.iris.can_con && (
+              <RockerBtn className="flex-1" onClick={() => run(t('Stop'), ptz.stopIris(monitorId))}>
+                <span>{t('Stop')}</span>
+              </RockerBtn>
+            )}
+            {caps.iris.can_auto && (
+              <RockerBtn
+                className="flex-1"
+                variant="state"
+                onClick={() => run(t('Auto iris'), ptz.iris(monitorId, 'auto'))}
+              >
+                <Aperture size={14} strokeWidth={2.5} />
+                <span>{t('Auto')}</span>
+              </RockerBtn>
+            )}
+            <RockerBtn className="flex-1" {...holdIris('open')}>
+              <Plus size={14} strokeWidth={2.5} />
+              <span>{t('Open')}</span>
+            </RockerBtn>
+          </div>
+        </Section>
+      )}
+
+      {/* Power — legacy `controlPower`: Wake / Sleep / Reset / Reboot, each
+          only when the control advertises it. No confirmation, as in legacy. */}
+      {hasPower && (
+        <Section label={t('Power')}>
+          <div className="grid grid-cols-2 gap-2" role="group" aria-label={t('Power')}>
+            {power.can_wake && powerButton('wake', t('Wake'))}
+            {power.can_sleep && powerButton('sleep', t('Sleep'))}
+            {power.can_reset && powerButton('reset', t('Reset'))}
+            {power.can_reboot && powerButton('reboot', t('Reboot'))}
           </div>
         </Section>
       )}

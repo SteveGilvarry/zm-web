@@ -4,7 +4,7 @@ import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
   AlertTriangle, Bell, BellOff, Camera, Image as ImageIcon, Maximize2, Pencil, Play,
-  RefreshCw, Square, Trash2, Video, Volume2, VolumeX,
+  RefreshCw, Square, Video, Volume2, VolumeX, ZoomOut,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -12,7 +12,9 @@ import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import type { PagePropsMap } from '@/skins/types';
 import type { StreamProtocol } from '@/types';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
+import { usePerms } from '@/features/auth/usePerms';
+import { ClassicEventsTable, WATCH_EVENT_COLUMNS } from '@/features/events/ClassicEventsTable';
+import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
 import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
 import { useMonitorEvents } from '@/features/monitors/useMonitorEvents';
@@ -23,7 +25,7 @@ import { PtzControls } from '@/features/ptz/PtzControls';
 import { WatchLoading, WatchNotFound } from '@/skins/modern/layouts/WatchStates';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
-  ClassicButton, ClassicHeader, ClassicIconButton, ClassicPage, ClassicPagination, ClassicSelect,
+  ClassicButton, ClassicHeader, ClassicIconButton, ClassicPage, ClassicSelect,
   ClassicToolbar, classicButtonClass,
 } from '@/skins/classic/components';
 import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
@@ -31,18 +33,21 @@ import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
 /**
  * Watch — classic skin: legacy `?view=watch&mid=`. Header squares, the
  * action row, the stage (+ PTZ column when the camera is controllable), the
- * transport row, and the full paginated events table for this monitor.
+ * transport row, and the newest 20 events for this monitor.
  */
 export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
   const { t } = useTranslation();
   const navigate = useNavigate();
+  const { can } = usePerms();
   const page = useWatchPage(monitorId);
+  // Digital zoom on the received picture (legacy panzoom); the camera is not moved.
+  const { ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom } = usePinchZoom<HTMLDivElement>();
   const [stageAreaRef, availableHeight] = useAvailableHeight<HTMLDivElement>();
   // Feed the measurement back so Auto sizes a portrait camera to the space
   // that is actually left, rather than to a constant.
   const { setAvailableHeight } = page.stage;
   useEffect(() => { setAvailableHeight(availableHeight); }, [availableHeight, setAvailableHeight]);
-  const { monitor, monitorLoading, runtime, alarm, ptzState, protocol, viewMode, stage } = page;
+  const { monitor, monitorLoading, runtime, alarm, ptzState, protocol, viewMode, stage, contentRef } = page;
   const events = useMonitorEvents(monitorId, page.isAuthenticated && !!monitor);
   useDocumentTitle(monitor ? t('Monitor - {{id}} - {{name}}', { id: monitor.id, name: monitor.name }) : t('Watch'));
 
@@ -69,7 +74,8 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
       <ClassicPage>
         <ClassicHeader
           title={t('Monitor - {{id}} - {{name}}', { id: monitor.id, name: monitor.name })}
-          backTo="/"
+          // Legacy: `history.back()`, greyed when there is no page to go back to.
+          backDisabled={!document.referrer}
           onRefresh={page.refresh}
           end={
             <>
@@ -160,6 +166,9 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           </div>
         )}
 
+        {/* Legacy `#content`: what the Fullscreen button fullscreens — stage,
+            PTZ column and the events table, not just the picture. */}
+        <div ref={contentRef} className={clsx('bg-white', page.isFullscreen && 'overflow-auto p-3')}>
         {/* Stage + PTZ column */}
         <div className={clsx('flex flex-col gap-3 items-start', showPtz && 'lg:flex-row')}>
           <div ref={stageAreaRef} className="flex-1 min-w-0 w-full">
@@ -179,14 +188,17 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                   )
                 ) : (
                   <>
-                    <video
-                      ref={videoRef}
-                      className={clsx(stageVideoClass(monitor, page.isFullscreen), !isActive && 'hidden')}
-                      style={stageVideoStyle(monitor, page.isFullscreen)}
-                      autoPlay
-                      muted={page.isMuted}
-                      playsInline
-                    />
+                    {/* Pinch, trackpad-pinch or drag once zoomed; double-click resets. */}
+                    <div ref={zoomRef} style={zoomStyle} className="absolute inset-0" data-testid="watch-zoom">
+                      <video
+                        ref={videoRef}
+                        className={clsx(stageVideoClass(monitor, page.isFullscreen), !isActive && 'hidden')}
+                        style={stageVideoStyle(monitor, page.isFullscreen)}
+                        autoPlay
+                        muted={page.isMuted}
+                        playsInline
+                      />
+                    </div>
                     {isConnecting && (
                       <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white text-sm" role="status">
                         {t('Loading…')}
@@ -224,6 +236,9 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                     })
                   : t('State: {{state}}', { state: isStreaming ? t('Connected') : t('Idle') })}
               </span>
+              {zoomed && (
+                <span className="tabular-nums">{t('Zoom: {{scale}}x', { scale: zoomScale.toFixed(1) })}</span>
+              )}
               <span>{t('{{name}} (id={{id}})', { name: monitor.name, id: monitor.id })}</span>
               <span className="uppercase">{viewMode === 'stills' ? t('Stills') : protocol === 'webrtc' ? 'WebRTC' : 'HLS'}</span>
             </div>
@@ -232,6 +247,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
             <ClassicToolbar label={t('Stream controls')}>
               <ClassicButton icon={<Square size={14} />} onClick={page.stopStream} disabled={viewMode !== 'stream' || !isActive}>{t('Stop')}</ClassicButton>
               <ClassicButton icon={<Play size={14} />} onClick={page.startStream} disabled={viewMode !== 'stream' || isActive || !isEnabled}>{t('Play')}</ClassicButton>
+              <ClassicButton icon={<ZoomOut size={14} />} onClick={resetZoom} disabled={!zoomed}>{t('Zoom Out')}</ClassicButton>
               {hasAudio && (
                 <ClassicButton icon={page.isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />} onClick={page.toggleMute} aria-pressed={!page.isMuted}>
                   {page.isMuted ? t('Unmute') : t('Mute')}
@@ -248,8 +264,9 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
             </ClassicToolbar>
           </div>
 
+          {/* Legacy `canView('Control')`: viewing the panel needs View, not Edit. */}
           {showPtz && (
-            <RequirePerm feature="control" level="Edit">
+            <RequirePerm feature="control" level="View">
               <aside className="w-full lg:w-80 shrink-0 bg-white border border-zinc-300 rounded-sm p-3" aria-label={t('Camera control')}>
                 <h2 className="text-sm font-bold text-zinc-800 mb-2 flex items-center justify-between">
                   {t('Camera control')}
@@ -263,7 +280,8 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           )}
         </div>
 
-        {/* Events for this monitor */}
+        {/* Events for this monitor: legacy `#eventList` — fixed columns, newest
+            20 by Id, no sorting or pager, a trash icon per row. */}
         <section className="mt-4" aria-labelledby="watch-events-heading">
           <ClassicToolbar
             label={t('Events toolbar')}
@@ -274,16 +292,6 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
             }
           >
             <h2 id="watch-events-heading" className="text-sm font-bold text-zinc-800 me-2">{t('Events')}</h2>
-            <RequirePerm feature="events" level="Edit">
-              <ClassicButton
-                tone="danger"
-                icon={<Trash2 size={14} />}
-                disabled={events.selectedIds.size === 0 || events.busy}
-                onClick={events.deleteSelected}
-              >
-                {t('Delete')}
-              </ClassicButton>
-            </RequirePerm>
           </ClassicToolbar>
           <QueryState
             isLoading={events.isLoading}
@@ -297,25 +305,19 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
               <ClassicEventsTable
                 events={events.events}
                 monitorLookup={{ [monitor.id]: monitor.name }}
+                columns={WATCH_EVENT_COLUMNS}
                 selectedIds={events.selectedIds}
                 onToggleSelected={events.toggleSelected}
+                onDeleteRow={can('events', 'Edit') ? events.deleteOne : undefined}
                 token={events.accessToken}
-                sortField={events.sortField}
-                sortDir={events.sortDir}
-                onSort={events.toggleSort}
                 showThumbs={events.showThumbs}
+                thumbsAtEnd
                 thumbWidth={events.thumbWidth}
               />
             </div>
           </QueryState>
-          <ClassicPagination
-            page={events.page}
-            pageSize={events.pageSize}
-            total={events.total}
-            onPage={events.setPage}
-            onPageSize={events.setPageSize}
-          />
         </section>
+        </div>
       </ClassicPage>
 
       {page.editorOpen && <MonitorEditor monitor={monitor} onClose={page.closeEditor} />}

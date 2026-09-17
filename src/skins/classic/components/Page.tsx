@@ -18,6 +18,8 @@ interface ClassicHeaderProps {
   title?: ReactNode;
   /** Route for the blue back arrow; omitted → `history.back()`. */
   backTo?: string;
+  /** Grey out the `history.back()` arrow (legacy: no referrer to go back to). */
+  backDisabled?: boolean;
   onRefresh?: () => void;
   /** Controls at the inline end. */
   end?: ReactNode;
@@ -25,7 +27,7 @@ interface ClassicHeaderProps {
 }
 
 /** Legacy `#header`: back + refresh squares, centred title, end cluster. */
-export function ClassicHeader({ title, backTo, onRefresh, end, children }: ClassicHeaderProps) {
+export function ClassicHeader({ title, backTo, backDisabled = false, onRefresh, end, children }: ClassicHeaderProps) {
   const { t } = useTranslation();
   const square = 'inline-flex items-center justify-center w-9 h-8 rounded-sm border text-white transition-colors';
   return (
@@ -36,7 +38,7 @@ export function ClassicHeader({ title, backTo, onRefresh, end, children }: Class
             <ArrowLeft size={16} className="rtl:-scale-x-100" aria-hidden />
           </Link>
         ) : (
-          <button type="button" onClick={() => window.history.back()} aria-label={t('Back')} title={t('Back')} className={clsx(square, 'bg-[#8a9299] border-[#7b838a] hover:bg-[#6f777e]')}>
+          <button type="button" onClick={() => window.history.back()} disabled={backDisabled} aria-label={t('Back')} title={t('Back')} className={clsx(square, 'bg-[#8a9299] border-[#7b838a] hover:bg-[#6f777e] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#8a9299]')}>
             <ArrowLeft size={16} className="rtl:-scale-x-100" aria-hidden />
           </button>
         )}

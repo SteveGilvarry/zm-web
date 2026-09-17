@@ -243,3 +243,77 @@ describe('useWatchPage', () => {
     expect(result.current.nextMonitorId).toBeNull();
   });
 });
+
+describe('useWatchPage — toggleFullscreen', () => {
+  /** jsdom implements neither half of the Fullscreen API. */
+  function stubFullscreen(element: Element | null) {
+    Object.defineProperty(document, 'fullscreenElement', { configurable: true, value: element });
+    const exit = vi.fn();
+    Object.defineProperty(document, 'exitFullscreen', { configurable: true, value: exit });
+    return exit;
+  }
+  function fullscreenable<T extends HTMLElement>(el: T) {
+    const request = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(el, 'requestFullscreen', { configurable: true, value: request });
+    return request;
+  }
+
+  afterEach(() => {
+    webrtcStream.videoRef.current = null;
+  });
+
+  it('fullscreens the content area, not the video container', async () => {
+    stubFullscreen(null);
+    stubMonitor();
+    const content = document.createElement('div');
+    const contentRequest = fullscreenable(content);
+
+    const container = document.createElement('div');
+    const containerRequest = fullscreenable(container);
+    const video = document.createElement('video');
+    container.appendChild(video);
+    webrtcStream.videoRef.current = video;
+
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.monitor).toBeDefined());
+    result.current.contentRef.current = content;
+
+    act(() => result.current.toggleFullscreen());
+    expect(contentRequest).toHaveBeenCalledTimes(1);
+    // The video's parent is only the fallback; the PTZ panel and the events
+    // table have to come along, so the content area wins.
+    expect(containerRequest).not.toHaveBeenCalled();
+  });
+
+  it("falls back to the video's container when the content area is not mounted", async () => {
+    stubFullscreen(null);
+    stubMonitor();
+    const container = document.createElement('div');
+    const containerRequest = fullscreenable(container);
+    const video = document.createElement('video');
+    container.appendChild(video);
+    webrtcStream.videoRef.current = video;
+
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.monitor).toBeDefined());
+    result.current.contentRef.current = null;
+
+    act(() => result.current.toggleFullscreen());
+    expect(containerRequest).toHaveBeenCalledTimes(1);
+  });
+
+  it('exits instead of re-entering when something is already fullscreen', async () => {
+    const content = document.createElement('div');
+    const contentRequest = fullscreenable(content);
+    const exit = stubFullscreen(content);
+    stubMonitor();
+
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.monitor).toBeDefined());
+    result.current.contentRef.current = content;
+
+    act(() => result.current.toggleFullscreen());
+    expect(exit).toHaveBeenCalledTimes(1);
+    expect(contentRequest).not.toHaveBeenCalled();
+  });
+});

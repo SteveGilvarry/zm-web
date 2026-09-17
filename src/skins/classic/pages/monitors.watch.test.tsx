@@ -5,7 +5,7 @@
  * verbs and the per-monitor events table underneath.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -351,20 +351,37 @@ describe('ClassicMonitorWatchPage', () => {
     expect(within(aside).getByText('ONVIF')).toBeInTheDocument();
   });
 
-  it('lists this monitor events and deletes the selected ones', async () => {
+  it('lists this monitor events in the legacy watch shape and deletes from the row icon', async () => {
     vi.spyOn(window, 'confirm').mockReturnValue(true);
-    stubOk();
+    stubOk({ events: [{ ...EVENT, notes: 'Motion: Zone 1' }] });
     const user = userEvent.setup();
     await mount();
 
     expect(await screen.findByRole('link', { name: '900' })).toBeInTheDocument();
+    // Legacy `#eventList` columns: Notes in, Archived/Monitor/Total Score/Storage out, no sort, no pager.
+    const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
+    expect(headers).toContain('Notes');
+    expect(headers).toContain('Delete');
+    expect(headers).not.toContain('Archived');
+    expect(headers).not.toContain('Monitor');
+    expect(headers).not.toContain('Total Score');
+    expect(headers).not.toContain('Storage');
+    expect(screen.getByText('Motion: Zone 1')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: 'Select event 900' })).toBeNull();
+    expect(screen.queryByRole('button', { name: /sort/i })).toBeNull();
 
-    const del = screen.getAllByRole('button', { name: 'Delete' })[0];
-    expect(del).toBeDisabled();
-    await user.click(screen.getByRole('checkbox', { name: 'Select event 900' }));
-    await waitFor(() => expect(del).toBeEnabled());
-    await user.click(del);
+    await user.click(screen.getByRole('button', { name: 'Delete event 900' }));
     await waitFor(() => expect(deletedEvents).toEqual(['900']));
+  });
+
+  it('shows the PTZ column to a control:View user and disables Back without a referrer', async () => {
+    useAuthStore.setState({ user: { ...VIEWER, perms: { ...VIEWER.perms, control: 'View' } } as UserClaims });
+    stubOk({ ptz: 'ready' });
+    await mount();
+    expect(await screen.findByRole('complementary', { name: 'Camera control' })).toBeInTheDocument();
+    // jsdom has no referrer, which is legacy's "nothing to go back to".
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Zoom Out' })).toBeDisabled();
   });
 
   it('shows the legacy empty message when the monitor has no events', async () => {
@@ -413,6 +430,43 @@ describe('ClassicMonitorWatchPage', () => {
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
     // The editor is a full-screen overlay, not a dialog role — assert its heading.
     expect(await screen.findByRole('heading', { name: 'Edit · Driveway' })).toBeInTheDocument();
+  });
+
+
+  it('digitally zooms the picture on a trackpad pinch and resets from Zoom Out', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+
+    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    const runtime = screen.getByTestId('watch-runtime');
+    const zoomOut = screen.getByRole('button', { name: 'Zoom Out' });
+    // Nothing to zoom out of yet.
+    expect(runtime).not.toHaveTextContent(/Zoom:/);
+    expect(zoomOut).toBeDisabled();
+
+    // A trackpad pinch arrives as a ctrl-key wheel event on the zoom layer.
+    fireEvent.wheel(screen.getByTestId('watch-zoom'), {
+      ctrlKey: true, deltaY: -100, clientX: 0, clientY: 0,
+    });
+
+    // exp(100/200) ≈ 1.65, shown to one decimal like legacy.
+    await waitFor(() => expect(runtime).toHaveTextContent('Zoom: 1.6x'));
+    expect(zoomOut).toBeEnabled();
+
+    await user.click(zoomOut);
+    await waitFor(() => expect(zoomOut).toBeDisabled());
+    expect(runtime).not.toHaveTextContent(/Zoom:/);
+  });
+
+  it('ignores a plain wheel, which is a scroll and not a zoom', async () => {
+    stubOk();
+    await mount();
+
+    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    fireEvent.wheel(screen.getByTestId('watch-zoom'), { deltaY: -100, clientX: 0, clientY: 0 });
+    expect(screen.getByTestId('watch-runtime')).not.toHaveTextContent(/Zoom:/);
+    expect(screen.getByRole('button', { name: 'Zoom Out' })).toBeDisabled();
   });
 
   it('shows the not-found state when the monitor does not exist', async () => {

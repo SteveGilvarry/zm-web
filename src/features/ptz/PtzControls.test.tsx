@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from 'vitest';
-import { act, screen, fireEvent } from '@testing-library/react';
+import { act, screen, fireEvent, within } from '@testing-library/react';
 import { renderWithProviders } from '@/test/render';
 import userEvent from '@testing-library/user-event';
 import type { PtzCapabilities } from '@/api/ptz';
@@ -17,6 +17,9 @@ const ptzMock = {
   gotoPreset: vi.fn().mockResolvedValue({}),
   setPreset: vi.fn().mockResolvedValue({}),
   clearPreset: vi.fn().mockResolvedValue({}),
+  iris: vi.fn().mockResolvedValue({}),
+  stopIris: vi.fn().mockResolvedValue({}),
+  power: vi.fn().mockResolvedValue({}),
 };
 vi.mock('@/api/ptz', () => ({ ptz: ptzMock }));
 
@@ -190,5 +193,126 @@ describe('PtzControls — command failures are shown, not swallowed', () => {
     (up as HTMLElement & { setPointerCapture: () => void }).setPointerCapture = () => {};
     fireEvent.pointerDown(up, { pointerId: 1 });
     expect(await screen.findByRole('alert')).toHaveTextContent('Move: timeout');
+  });
+});
+
+describe('PtzControls — Iris', () => {
+  const irisCaps = (over: Partial<typeof axisOff> = {}) =>
+    fullCaps({ iris: { ...axisOff, can: true, ...over } });
+
+  it('omits the whole section when caps.iris.can=false', () => {
+    renderWithProviders(<PtzControls monitorId={1} capabilities={fullCaps()} />);
+    expect(screen.queryByText('Iris')).toBeNull();
+    expect(screen.queryByRole('button', { name: /^close$/i })).toBeNull();
+    expect(screen.queryByRole('button', { name: /^open$/i })).toBeNull();
+  });
+
+  it('draws Close and Open, but Stop only for a continuous iris', () => {
+    const { unmount } = renderWithProviders(
+      <PtzControls monitorId={1} capabilities={irisCaps()} />,
+    );
+    expect(screen.getByRole('button', { name: /^close$/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^open$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^stop$/i })).toBeNull();
+    unmount();
+
+    renderWithProviders(<PtzControls monitorId={1} capabilities={irisCaps({ can_con: true })} />);
+    expect(screen.getByRole('button', { name: /^stop$/i })).toBeInTheDocument();
+  });
+
+  it('shows Auto only when the control advertises can_auto', () => {
+    // The focus section owns the other Auto button; turn it off so the one
+    // under test is unambiguous.
+    const caps = irisCaps();
+    caps.focus = { ...axisOff };
+    const { unmount } = renderWithProviders(<PtzControls monitorId={1} capabilities={caps} />);
+    expect(screen.queryByRole('button', { name: /^auto$/i })).toBeNull();
+    unmount();
+
+    const autoCaps = irisCaps({ can_auto: true });
+    autoCaps.focus = { ...axisOff };
+    renderWithProviders(<PtzControls monitorId={7} capabilities={autoCaps} />);
+    fireEvent.click(screen.getByRole('button', { name: /^auto$/i }));
+    expect(ptzMock.iris).toHaveBeenCalledWith(7, 'auto');
+  });
+
+  it('continuous iris: hold drives, release stops', () => {
+    renderWithProviders(
+      <PtzControls monitorId={42} capabilities={irisCaps({ can_con: true })} />,
+    );
+    const close = screen.getByRole('button', { name: /^close$/i });
+    fireEvent.pointerDown(close, { pointerId: 1 });
+    expect(ptzMock.iris).toHaveBeenCalledWith(42, 'close');
+
+    fireEvent.pointerUp(close, { pointerId: 1 });
+    expect(ptzMock.stopIris).toHaveBeenCalledWith(42);
+  });
+
+  it('step iris: pointerDown is a single step and release stops nothing', () => {
+    renderWithProviders(<PtzControls monitorId={42} capabilities={irisCaps()} />);
+    const open = screen.getByRole('button', { name: /^open$/i });
+    fireEvent.pointerDown(open, { pointerId: 1 });
+    expect(ptzMock.iris).toHaveBeenCalledWith(42, 'open');
+
+    fireEvent.pointerUp(open, { pointerId: 1 });
+    expect(ptzMock.stopIris).not.toHaveBeenCalled();
+  });
+
+  it('a cancelled pointer stops a continuous iris too', () => {
+    renderWithProviders(
+      <PtzControls monitorId={42} capabilities={irisCaps({ can_con: true })} />,
+    );
+    // Drag off the button and the browser cancels instead of firing pointerup;
+    // without this the iris would keep driving.
+    const close = screen.getByRole('button', { name: /^close$/i });
+    fireEvent.pointerDown(close, { pointerId: 1 });
+    fireEvent.pointerCancel(close, { pointerId: 1 });
+    expect(ptzMock.stopIris).toHaveBeenCalledWith(42);
+  });
+
+  it('the explicit Stop button calls ptz.stopIris', () => {
+    renderWithProviders(
+      <PtzControls monitorId={42} capabilities={irisCaps({ can_con: true })} />,
+    );
+    fireEvent.click(screen.getByRole('button', { name: /^stop$/i }));
+    expect(ptzMock.stopIris).toHaveBeenCalledWith(42);
+  });
+});
+
+describe('PtzControls — Power', () => {
+  const powerCaps = (over: Partial<PtzCapabilities['power']> = {}) =>
+    fullCaps({
+      power: { can_wake: false, can_sleep: false, can_reset: false, can_reboot: false, ...over },
+    });
+
+  it('omits the section when the control can do none of the four', () => {
+    renderWithProviders(<PtzControls monitorId={1} capabilities={powerCaps()} />);
+    expect(screen.queryByRole('group', { name: 'Power' })).toBeNull();
+  });
+
+  it('draws only the actions the control advertises', () => {
+    renderWithProviders(
+      <PtzControls monitorId={1} capabilities={powerCaps({ can_wake: true, can_reboot: true })} />,
+    );
+    const group = screen.getByRole('group', { name: 'Power' });
+    expect(within(group).getAllByRole('button').map((b) => b.textContent)).toEqual(['Wake', 'Reboot']);
+  });
+
+  it.each([
+    ['Wake', 'wake'],
+    ['Sleep', 'sleep'],
+    ['Reset', 'reset'],
+    ['Reboot', 'reboot'],
+  ] as const)('%s calls ptz.power(id, "%s")', async (label, action) => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <PtzControls
+        monitorId={42}
+        capabilities={powerCaps({ can_wake: true, can_sleep: true, can_reset: true, can_reboot: true })}
+      />,
+    );
+    const group = screen.getByRole('group', { name: 'Power' });
+    await user.click(within(group).getByRole('button', { name: label }));
+    expect(ptzMock.power).toHaveBeenCalledWith(42, action);
   });
 });
