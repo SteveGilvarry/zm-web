@@ -185,12 +185,12 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
 /*  Chip — a single multi-select dropdown                                     */
 /* -------------------------------------------------------------------------- */
 
-interface ChipOption {
+export interface ChipOption {
   value: string;
   label: string;
 }
 
-interface ChipProps {
+export interface ChipProps {
   label: string;
   /** Tooltip / placeholder shown when nothing is selected. */
   emptyLabel: string;
@@ -199,7 +199,7 @@ interface ChipProps {
   onChange: (next: string[]) => void;
 }
 
-function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
+export function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

@@ -61,6 +61,7 @@ const EVENT = {
   uploaded: 0, emailed: 1, messaged: 0, executed: 0, notes: 'parcel at the door',
   state_id: 1, orientation: 'ROTATE_0', disk_space: 1_048_576, scheme: 'Medium',
   locked: 0, tags: [{ id: 5, name: 'person' }], storage_id: 1,
+  default_video: '4242-video.mp4',
 };
 
 const MONITOR = {
@@ -132,7 +133,10 @@ function signIn(perms: unknown = ALL_EDIT) {
 }
 
 beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
-beforeEach(() => { signIn(); });
+beforeEach(() => {
+  signIn();
+  useEventPlaybackStore.setState({ replayMode: 'none', scaleByMonitor: {}, showStats: false, rate: 1 });
+});
 afterEach(() => {
   server.resetHandlers();
   calls = [];
@@ -161,7 +165,8 @@ describe('ClassicEventDetailPage — chrome', () => {
     stub();
     await mountAndSettle();
 
-    expect(screen.getByRole('link', { name: 'Back' })).toHaveAttribute('href', '/events');
+    // Back is legacy's `history.back()`, not a link to the list.
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
     expect(screen.getByLabelText('Replay mode')).toBeInTheDocument();
     expect(screen.getByLabelText('Scale')).toBeInTheDocument();
@@ -178,8 +183,8 @@ describe('ClassicEventDetailPage — chrome', () => {
 
     await user.selectOptions(screen.getByLabelText('Playback speed'), '2');
     expect(useEventPlaybackStore.getState().rate).toBe(2);
-    // "2×" is also an <option>; the status line is the bold one.
-    await waitFor(() => expect(screen.getAllByText('2×').some((el) => el.tagName === 'B')).toBe(true));
+    // "2x" is also an <option>; the status line is the bold one.
+    await waitFor(() => expect(screen.getAllByText('2x').some((el) => el.tagName === 'B')).toBe(true));
   });
 
   it('links Frames and Montage Review from the toolbar', async () => {
@@ -192,12 +197,29 @@ describe('ClassicEventDetailPage — chrome', () => {
     expect(review.getAttribute('href')).toContain('monitor_id=1');
   });
 
-  it('offers a download link for the recording', async () => {
+  it('offers a download link titled with the stored file name', async () => {
     stub();
     await mountAndSettle();
     const download = screen.getByRole('link', { name: 'Download' });
     expect(download.getAttribute('href')).toContain('/events/4242/stream/');
     expect(download).toHaveAttribute('download');
+    expect(download).toHaveAttribute('title', 'Download 4242-video.mp4');
+  });
+
+  it('hides Download when the event has no stored video file', async () => {
+    stub({ event: { ...EVENT, default_video: '' } });
+    await mountAndSettle();
+    expect(screen.queryByRole('link', { name: 'Download' })).toBeNull();
+  });
+
+  it('goes back through history rather than to the list', async () => {
+    const user = userEvent.setup();
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    stub();
+    await mountAndSettle();
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(back).toHaveBeenCalled();
+    back.mockRestore();
   });
 });
 
@@ -430,7 +452,7 @@ describe('ClassicEventDetailPage — DVR transport', () => {
     const scale = screen.getByLabelText('Scale') as HTMLSelectElement;
     const otherScale = Array.from(scale.options).find((o) => o.value !== scale.value)!;
     await user.selectOptions(scale, otherScale.value);
-    expect(useEventPlaybackStore.getState().scale).toBe(otherScale.value);
+    expect(useEventPlaybackStore.getState().scaleByMonitor[1]).toBe(otherScale.value);
   });
 
   it('reloads the page from the control-bar refresh button', async () => {
@@ -515,5 +537,151 @@ describe('ClassicEventDetailPage — failure states', () => {
     stub();
     const { container } = await mount();
     expect(container).toBeEmptyDOMElement();
+  });
+});
+
+describe('ClassicEventDetailPage — delete flow', () => {
+  const NEXT = { ...EVENT, id: 4243, start_date_time: '2026-08-21T12:10:00Z' };
+
+  it('plays the next event after a confirmed delete', async () => {
+    const user = userEvent.setup();
+    stub({ neighbours: [NEXT] });
+    await mountAndSettle();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next event' })).toBeEnabled());
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(calls).toEqual([{ method: 'DELETE', path: '/events/4242' }]));
+    expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({
+      to: '/events/$eventId', params: { eventId: '4243' },
+    }));
+  });
+
+  it('stays put with "No more events" when the deleted event was the last', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByTestId('event-replay-message')).toHaveTextContent('No more events');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('deletes without the confirmation on a shift-click', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+
+    await user.keyboard('{Shift>}');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.keyboard('{/Shift}');
+
+    await waitFor(() => expect(calls).toEqual([{ method: 'DELETE', path: '/events/4242' }]));
+    expect(screen.queryByRole('dialog')).toBeNull();
+  });
+
+  it('refuses to delete an archived event and says why', async () => {
+    const user = userEvent.setup();
+    stub({ event: { ...EVENT, archived: 1 } });
+    await mountAndSettle();
+
+    const del = screen.getByRole('button', { name: 'Delete' });
+    expect(del).toBeDisabled();
+    expect(del).toHaveAttribute('title', 'You cannot delete an archived event.');
+
+    // The keyboard route is closed too.
+    await user.keyboard('{Delete}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(calls).toEqual([]);
+  });
+});
+
+describe('ClassicEventDetailPage — frame stepping', () => {
+  it('steps by Length / Frames seconds, and only while paused', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    const video = document.querySelector('video')!;
+    vi.spyOn(video, 'play').mockResolvedValue(undefined);
+    vi.spyOn(video, 'pause').mockImplementation(() => {});
+
+    // 30 s over 100 frames = 0.3 s per frame.
+    const forward = screen.getByRole('button', { name: 'Step Forward' });
+    expect(forward).toBeEnabled();
+    await user.click(forward);
+    expect(video.currentTime).toBeCloseTo(0.3, 5);
+    await user.click(screen.getByRole('button', { name: 'Step Back' }));
+    expect(video.currentTime).toBeCloseTo(0, 5);
+
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.play(video);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Step Forward' })).toBeDisabled());
+    expect(screen.getByRole('button', { name: 'Step Back' })).toBeDisabled();
+  });
+});
+
+describe('ClassicEventDetailPage — replay modes', () => {
+  async function endPlayback() {
+    const { fireEvent } = await import('@testing-library/react');
+    fireEvent.ended(document.querySelector('video')!);
+  }
+
+  it('counts the real gap down before playing the next event', async () => {
+    useEventPlaybackStore.setState({ replayMode: 'all' });
+    stub({ neighbours: [{ ...EVENT, id: 4243, start_date_time: '2026-08-21T12:01:30Z' }] });
+    await mountAndSettle();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next event' })).toBeEnabled());
+
+    await endPlayback();
+    // End 12:00:30, next start 12:01:30 — one minute of wall clock.
+    expect(await screen.findByTestId('event-replay-message'))
+      .toHaveTextContent('00:01:00 to next event.');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('goes straight on when the next event began before this one ended', async () => {
+    useEventPlaybackStore.setState({ replayMode: 'all' });
+    stub({ neighbours: [{ ...EVENT, id: 4243, start_date_time: '2026-08-21T12:00:15Z' }] });
+    await mountAndSettle();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next event' })).toBeEnabled());
+
+    await endPlayback();
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({
+      params: { eventId: '4243' },
+    })));
+    expect(screen.queryByTestId('event-replay-message')).toBeNull();
+  });
+
+  it('shows "No more events" at the end of a replay run', async () => {
+    useEventPlaybackStore.setState({ replayMode: 'gapless' });
+    stub();
+    await mountAndSettle();
+
+    await endPlayback();
+    expect(await screen.findByTestId('event-replay-message')).toHaveTextContent('No more events');
+  });
+
+  it('leaves the player alone in replay mode None', async () => {
+    useEventPlaybackStore.setState({ replayMode: 'none' });
+    stub({ neighbours: [{ ...EVENT, id: 4243, start_date_time: '2026-08-21T12:10:00Z' }] });
+    await mountAndSettle();
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Next event' })).toBeEnabled());
+
+    await endPlayback();
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(screen.queryByTestId('event-replay-message')).toBeNull();
+  });
+});
+
+describe('ClassicEventDetailPage — permissions', () => {
+  it('hides the Zones toggle without System View', async () => {
+    signIn({ iat: 0, exp: 0, user: 'op', perms: { events: 'Edit', system: 'None' } });
+    stub();
+    await mountAndSettle();
+    expect(screen.queryByRole('button', { name: 'Zones' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Stats' })).toBeInTheDocument();
   });
 });

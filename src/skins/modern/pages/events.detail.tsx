@@ -31,6 +31,8 @@ import {
   HardDrive,
   Film,
   LayoutGrid,
+  ChevronsLeft,
+  ChevronsRight,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -42,7 +44,7 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { EventEditForm } from '@/features/events/EventEditForm';
-import { useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
+import { useRateOptions, useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 import { TagChips } from '@/features/events/TagChips';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
@@ -60,6 +62,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
   const { t } = useTranslation();
   const replayModeOptions = useReplayModeOptions();
   const scaleOptions = useScaleOptions();
+  const rateOptions = useRateOptions();
   // Event stamps render through ZoneMinder's own patterns / server zone.
   const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
@@ -74,7 +77,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
     prevEventId, nextEventId, navMonitorId,
     startTime, endTime, downloadUrl, thumbnailUrl, codecHint,
     videoContainerW, videoContainerH, useSwappedRotation, videoElementStyle,
-    playerRef, playerMaxWidthPx, rate, setRate, rateOptions,
+    playerRef, playerMaxWidthPx, rate, setRate,
     storageName, eventData,
   } = s;
 
@@ -206,26 +209,29 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 onChange={(e) => setRate(Number(e.target.value))}
                 className="px-2 py-1 text-sm bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors cursor-pointer"
               >
-                {rateOptions.map((r) => (
-                  <option key={r} value={r}>{r}×</option>
+                {rateOptions.map((o) => (
+                  <option key={o.value} value={o.value}>{o.label}</option>
                 ))}
               </select>
             </label>
 
             <span className="ms-auto" />
 
-            <button
-              type="button"
-              onClick={() => setShowZones(!showZones)}
-              aria-pressed={showZones}
-              className={clsx(
-                'shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
-                showZones ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
-              )}
-            >
-              <Layers size={14} aria-hidden />
-              {showZones ? t('Hide Zones') : t('Show Zones')}
-            </button>
+            {/* Zones are a System-permission view in legacy. */}
+            <RequirePerm feature="system" level="View">
+              <button
+                type="button"
+                onClick={() => setShowZones(!showZones)}
+                aria-pressed={showZones}
+                className={clsx(
+                  'shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs transition-colors',
+                  showZones ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
+              >
+                <Layers size={14} aria-hidden />
+                {showZones ? t('Hide Zones') : t('Show Zones')}
+              </button>
+            </RequirePerm>
 
             <button
               type="button"
@@ -313,6 +319,19 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                   )}
                   </div>
 
+                  {/* Legacy's `.vjsMessage`: the replay run has nowhere left
+                      to go, or is waiting out the real gap to the next event. */}
+                  {(s.noMoreEvents || s.gapCountdown) && (
+                    <p
+                      data-testid="event-replay-message"
+                      className="absolute inset-0 z-10 flex items-center justify-center bg-black/70 text-base text-fg"
+                    >
+                      {s.noMoreEvents
+                        ? t('No more events')
+                        : t('{{time}} to next event.', { time: s.gapCountdown })}
+                    </p>
+                  )}
+
                   {/* Unsupported-codec fallback — HEVC in a browser whose MSE
                       can't decode it. Offer the download instead of a black
                       frame. Takes precedence over the play overlay. */}
@@ -386,20 +405,41 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                           {isPlaying ? <Pause size={18} /> : <Play size={18} />}
                         </button>
 
-                        {/* Skip buttons */}
+                        {/* Rewind / Fast Forward step through the rate list
+                            (legacy DVR row); they only apply while moving. */}
                         <button
-                          onClick={() => s.handleSkip(-10)}
-                          aria-label={t('Back 10 seconds')}
-                          className="p-2 rounded text-white/70 hover:text-white transition-colors"
+                          onClick={s.scanBack}
+                          disabled={!s.canScan}
+                          aria-label={t('Rewind')}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <SkipBack size={16} />
                         </button>
                         <button
-                          onClick={() => s.handleSkip(10)}
-                          aria-label={t('Forward 10 seconds')}
-                          className="p-2 rounded text-white/70 hover:text-white transition-colors"
+                          onClick={s.scanForward}
+                          disabled={!s.canScan}
+                          aria-label={t('Fast Forward')}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
                         >
                           <SkipForward size={16} />
+                        </button>
+
+                        {/* Frame stepping: ±(Length / Frames) s, paused only. */}
+                        <button
+                          onClick={s.stepBack}
+                          disabled={!s.canStep}
+                          aria-label={t('Step Back')}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <ChevronsLeft size={16} className="rtl:-scale-x-100" />
+                        </button>
+                        <button
+                          onClick={s.stepForward}
+                          disabled={!s.canStep}
+                          aria-label={t('Step Forward')}
+                          className="p-2 rounded text-white/70 hover:text-white transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <ChevronsRight size={16} className="rtl:-scale-x-100" />
                         </button>
 
                         {/* Time */}
@@ -726,24 +766,28 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                   </button>
                   </RequirePerm>
 
-                  <a
-                    href={downloadUrl}
-                    download
-                    title={t('Backend generates the MP4 on demand (Range-supported) and streams it as a download.')}
-                    className={clsx(
-                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
-                      'bg-surface border border-border-subtle',
-                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
-                    )}
-                  >
-                    <Download size={14} aria-hidden />
-                    {t('Download Video')}
-                  </a>
+                  {/* No stored video file, no download (legacy hides it). */}
+                  {s.downloadFileName && (
+                    <a
+                      href={downloadUrl}
+                      download
+                      title={t('Download {{file}}', { file: s.downloadFileName })}
+                      className={clsx(
+                        'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                        'bg-surface border border-border-subtle',
+                        'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                      )}
+                    >
+                      <Download size={14} aria-hidden />
+                      {t('Download Video')}
+                    </a>
+                  )}
 
                   <RequirePerm feature="events" level="Edit">
                     <button
-                      onClick={s.requestDelete}
-                      disabled={s.deletePending}
+                      onClick={(e) => s.requestDelete(e.shiftKey)}
+                      disabled={s.deletePending || !s.canDelete}
+                      title={s.deleteBlockedReason ?? undefined}
                       aria-keyshortcuts="Delete"
                       className={clsx(
                         'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',

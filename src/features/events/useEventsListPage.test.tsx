@@ -197,6 +197,35 @@ describe('useEventsListPage', () => {
     expect(eventRequests[0].get('tag_id')).toBe('4');
   });
 
+  it('sends the storage filter as storage_id', async () => {
+    mockSearch = { storage: 2 };
+    stub();
+    renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(eventRequests).toHaveLength(1));
+    expect(eventRequests[0].get('storage_id')).toBe('2');
+    // A named filter means no seeded last hour.
+    expect(eventRequests[0].get('start_time')).toBeNull();
+  });
+
+  it('pushes the storage filter into the group preview AST', async () => {
+    mockSearch = { group: 3, storage: 2 };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({
+          items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toContainEqual(
+      { field: 'storage_id', op: 'eq', value: 2 },
+    );
+  });
+
   it('runs a group filter through /filters/preview with the group\'s monitor ids', async () => {
     mockSearch = { group: 3 };
     stub();
@@ -279,7 +308,7 @@ describe('useEventsListPage', () => {
     mockSearch = { monitor_id: 7, cause: 'Alarm' };
     stub();
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
-    expect(result.current.monitorFilter).toBe(7);
+    expect(result.current.monitorFilter).toEqual([7]);
     expect(result.current.causeFilter).toBe('Alarm');
     await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
@@ -356,15 +385,51 @@ describe('useEventsListPage', () => {
     act(() => result.current.setPageSize(100));
     expect(result.current.pageSize).toBe(100);
     expect(result.current.page).toBe(1);
-    expect(result.current.pageSizeOptions).toEqual([5, 10, 25, 50, 100, 200, 500]);
+    expect(result.current.pageSizeOptions).toEqual([5, 10, 25, 50, 100, 200, 500, 1000]);
+  });
+
+  it('clamps the page size to zm-api\'s 1000 ceiling', async () => {
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.sortField).toBe('start_time'));
+
+    act(() => result.current.setPageSize(5000));
+    expect(result.current.pageSize).toBe(1000);
+    expect(result.current.pageSizeOptions).toEqual([5, 10, 25, 50, 100, 200, 500, 1000]);
   });
 
   it('publishes the monitor filter as the detail page\'s prev/next scope', async () => {
     stub();
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
     await waitFor(() => expect(useEventPlaybackStore.getState().navScope).toEqual({ monitorId: null }));
-    act(() => result.current.setMonitorFilter(4));
+    act(() => result.current.setMonitorFilter([4]));
     expect(useEventPlaybackStore.getState().navScope).toEqual({ monitorId: 4 });
+  });
+
+  it('publishes this list\'s position, order and filters for the event links', async () => {
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events).toHaveLength(2));
+
+    // The seeded last hour counts: `detailSearch` carries the *resolved*
+    // filters, so the detail page can re-fetch this exact page.
+    expect(result.current.detailSearch).toMatchObject({
+      page: 1, page_size: 25, sort: 'start_time', dir: 'asc',
+    });
+    expect(result.current.detailSearch.start).toBe(result.current.dateFilter);
+    expect(result.current.detailSearch.monitor_id).toBeUndefined();
+
+    act(() => result.current.setMonitorFilter([4]));
+    act(() => result.current.setCauseFilter('Motion'));
+    act(() => result.current.setArchivedFilter('archived'));
+    await waitFor(() => expect(result.current.detailSearch).toMatchObject({
+      monitor_id: 4, cause: 'Motion', archived: true,
+    }));
+
+    // Several monitors can only be listed through /filters/preview, which the
+    // detail page cannot page — the monitor filter stays behind.
+    act(() => result.current.setMonitorFilter([4, 7]));
+    await waitFor(() => expect(result.current.detailSearch.monitor_id).toBeUndefined());
   });
 
   it('resets to page 1 when a filter changes and toggles selection', async () => {

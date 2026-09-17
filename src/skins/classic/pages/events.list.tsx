@@ -68,8 +68,16 @@ export default function ClassicEventsListPage() {
               </ClassicFilterField>
             )}
             <ClassicFilterField label={<>{t('Monitor')} <span className="text-zinc-500">=</span></>} htmlFor="ev-monitor">
-              <select id="ev-monitor" value={s.monitorFilter} onChange={(e) => s.setMonitorFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))} className={clsx(classicSelect, 'w-40')}>
-                <option value="all">{t('All Monitors')}</option>
+              {/* Legacy: a chosen multi-select whose placeholder reads "All Monitors"; nothing selected means every monitor. */}
+              <select
+                id="ev-monitor"
+                multiple
+                size={3}
+                title={t('All Monitors')}
+                value={s.monitorFilter.map(String)}
+                onChange={(e) => s.setMonitorFilter(Array.from(e.target.selectedOptions, (o) => Number(o.value)))}
+                className={clsx(classicSelect, 'w-40')}
+              >
                 {s.monitors.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
               </select>
             </ClassicFilterField>
@@ -104,7 +112,7 @@ export default function ClassicEventsListPage() {
           </div>
 
           <div className="pt-4">
-            <BulkActionBar variant="classic" selectedIds={s.selectedIds} onClear={s.clearSelection} />
+            <BulkActionBar variant="classic" selectedIds={s.selectedIds} events={s.events} onClear={s.clearSelection} />
           </div>
         </div>
 
@@ -149,6 +157,7 @@ export default function ClassicEventsListPage() {
               onSort={s.toggleSort}
               showThumbs={s.showThumbs}
               thumbWidth={s.thumbWidth}
+              detailSearch={s.detailSearch}
             />
             <ClassicPager
               page={s.page}

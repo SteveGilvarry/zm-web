@@ -22,7 +22,13 @@ import { toLocalDatetime } from '@/features/reports/datetime';
 import i18next from '@/i18n';
 import type { Monitor, PaginatedResponse, ZmEvent } from '@/types';
 import { eventsToCsv } from './eventsCsv';
-import { termsFromEventsSearch, type EventsSearchParams } from './eventsSearch';
+import {
+  monitorIdsFromSearch,
+  monitorIdsToSearch,
+  termsFromEventsSearch,
+  type EventNavSearch,
+  type EventsSearchParams,
+} from './eventsSearch';
 
 /**
  * Lower bound for the default "last hour" start-time filter. Pulled into a
@@ -67,12 +73,26 @@ export function startTimeToDateInput(iso: string): string {
 
 export type ArchivedFilter = 'all' | 'archived' | 'unarchived';
 
-/** Page sizes offered in the selector (legacy bootstrap-table list). */
-export const EVENTS_PAGE_SIZE_OPTIONS: readonly number[] = [5, 10, 25, 50, 100, 200, 500];
+/**
+ * Page sizes offered in the selector — legacy's bootstrap-table list
+ * (`data-page-list="[5, 10, 25, 50, 100, 200, 500, 1000, All]"` in
+ * `events.php`) minus `All`: zm-api rejects `page_size > 1000` with a 400,
+ * so 1000 is the ceiling and there is nothing to offer past it.
+ */
+export const EVENTS_PAGE_SIZE_OPTIONS: readonly number[] = [5, 10, 25, 50, 100, 200, 500, 1000];
+
+/** zm-api's hard cap on `page_size`; anything larger comes back as a 400. */
+export const EVENTS_PAGE_SIZE_MAX = 1000;
+
+/** Keep a page size (from the selector or a hand-edited URL) inside the cap. */
+export function clampPageSize(n: number): number {
+  if (!Number.isFinite(n) || n <= 0) return EVENTS_PAGE_SIZE_MAX;
+  return Math.min(Math.floor(n), EVENTS_PAGE_SIZE_MAX);
+}
 
 /** Keys that mean "the operator asked for a specific set" (no last-hour default). */
 const FILTER_KEYS: (keyof EventsSearchParams)[] = [
-  'monitor_id', 'group', 'cause', 'archived', 'start', 'end', 'notes', 'tag', 'q',
+  'monitor_id', 'group', 'storage', 'cause', 'archived', 'start', 'end', 'notes', 'tag', 'q',
 ];
 
 export interface EventsListPageState {
@@ -107,8 +127,9 @@ export interface EventsListPageState {
   setSearchQuery: (v: string) => void;
   notesQuery: string;
   setNotesQuery: (v: string) => void;
-  monitorFilter: number | 'all';
-  setMonitorFilter: (v: number | 'all') => void;
+  /** Selected monitor ids; empty means every monitor (legacy's multi-select). */
+  monitorFilter: number[];
+  setMonitorFilter: (ids: number[]) => void;
   groupFilter: number | 'all';
   setGroupFilter: (v: number | 'all') => void;
   /** Substring match on Cause, sent as the API's `cause` param. */
@@ -162,6 +183,12 @@ export interface EventsListPageState {
   filterTerms: FilterTerm[];
   /** Search params for `/filters` that open a new filter seeded with them. */
   filterLinkSearch: { terms: string };
+  /**
+   * Search params every link to an event carries, so Prev / Next on the
+   * detail page walk this list in this order (legacy `filterQuery` +
+   * `sortQuery`).
+   */
+  detailSearch: EventNavSearch;
   /** Download the visible page as CSV (bootstrap-table "Export"). */
   exportCsv: () => void;
 }
@@ -182,6 +209,7 @@ export function groupEventsAst(opts: {
   cause?: string;
   notes?: string;
   eventIds?: number[];
+  storageId?: number;
   sort: EventSortField;
   dir: SortDirection;
 }): { where: FilterAstExpr; sort: { field: EventSortField; dir: SortDirection } } {
@@ -193,6 +221,7 @@ export function groupEventsAst(opts: {
   if (opts.cause) rules.push({ field: 'cause', op: 'like', value: `%${opts.cause}%` });
   if (opts.notes) rules.push({ field: 'notes', op: 'like', value: `%${opts.notes}%` });
   if (opts.eventIds) rules.push({ field: 'id', op: 'in', value: opts.eventIds });
+  if (opts.storageId != null) rules.push({ field: 'storage_id', op: 'eq', value: opts.storageId });
   return { where: { match: 'all', rules }, sort: { field: opts.sort, dir: opts.dir } };
 }
 
@@ -275,8 +304,11 @@ export function useEventsListPage(): EventsListPageState {
     });
   };
 
-  const monitorFilter: number | 'all' = search.monitor_id ?? 'all';
+  const rawMonitorId = search.monitor_id;
+  const monitorFilter = useMemo(() => monitorIdsFromSearch({ monitor_id: rawMonitorId }), [rawMonitorId]);
   const groupFilter: number | 'all' = search.group ?? 'all';
+  // Set by the Storage list's Events link; there is no picker for it.
+  const storageFilter = search.storage;
   const causeFilter = search.cause ?? '';
   const tagFilter: number | 'all' = search.tag ?? 'all';
   const archivedFilter: ArchivedFilter =
@@ -297,7 +329,7 @@ export function useEventsListPage(): EventsListPageState {
   const endFilter = search.end ? dateInputToStartTime(search.end) : '';
 
   const page = search.page ?? 1;
-  const pageSize = search.page_size ?? (configPageSize > 0 ? configPageSize : 25);
+  const pageSize = clampPageSize(search.page_size ?? (configPageSize > 0 ? configPageSize : 25));
   const sortField = search.sort ?? legacySortFieldToApi(configSortField);
   const sortDir = search.dir ?? (configSortOrder.toLowerCase() === 'desc' ? 'desc' : 'asc');
 
@@ -354,17 +386,22 @@ export function useEventsListPage(): EventsListPageState {
   // Every filter is a backend parameter now (zm-api#20), so every one of
   // them is in the query key.
   //
-  // A single monitor goes through `/events`; a group (several monitors) has
-  // no list parameter, so it runs through `/filters/preview` with
-  // `monitor_id in […]` — same paging, sort and ACLs, server-side. Preview
-  // has no tag field, so on that path the tag is resolved to its event ids
-  // first (`/tags/{id}` already pages the events carrying it).
+  // The monitor scope is the Monitor box when anything is picked there,
+  // else the Group's monitors; `null` is every monitor. One monitor goes
+  // through `/events`; several have no list parameter, so they run through
+  // `/filters/preview` with `monitor_id in […]` — same paging, sort and
+  // ACLs, server-side. Preview has no tag field, so on that path the tag is
+  // resolved to its event ids first (`/tags/{id}` already pages the events
+  // carrying it).
   const searchQuery = (search.q ?? '').trim();
   const notesQuery = (search.notes ?? '').trim();
   const causeQuery = causeFilter.trim();
 
-  const useGroupPath = monitorFilter === 'all' && groupMonitorIds !== null;
-  const needTagIds = useGroupPath && tagFilter !== 'all';
+  const monitorScope = monitorFilter.length > 0 ? monitorFilter : groupMonitorIds;
+  // A group keeps its preview path even with one monitor, as before.
+  const usePreviewPath = monitorScope !== null
+    && (monitorScope.length !== 1 || monitorFilter.length === 0);
+  const needTagIds = usePreviewPath && tagFilter !== 'all';
   const { data: tagDetail } = useQuery({
     queryKey: ['tag-events', tagFilter],
     queryFn: () => getTagDetail(tagFilter as number, { page: 1, page_size: 1000 }),
@@ -372,35 +409,38 @@ export function useEventsListPage(): EventsListPageState {
     staleTime: 60_000,
   });
   const groupReady =
-    (!useGroupPath || groupMonitorsData !== undefined) && (!needTagIds || tagDetail !== undefined);
+    (groupFilter === 'all' || groupMonitorsData !== undefined) && (!needTagIds || tagDetail !== undefined);
 
   const { data: eventsData, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: [
-      'events', page, pageSize, monitorFilter, groupMonitorIds, archivedFilter,
+      'events', page, pageSize, monitorScope, archivedFilter,
       dateFilter, endFilter, sortField, sortDir,
       searchQuery, causeQuery, notesQuery, tagFilter, tagDetail?.events.length ?? null,
+      storageFilter ?? null,
     ],
     queryFn: async (): Promise<PaginatedResponse<ZmEvent>> => {
       const archived = archivedFilter === 'all' ? undefined : archivedFilter === 'archived';
-      if (useGroupPath) {
-        if (groupMonitorIds!.length === 0) {
+      if (usePreviewPath) {
+        if (monitorScope!.length === 0) {
           return { items: [], total: 0, current_page: 1, per_page: pageSize, last_page: 1 };
         }
         return previewFilter(groupEventsAst({
-          monitorIds: groupMonitorIds!, archived,
+          monitorIds: monitorScope!, archived,
           startTime: dateFilter || undefined, endTime: endFilter || undefined,
           name: searchQuery || undefined,
           cause: causeQuery || undefined,
           notes: notesQuery || undefined,
           eventIds: needTagIds ? (tagDetail?.events ?? []).map((e) => e.id) : undefined,
+          storageId: storageFilter,
           sort: sortField, dir: sortDir,
         }), { page, page_size: pageSize });
       }
       return getEvents({
         page,
         page_size: pageSize,
-        monitor_id: monitorFilter === 'all' ? undefined : monitorFilter,
+        monitor_id: monitorScope?.[0],
         archived,
+        storage_id: storageFilter,
         start_time: dateFilter || undefined,
         // Legacy "Start Date/Time <=" — the API bounds end_date_time instead,
         // so an event still running at this instant is left out.
@@ -421,12 +461,14 @@ export function useEventsListPage(): EventsListPageState {
   const totalPages = eventsData?.last_page || 1;
   const monitors = useMemo(() => monitorsData?.items || [], [monitorsData]);
 
-  // Tell the event detail page which set Prev/Next should walk: the monitor
-  // this list is filtered to, or every monitor when unfiltered.
+  // Tell the event detail page which set Prev/Next should walk: the one
+  // monitor this list is filtered to, or every monitor otherwise. (The
+  // bulk bar's View button narrows this to the checked ids.)
   const setNavScope = useEventPlaybackStore((s) => s.setNavScope);
+  const navMonitorId = monitorFilter.length === 1 ? monitorFilter[0] : null;
   useEffect(() => {
-    setNavScope({ monitorId: monitorFilter === 'all' ? null : monitorFilter });
-  }, [monitorFilter, setNavScope]);
+    setNavScope({ monitorId: navMonitorId });
+  }, [navMonitorId, setNavScope]);
 
   // Create monitor lookup
   const monitorLookup = useMemo(() => {
@@ -460,8 +502,8 @@ export function useEventsListPage(): EventsListPageState {
   };
 
   // Every filter change resets to page 1, as the old inline handlers did.
-  const setMonitorFilter = (v: number | 'all') =>
-    setSearch({ monitor_id: v === 'all' ? undefined : v, page: undefined });
+  const setMonitorFilter = (ids: number[]) =>
+    setSearch({ monitor_id: monitorIdsToSearch(ids), page: undefined });
   const setGroupFilter = (v: number | 'all') =>
     setSearch({ group: v === 'all' ? undefined : v, page: undefined });
   const setTagFilter = (v: number | 'all') => setSearch({ tag: v === 'all' ? undefined : v, page: undefined });
@@ -476,13 +518,13 @@ export function useEventsListPage(): EventsListPageState {
   const resetFilters = () => {
     setDefaultCleared(true);
     setSearch({
-      monitor_id: undefined, group: undefined, cause: undefined, archived: undefined,
+      monitor_id: undefined, group: undefined, storage: undefined, cause: undefined, archived: undefined,
       start: undefined, end: undefined, notes: undefined, tag: undefined, q: undefined, page: undefined,
     });
   };
   const setPageSize = (n: number) => {
     if (!Number.isFinite(n) || n <= 0) return;
-    setSearch({ page_size: n, page: undefined });
+    setSearch({ page_size: clampPageSize(n), page: undefined });
   };
   const toggleSort = (field: EventSortField) => {
     setSearch(
@@ -511,6 +553,37 @@ export function useEventsListPage(): EventsListPageState {
     [search, dateFilter],
   );
   const filterLinkSearch = useMemo(() => ({ terms: JSON.stringify(filterTerms) }), [filterTerms]);
+
+  // What every link to an event carries, so Prev / Next over there walk this
+  // list in this order (legacy's `filterQuery` + `sortQuery`). The values are
+  // the *resolved* ones — the seeded last hour, the config-driven sort and
+  // page size included — so the detail page can re-fetch this exact page.
+  // Several monitors (or a group) can only be listed through
+  // `/filters/preview`, which the detail page cannot page, so the monitor
+  // filter only travels when it is a single id.
+  const detailSearch = useMemo<EventNavSearch>(() => {
+    const out: EventNavSearch = {
+      monitor_id: monitorFilter.length === 1 ? monitorFilter[0] : undefined,
+      cause: causeFilter || undefined,
+      archived: archivedFilter === 'all' ? undefined : archivedFilter === 'archived',
+      start: dateFilter || undefined,
+      end: endFilter || undefined,
+      notes: search.notes || undefined,
+      tag: tagFilter === 'all' ? undefined : tagFilter,
+      q: search.q || undefined,
+      page,
+      page_size: pageSize,
+      sort: sortField,
+      dir: sortDir,
+    };
+    for (const k of Object.keys(out) as (keyof EventNavSearch)[]) {
+      if (out[k] === undefined) delete out[k];
+    }
+    return out;
+  }, [
+    monitorFilter, causeFilter, archivedFilter, dateFilter, endFilter,
+    search.notes, tagFilter, search.q, page, pageSize, sortField, sortDir,
+  ]);
 
   const hidden = useEventsColumnsStore((s) => s.hidden);
   const exportCsv = () => {
@@ -590,6 +663,7 @@ export function useEventsListPage(): EventsListPageState {
 
     filterTerms,
     filterLinkSearch,
+    detailSearch,
     exportCsv,
   };
 }

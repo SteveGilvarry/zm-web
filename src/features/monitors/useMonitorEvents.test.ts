@@ -37,16 +37,29 @@ function wrapper() {
 }
 
 describe('useMonitorEvents', () => {
-  it('asks for the monitor, newest first, at the configured page size', async () => {
+  it('asks for the monitor, highest Id first, 20 rows (legacy 2 × MAX_EVENTS)', async () => {
     const { result } = renderHook(() => useMonitorEvents(1), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
-    await waitFor(() => expect(result.current.pageSize).toBe(2));
+    expect(result.current.pageSize).toBe(20);
     const last = requests.at(-1)!;
     expect(last.searchParams.get('monitor_id')).toBe('1');
-    expect(last.searchParams.get('sort')).toBe('start_time');
+    expect(last.searchParams.get('sort')).toBe('id');
     expect(last.searchParams.get('direction')).toBe('desc');
+    expect(last.searchParams.get('page_size')).toBe('20');
     expect(result.current.total).toBe(5);
     expect(result.current.accessToken).toBe('tok');
+  });
+
+  it('deleteOne confirms first, and skips the confirm on shift+click', async () => {
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { result } = renderHook(() => useMonitorEvents(1), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events).toHaveLength(2));
+    act(() => result.current.deleteOne(11));
+    expect(confirm).toHaveBeenCalledOnce();
+    expect(deleted).toEqual([]);
+    act(() => result.current.deleteOne(12, true));
+    await waitFor(() => expect(deleted).toEqual(['12']));
+    expect(confirm).toHaveBeenCalledOnce();
   });
 
   it('pages, sorts (same field flips), and resets to page 1 on a sort change', async () => {

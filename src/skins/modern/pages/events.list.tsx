@@ -22,6 +22,7 @@ import { EventsSortBar } from '@/features/events/EventsSortBar';
 import { formatBytes } from '@/lib/format';
 import { formatDuration } from '@/features/events/duration';
 import { useEventsListPage } from '@/features/events/useEventsListPage';
+import { Chip } from '@/features/monitors/MonitorFilterBar';
 import { EventCard } from '../components/EventCard';
 import { EventsTable } from '../components/EventsTable';
 import { ToolbarDisclosure } from '../components/ToolbarDisclosure';
@@ -59,7 +60,7 @@ export default function EventsListPage() {
     sortField, sortDir, toggleSort,
     page, pageSize, pageSizeOptions, setPageSize, totalPages, setPage, prevPage, nextPage,
     selectedIds, toggleSelected, clearSelection, showThumbs, monitorLookup,
-    filterLinkSearch, exportCsv,
+    filterLinkSearch, exportCsv, detailSearch,
   } = state;
   const view = useEventsColumnsStore((st) => st.view);
   const setView = useEventsColumnsStore((st) => st.setView);
@@ -96,17 +97,15 @@ export default function EventsListPage() {
             />
           </div>
 
-          <select
-            aria-label={t('Monitor')}
-            value={monitorFilter}
-            onChange={(e) => setMonitorFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-            className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
-          >
-            <option value="all">{t('All Monitors')}</option>
-            {monitors.map((monitor) => (
-              <option key={monitor.id} value={monitor.id}>{monitor.name}</option>
-            ))}
-          </select>
+          {/* Legacy's Monitor box is a multi-select, so this one is too: a
+              checkbox chip, empty meaning every monitor. */}
+          <Chip
+            label={t('Monitor')}
+            emptyLabel={t('All Monitors')}
+            options={monitors.map((m) => ({ value: String(m.id), label: m.name }))}
+            selected={monitorFilter.map(String)}
+            onChange={(vals) => setMonitorFilter(vals.map(Number))}
+          />
 
           <div role="group" aria-label={t('Archive state')} className="shrink-0 flex items-center gap-0.5 rounded border border-border-subtle p-0.5">
             {(['all', 'unarchived', 'archived'] as const).map((status) => (
@@ -334,6 +333,7 @@ export default function EventsListPage() {
               sortField={sortField}
               sortDir={sortDir}
               onSort={toggleSort}
+              detailSearch={detailSearch}
             />
           ) : (
             <div className="space-y-3">
@@ -346,6 +346,7 @@ export default function EventsListPage() {
                   isSelected={selectedIds.has(event.id)}
                   onToggleSelected={() => toggleSelected(event.id)}
                   showThumbnail={showThumbs}
+                  detailSearch={detailSearch}
                 />
               ))}
             </div>
@@ -353,7 +354,7 @@ export default function EventsListPage() {
         </QueryState>
         </div>
 
-        <BulkActionBar selectedIds={selectedIds} onClear={clearSelection} />
+        <BulkActionBar selectedIds={selectedIds} events={events} onClear={clearSelection} />
 
         {/* Status bar: what this page is showing, and how to leave it. */}
         <div className="flex items-center gap-3 px-3 py-2 shrink-0 border-t border-border-subtle bg-surface text-xs text-fg-dim">

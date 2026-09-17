@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, RefreshCw, Archive, ArchiveRestore, Pencil, ExternalLink, Download, Trash2,
   Film, Info, Layers, LayoutGrid, SkipBack, SkipForward, Rewind, FastForward, Play, Pause,
-  Maximize2, Volume2, VolumeX,
+  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -15,7 +15,7 @@ import { EventEditForm } from '@/features/events/EventEditForm';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
 import { TagChips } from '@/features/events/TagChips';
 import { ZonesOverlay } from '@/features/events/ZonesOverlay';
-import { useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
+import { useRateOptions, useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
 import { formatDurationHms } from '@/features/events/duration';
 import { formatTime, useEventDetailPage } from '@/features/events/useEventDetailPage';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
@@ -38,6 +38,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
   const { t } = useTranslation();
   const replayModeOptions = useReplayModeOptions();
   const scaleOptions = useScaleOptions();
+  const rateOptions = useRateOptions();
   // Event stamps render through ZoneMinder's own patterns / server zone.
   const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
@@ -53,9 +54,11 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
         {/* Dark control bar */}
         <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 bg-[#485563] text-white">
           <div className="flex items-center gap-1">
-            <Link to="/events" className="inline-flex items-center px-2.5 py-1.5 rounded-sm bg-[#e9ecef] border border-[#adb5bd] text-zinc-700" title={t('Back')} aria-label={t('Back')}>
+            {/* Legacy's Back is `history.back()`, not a link to the list —
+                it returns to wherever the operator came from. */}
+            <ClassicButton onClick={() => window.history.back()} title={t('Back')} aria-label={t('Back')}>
               <ArrowLeft size={14} className="rtl:-scale-x-100" />
-            </Link>
+            </ClassicButton>
             <ClassicButton tone="primary" onClick={() => window.location.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
               <RefreshCw size={14} />
             </ClassicButton>
@@ -94,7 +97,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
             <label className="flex items-center gap-1">
               <span className="font-semibold">{t('Rate')}</span>
               <select aria-label={t('Playback speed')} value={s.rate} onChange={(e) => s.setRate(Number(e.target.value))} className={barSelect}>
-                {s.rateOptions.map((r) => <option key={r} value={r}>{r}×</option>)}
+                {rateOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
           </div>
@@ -119,12 +122,20 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   <ExternalLink size={14} />
                   {t('Export')}
                 </ClassicButton>
-                <ClassicLinkButton href={s.downloadUrl} download title={t('Download video')}>
-                  <Download size={14} />
-                  {t('Download')}
-                </ClassicLinkButton>
+                {/* No stored video file, no download (legacy hides it). */}
+                {s.downloadFileName && (
+                  <ClassicLinkButton href={s.downloadUrl} download title={t('Download {{file}}', { file: s.downloadFileName })}>
+                    <Download size={14} />
+                    {t('Download')}
+                  </ClassicLinkButton>
+                )}
                 <RequirePerm feature="events" level="Edit">
-                  <ClassicButton tone="danger" onClick={s.requestDelete} disabled={s.deletePending} title={t('Delete')}>
+                  <ClassicButton
+                    tone="danger"
+                    onClick={(e) => s.requestDelete(e.shiftKey)}
+                    disabled={s.deletePending || !s.canDelete}
+                    title={s.deleteBlockedReason ?? t('Delete')}
+                  >
                     <Trash2 size={14} />
                     {t('Delete')}
                   </ClassicButton>
@@ -137,10 +148,13 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   <Info size={14} />
                   {t('Stats')}
                 </ClassicButton>
-                <ClassicButton onClick={() => s.setShowZones(!s.showZones)} aria-pressed={s.showZones} title={s.showZones ? t('Hide Zones') : t('Show Zones')}>
-                  <Layers size={14} />
-                  {t('Zones')}
-                </ClassicButton>
+                {/* Zones are a System-permission view in legacy. */}
+                <RequirePerm feature="system" level="View">
+                  <ClassicButton onClick={() => s.setShowZones(!s.showZones)} aria-pressed={s.showZones} title={s.showZones ? t('Hide Zones') : t('Show Zones')}>
+                    <Layers size={14} />
+                    {t('Zones')}
+                  </ClassicButton>
+                </RequirePerm>
                 {s.reviewSearch && (
                   <Link to="/montagereview" search={s.reviewSearch} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-sm font-medium bg-[#e9ecef] border-[#adb5bd] text-zinc-800 hover:bg-[#dde1e5]">
                     <LayoutGrid size={14} />
@@ -216,6 +230,15 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     {s.showZones && event.monitor_id > 0 && (
                       <ZonesOverlay monitorId={event.monitor_id} monitorWidth={event.width || 1920} monitorHeight={event.height || 1080} />
                     )}
+                    {/* Legacy's `.vjsMessage`: the replay run has nowhere
+                        left to go, or is waiting out the real gap. */}
+                    {(s.noMoreEvents || s.gapCountdown) && (
+                      <p data-testid="event-replay-message" className="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-lg">
+                        {s.noMoreEvents
+                          ? t('No more events')
+                          : t('{{time}} to next event.', { time: s.gapCountdown })}
+                      </p>
+                    )}
                     {s.playbackMode === 'unsupported' && (
                       <div data-testid="event-unsupported-overlay" className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/80 p-4 text-center text-white text-sm">
                         <p>{s.playbackError ?? t('This video codec is not supported in this browser.')}</p>
@@ -241,11 +264,13 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   {/* DVR controls */}
                   <div dir="ltr" className="flex items-center justify-center gap-1">
                     <button type="button" onClick={s.navPrev} disabled={s.prevEventId == null} className={dvrBtn} title={t('Prev')} aria-label={t('Previous event')}><SkipBack size={18} /></button>
-                    <button type="button" onClick={() => s.handleSkip(-10)} className={dvrBtn} title={t('Rewind')} aria-label={t('Rewind')}><Rewind size={18} /></button>
+                    <button type="button" onClick={s.scanBack} disabled={!s.canScan} className={dvrBtn} title={t('Rewind')} aria-label={t('Rewind')}><Rewind size={18} /></button>
+                    <button type="button" onClick={s.stepBack} disabled={!s.canStep} className={dvrBtn} title={t('Step Back')} aria-label={t('Step Back')}><ChevronsLeft size={18} /></button>
                     <button type="button" onClick={s.handlePlayPause} className={dvrBtn} title={s.isPlaying ? t('Pause') : t('Play')} aria-label={s.isPlaying ? t('Pause') : t('Play')}>
                       {s.isPlaying ? <Pause size={18} /> : <Play size={18} />}
                     </button>
-                    <button type="button" onClick={() => s.handleSkip(10)} className={dvrBtn} title={t('Fast Forward')} aria-label={t('Fast Forward')}><FastForward size={18} /></button>
+                    <button type="button" onClick={s.stepForward} disabled={!s.canStep} className={dvrBtn} title={t('Step Forward')} aria-label={t('Step Forward')}><ChevronsRight size={18} /></button>
+                    <button type="button" onClick={s.scanForward} disabled={!s.canScan} className={dvrBtn} title={t('Fast Forward')} aria-label={t('Fast Forward')}><FastForward size={18} /></button>
                     <button type="button" onClick={s.handleToggleMute} className={dvrBtn} aria-label={s.isMuted ? t('Unmute') : t('Mute')}>{s.isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
                     <button type="button" onClick={s.handleToggleFullscreen} className={dvrBtn} title={t('Fullscreen')} aria-label={t('Fullscreen')}><Maximize2 size={18} /></button>
                     <button type="button" onClick={s.navNext} disabled={s.nextEventId == null} className={dvrBtn} title={t('Next')} aria-label={t('Next event')}><SkipForward size={18} /></button>
@@ -254,7 +279,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   {/* Replay status */}
                   <p className="flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-700">
                     <span>{t('Mode')}: <b>{replayModeOptions.find((o) => o.value === s.replayMode)?.label}</b></span>
-                    <span>{t('Rate')}: <b>{s.rate}×</b></span>
+                    <span>{t('Rate')}: <b>{rateOptions.find((o) => o.value === s.rate)?.label}</b></span>
                     <span>{t('Progress')}: <b>{formatTime(s.currentTime)}</b> / {formatTime(s.duration)}</span>
                     <span>{t('Time')}: <b>{s.startTime ? new Date(s.startTime.getTime() + s.currentTime * 1000).toLocaleTimeString() : '—'}</b></span>
                   </p>

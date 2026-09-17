@@ -27,7 +27,9 @@ export type EventsColumnKey =
   | 'storage'
   | 'disk_space'
   | 'archived'
-  | 'emailed';
+  | 'emailed'
+  /** Legacy watch-page table only; not in `EVENTS_COLUMNS`, so the events list never offers it. */
+  | 'notes';
 
 export interface EventsColumnDef {
   key: EventsColumnKey;
@@ -59,6 +61,16 @@ export const EVENTS_COLUMNS: EventsColumnDef[] = [
   { key: 'max_score',    label: 'Max. Score',   defaultVisible: true },
   { key: 'storage',      label: 'Storage',      defaultVisible: true },
   { key: 'disk_space',   label: 'DiskSpace',    defaultVisible: true },
+];
+
+/**
+ * The legacy watch page's fixed columns (`watch.php` `#eventList`): no
+ * Archived / Emailed / Monitor / Total Score / Storage / DiskSpace, and Notes
+ * between Tags and Start Time. Not part of `EVENTS_COLUMNS`, so the events
+ * list and its column chooser are untouched.
+ */
+export const WATCH_EVENT_COLUMNS: EventsColumnKey[] = [
+  'id', 'name', 'cause', 'tags', 'notes', 'time', 'end', 'duration', 'frames', 'alarm_frames', 'avg_score', 'max_score',
 ];
 
 /** How the modern events list draws its rows. */

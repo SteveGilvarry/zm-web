@@ -16,10 +16,13 @@ export interface BulkProgress {
 
 const IDLE: BulkProgress = { action: null, done: 0, total: 0, failed: [], running: false };
 
+/** Legacy sends `eids[]` ten at a time (events.js `deleteEvents`); so do we. */
+export const BULK_CHUNK_SIZE = 10;
+
 /**
- * Run one request per id, sequentially, and keep going past failures so a
- * single 404 in the middle of a selection does not abandon the rest. Calls
- * `onProgress` after every id; resolves with the failures.
+ * Run one request per id, `BULK_CHUNK_SIZE` at a time, and keep going past
+ * failures so a single 404 in the middle of a selection does not abandon
+ * the rest. Calls `onProgress` after every chunk; resolves with the failures.
  */
 export async function fanOut(
   ids: number[],
@@ -28,13 +31,16 @@ export async function fanOut(
 ): Promise<BulkFailure[]> {
   const failed: BulkFailure[] = [];
   let done = 0;
-  for (const id of ids) {
-    try {
-      await run(id);
-    } catch (e) {
-      failed.push({ id, message: e instanceof Error ? e.message : String(e) });
-    }
-    done += 1;
+  for (let i = 0; i < ids.length; i += BULK_CHUNK_SIZE) {
+    const chunk = ids.slice(i, i + BULK_CHUNK_SIZE);
+    const results = await Promise.allSettled(chunk.map((id) => run(id)));
+    results.forEach((r, j) => {
+      if (r.status === 'rejected') {
+        const e: unknown = r.reason;
+        failed.push({ id: chunk[j], message: e instanceof Error ? e.message : String(e) });
+      }
+    });
+    done += chunk.length;
     onProgress?.(done, failed.slice());
   }
   return failed;

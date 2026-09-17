@@ -67,6 +67,8 @@ export interface EventQueryParams {
    */
   end_time?: string;
   archived?: boolean;
+  /** Only events stored on this storage area (legacy's `StorageId` term). */
+  storage_id?: number;
   alarm_frames_min?: number;
   /** Case-insensitive substring match on `Events.Cause` (zm-api#20). */
   cause?: string;

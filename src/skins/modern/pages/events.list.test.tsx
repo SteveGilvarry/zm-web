@@ -70,6 +70,19 @@ async function openFilters(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: /^Filters/ }));
 }
 
+/** The Monitor chip's button — its accessible name carries the count. */
+function monitorChip() {
+  return screen.getByRole('button', { name: /^Monitor filter/ });
+}
+
+/** Open the Monitor chip and tick each named monitor. */
+async function pickMonitors(user: ReturnType<typeof userEvent.setup>, ...names: string[]) {
+  await user.click(monitorChip());
+  const list = within(screen.getByRole('listbox', { name: 'Monitor options' }));
+  for (const name of names) await user.click(list.getByRole('checkbox', { name }));
+  await user.keyboard('{Escape}');
+}
+
 describe('EventsListPage — modern skin', () => {
   it('renders one row per event with monitor, cause, counts and archive state', async () => {
     renderRoute('/events');
@@ -188,7 +201,7 @@ describe('EventsListPage — modern skin', () => {
     renderRoute('/events?monitor_id=2&cause=Forced%20Web&q=Event&page_size=5&sort=id&dir=desc&group=1');
     await screen.findByRole('link', { name: 'Download video for event 102' });
 
-    expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveValue('2');
+    expect(monitorChip()).toHaveAccessibleName(/1 selected/);
     expect(screen.getByRole('combobox', { name: 'Events per page' })).toHaveValue('5');
     // Two of the URL's filters are behind the disclosure, and the button
     // counts them so they are never applied invisibly.
@@ -312,7 +325,7 @@ describe('EventsListPage — modern skin', () => {
     const { router } = renderRoute('/events');
     await rows();
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '2');
+    await pickMonitors(user, 'Driveway');
     await waitFor(() => expect(router.state.location.search).toEqual({ monitor_id: 2 }));
 
     await openFilters(user);
@@ -335,8 +348,38 @@ describe('EventsListPage — modern skin', () => {
     await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), 'all');
     await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), 'all');
     await user.keyboard('{Escape}');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), 'all');
+    await pickMonitors(user, 'Driveway');
     await waitFor(() => expect(router.state.location.search).toEqual({}), { timeout: 3000 });
+  });
+
+  it('picks several monitors and lists them through /filters/preview', async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(paginated(db.events));
+      }),
+    );
+    const { router } = renderRoute('/events');
+    await rows();
+
+    await pickMonitors(user, 'Front Door', 'Driveway');
+
+    // Both ids ride in the URL, as an array — one id would be a bare number.
+    await waitFor(() =>
+      expect(router.state.location.search).toEqual({ monitor_id: [1, 2] }));
+    expect(monitorChip()).toHaveAccessibleName(/2 selected/);
+
+    // …and several monitors can only be listed through the preview route.
+    await waitFor(() => expect(body).toBeDefined());
+    expect(body).toMatchObject({
+      where: {
+        match: 'all',
+        // Alongside the page's default last-hour bound.
+        rules: expect.arrayContaining([{ field: 'monitor_id', op: 'in', value: [1, 2] }]),
+      },
+    });
   });
 
   it('cycles the archived toggle through the URL', async () => {
@@ -616,12 +659,12 @@ describe('EventsListPage — modern skin', () => {
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'Unarchive' }),
     );
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Unarchive' }));
 
     await waitFor(() => expect(bodies).toEqual([{ archived: false }]));
   });
 
   it('deletes the selection after confirming', async () => {
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const user = userEvent.setup();
     const deleted: string[] = [];
     server.use(
@@ -640,7 +683,8 @@ describe('EventsListPage — modern skin', () => {
         .getByRole('button', { name: 'Delete' }),
     );
 
-    expect(confirmSpy).toHaveBeenCalledWith("Delete 1 event? This can't be undone.");
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Confirmation' });
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(deleted).toEqual(['101']));
     await waitFor(() =>
       expect(screen.queryByRole('link', { name: 'Download video for event 101' })).toBeNull(),
@@ -648,7 +692,6 @@ describe('EventsListPage — modern skin', () => {
   });
 
   it('does not delete when the confirm is dismissed', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     const user = userEvent.setup();
     let deletes = 0;
     server.use(
@@ -665,6 +708,7 @@ describe('EventsListPage — modern skin', () => {
       within(screen.getByRole('region', { name: 'Bulk event actions' }))
         .getByRole('button', { name: 'Delete' }),
     );
+    await user.click(within(await screen.findByRole('dialog')).getByRole('button', { name: 'Cancel' }));
 
     expect(deletes).toBe(0);
     expect(screen.getByRole('region', { name: 'Bulk event actions' })).toBeVisible();

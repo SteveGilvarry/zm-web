@@ -26,5 +26,6 @@ export function useEventsColumnLabels(): Record<EventsColumnKey, string> {
     disk_space: t('DiskSpace'),
     archived: t('Archived'),
     emailed: t('Emailed'),
+    notes: t('Notes'),
   };
 }

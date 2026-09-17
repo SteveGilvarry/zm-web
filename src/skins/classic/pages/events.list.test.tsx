@@ -189,7 +189,12 @@ describe('ClassicEventsListPage — rendering', () => {
     stub();
     await mountAndSettle();
 
-    expect(screen.getByRole('link', { name: 'Event-2' })).toHaveAttribute('href', '/events/2');
+    // The link carries this list's position + order, so Prev / Next on the
+    // detail page walk the same set (legacy `filterQuery` + `sortQuery`).
+    const eventLink = screen.getByRole('link', { name: 'Event-2' });
+    expect(eventLink.getAttribute('href')).toMatch(/^\/events\/2\?/);
+    expect(eventLink.getAttribute('href')).toContain('sort=start_time');
+    expect(eventLink.getAttribute('href')).toContain('page=1');
     expect(screen.getAllByRole('link', { name: 'Front Door' })[0])
       .toHaveAttribute('href', '/monitors/1');
     expect(screen.getByText('Continuous')).toBeInTheDocument();
@@ -281,10 +286,32 @@ describe('ClassicEventsListPage — filters', () => {
     await mountAndSettle();
 
     await user.selectOptions(screen.getByLabelText(/Monitor =/), '2');
-    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue('2'));
+    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue(['2']));
 
     await user.click(screen.getByRole('button', { name: 'Reset filters' }));
-    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue('all'));
+    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue([]));
+  });
+
+  it('keeps two picked monitors in the search and lists them through /filters/preview', async () => {
+    const user = userEvent.setup();
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      previewBody = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json(paged([event(9)], { total: 1 }));
+    }));
+    await mountAndSettle();
+
+    await user.selectOptions(screen.getByLabelText(/Monitor =/), ['1', '2']);
+    await waitFor(() => expect(screen.getByLabelText(/Monitor =/)).toHaveValue(['1', '2']));
+
+    await waitFor(() => expect(previewBody).not.toBeNull());
+    expect(previewBody).toMatchObject({
+      where: { rules: expect.arrayContaining([
+        { field: 'monitor_id', op: 'in', value: [1, 2] },
+      ]) },
+    });
+    expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
   });
 
   it('sends a group filter through /filters/preview with the group\'s monitors', async () => {

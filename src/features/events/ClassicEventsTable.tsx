@@ -1,7 +1,10 @@
+import type { MouseEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
+import { Trash2 } from 'lucide-react';
 import type { ZmEvent } from '@/types';
 import { useEventsColumnsStore, EVENTS_COLUMNS, type EventsColumnKey } from '@/stores/eventsColumns';
+export { WATCH_EVENT_COLUMNS } from '@/stores/eventsColumns';
 import {
   getEventThumbnailUrl,
   type EventSortField,
@@ -14,6 +17,7 @@ import { useLegacyDateTimeFormat } from '@/features/config/useLegacyDateTimeForm
 import { formatDurationHms, sumEventDurations, sumEventDiskSpace } from './duration';
 import { useEventsColumnLabels } from './columnLabels';
 import { COLUMN_SORT_FIELD } from './sortColumns';
+import type { EventNavSearch } from './eventsSearch';
 
 interface ClassicEventsTableProps {
   events: ZmEvent[];
@@ -34,6 +38,24 @@ interface ClassicEventsTableProps {
   showThumbs?: boolean;
   /** `ZM_WEB_LIST_THUMB_WIDTH`, px. */
   thumbWidth?: number;
+  /**
+   * Fixed column set, in order. Bypasses the operator's column-visibility
+   * store — the legacy watch page has its own table shape (`WATCH_EVENT_COLUMNS`).
+   */
+  columns?: EventsColumnKey[];
+  /** Thumbnail as the last column (legacy watch) instead of the first (legacy events). */
+  thumbsAtEnd?: boolean;
+  /**
+   * Per-row trash icon in place of the selection checkbox (legacy watch
+   * table's `Delete` column). `shiftKey` is passed on: legacy skips the
+   * confirmation on shift+click.
+   */
+  onDeleteRow?: (id: number, shiftKey: boolean) => void;
+  /**
+   * List context carried on every event link, so Prev / Next on the detail
+   * page walk this list in this order (legacy `filterQuery` + `sortQuery`).
+   */
+  detailSearch?: EventNavSearch;
 }
 
 const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
@@ -51,7 +73,8 @@ const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
  */
 export function ClassicEventsTable({
   events, monitorLookup, storageName, selectedIds, onToggleSelected, onSetSelected, token,
-  sortField, sortDir = 'asc', onSort, showThumbs = false, thumbWidth = 48,
+  sortField, sortDir = 'asc', onSort, showThumbs = false, thumbWidth = 48, columns, thumbsAtEnd = false, onDeleteRow,
+  detailSearch,
 }: ClassicEventsTableProps) {
   const { t } = useTranslation();
   const labels = useEventsColumnLabels();
@@ -59,7 +82,9 @@ export function ClassicEventsTable({
   const { formatDateTime } = useLegacyDateTimeFormat();
   const fmtTime = (iso: string | null | undefined) => (iso ? formatDateTime(iso) || '—' : '—');
   const hidden = useEventsColumnsStore((s) => s.hidden);
-  const visible: EventsColumnKey[] = EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
+  const visible: EventsColumnKey[] = columns ?? EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
+  const thumbsFirst = showThumbs && !thumbsAtEnd;
+  const thumbsLast = showThumbs && thumbsAtEnd;
 
   const ids = events.map((e) => e.id);
   const allSelected = ids.length > 0 && ids.every((id) => selectedIds.has(id));
@@ -72,7 +97,7 @@ export function ClassicEventsTable({
   const totalDiskSpace = sumEventDiskSpace(events);
 
   const cell = (e: ZmEvent, key: EventsColumnKey) => {
-    const eventLink = { to: '/events/$eventId' as const, params: { eventId: String(e.id) } };
+    const eventLink = { to: '/events/$eventId' as const, params: { eventId: String(e.id) }, search: detailSearch };
     const framesLink = { to: '/events/$eventId/frames' as const, params: { eventId: String(e.id) } };
     switch (key) {
       case 'id':
@@ -113,8 +138,26 @@ export function ClassicEventsTable({
         return storageName ? storageName(e.storage_id) : String(e.storage_id);
       case 'disk_space':
         return e.disk_space != null ? humanFilesize(e.disk_space) : '—';
+      case 'notes':
+        return <span className="text-xs text-zinc-500">{e.notes ?? ''}</span>;
     }
   };
+
+  const thumbCell = (e: ZmEvent) => (
+    <ClassicTd center>
+      <Link to="/events/$eventId" params={{ eventId: String(e.id) }} search={detailSearch}>
+        <img
+          src={getEventThumbnailUrl(e.id, token ?? undefined)}
+          alt={t('Thumbnail for event {{id}}', { id: e.id })}
+          width={thumbWidth}
+          style={{ width: thumbWidth }}
+          className="inline-block h-auto max-w-none"
+          loading="lazy"
+          onError={(ev) => { ev.currentTarget.style.visibility = 'hidden'; }}
+        />
+      </Link>
+    </ClassicTd>
+  );
 
   // Footer: totals under Duration and DiskSpace, blanks elsewhere.
   const footerCell = (key: EventsColumnKey) => {
@@ -131,15 +174,19 @@ export function ClassicEventsTable({
     <ClassicTable testId="classic-events-table">
       <ClassicThead>
         <tr>
-          <ClassicTh center className="w-8">
-            <input
-              type="checkbox"
-              checked={allSelected}
-              onChange={toggleAll}
-              aria-label={t('Select all events')}
-            />
-          </ClassicTh>
-          {showThumbs && <ClassicTh center>{t('Thumbnail')}</ClassicTh>}
+          {onDeleteRow ? (
+            <ClassicTh center className="w-8">{t('Delete')}</ClassicTh>
+          ) : (
+            <ClassicTh center className="w-8">
+              <input
+                type="checkbox"
+                checked={allSelected}
+                onChange={toggleAll}
+                aria-label={t('Select all events')}
+              />
+            </ClassicTh>
+          )}
+          {thumbsFirst && <ClassicTh center>{t('Thumbnail')}</ClassicTh>}
           {visible.map((key) => {
             const field = COLUMN_SORT_FIELD[key];
             return (
@@ -155,6 +202,7 @@ export function ClassicEventsTable({
               </ClassicTh>
             );
           })}
+          {thumbsLast && <ClassicTh center>{t('Thumbnail')}</ClassicTh>}
         </tr>
       </ClassicThead>
       <ClassicTbody>
@@ -167,34 +215,35 @@ export function ClassicEventsTable({
         )}
         {events.map((e) => (
           <tr key={e.id} className={selectedIds.has(e.id) ? '!bg-[#dbeafe]' : undefined}>
-            <ClassicTd center>
-              <input
-                type="checkbox"
-                checked={selectedIds.has(e.id)}
-                onChange={() => onToggleSelected(e.id)}
-                aria-label={t('Select event {{id}}', { id: e.id })}
-              />
-            </ClassicTd>
-            {showThumbs && (
+            {onDeleteRow ? (
               <ClassicTd center>
-                <Link to="/events/$eventId" params={{ eventId: String(e.id) }}>
-                  <img
-                    src={getEventThumbnailUrl(e.id, token ?? undefined)}
-                    alt={t('Thumbnail for event {{id}}', { id: e.id })}
-                    width={thumbWidth}
-                    style={{ width: thumbWidth }}
-                    className="inline-block h-auto max-w-none"
-                    loading="lazy"
-                    onError={(ev) => { ev.currentTarget.style.visibility = 'hidden'; }}
-                  />
-                </Link>
+                <button
+                  type="button"
+                  onClick={(ev: MouseEvent<HTMLButtonElement>) => onDeleteRow(e.id, ev.shiftKey)}
+                  aria-label={t('Delete event {{id}}', { id: e.id })}
+                  title={t('Delete')}
+                  className="text-red-600 hover:text-red-800"
+                >
+                  <Trash2 size={14} aria-hidden />
+                </button>
+              </ClassicTd>
+            ) : (
+              <ClassicTd center>
+                <input
+                  type="checkbox"
+                  checked={selectedIds.has(e.id)}
+                  onChange={() => onToggleSelected(e.id)}
+                  aria-label={t('Select event {{id}}', { id: e.id })}
+                />
               </ClassicTd>
             )}
+            {thumbsFirst && thumbCell(e)}
             {visible.map((key) => (
               <ClassicTd key={key} numeric={NUMERIC.has(key)} className={key === 'time' || key === 'end' ? 'whitespace-nowrap' : undefined}>
                 {cell(e, key)}
               </ClassicTd>
             ))}
+            {thumbsLast && thumbCell(e)}
           </tr>
         ))}
       </ClassicTbody>
@@ -202,8 +251,9 @@ export function ClassicEventsTable({
         <tfoot className="bg-[#f8f9fa] text-zinc-800" data-testid="events-table-footer">
           <tr>
             <ClassicTd />
-            {showThumbs && <ClassicTd />}
+            {thumbsFirst && <ClassicTd />}
             {visible.map(footerCell)}
+            {thumbsLast && <ClassicTd />}
           </tr>
         </tfoot>
       )}

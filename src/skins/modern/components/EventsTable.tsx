@@ -7,6 +7,7 @@ import { getEventThumbnailUrl, getEventVideoUrl, type EventSortField } from '@/a
 import type { ZmEvent } from '@/types';
 import { formatDuration } from '@/features/events/duration';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import type { EventNavSearch } from '@/features/events/eventsSearch';
 
 /**
  * The modern events list, as a table.
@@ -30,6 +31,11 @@ interface EventsTableProps {
   sortField: EventSortField;
   sortDir: 'asc' | 'desc';
   onSort: (field: EventSortField) => void;
+  /**
+   * List context carried on every event link, so Prev / Next on the detail
+   * page walk this list in this order (legacy `filterQuery` + `sortQuery`).
+   */
+  detailSearch?: EventNavSearch;
 }
 
 function thumbnailRotationStyle(orientation?: string | null): CSSProperties | undefined {
@@ -110,6 +116,7 @@ export function EventsTable({
   sortField,
   sortDir,
   onSort,
+  detailSearch,
 }: EventsTableProps) {
   const { t } = useTranslation();
   const { formatDateTime } = useDateTimeFormat();
@@ -181,6 +188,7 @@ export function EventsTable({
                     <Link
                       to="/events/$eventId"
                       params={{ eventId: String(event.id) }}
+                      search={detailSearch}
                       // The image is decorative (the row names the event
                       // twice already), so the link needs its own name.
                       aria-label={t('Event {{id}}', { id: event.id })}
@@ -200,6 +208,7 @@ export function EventsTable({
                   <Link
                     to="/events/$eventId"
                     params={{ eventId: String(event.id) }}
+                    search={detailSearch}
                     className="hover:text-accent transition-colors"
                   >
                     {event.id}
@@ -212,6 +221,7 @@ export function EventsTable({
                   <Link
                     to="/events/$eventId"
                     params={{ eventId: String(event.id) }}
+                    search={detailSearch}
                     className="text-fg hover:text-accent transition-colors inline-flex items-center gap-1.5 max-w-full"
                   >
                     {event.archived === 1 && (

@@ -8,7 +8,7 @@
  * stats panel, and the Download Video tooltip.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -20,10 +20,14 @@ import { useEventPlaybackStore } from '@/stores/eventPlayback';
 // receives its event id as a prop (the route parses it), so only
 // `useNavigate` and `Link` need shims.
 const mockNavigate = vi.fn();
+let mockSearch: Record<string, unknown> = {};
 let currentEventId = '100';
 
 vi.mock('@tanstack/react-router', () => {
   return {
+    // The detail route carries the list's filter + sort; the page under test
+    // gets an empty one unless a case overrides it.
+    useSearch: () => mockSearch,
     useNavigate: () => mockNavigate,
     Link: ({
       children, to, params, ...rest
@@ -68,8 +72,10 @@ beforeEach(() => {
   // Reset session-store between tests so cross-test bleed doesn't change
   // the dropdown defaults.
   useEventPlaybackStore.setState({
-    replayMode: 'single', scale: 'auto', showZones: false, showStats: false,
+    replayMode: 'none', scaleByMonitor: {}, showZones: false, showStats: false, rate: 1,
+    navScope: null,
   });
+  mockSearch = {};
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -186,15 +192,15 @@ async function mount() {
 }
 
 describe('EventDetailPage — playback toolbar', () => {
-  it('renders the replay mode selector with three options', async () => {
+  it('renders the replay mode selector with the four legacy modes', async () => {
     stubBase();
     await mount();
     await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
 
     const select = screen.getByLabelText(/replay mode/i) as HTMLSelectElement;
-    expect(select.value).toBe('single');
+    expect(select.value).toBe('none');
     const options = Array.from(select.options).map((o) => o.value);
-    expect(options).toEqual(['single', 'all', 'gapless']);
+    expect(options).toEqual(['none', 'single', 'all', 'gapless']);
   });
 
   it('persists the replay-mode change to the playback store', async () => {
@@ -207,14 +213,17 @@ describe('EventDetailPage — playback toolbar', () => {
     expect(useEventPlaybackStore.getState().replayMode).toBe('gapless');
   });
 
-  it('renders the scale selector with all seven options', async () => {
+  it('renders the legacy scale list: Auto, Actual, Fit to width and the pixel caps', async () => {
     stubBase();
     await mount();
     await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
 
     const select = screen.getByLabelText(/^scale$/i) as HTMLSelectElement;
     const labels = Array.from(select.options).map((o) => o.textContent?.trim());
-    expect(labels).toEqual(['Auto', '25%', '50%', '75%', '100%', '150%', '200%']);
+    expect(labels).toEqual([
+      'Auto', 'Actual', 'Fit to width',
+      'Max 480px', 'Max 640px', 'Max 800px', 'Max 1024px', 'Max 1280px', 'Max 1600px',
+    ]);
   });
 
   it('renders the codec hint badge with the event default_video', async () => {
@@ -285,6 +294,7 @@ describe('EventDetailPage — prev/next navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/events/$eventId',
       params: { eventId: '101' },
+      search: {},
     });
   });
 
@@ -300,6 +310,7 @@ describe('EventDetailPage — prev/next navigation', () => {
     expect(mockNavigate).toHaveBeenCalledWith({
       to: '/events/$eventId',
       params: { eventId: '99' },
+      search: {},
     });
   });
 });
@@ -357,9 +368,9 @@ describe('EventDetailPage — keyboard shortcuts', () => {
     });
 
     await user.keyboard('{ArrowRight}');
-    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/events/$eventId', params: { eventId: '101' } });
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/events/$eventId', params: { eventId: '101' }, search: {} });
     await user.keyboard('{ArrowLeft}');
-    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/events/$eventId', params: { eventId: '99' } });
+    expect(mockNavigate).toHaveBeenLastCalledWith({ to: '/events/$eventId', params: { eventId: '99' }, search: {} });
 
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
     await user.keyboard(' ');
@@ -423,7 +434,7 @@ describe('EventDetailPage — actions', () => {
     await waitFor(() => expect(screen.queryByTestId('event-edit-form')).toBeNull());
   });
 
-  it('Delete confirms, DELETEs and navigates to the list through the router', async () => {
+  it('Delete confirms, DELETEs and plays the next event', async () => {
     let deleted: string | undefined;
     stubBase();
     server.use(
@@ -437,7 +448,10 @@ describe('EventDetailPage — actions', () => {
     await user.click(await screen.findByRole('button', { name: /delete event/i }));
     await user.click(await screen.findByRole('button', { name: /^delete$/i }));
     await waitFor(() => expect(deleted).toBe('100'));
-    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/events' }));
+    // Legacy `streamNext(true)`: the next event, not back to the list.
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({
+      to: '/events/$eventId', params: { eventId: '101' }, search: {},
+    }));
   });
 
   it('shows the delete error inside the dialog instead of closing it', async () => {
@@ -457,17 +471,18 @@ describe('EventDetailPage — actions', () => {
 });
 
 describe('EventDetailPage — playback speed', () => {
-  it('offers 0.25× to 16× and applies the choice to the <video>', async () => {
+  it('offers the legacy -16x … Stop … 16x list and applies a forward choice to the <video>', async () => {
     stubBase();
     const user = userEvent.setup();
     const { container } = await mount();
     const select = await screen.findByLabelText(/playback speed/i) as HTMLSelectElement;
-    expect(Array.from(select.options).map((o) => o.textContent)).toEqual(
-      ['0.25×', '0.5×', '1×', '2×', '4×', '8×', '16×'],
-    );
-    await user.selectOptions(select, '4');
-    expect(useEventPlaybackStore.getState().rate).toBe(4);
-    await waitFor(() => expect(container.querySelector('video')!.playbackRate).toBe(4));
+    expect(Array.from(select.options).map((o) => o.textContent)).toEqual([
+      '-16x', '-10x', '-5x', '-2x', '-1x', '-1/2x', '-1/4x', 'Stop',
+      '1/4x', '1/2x', '1x', '2x', '5x', '10x', '16x',
+    ]);
+    await user.selectOptions(select, '5');
+    expect(useEventPlaybackStore.getState().rate).toBe(5);
+    await waitFor(() => expect(container.querySelector('video')!.playbackRate).toBe(5));
   });
 });
 
@@ -579,8 +594,8 @@ describe('EventDetailPage — Download Video button', () => {
     // Codec-aware playback (commit 7e1c4c3) moved the download to the
     // Range-supported HLS-adjacent endpoint: /events/{id}/stream/video.mp4.
     expect(link.getAttribute('href')).toMatch(/\/api\/v3\/events\/100\/stream\/video\.mp4/);
-    // Tooltip explains that the backend generates on demand.
-    expect(link.getAttribute('title') ?? '').toMatch(/on demand/i);
+    // Legacy titles the button with the stored file name.
+    expect(link.getAttribute('title') ?? '').toBe('Download 100-video.mp4');
   });
 });
 
@@ -670,5 +685,180 @@ describe('EventDetailPage — rotated-camera playback', () => {
     expect(video.style.transform).toContain('rotate(180deg)');
     // 180° preserves the bounding box, so no absolute positioning swap.
     expect(video.style.position).toBe('');
+  });
+});
+
+/**
+ * Prev / Next follow the set the operator was looking at. Most specific
+ * first: an explicit id list from the list's View button, then the list's
+ * page + sort carried in this URL, then neighbours by time.
+ */
+describe('EventDetailPage — list-context navigation', () => {
+  /** `/events` paged by the `page` query param, two rows to a page. */
+  function stubPages(pages: Record<number, number[]>) {
+    const lastPage = Math.max(...Object.keys(pages).map(Number));
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page') ?? 1);
+        const ids = pages[page] ?? [];
+        return HttpResponse.json({
+          items: ids.map((id) => makeEvent({ id, monitor_id: 1 })),
+          total: 6, per_page: 2, current_page: page, last_page: lastPage,
+        });
+      }),
+    );
+  }
+
+  it('takes the rows either side of this one in the list page the URL names', async () => {
+    const user = userEvent.setup();
+    stubBase();
+    stubPages({ 1: [97, 98], 2: [99, 100], 3: [101, 102] });
+    mockSearch = { page: 2, page_size: 2, sort: 'start_time', dir: 'asc' };
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /next event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      params: { eventId: '101' },
+    }));
+    await user.click(screen.getByRole('button', { name: /previous event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      params: { eventId: '99' },
+    }));
+  });
+
+  it('keeps Prev timewise earlier when the list is sorted newest first', async () => {
+    const user = userEvent.setup();
+    stubBase();
+    stubPages({ 1: [102, 101], 2: [100, 99], 3: [98, 97] });
+    mockSearch = { page: 2, page_size: 2, sort: 'start_time', dir: 'desc' };
+    await mount();
+
+    // Row below in a descending list is the earlier event, so it is Prev.
+    await waitFor(() => expect(screen.getByRole('button', { name: /previous event/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /previous event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      params: { eventId: '99' },
+    }));
+    await user.click(screen.getByRole('button', { name: /next event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      params: { eventId: '101' },
+    }));
+  });
+
+  it('follows the list order for a column legacy does not force ascending', async () => {
+    const user = userEvent.setup();
+    stubBase();
+    stubPages({ 1: [99, 100], 2: [101, 102] });
+    mockSearch = { page: 1, page_size: 2, sort: 'max_score', dir: 'desc' };
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /next event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      params: { eventId: '101' },
+    }));
+  });
+
+  it('carries the list context on to the event it navigates to', async () => {
+    const user = userEvent.setup();
+    stubBase();
+    stubPages({ 1: [99, 100], 2: [101, 102] });
+    mockSearch = { page: 1, page_size: 2, sort: 'start_time', dir: 'asc', cause: 'Motion' };
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /next event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      search: mockSearch,
+    }));
+  });
+
+  it('walks an explicit id list from the list’s View button first', async () => {
+    const user = userEvent.setup();
+    stubBase();
+    stubPages({ 1: [99, 100], 2: [101, 102] });
+    mockSearch = { page: 1, page_size: 2, sort: 'start_time', dir: 'asc' };
+    useEventPlaybackStore.setState({ navScope: { monitorId: null, ids: [42, 100, 77] } });
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled());
+    await user.click(screen.getByRole('button', { name: /next event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      params: { eventId: '77' },
+    }));
+    await user.click(screen.getByRole('button', { name: /previous event/i }));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({
+      params: { eventId: '42' },
+    }));
+  });
+
+  it('plays on arrival when the run was started with autoplay', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    stubBase();
+    useEventPlaybackStore.setState({ navScope: { monitorId: null, ids: [100, 101], autoplay: true } });
+    await mount();
+
+    await waitFor(() => expect(play).toHaveBeenCalled());
+    play.mockRestore();
+  });
+
+  it('does not autoplay without the flag', async () => {
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    stubBase();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(play).not.toHaveBeenCalled();
+    play.mockRestore();
+  });
+});
+
+describe('EventDetailPage — transport and toolbar parity', () => {
+  it('steps by Length / Frames seconds while paused, and not while playing', async () => {
+    const user = userEvent.setup();
+    stubBase({ event: makeEvent({ id: 100, monitor_id: 1, length: 60, frames: 120 }) });
+    await mount();
+    const video = await screen.findByText('Event 100').then(() => document.querySelector('video')!);
+
+    await user.click(screen.getByRole('button', { name: /step forward/i }));
+    expect(video.currentTime).toBeCloseTo(0.5, 5);
+
+    fireEvent.play(video);
+    await waitFor(() => expect(screen.getByRole('button', { name: /step forward/i })).toBeDisabled());
+    expect(screen.getByRole('button', { name: /step back/i })).toBeDisabled();
+  });
+
+  it('shows "No more events" when a replay run reaches the end', async () => {
+    stubBase({ neighbors: [makeEvent({ id: 100, monitor_id: 1 })] });
+    useEventPlaybackStore.setState({ replayMode: 'gapless' });
+    await mount();
+    await screen.findByText('Event 100');
+
+    fireEvent.ended(document.querySelector('video')!);
+    expect(await screen.findByTestId('event-replay-message')).toHaveTextContent('No more events');
+  });
+
+  it('hides Download and blocks Delete for an archived event', async () => {
+    stubBase({ event: makeEvent({ id: 100, monitor_id: 1, archived: 1, default_video: '' }) });
+    await mount();
+    await screen.findByText('Event 100');
+
+    expect(screen.queryByRole('link', { name: /download video/i })).toBeNull();
+    const del = screen.getByRole('button', { name: /delete event/i });
+    expect(del).toBeDisabled();
+    expect(del).toHaveAttribute('title', 'You cannot delete an archived event.');
+  });
+
+  it('hides the Zones toggle without System View', async () => {
+    useAuthStore.setState({
+      accessToken: 'test', refreshToken: 'test', isAuthenticated: true,
+      user: { user: 'op', iat: 0, exp: 0, perms: { events: 'Edit', system: 'None' } } as never,
+    });
+    stubBase();
+    await mount();
+    await screen.findByText('Event 100');
+
+    expect(screen.queryByRole('button', { name: /show zones/i })).toBeNull();
+    useAuthStore.setState({ user: { user: 'admin', iat: 0, exp: 0 } as never });
   });
 });
