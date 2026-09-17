@@ -20,6 +20,9 @@ import { resolve as resolvePath } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 import {
+  makeAiDataset,
+  makeAiModel,
+  makeAiObjectClass,
   makeConfig,
   makeControl,
   makeDaemon,
@@ -197,6 +200,9 @@ const CASES: Array<[name: string, schema: string, value: unknown]> = [
   ['makeMontageLayout', 'MontageLayoutResponse', makeMontageLayout()],
   ['makePtzCapabilities', 'PtzCapabilitiesResponse', makePtzCapabilities()],
   ['makePtzStatus', 'PtzStatusResponse', makePtzStatus()],
+  ['makeAiDataset', 'AiDatasetResponse', makeAiDataset()],
+  ['makeAiModel', 'AiModelResponse', makeAiModel()],
+  ['makeAiObjectClass', 'AiObjectClassResponse', makeAiObjectClass()],
   ['makeDaemon', 'DaemonStatusResponse', makeDaemon()],
   ['makeSystemStats', 'SystemStatsResponse', makeSystemStats()],
   ['makeSystemStatus', 'SystemStatusResponse', makeSystemStatus()],

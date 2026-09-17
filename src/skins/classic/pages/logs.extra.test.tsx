@@ -64,6 +64,14 @@ function stub(opts: { logs?: unknown[]; servers?: unknown[]; total?: number; las
     // `useDateTimeFormat` reads ZM's four date/time rows; blank = locale default.
     http.get('/api/v3/configs/:name', ({ params }) =>
       HttpResponse.json({ name: String(params.name), value: '' })),
+    http.get('/api/v3/configs', () =>
+      HttpResponse.json({
+        items: [{
+          id: 1, name: 'ZM_WEB_REFRESH_LOGS', value: '60', type: 'integer',
+          category: 'web', readonly: 0, private: 0, system: 0,
+        }],
+        total: 1, per_page: 1000, current_page: 1, last_page: 1,
+      })),
   );
 }
 
@@ -266,6 +274,37 @@ describe('ClassicLogsPage — extra paths', () => {
     expect(cells[2]).toHaveTextContent('');
     expect(cells[5]).toHaveTextContent('');
     expect(cells[6]).toHaveTextContent('');
+  });
+
+  it('links every `event NNN` in a message to that event', async () => {
+    stub({
+      logs: [{
+        id: 9, time_key: '1780000000', component: 'zmfilter', pid: 1, level: 0,
+        code: 'INF', message: 'Deleting event 4321 from monitor 1',
+        file: null, line: null, server_id: null,
+      }],
+    });
+    await mount();
+
+    const row = await screen.findByTestId('log-row-9');
+    const link = within(row).getByRole('link', { name: 'event 4321' });
+    expect(link).toHaveAttribute('href', '/events/$eventId');
+    expect(row).toHaveTextContent('Deleting event 4321 from monitor 1');
+  });
+
+  it('toggles auto refresh, starting from ZM_WEB_REFRESH_LOGS', async () => {
+    stub();
+    const user = userEvent.setup();
+    await mount();
+    await screen.findByTestId('log-row-1');
+
+    const toggle = screen.getByRole('button', { name: 'Auto refresh' });
+    await waitFor(() => expect(toggle).toHaveAttribute('aria-pressed', 'true'));
+    expect(toggle).toHaveAttribute('title', 'Auto refresh every 60 seconds');
+
+    await user.click(toggle);
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(toggle).toHaveAttribute('title', 'Auto refresh off');
   });
 
   it('hides Clear Logs from a user without system:Edit', async () => {

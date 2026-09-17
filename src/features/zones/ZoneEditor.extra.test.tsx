@@ -12,6 +12,7 @@ import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { ZoneEditor } from './ZoneEditor';
+import { useToastStore } from '@/components/common/toastStore';
 
 // The live snapshot poller would hammer the backend; the editor works fine
 // with no image behind the polygon.
@@ -31,6 +32,7 @@ beforeEach(() => {
 afterEach(() => {
   server.resetHandlers();
   restorePointerCapture();
+  useToastStore.getState().clear();
 });
 
 /**
@@ -277,5 +279,113 @@ describe('ZoneEditor — vertex handles', () => {
     const handled = fireEvent.contextMenu(vertices(container)[0]);
     // fireEvent returns false once a listener called preventDefault().
     expect(handled).toBe(false);
+  });
+});
+
+describe('ZoneEditor — the point table, the intersection guard and Privacy', () => {
+  it('lists every vertex, and typing a coordinate moves it', async () => {
+    const user = userEvent.setup();
+    stubZones();
+    mount();
+    await waitFor(() => screen.getByText('Driveway'));
+    await user.click(screen.getByText('Driveway'));
+    await waitFor(() => screen.getByText(/4 vertices/i));
+
+    const x1 = screen.getByLabelText('Point 1 X');
+    expect(x1).toHaveValue(100);
+    expect(screen.getByLabelText('Point 3 Y')).toHaveValue(400);
+
+    await user.clear(x1);
+    await user.type(x1, '250');
+    expect(screen.getByLabelText('Point 1 X')).toHaveValue(250);
+  });
+
+  it('clamps a coordinate typed past the frame', async () => {
+    const user = userEvent.setup();
+    stubZones();
+    mount();
+    await waitFor(() => screen.getByText('Driveway'));
+    await user.click(screen.getByText('Driveway'));
+    await waitFor(() => screen.getByText(/4 vertices/i));
+
+    const y1 = screen.getByLabelText('Point 1 Y');
+    await user.clear(y1);
+    await user.type(y1, '5000');
+    // The frame is 1920×1080, so Y stops at 1080.
+    expect(screen.getByLabelText('Point 1 Y')).toHaveValue(1080);
+  });
+
+  it('+ inserts the midpoint to the next vertex and − removes one, down to a triangle', async () => {
+    const user = userEvent.setup();
+    stubZones();
+    mount();
+    await waitFor(() => screen.getByText('Driveway'));
+    await user.click(screen.getByText('Driveway'));
+    await waitFor(() => screen.getByText(/4 vertices/i));
+
+    await user.click(screen.getByRole('button', { name: 'Add a point after point 1' }));
+    await waitFor(() => screen.getByText(/5 vertices/i));
+    // Midpoint of (100,100) and (500,100).
+    expect(screen.getByLabelText('Point 2 X')).toHaveValue(300);
+    expect(screen.getByLabelText('Point 2 Y')).toHaveValue(100);
+
+    await user.click(screen.getByRole('button', { name: 'Remove point 2' }));
+    await waitFor(() => screen.getByText(/4 vertices/i));
+    await user.click(screen.getByRole('button', { name: 'Remove point 2' }));
+    await waitFor(() => screen.getByText(/3 vertices/i));
+    expect(screen.getByRole('button', { name: 'Remove point 1' })).toBeDisabled();
+  });
+
+  it('blocks Save while the edges cross, and says why', async () => {
+    const user = userEvent.setup();
+    stubZones();
+    mount();
+    await waitFor(() => screen.getByText('Driveway'));
+    await user.click(screen.getByText('Driveway'));
+    await waitFor(() => screen.getByText(/4 vertices/i));
+    expect(screen.getByRole('button', { name: /save/i })).toBeEnabled();
+
+    // Swap the last two vertices into a bow tie.
+    const y3 = screen.getByLabelText('Point 3 Y');
+    await user.clear(y3);
+    await user.type(y3, '100');
+    const y4 = screen.getByLabelText('Point 4 Y');
+    await user.clear(y4);
+    await user.type(y4, '400');
+    const x4 = screen.getByLabelText('Point 4 X');
+    await user.clear(x4);
+    await user.type(x4, '500');
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Polygon edges must not intersect');
+    expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+  });
+
+  it('warns that the capture process restarts after saving a Privacy zone', async () => {
+    const user = userEvent.setup();
+    stubZones([{ ...quad, type: 'Privacy' }]);
+    server.use(http.put('/api/v3/zones/:id', () => HttpResponse.json({ ...quad, type: 'Privacy' })));
+    mount();
+    await waitFor(() => screen.getByText('Driveway'));
+    await user.click(screen.getByText('Driveway'));
+    await waitFor(() => screen.getByText(/4 vertices/i));
+
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.some((x) => /capture process/i.test(x.message))).toBe(true));
+  });
+
+  it('says nothing extra after saving a non-Privacy zone', async () => {
+    const user = userEvent.setup();
+    stubZones();
+    server.use(http.put('/api/v3/zones/:id', () => HttpResponse.json(quad)));
+    mount();
+    await waitFor(() => screen.getByText('Driveway'));
+    await user.click(screen.getByText('Driveway'));
+    await waitFor(() => screen.getByText(/4 vertices/i));
+
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(screen.queryByText(/4 vertices/i)).toBeNull());
+    expect(useToastStore.getState().toasts).toHaveLength(0);
   });
 });

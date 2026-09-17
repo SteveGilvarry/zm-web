@@ -11,8 +11,10 @@ import {
   type Zone, type ZoneType, type Point,
 } from '@/api/zones';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
+import { useToast } from '@/components/common/toastStore';
 import { useRefreshingSnapshot } from '@/hooks/useRefreshingSnapshot';
 import { zoneArea } from './zoneArea';
+import { isSelfIntersecting } from './selfIntersects';
 
 interface ZoneEditorProps {
   monitorId: number;
@@ -113,6 +115,7 @@ function zoneTypeHint(type: string, t: TFunction): string {
 export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange }: ZoneEditorProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const toast = useToast();
 
   const zonesQ = useQuery({
     queryKey: ['zones', monitorId],
@@ -169,6 +172,9 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
     select(null);
   };
 
+  // Legacy blocks Save while the edges cross (`zone.js:16-20`), and says why.
+  const selfIntersecting = draft ? isSelfIntersecting(draft.points) : false;
+
   // Live area of the polygon being dragged; a draft has no stored area yet.
   const draftArea = draft
     ? zoneArea(
@@ -213,8 +219,16 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
       } else {
         await updateZone(draft.id, { name: draft.name, polygon: coords });
       }
+      // Returned, not read off `draft`: by the time this settles the
+      // selection has moved on.
+      return draft.type;
     },
-    onSuccess: () => {
+    onSuccess: (savedType) => {
+      // Legacy alerts on every Privacy-zone save (`zone.js:521`): the capture
+      // process has to restart before the blackout changes on the stream.
+      if (savedType === 'Privacy') {
+        toast.info(t('Capture process for this monitor will be restarted for the Privacy zone changes to take effect.'));
+      }
       invalidate();
       clearSelection();
     },
@@ -369,6 +383,19 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
               {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}
             </div>
 
+            <PointTable
+              points={draft.points}
+              maxX={width}
+              maxY={height}
+              onChange={(points) => setDraft({ ...draft, points })}
+            />
+
+            {selfIntersecting && (
+              <p role="alert" className="text-xs text-danger">
+                {t('Polygon edges must not intersect')}
+              </p>
+            )}
+
             <div className="flex items-center justify-end gap-2 pt-1">
               {draft.id != null && (
                 <button
@@ -386,7 +413,7 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
               <button
                 type="button"
                 onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending || draft.points.length < 3 || !draft.name.trim()}
+                disabled={saveMutation.isPending || draft.points.length < 3 || !draft.name.trim() || selfIntersecting}
                 className={buttonClasses('primary', 'sm')}
               >
                 <Save size={10} />
@@ -397,6 +424,93 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
         )}
       </div>
     </div>
+  );
+}
+
+/**
+ * Legacy's point table (`zone.php:371-405`, built by `drawZonePoints`):
+ * one row per vertex with X and Y as numbers, `+` inserting the midpoint
+ * between this vertex and the next (wrapping at the end, `zone.js:399`) and
+ * `−` deleting it. The canvas and this table edit the same array, so
+ * dragging a handle moves the numbers and typing a number moves the handle.
+ */
+function PointTable({ points, maxX, maxY, onChange }: {
+  points: Point[];
+  maxX: number;
+  maxY: number;
+  onChange: (points: Point[]) => void;
+}) {
+  const { t } = useTranslation();
+  const clamp = (v: number, hi: number) => Math.min(Math.max(v, 0), hi);
+  const setCoord = (i: number, axis: 'x' | 'y', raw: string) => {
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return;
+    const next = points.slice();
+    next[i] = { ...next[i], [axis]: clamp(n, axis === 'x' ? maxX : maxY) };
+    onChange(next);
+  };
+
+  return (
+    <table className="w-full text-xs tabular-nums" aria-label={t('Points')}>
+      <thead>
+        <tr className="text-fg-dim">
+          <th scope="col" className="text-start font-normal w-6">{t('Point')}</th>
+          <th scope="col" className="text-start font-normal">{t('X')}</th>
+          <th scope="col" className="text-start font-normal">{t('Y')}</th>
+          <th scope="col" className="text-end font-normal w-12">{t('Action')}</th>
+        </tr>
+      </thead>
+      <tbody>
+        {points.map((pt, i) => (
+          <tr key={i}>
+            <td className="text-fg-dim">{i + 1}</td>
+            <td className="pe-1">
+              <input
+                type="number"
+                step="any"
+                min={0}
+                max={maxX}
+                value={Math.round(pt.x * 100) / 100}
+                aria-label={t('Point {{n}} X', { n: i + 1 })}
+                onChange={(e) => setCoord(i, 'x', e.target.value)}
+                className={clsx('w-full', fieldClasses('sm'))}
+              />
+            </td>
+            <td className="pe-1">
+              <input
+                type="number"
+                step="any"
+                min={0}
+                max={maxY}
+                value={Math.round(pt.y * 100) / 100}
+                aria-label={t('Point {{n}} Y', { n: i + 1 })}
+                onChange={(e) => setCoord(i, 'y', e.target.value)}
+                className={clsx('w-full', fieldClasses('sm'))}
+              />
+            </td>
+            <td className="text-end whitespace-nowrap">
+              <button
+                type="button"
+                aria-label={t('Add a point after point {{n}}', { n: i + 1 })}
+                onClick={() => onChange(insertMidpoint(points, i))}
+                className="px-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2"
+              >
+                +
+              </button>
+              <button
+                type="button"
+                aria-label={t('Remove point {{n}}', { n: i + 1 })}
+                disabled={points.length <= 3}
+                onClick={() => onChange(points.filter((_, j) => j !== i))}
+                className="px-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 disabled:opacity-40"
+              >
+                −
+              </button>
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
   );
 }
 

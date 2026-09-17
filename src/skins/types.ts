@@ -21,6 +21,9 @@ export type SkinId = 'modern' | 'classic';
 
 export type ColorScheme = 'light' | 'dark';
 
+/** The three AI admin tabs legacy splits across `_options_ai_*.php`. */
+export type AiSection = 'datasets' | 'models' | 'classes';
+
 /** Every routed page in the app. Add here first, then to each skin's pages/. */
 export type PageKey =
   | 'login'
@@ -45,7 +48,9 @@ export type PageKey =
   | 'settings.servers'
   | 'settings.storage'
   | 'settings.state'
-  | 'settings.ptzControls';
+  | 'settings.ptzControls'
+  | 'settings.apiTokens'
+  | 'settings.ai';
 
 /** Props a route passes into a page. Pages without params take `{}`. */
 export interface PagePropsMap {
@@ -72,6 +77,8 @@ export interface PagePropsMap {
   'settings.storage': Record<never, never>;
   'settings.state': Record<never, never>;
   'settings.ptzControls': Record<never, never>;
+  'settings.apiTokens': Record<never, never>;
+  'settings.ai': { section: AiSection };
 }
 
 export type PageComponent<K extends PageKey> = ComponentType<PagePropsMap[K]>;

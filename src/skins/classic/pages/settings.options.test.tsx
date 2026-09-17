@@ -84,7 +84,12 @@ describe('Classic Options page', () => {
     await waitFor(() => expect(screen.getByText('Authenticate user logins')).toBeInTheDocument());
     const rail = screen.getByRole('navigation', { name: 'Options' });
     const labels = within(rail).getAllByRole('listitem').map((li) => li.textContent);
-    expect(labels).toEqual(['Display', 'System', 'Servers', 'Storage', 'Web', 'Control', 'MQTT', 'Users', 'Groups', 'Run State']);
+    expect(labels).toEqual([
+      'Display', 'System', 'API', 'Servers', 'Storage', 'Web', 'Control', 'MQTT',
+      'Users', 'Groups', 'AI Datasets', 'AI Models', 'AI Classes', 'Run State',
+    ]);
+    expect(within(rail).getByRole('link', { name: 'API' })).toHaveAttribute('href', '/settings/api-tokens');
+    expect(within(rail).getByRole('link', { name: 'AI Models' })).toHaveAttribute('href', '/settings/ai/models');
     expect(within(rail).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/settings/users');
     expect(within(rail).getByRole('link', { name: 'Groups' })).toHaveAttribute('href', '/groups');
     // bandwidth rows never show, even under "All"

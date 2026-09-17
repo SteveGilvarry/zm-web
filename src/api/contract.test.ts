@@ -92,6 +92,23 @@ const CALLS: Record<string, Record<string, Call>> = {
     logout: { args: ['tok'] },
     refreshToken: { args: ['tok'] },
   },
+  ai: {
+    listAiDatasets: { args: [] },
+    getAiDataset: { args: [1] },
+    createAiDataset: { args: [{ name: 'COCO', num_classes: 80 }] },
+    updateAiDataset: { args: [1, { name: 'COCO' }] },
+    deleteAiDataset: { args: [1] },
+    listAiModels: { args: [] },
+    getAiModel: { args: [1] },
+    createAiModel: { args: [{ name: 'yolov8n', framework: 'ONNX' }] },
+    updateAiModel: { args: [1, { enabled: 0 }] },
+    deleteAiModel: { args: [1] },
+    listAiObjectClasses: { args: [{ dataset_id: 1 }] },
+    getAiObjectClass: { args: [1] },
+    createAiObjectClass: { args: [{ dataset_id: 1, class_name: 'person', class_index: 0 }] },
+    updateAiObjectClass: { args: [1, { class_name: 'person' }] },
+    deleteAiObjectClass: { args: [1] },
+  },
   configs: {
     getConfigs: { args: [] },
     getConfig: { args: ['ZM_WEB_TITLE'] },
@@ -288,6 +305,9 @@ const CALLS: Record<string, Record<string, Call>> = {
     getTagDetail: { args: [1] },
     attachTag: { args: [1, 2] },
     detachTag: { args: [1, 2] },
+  },
+  userPreferences: {
+    listUserPreferences: { args: [] },
   },
   users: {
     getUsers: { args: [] },

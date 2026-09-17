@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Download, RefreshCw, Trash2 } from 'lucide-react';
+import { ArrowLeft, Download, RefreshCw, RefreshCwOff, Trash2 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -10,11 +10,12 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { LOG_LEVEL, levelLabel, type LogEntry } from '@/api/logs';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { LEVEL_CHIPS, useLogTimeFormat, useLogsPage } from '@/features/logs/useLogsPage';
+import { LogMessage } from '@/features/logs/LogMessage';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicFilterField, ClassicPager, ClassicTable, ClassicTh, ClassicThead, ClassicToolbar,
 } from '@/skins/classic/components/events/primitives';
-import { classicInput, classicSelect } from '@/skins/classic/components/events/styles';
+import { classicInput, classicLink, classicSelect } from '@/skins/classic/components/events/styles';
 
 /** Level dropdown labels by chip code (kept literal for the extractor). */
 function useChipLabel(): (code: string) => string {
@@ -131,6 +132,18 @@ export default function ClassicLogsPage() {
             </ClassicButton>
             <ClassicButton tone="primary" onClick={s.refetch} aria-label={t('Refresh')} title={t('Refresh')}>
               <RefreshCw size={14} className={clsx(isFetching && 'animate-spin')} aria-hidden />
+            </ClassicButton>
+            <ClassicButton
+              onClick={s.toggleAutoRefresh}
+              aria-pressed={s.autoRefresh}
+              aria-label={t('Auto refresh')}
+              title={s.autoRefresh
+                ? t('Auto refresh every {{count}} second', { count: s.refreshSeconds })
+                : t('Auto refresh off')}
+            >
+              {s.autoRefresh
+                ? <RefreshCw size={14} aria-hidden />
+                : <RefreshCwOff size={14} aria-hidden />}
             </ClassicButton>
             <RequirePerm feature="system" level="Edit">
               <ClassicButton tone="danger" onClick={s.askClear} disabled={s.clearing} title={t('Clear Logs')}>
@@ -271,7 +284,9 @@ function LogRow({ log, formatLogTime }: { log: LogEntry; formatLogTime: (timeKey
       <td className={clsx(cell, 'whitespace-nowrap')} title={levelLabel(log.level)}>
         {log.code || levelLabel(log.level)}
       </td>
-      <td className={clsx(cell, 'whitespace-pre-wrap break-words')}>{log.message}</td>
+      <td className={clsx(cell, 'whitespace-pre-wrap break-words')}>
+        <LogMessage message={log.message} className={classicLink} />
+      </td>
       <td className={clsx(cell, 'whitespace-nowrap')}>{log.file ?? ''}</td>
       <td className={clsx(cell, 'whitespace-nowrap text-end tabular-nums')}>{log.line ?? ''}</td>
     </tr>

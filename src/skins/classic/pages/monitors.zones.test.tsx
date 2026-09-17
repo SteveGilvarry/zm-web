@@ -232,6 +232,18 @@ describe('ClassicMonitorZonesPage', () => {
     await waitFor(() => expect(screen.getByTestId('zones-picture')).toBeInTheDocument());
   });
 
+  it('opens a zone by clicking its polygon on the picture, as legacy does', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+
+    await waitFor(() => expect(screen.getByTestId('zones-picture')).toBeInTheDocument());
+    await user.click(screen.getByTestId('zone-polygon-12'));
+
+    expect(await screen.findByText('Edit zone')).toBeInTheDocument();
+    expect(screen.queryByTestId('zones-picture')).toBeNull();
+  });
+
   it('shows the opened zone\'s legacy motion settings, read-only', async () => {
     stubOk();
     const user = userEvent.setup();

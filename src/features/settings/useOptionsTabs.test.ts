@@ -51,10 +51,13 @@ describe('useOptionsTabs', () => {
   it('builds the legacy rail from the category counts, dropping hidden ones', async () => {
     stub('0');
     const { result } = renderHook(() => useOptionsTabs(), { wrapper: wrapper() });
-    await waitFor(() => expect(result.current.length).toBeGreaterThan(7));
+    // There are enough page tabs to clear any length threshold before the
+    // categories land, so wait for a category tab specifically.
+    await waitFor(() => expect(result.current.some((tab) => tab.kind === 'category')).toBe(true));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'system', 'servers', 'storage', 'web', 'control', 'users', 'groups', 'state',
+      'display', 'system', 'api', 'servers', 'storage', 'web', 'control', 'users', 'groups',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
     expect(result.current.find((tab) => tab.key === 'system'))
       .toEqual({ kind: 'category', key: 'system', category: 'system' });
@@ -90,7 +93,8 @@ describe('useOptionsTabs', () => {
     await new Promise((r) => setTimeout(r, 30));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'servers', 'storage', 'control', 'users', 'groups', 'state',
+      'display', 'api', 'servers', 'storage', 'control', 'users', 'groups',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 

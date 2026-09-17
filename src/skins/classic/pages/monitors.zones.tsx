@@ -108,6 +108,12 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
                             fillOpacity={0.25}
                             stroke={colour}
                             strokeWidth={Math.max(2, frame.width / 400)}
+                            // Legacy `zones.js:17` opens the zone you click on
+                            // the picture. Not focusable: the table's name
+                            // button is the keyboard route to the same editor.
+                            onClick={() => page.openEditor(z.id)}
+                            style={{ cursor: 'pointer' }}
+                            data-testid={`zone-polygon-${z.id}`}
                           >
                             <title>{z.name}</title>
                           </polygon>
