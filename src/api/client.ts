@@ -115,9 +115,68 @@ export function shouldRetryQuery(failureCount: number, error: unknown, maxRetrie
  */
 export function retryDelayForError(failureCount: number, error: unknown): number {
   if (error instanceof ApiClientError && error.retryAfterMs != null) {
-    return Math.min(error.retryAfterMs, 30_000);
+    return Math.min(Math.max(error.retryAfterMs, MIN_RATE_LIMIT_WAIT_MS), 30_000);
   }
   return Math.min(1000 * 2 ** failureCount, 30_000);
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Rate-limit gate                                                           */
+/* -------------------------------------------------------------------------- */
+
+/**
+ * A 429 is per client, not per request. When one query hears "slow down",
+ * every other query still in flight or about to start is behind the same
+ * bucket, and tower_governor (zm-api's limiter) extends the penalty for each
+ * request that arrives during it. Left to themselves, twelve queries retrying
+ * independently turn a four-second pause into a minute of 429s.
+ *
+ * So the client keeps one gate: a 429 closes it for `Retry-After` (never less
+ * than a second — the box answers `retry-after: 0` when the next token is
+ * under a second away, and "0" as a delay is the loop), and for a short
+ * cool-down afterwards requests are released one at a time, spaced out, so
+ * the reopened gate does not fire the whole page at the bucket at once.
+ */
+export const MIN_RATE_LIMIT_WAIT_MS = 1000;
+/** Gap between released requests while cooling down after a 429. */
+export const RATE_LIMIT_RELEASE_SPACING_MS = 200;
+/** How long after the last 429 the spacing applies. */
+export const RATE_LIMIT_COOLDOWN_MS = 10_000;
+
+let rateLimitedUntil = 0;
+let lastRateLimitAt = -Infinity;
+let nextReleaseAt = 0;
+
+/** Record a 429: close the gate until the server's `Retry-After` has passed. */
+export function noteRateLimited(retryAfterMs: number | undefined, now = Date.now()): void {
+  const wait = Math.max(retryAfterMs ?? 0, MIN_RATE_LIMIT_WAIT_MS);
+  rateLimitedUntil = Math.max(rateLimitedUntil, now + wait);
+  lastRateLimitAt = now;
+}
+
+/**
+ * How long the next request must wait before it may be sent, and reserve
+ * its slot. Zero when no 429 has been seen recently.
+ */
+export function reserveRateLimitSlot(now = Date.now()): number {
+  let at = Math.max(now, rateLimitedUntil);
+  if (now - lastRateLimitAt < RATE_LIMIT_COOLDOWN_MS) {
+    at = Math.max(at, nextReleaseAt);
+    nextReleaseAt = at + RATE_LIMIT_RELEASE_SPACING_MS;
+  }
+  return at - now;
+}
+
+/** Test hook: forget any 429 the gate has seen. */
+export function resetRateLimitGate(): void {
+  rateLimitedUntil = 0;
+  lastRateLimitAt = -Infinity;
+  nextReleaseAt = 0;
+}
+
+async function waitForRateLimitGate(): Promise<void> {
+  const delay = reserveRateLimitSlot();
+  if (delay > 0) await new Promise<void>((resolve) => setTimeout(resolve, delay));
 }
 
 /**
@@ -160,14 +219,12 @@ async function handleResponse<T>(response: Response): Promise<T> {
       // Response wasn't JSON
     }
 
-    throw new ApiClientError(
-      errorMessage,
-      response.status,
-      details,
-      response.status === 429
-        ? parseRetryAfter(response.headers.get('retry-after') ?? response.headers.get('x-ratelimit-after'))
-        : undefined,
-    );
+    const retryAfterMs = response.status === 429
+      ? parseRetryAfter(response.headers.get('retry-after') ?? response.headers.get('x-ratelimit-after'))
+      : undefined;
+    if (response.status === 429) noteRateLimited(retryAfterMs);
+
+    throw new ApiClientError(errorMessage, response.status, details, retryAfterMs);
   }
 
   // Handle 204 No Content
@@ -201,6 +258,7 @@ function getAuthHeaders(): HeadersInit {
  * error and the root route will redirect to login.
  */
 async function authedFetch(url: string, init: RequestInit): Promise<Response> {
+  await waitForRateLimitGate();
   const initWithAuth = (): RequestInit => ({
     ...init,
     headers: {
