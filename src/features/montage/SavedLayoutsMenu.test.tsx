@@ -159,7 +159,9 @@ describe('SavedLayoutsMenu — load', () => {
 
     await user.selectOptions(select, '4');
     expect(onLoad).toHaveBeenCalledTimes(1);
-    expect(onLoad).toHaveBeenCalledWith({ tree: sampleTree, statusPosition: 'inside', source: 'dashboard' });
+    expect(onLoad).toHaveBeenCalledWith(expect.objectContaining({
+      tree: sampleTree, statusPosition: 'inside', monitorRatio: { 1: 'auto', 2: 'auto' }, source: 'dashboard',
+    }));
   });
 
   it('loads a legacy gridstack row as a converted tree', async () => {

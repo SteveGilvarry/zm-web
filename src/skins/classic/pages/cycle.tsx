@@ -10,6 +10,8 @@ import { useCycleMonitors, useCyclePage } from '@/features/cycle/useCyclePage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
 import { TileControls } from '@/features/montage/TileControls';
+import { WebsiteTile } from '@/features/montage/WebsiteTile';
+import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
 import { useTileZoom } from '@/features/montage/tileZoom';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { ClassicButton, ClassicFilterRow, ClassicPage } from '@/skins/classic/components';
@@ -94,7 +96,9 @@ export default function ClassicCyclePage() {
                     data-testid="cycle-stage"
                   >
                     <div className="absolute inset-0" style={zoom.style}>
-                      {cycle.viewMode === 'stream' ? (
+                      {isWebsiteMonitor(current) ? (
+                        <WebsiteTile monitor={current} />
+                      ) : cycle.viewMode === 'stream' ? (
                         <StreamCell
                           key={current.id}
                           protocol="webrtc"

@@ -4,6 +4,7 @@ import type { StreamProtocol } from '@/types';
 import type { LayoutNode } from '@/features/montage/mosaic';
 import { leaf } from '@/features/montage/mosaic';
 import { DEFAULT_STAGE_SIZE, type StageSize } from '@/features/monitors/watchStage';
+import { DEFAULT_MONTAGE_RATIO } from '@/features/montage/ratio';
 
 /**
  * Where a cell's name + runtime-status caption sits. Mirrors legacy
@@ -37,6 +38,10 @@ interface MontageState {
   cycleStage: StageSize;
   /** Montage Review playback multiplier, legacy `speed` cookie. */
   reviewSpeed: number;
+  /** Montage Ratio select for every tile, legacy `zmMontageRatioForAll`. */
+  montageRatio: string;
+  /** Per-tile Ratio overrides, legacy `Positions.monitorRatio`. */
+  montageRatioById: Record<number, string>;
 
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   setProtocol: (protocol: StreamProtocol) => void;
@@ -47,6 +52,11 @@ interface MontageState {
   setReviewFit: (fit: boolean) => void;
   setCycleStage: (size: StageSize) => void;
   setReviewSpeed: (speed: number) => void;
+  /** Set the Ratio for every tile (clears the per-tile overrides). */
+  setMontageRatio: (ratio: string) => void;
+  setMontageRatioFor: (monitorId: number, ratio: string) => void;
+  /** Replace every per-tile override (loading a saved layout). */
+  setMontageRatios: (ratios: Record<number, string>) => void;
 }
 
 export const useMontageStore = create<MontageState>()(
@@ -64,6 +74,8 @@ export const useMontageStore = create<MontageState>()(
       reviewFit: true,
       cycleStage: DEFAULT_STAGE_SIZE,
       reviewSpeed: DEFAULT_REVIEW_SPEED,
+      montageRatio: DEFAULT_MONTAGE_RATIO,
+      montageRatioById: {},
 
       setTree: (next) =>
         set({ tree: typeof next === 'function' ? next(get().tree) : next }),
@@ -75,6 +87,10 @@ export const useMontageStore = create<MontageState>()(
       setReviewFit: (reviewFit) => set({ reviewFit }),
       setCycleStage: (cycleStage) => set({ cycleStage }),
       setReviewSpeed: (reviewSpeed) => set({ reviewSpeed }),
+      setMontageRatio: (montageRatio) => set({ montageRatio, montageRatioById: {} }),
+      setMontageRatioFor: (monitorId, ratio) =>
+        set({ montageRatioById: { ...get().montageRatioById, [monitorId]: ratio } }),
+      setMontageRatios: (montageRatioById) => set({ montageRatioById }),
     }),
     {
       name: 'zm-montage',
@@ -88,6 +104,8 @@ export const useMontageStore = create<MontageState>()(
         reviewFit: state.reviewFit,
         cycleStage: state.cycleStage,
         reviewSpeed: state.reviewSpeed,
+        montageRatio: state.montageRatio,
+        montageRatioById: state.montageRatioById,
       }),
     },
   ),

@@ -12,6 +12,8 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
+import { WebsiteTile } from '@/features/montage/WebsiteTile';
+import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { ZonesOverlay } from '@/features/events/ZonesOverlay';
@@ -293,7 +295,10 @@ export default function MontagePage() {
                   monitorHeight={displayDimensions(m).height}
                 />
               ) : null;
-              const cell = (
+              const cell = isWebsiteMonitor(m) ? (
+                // A WebSite monitor is a page, not a camera.
+                <WebsiteTile key={`${m.id}-site`} monitor={m} />
+              ) : (
                 <StreamCell
                   key={`${m.id}-${protocol}-${streamGeneration}`}
                   protocol={protocol}

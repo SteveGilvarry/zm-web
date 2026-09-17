@@ -8,6 +8,8 @@ import { listTags, type Tag } from '@/api/tags';
 import { fitRange, type EventSpan } from './fitRange';
 import { eventEndMs, DEFAULT_REVIEW_FILTERS, type ReviewEventFilters } from './useReviewEvents';
 import { useRouteSearch, searchInt, searchString } from '@/features/monitors/useRouteSearch';
+import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { applyMontageSort, useMontageSort } from './useMontageSort';
 import { useMontageStore } from '@/stores/montage';
 import { useReviewClock, type ReviewClock } from './useReviewClock';
 import type { Monitor } from '@/types';
@@ -82,8 +84,22 @@ export const REVIEW_NOTES_OPTIONS: Array<{ value: string; label: string }> = [
   { value: 'vehicle', label: 'vehicle' },
 ];
 
-/** Playback multipliers; browsers cap `playbackRate` around 16. */
-export const REVIEW_SPEEDS = [0.25, 0.5, 1, 2, 4, 8, 16];
+/**
+ * Legacy's speed slider (`montagereview.php:254`): 13 steps, `0` meaning
+ * paused — the playhead then moves only by scrubbing. Browsers cap
+ * `playbackRate` near 16, so the last two steps run the clock faster than
+ * any cell can play and the cells step by seeking (`playbackRateFor`).
+ */
+export const REVIEW_SPEEDS = [0, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10, 20, 50];
+
+/** Slider position of a speed; the nearest step for anything off-list. */
+export function reviewSpeedIndex(speed: number): number {
+  let best = 0;
+  for (let i = 1; i < REVIEW_SPEEDS.length; i++) {
+    if (Math.abs(REVIEW_SPEEDS[i] - speed) < Math.abs(REVIEW_SPEEDS[best] - speed)) best = i;
+  }
+  return best;
+}
 
 export function presetToRange(preset: ReviewRangePreset, now: Date): { start: Date; end: Date } {
   const ms = (h: number) => h * 60 * 60 * 1000;
@@ -114,6 +130,22 @@ export function parseLegacyTime(value: string | undefined): Date | null {
   const iso = /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}(:\d{2})?$/.test(value) ? value.replace(' ', 'T') : value;
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
+}
+
+/**
+ * Legacy `&z<id>=1.4`: per-monitor zoom scales carried on the URL
+ * (`montagereview.php`). Keys that are not `z<positive int>` are ignored.
+ */
+export function parseZoomParams(search: Record<string, unknown>): Record<number, number> {
+  const out: Record<number, number> = {};
+  for (const [key, raw] of Object.entries(search)) {
+    const m = /^z(\d+)$/.exec(key);
+    if (!m) continue;
+    const scale = Number(raw);
+    if (!Number.isFinite(scale) || scale <= 0) continue;
+    out[Number(m[1])] = scale;
+  }
+  return out;
 }
 
 /** Slide the window by `fraction` of its width (negative = earlier). */
@@ -161,6 +193,10 @@ export interface MontageReviewPageState {
    */
   fit: boolean;
   setFit: (fit: boolean) => void;
+  /** Per-monitor zoom scale (legacy `&z<id>=`); 1 unless zoomed. */
+  monitorZoom: Record<number, number>;
+  /** Multiply one monitor's zoom (legacy corner click: 1.15 / 1÷1.15). */
+  zoomMonitor: (monitorId: number, factor: number) => void;
   /** Every monitor, for the filter bar. */
   allMonitors: Monitor[];
   setFilteredMonitors: (monitors: Monitor[]) => void;
@@ -185,13 +221,30 @@ export function useMontageReviewPage(): MontageReviewPageState {
   const urlMin = parseLegacyTime(searchString(search, 'min_time'));
   const urlMax = parseLegacyTime(searchString(search, 'max_time'));
   const hasUrlRange = !!(urlMin && urlMax && urlMax > urlMin);
+  // Legacy `&current=`: where the playhead starts. On its own it also picks
+  // the window — half an hour each side (`montagereview.php:97-101`).
+  const urlCurrent = parseLegacyTime(searchString(search, 'current'));
+  const urlLive = searchString(search, 'live');
 
-  const [preset, setPresetState] = useState<ReviewRangePreset>(hasUrlRange ? 'custom' : '24h');
+  const [preset, setPresetState] = useState<ReviewRangePreset>(
+    urlLive != null && urlLive !== '0' ? 'live' : hasUrlRange || urlCurrent ? 'custom' : '24h',
+  );
   // A URL monitor preselects just that monitor; otherwise all once loaded.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(
     () => new Set(urlMonitorId != null ? [urlMonitorId] : []),
   );
-  const [scale, setScale] = useState(1);
+  // Legacy `&scale=` (0.1–1.0; anything above 1.1 falls back to 1).
+  const [scale, setScale] = useState(() => {
+    const raw = Number(searchString(search, 'scale'));
+    return Number.isFinite(raw) && raw >= 0.1 && raw <= 1 ? raw : 1;
+  });
+  // Legacy `&z<id>=`: per-monitor zoom, stepped ±15 % by a corner click.
+  const [monitorZoom, setMonitorZoom] = useState<Record<number, number>>(() => parseZoomParams(search));
+  const zoomMonitor = (monitorId: number, factor: number) =>
+    setMonitorZoom((prev) => {
+      const next = Math.min(8, Math.max(0.25, (prev[monitorId] ?? 1) * factor));
+      return { ...prev, [monitorId]: next };
+    });
   const { reviewFit: fit, setReviewFit: setFit } = useMontageStore();
 
   // Legacy carries fit mode on the URL (`&fit=0|1`); it wins over the
@@ -202,19 +255,39 @@ export function useMontageReviewPage(): MontageReviewPageState {
     setFit(raw === '1' || raw === 1 || raw === true || raw === 'true');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+  // Legacy `&speed=`: the slider's opening position, ahead of the cookie.
+  const setStoredSpeed = useMontageStore((st) => st.setReviewSpeed);
+  useEffect(() => {
+    const raw = Number(searchString(search, 'speed'));
+    if (Number.isFinite(raw) && raw >= 0) setStoredSpeed(raw);
+    // URL values are read once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [filters, setFiltersState] = useState<ReviewEventFilters>(DEFAULT_REVIEW_FILTERS);
   const setFilters = (patch: Partial<ReviewEventFilters>) =>
     setFiltersState((prev) => ({ ...prev, ...patch }));
   const isLive = preset === 'live';
 
-  // Initial range: the URL's, else the last 24 h.
+  // Initial range: the URL's, a window around `current`, else the last 24 h.
   const initialRange = useMemo(
-    () => (hasUrlRange ? { start: urlMin!, end: urlMax! } : presetToRange('24h', new Date())),
+    () => (hasUrlRange
+      ? { start: urlMin!, end: urlMax! }
+      : urlCurrent
+        ? { start: new Date(urlCurrent.getTime() - 1800_000), end: new Date(urlCurrent.getTime() + 1800_000) }
+        : presetToRange('24h', new Date())),
     // URL values are read once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
   const clock = useReviewClock(initialRange.start, initialRange.end);
+
+  // `&current=` places the playhead once the clock exists.
+  useEffect(() => {
+    if (urlCurrent) clock.setCurrentTime(urlCurrent);
+    // URL values are read once on mount.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Both in one call: a separate `setCurrentTime` would clamp the playhead
   // against the range it is replacing.
@@ -304,7 +377,13 @@ export function useMontageReviewPage(): MontageReviewPageState {
   // chip toggles further down — so the chip row only offers monitors that
   // survive the filter bar's group/source/etc. selections.
   const [filteredMonitors, setFilteredMonitors] = useState<Monitor[] | null>(null);
-  const enabled = (filteredMonitors ?? allMonitors).filter((m) => m.capturing !== 'None');
+  // Legacy orders the wall by the `MontageSort<groupIds>` user preference.
+  const groupIds = useMonitorFilterStore((st) => st.groupIds);
+  const sortValue = useMontageSort(groupIds);
+  const enabled = applyMontageSort(
+    (filteredMonitors ?? allMonitors).filter((m) => m.capturing !== 'None'),
+    sortValue,
+  );
 
   // Default selection: all enabled monitors (once they load), unless the
   // URL named one.
@@ -346,6 +425,8 @@ export function useMontageReviewPage(): MontageReviewPageState {
     setScale,
     fit,
     setFit,
+    monitorZoom,
+    zoomMonitor,
     allMonitors,
     setFilteredMonitors,
     enabled,

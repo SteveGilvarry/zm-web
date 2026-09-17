@@ -20,6 +20,7 @@ let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => mockSearch,
   useNavigate: () => vi.fn(),
+  useRouter: () => ({ buildLocation: ({ to }: { to: string }) => ({ href: to }) }),
   Link: ({ children, to, params, ...rest }: {
     children: React.ReactNode; to?: string; params?: Record<string, string>; [k: string]: unknown;
   }) => {
@@ -109,6 +110,9 @@ function stub({ monitors = MONITORS, events = EVENTS }: { monitors?: unknown[]; 
     http.get('/api/v3/monitor-status', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/groups', () => HttpResponse.json(paged([{ id: 5, name: 'Outside', parent_id: null }]))),
     http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([{ id: 1, group_id: 5, monitor_id: 1 }]))),
+    http.get('/api/v3/servers', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/storage', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/user_preferences', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/tags', () => HttpResponse.json(paged([{ id: 4, name: 'Suspicious' }]))),
     http.get('/api/v3/events', ({ request }) => {
       const q = new URL(request.url).searchParams;
@@ -273,16 +277,20 @@ describe('ClassicMontageReviewPage', () => {
     expect(within(bar).queryByRole('button', { name: 'Play' })).toBeNull();
   });
 
-  it('Play toggles the master clock', async () => {
-    const user = userEvent.setup();
+  it('the speed slider is legacy\'s 13 steps, 0 = paused', async () => {
     stub();
     await mount();
 
-    const bar = await screen.findByRole('toolbar', { name: 'Review range' });
-    const play = within(bar).getByRole('button', { name: 'Play' });
-    expect(play).toHaveAttribute('aria-pressed', 'false');
-    await user.click(play);
-    expect(await within(bar).findByRole('button', { name: 'Pause' })).toHaveAttribute('aria-pressed', 'true');
+    const speed = await screen.findByRole('slider', { name: 'Speed' });
+    // 13 steps (0 … 50), opening at 1× — index 5.
+    expect(speed).toHaveAttribute('max', '12');
+    expect(screen.getByTestId('review-speed')).toHaveTextContent('1 fps');
+
+    fireEvent.change(speed, { target: { value: '0' } });
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('0 fps'));
+
+    fireEvent.change(speed, { target: { value: '12' } });
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('50 fps'));
   });
 
   it('In + narrows the window and < Pan slides it back', async () => {
@@ -305,16 +313,15 @@ describe('ClassicMontageReviewPage', () => {
   });
 
   it('carries Scale and Speed', async () => {
-    const user = userEvent.setup();
     stub();
     await mount();
 
     await screen.findByTestId('review-classic-grid');
-    const speed = screen.getByRole('combobox', { name: 'Speed' });
-    await user.selectOptions(speed, '4');
-    expect((speed as HTMLSelectElement).value).toBe('4');
+    const speed = screen.getByRole('slider', { name: 'Speed' });
+    fireEvent.change(speed, { target: { value: '7' } }); // 2×
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('2 fps'));
 
-    const scale = screen.getByRole('slider');
+    const scale = screen.getByRole('slider', { name: 'Scale' });
     expect(scale).toHaveAttribute('aria-valuetext', '1.00 x');
     // Halving the scale halves each cell's rendered width.
     const widthBefore = (screen.getByTitle('1 Cam 1') as HTMLElement).style.width;
@@ -329,7 +336,7 @@ describe('ClassicMontageReviewPage', () => {
     await mount();
 
     await screen.findByTitle('2 Cam 2');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '1');
+    await user.selectOptions(screen.getByRole('listbox', { name: 'Monitor' }), '1');
 
     await waitFor(() => expect(screen.queryByTitle('2 Cam 2')).toBeNull());
     expect(screen.getByTitle('1 Cam 1')).toBeInTheDocument();
@@ -341,7 +348,7 @@ describe('ClassicMontageReviewPage', () => {
     await mount();
 
     await screen.findByTitle('1 Cam 1');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'GroupId' }), '5');
+    await user.selectOptions(screen.getByRole('listbox', { name: 'GroupId' }), '5');
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'nothing-matches-this');
 
     expect(await screen.findByText('Select one or more monitors to review.')).toBeInTheDocument();
@@ -422,11 +429,11 @@ describe('ClassicMontageReviewPage — Fit', () => {
     await screen.findByTestId('review-classic-grid');
 
     // Legacy hides #ScaleDiv in fit mode and labels the button 'Scale'.
-    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.queryByRole('slider', { name: 'Scale' })).toBeNull();
     const bar = screen.getByRole('toolbar', { name: 'Review range' });
     await user.click(within(bar).getByRole('button', { name: 'Scale' }));
 
-    expect(screen.getByRole('slider')).toBeInTheDocument();
+    expect(screen.getByRole('slider', { name: 'Scale' })).toBeInTheDocument();
     expect(within(bar).getByRole('button', { name: 'Fit' })).toBeInTheDocument();
     expect(useMontageStore.getState().reviewFit).toBe(false);
   });
@@ -438,7 +445,7 @@ describe('ClassicMontageReviewPage — Fit', () => {
     await screen.findByTestId('review-classic-grid');
 
     expect(useMontageStore.getState().reviewFit).toBe(true);
-    expect(screen.queryByRole('slider')).toBeNull();
+    expect(screen.queryByRole('slider', { name: 'Scale' })).toBeNull();
   });
 
   it('packs the cells into the measured wall when fitted', async () => {

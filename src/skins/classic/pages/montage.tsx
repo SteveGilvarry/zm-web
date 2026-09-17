@@ -6,6 +6,7 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { MontageClassicGrid } from '@/features/montage/MontageClassicGrid';
+import { MONTAGE_RATIOS } from '@/features/montage/ratio';
 import { useClassicMontage } from '@/features/montage/useClassicMontage';
 import { useMontageWallPage } from '@/features/montage/useMontagePage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
@@ -14,7 +15,8 @@ import { toggleFullscreen } from '@/features/montage/fullscreen';
 import type { MontageStatusPosition } from '@/stores/montage';
 import type { StreamProtocol } from '@/types';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
-import { ClassicButton, ClassicFilterRow, ClassicIconButton, ClassicPage, ClassicSelect } from '@/skins/classic/components';
+import { clsx } from 'clsx';
+import { ClassicButton, ClassicFilterRow, ClassicIconButton, ClassicPage, ClassicSelect, classicInputClass } from '@/skins/classic/components';
 import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
 
 /**
@@ -68,20 +70,47 @@ export default function ClassicMontagePage() {
           />
           <StageSizeSelects stage={montage.stage} monitors={visible} tone="dark" />
           <ClassicSelect
+            label={t('Ratio')}
+            value={montage.ratio}
+            onChange={montage.setRatio}
+            options={MONTAGE_RATIOS.map((r) => ({
+              value: r,
+              label: r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : r,
+            }))}
+          />
+          <ClassicSelect
             label={t('Layout')}
             value={montage.layoutId}
             onChange={montage.setLayoutId}
             options={montage.layoutOptions}
           />
-          <RequirePerm feature="system" level="Edit">
-            {montage.editMode ? (
-              <>
-                <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save Layout')}</ClassicButton>
-                <ClassicButton size="sm" icon={<X size={13} />} onClick={montage.cancelEdit}>{t('Cancel')}</ClassicButton>
-              </>
-            ) : (
-              <ClassicButton tone="primary" size="sm" icon={<Pencil size={13} />} onClick={montage.beginEdit}>{t('Edit Layout')}</ClassicButton>
-            )}
+          {/* Legacy lets any user save their own layout; only Delete needs
+              System Edit (`delete_layout` → `enoperm()`). */}
+          {montage.editMode ? (
+            <>
+              <label className="flex flex-col items-center gap-0.5 text-sm">
+                <span className="font-semibold">{t('Name')}</span>
+                <input
+                  type="text"
+                  value={montage.saveName}
+                  onChange={(e) => montage.setSaveName(e.target.value)}
+                  placeholder={t('Layout name')}
+                  // The filter row has a `Name` field too; this one says
+                  // which name it means.
+                  aria-label={t('Layout name')}
+                  className={clsx(classicInputClass, 'w-44 text-zinc-900')}
+                />
+              </label>
+              <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save Layout')}</ClassicButton>
+              <ClassicButton size="sm" icon={<X size={13} />} onClick={montage.cancelEdit}>{t('Cancel')}</ClassicButton>
+              {montage.saveError && (
+                <span role="alert" className="text-xs text-red-200">{montage.saveError}</span>
+              )}
+            </>
+          ) : (
+            <ClassicButton tone="primary" size="sm" icon={<Pencil size={13} />} onClick={montage.beginEdit}>{t('Edit Layout')}</ClassicButton>
+          )}
+          {montage.canDelete && (
             <ClassicButton
               tone="danger"
               size="sm"
@@ -91,7 +120,7 @@ export default function ClassicMontagePage() {
               aria-label={t('Delete layout')}
               title={t('Delete layout')}
             />
-          </RequirePerm>
+          )}
           <ClassicIconButton onClick={() => toggleFullscreen(wallEl.current)} aria-label={t('Fullscreen')}>
             <Maximize size={14} aria-hidden />
           </ClassicIconButton>
@@ -126,8 +155,13 @@ export default function ClassicMontagePage() {
                 statusPosition={montage.statusPosition}
                 editMode={montage.editMode}
                 onReorder={montage.reorder}
+                items={montage.items}
+                onResize={montage.resizeTile}
+                gridRef={montage.gridRef}
                 cellStyle={montage.stage.styleFor}
                 showZones={montage.showZones}
+                ratioFor={montage.ratioFor}
+                onRatioChange={montage.setRatioFor}
               />
             </QueryState>
           </RequirePerm>

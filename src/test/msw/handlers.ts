@@ -7,6 +7,7 @@ import type { Monitor, PaginatedResponse, User, ZmConfig, ZmEvent, ZmStorage } f
 import type { Control } from '@/api/controls';
 import type { Filter } from '@/api/filters';
 import type { Frame } from '@/api/frames';
+import type { UserPreference } from '@/api/userPreferences';
 import type { Group, GroupMonitor } from '@/api/groups';
 import type { LogEntry } from '@/api/logs';
 import type { MonitorStatusRecord } from '@/api/monitorStatus';
@@ -16,8 +17,12 @@ import type { Server } from '@/api/servers';
 import type { State } from '@/api/states';
 import type { Tag } from '@/api/tags';
 import type { Zone } from '@/api/zones';
+import type { AiDataset, AiModel, AiObjectClass } from '@/api/ai';
 
 import {
+  makeAiDataset,
+  makeAiModel,
+  makeAiObjectClass,
   makeConfig,
   makeControl,
   makeEvent,
@@ -85,6 +90,10 @@ export interface MockDb {
   reports: Report[];
   users: User[];
   montageLayouts: MontageLayout[];
+  userPreferences: UserPreference[];
+  aiDatasets: AiDataset[];
+  aiModels: AiModel[];
+  aiClasses: AiObjectClass[];
   systemStatus: SystemStatusFixture;
 }
 
@@ -167,6 +176,13 @@ function seed(): MockDb {
     reports: [makeReport({ id: 1 })],
     users: [makeUser({ id: 1 })],
     montageLayouts: [makeMontageLayout({ id: 1 })],
+    userPreferences: [],
+    aiDatasets: [makeAiDataset({ id: 1 })],
+    aiModels: [makeAiModel({ id: 1 })],
+    aiClasses: [
+      makeAiObjectClass({ id: 1 }),
+      makeAiObjectClass({ id: 2, class_name: 'car', class_index: 2, description: 'Car' }),
+    ],
     systemStatus: makeSystemStatus(),
   };
 }
@@ -767,11 +783,34 @@ const misc: HttpHandler[] = [
     makeUser({ ...(body as Partial<User>), id }), { update: 'PUT' }),
   ...crud<MontageLayout>('/montage_layouts', () => db.montageLayouts, (body, id) =>
     makeMontageLayout({ ...(body as Partial<MontageLayout>), id })),
+  http.get(`${API}/user_preferences`, ({ request }) =>
+    HttpResponse.json(pageOf(request, db.userPreferences)),
+  ),
   http.post(`${API}/server/control/:action`, () =>
     HttpResponse.json({ success: true, message: 'ok' }),
   ),
   ...crud<State>('/states', () => db.states, (body, id) =>
     makeState({ ...(body as Partial<State>), id })),
+];
+
+/**
+ * The AI catalogue (`_options_ai_*.php`). The object-class list is filtered
+ * server-side by `dataset_id`, so that GET goes ahead of the generic one.
+ */
+const ai: HttpHandler[] = [
+  http.get(`${API}/ai/object-classes`, ({ request }) => {
+    const datasetId = num(new URL(request.url).searchParams.get('dataset_id'));
+    const rows = datasetId == null
+      ? db.aiClasses
+      : db.aiClasses.filter((c) => c.dataset_id === datasetId);
+    return HttpResponse.json(pageOf(request, rows));
+  }),
+  ...crud<AiDataset>('/ai/datasets', () => db.aiDatasets, (body, id) =>
+    makeAiDataset({ ...(body as Partial<AiDataset>), id })),
+  ...crud<AiModel>('/ai/models', () => db.aiModels, (body, id) =>
+    makeAiModel({ ...(body as Partial<AiModel>), id })),
+  ...crud<AiObjectClass>('/ai/object-classes', () => db.aiClasses, (body, id) =>
+    makeAiObjectClass({ ...(body as Partial<AiObjectClass>), id })),
 ];
 
 /**
@@ -789,5 +828,6 @@ export const handlers: HttpHandler[] = [
   ...system,
   ...ptz,
   ...filters,
+  ...ai,
   ...misc,
 ];

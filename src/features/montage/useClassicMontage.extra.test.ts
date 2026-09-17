@@ -75,6 +75,7 @@ function stubLayouts(seed: unknown[] = [
       items.push(created);
       return HttpResponse.json(created);
     }),
+    http.get('/api/v3/me', () => new HttpResponse(null, { status: 404 })),
     http.delete('/api/v3/montage_layouts/:id', ({ params }) => {
       deleted.push(String(params.id));
       return new HttpResponse(null, { status: 204 });
@@ -154,17 +155,16 @@ describe('useClassicMontage — reorder guards', () => {
 });
 
 describe('useClassicMontage — save layout', () => {
-  it('prompts for a name and POSTs the current arrangement + status position', async () => {
+  it('POSTs the current arrangement + status position under the typed name', async () => {
     stubLayouts();
     useMontageStore.setState({ statusPosition: 'outside' });
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('  Front wall  ');
     const { result } = await mounted();
 
     act(() => result.current.reorder(3, 1)); // 3, 1, 2
+    act(() => result.current.setSaveName('  Front wall  '));
     await act(async () => { result.current.save(); });
     await waitFor(() => expect(posted).toHaveLength(1));
 
-    expect(prompt).toHaveBeenCalledWith('Layout name', '');
     const body = posted[0].body as { name: string; positions: string; user_id: number };
     expect(body.name).toBe('Front wall');
     expect(body.user_id).toBe(7);
@@ -178,32 +178,44 @@ describe('useClassicMontage — save layout', () => {
     expect(useToastStore.getState().toasts.some((t) => /Layout "Front wall" saved/.test(t.message))).toBe(true);
   });
 
-  it('offers the current saved layout name as the default and sends no request when cancelled', async () => {
+  it('seeds the Name field from the layout being edited and keeps that name', async () => {
     stubLayouts();
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue(null);
     const { result } = await mounted();
     act(() => result.current.setLayoutId('saved:12'));
+    act(() => result.current.beginEdit());
+    expect(result.current.saveName).toBe('Zulu wall');
 
+    // Saving with the field untouched keeps the layout's own name — the
+    // owner is this user's, so legacy allows it.
     await act(async () => { result.current.save(); });
-    expect(prompt).toHaveBeenCalledWith('Layout name', 'Zulu wall');
-    expect(posted).toHaveLength(0);
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect((posted[0].body as { name: string }).name).toBe('Zulu wall');
   });
 
-  it('treats a whitespace-only name as a cancel', async () => {
+  it('refuses a name that collides with a built-in layout', async () => {
     stubLayouts();
-    vi.spyOn(window, 'prompt').mockReturnValue('   ');
+    const { result } = await mounted();
+    act(() => result.current.setSaveName('4 Wide'));
+    await act(async () => { result.current.save(); });
+    expect(posted).toHaveLength(0);
+    expect(result.current.saveError).toMatch(/built in layouts/i);
+  });
+
+  it('refuses an empty name with nothing selected to inherit from', async () => {
+    stubLayouts();
     const { result } = await mounted();
     await act(async () => { result.current.save(); });
     expect(posted).toHaveLength(0);
+    expect(result.current.saveError).toMatch(/give the layout a name/i);
   });
 
   it('reports a failed save through the toast rail', async () => {
     stubLayouts();
     server.use(http.post('/api/v3/montage_layouts', () =>
       HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'duplicate name' }, { status: 500 })));
-    vi.spyOn(window, 'prompt').mockReturnValue('Front wall');
     const { result } = await mounted();
 
+    act(() => result.current.setSaveName('Front wall'));
     await act(async () => { result.current.save(); });
     await waitFor(() =>
       expect(useToastStore.getState().toasts.some((t) => t.tone === 'error')).toBe(true));
@@ -264,9 +276,16 @@ describe('useClassicMontage — stage controls', () => {
     stubLayouts();
     const { result } = await mounted();
 
-    // Default: Auto scale, landscape camera fills the column width.
+    // Default: Auto scale, landscape camera fills the column width. The
+    // Ratio select shapes the tile — `auto` is the preset nearest the mean
+    // of what is on screen, which for 16:9 cameras is 16:9.
     expect(result.current.stage.size).toEqual({ width: 'auto', height: 'auto', scale: '0' });
+    expect(result.current.stage.styleFor(m(1))).toMatchObject({ aspectRatio: `${16 / 9} / 1` });
+
+    // `real` gives the camera its own shape back.
+    act(() => result.current.setRatio('real'));
     expect(result.current.stage.styleFor(m(1))).toMatchObject({ aspectRatio: '1920 / 1080' });
+    act(() => result.current.setRatio('auto'));
 
     act(() => result.current.stage.setWidth('640px'));
     expect(result.current.stage.size.width).toBe('640px');
@@ -289,5 +308,98 @@ describe('useClassicMontage — stage controls', () => {
     expect(result.current.statusPosition).toBe('hidden');
     act(() => result.current.setProtocol('hls'));
     expect(result.current.protocol).toBe('hls');
+  });
+});
+
+/**
+ * Edit Layout on legacy's 48-column canvas: tiles are resizable, a saved
+ * layout comes back the size it was saved, and Save writes the geometry in
+ * the shape `objGridStack.save(false, false)` produces.
+ */
+describe('useClassicMontage — tile geometry', () => {
+  /** A hand-made legacy row: one wide tile over two narrow ones. */
+  const MIXED = JSON.stringify({
+    gridStack: [
+      { id: '2', x: 0, y: 0, w: 48, h: 550 },
+      { id: '1', x: 0, y: 550, w: 30, h: 300 },
+      { id: '3', x: 30, y: 550, w: 18, h: 300 },
+    ],
+    monitorStatusPosition: 'outsideImgBottom',
+    monitorRatio: { 1: 'auto', 2: 'auto', 3: 'auto' },
+  });
+
+  /** `mounted()` waits for the default stub's rows; this one waits for ours. */
+  async function mountedWith(list: Monitor[]) {
+    const hook = renderHook(() => useClassicMontage(list), { wrapper: wrapper() });
+    await waitFor(() => expect(hook.result.current.layoutOptions.some((o) => o.value === 'saved:20')).toBe(true));
+    return hook;
+  }
+
+  it('a preset lays out on the plain column grid until Edit Layout starts', async () => {
+    stubLayouts();
+    const { result } = await mounted();
+    expect(result.current.items).toBeNull();
+    act(() => result.current.beginEdit());
+    expect(result.current.items?.map((i) => [i.id, i.x, i.w]))
+      .toEqual([['1', 0, 16], ['2', 16, 16], ['3', 32, 16]]);
+  });
+
+  it('reproduces a legacy layout\'s mixed tile sizes instead of an even grid', async () => {
+    stubLayouts([{ id: 20, name: 'Mixed', user_id: 7, positions: MIXED }]);
+    const { result } = await mountedWith(monitors);
+    act(() => result.current.setLayoutId('saved:20'));
+    expect(result.current.monitors.map((x) => x.id)).toEqual([2, 1, 3]);
+    expect(result.current.items?.map((i) => [i.id, i.x, i.y, i.w, i.h])).toEqual([
+      ['2', 0, 0, 48, 550],
+      ['1', 0, 550, 30, 300],
+      ['3', 30, 550, 18, 300],
+    ]);
+  });
+
+  it('packs a camera the saved layout never named onto a row of its own', async () => {
+    stubLayouts([{ id: 20, name: 'Mixed', user_id: 7, positions: MIXED }]);
+    const { result } = await mountedWith([...monitors, m(8)]);
+    act(() => result.current.setLayoutId('saved:20'));
+    const tail = result.current.items!.at(-1)!;
+    expect(tail.id).toBe('8');
+    expect(tail.y).toBeGreaterThanOrEqual(850);
+  });
+
+  it('resizes a tile in grid columns and pushes the row along', async () => {
+    stubLayouts();
+    const { result } = await mounted();
+    act(() => result.current.beginEdit());
+    act(() => result.current.resizeTile(1, 36));
+    expect(result.current.items?.map((i) => [i.id, i.x, i.w]))
+      .toEqual([['1', 0, 36], ['2', 0, 16], ['3', 16, 16]]);
+    // A monitor the wall does not hold changes nothing.
+    act(() => result.current.resizeTile(404, 12));
+    expect(result.current.items?.[0].w).toBe(36);
+    act(() => result.current.cancelEdit());
+    expect(result.current.items).toBeNull();
+  });
+
+  it('saves the resized geometry as legacy\'s gridStack', async () => {
+    stubLayouts();
+    useMontageStore.setState({ statusPosition: 'outside' });
+    const { result } = await mounted();
+
+    act(() => result.current.beginEdit());
+    act(() => result.current.resizeTile(1, 24));
+    act(() => result.current.setSaveName('Wide left'));
+    await act(async () => { result.current.save(); });
+    await waitFor(() => expect(posted).toHaveLength(1));
+
+    const positions = JSON.parse((posted[0].body as { positions: string }).positions);
+    expect(positions.gridStack).toEqual([
+      { id: '1', x: 0, y: 0, w: 24, h: 100 },
+      { id: '2', x: 24, y: 0, w: 16, h: 100 },
+      { id: '3', x: 0, y: 100, w: 16, h: 100 },
+    ]);
+    expect(positions.monitorStatusPosition).toBe('outsideImgBottom');
+    expect(positions.monitorRatio).toEqual({ 1: 'auto', 2: 'auto', 3: 'auto' });
+    // And the row reads back as the same wall.
+    expect(parsePositions((posted[0].body as { positions: string }).positions)?.items)
+      .toEqual(positions.gridStack);
   });
 });

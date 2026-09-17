@@ -1,6 +1,9 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { useReviewClock } from './useReviewClock';
+import { useMontageStore, DEFAULT_REVIEW_SPEED } from '@/stores/montage';
+import {
+  REVIEW_MAX_PLAYBACK_RATE, isFrameStepping, playbackRateFor, useReviewClock,
+} from './useReviewClock';
 
 const START = new Date('2026-05-24T12:00:00Z');
 const END   = new Date('2026-05-24T13:00:00Z'); // +1 hour
@@ -144,5 +147,83 @@ describe('useReviewClock — playback advances the clock', () => {
     act(() => { vi.advanceTimersByTime(10_000); });
     expect(result.current.currentTime).toEqual(tightEnd);
     expect(result.current.isPlaying).toBe(false); // auto-paused at end
+  });
+});
+
+describe('useReviewClock — legacy speed semantics', () => {
+  beforeEach(() => {
+    useMontageStore.setState({ reviewSpeed: DEFAULT_REVIEW_SPEED });
+  });
+
+  it('speed 0 is pause: the clock is not playing and will not advance', () => {
+    vi.useFakeTimers();
+    try {
+      const { result } = renderHook(() => useReviewClock(START, END));
+      act(() => result.current.play());
+      expect(result.current.isPlaying).toBe(true);
+
+      act(() => result.current.setSpeed(0));
+      expect(result.current.isPlaying).toBe(false);
+      const at = result.current.currentTime.getTime();
+      act(() => { vi.advanceTimersByTime(2_000); });
+      expect(result.current.currentTime.getTime()).toBe(at);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('moving the slider off 0 starts playing, as legacy does', () => {
+    const { result } = renderHook(() => useReviewClock(START, END));
+    act(() => result.current.setSpeed(0));
+    act(() => result.current.setSpeed(0.1));
+    expect(result.current.isPlaying).toBe(true);
+    expect(result.current.speed).toBe(0.1);
+  });
+
+  it('play() after the window end restores the last moving speed', () => {
+    vi.useFakeTimers();
+    try {
+      const tightEnd = new Date(START.getTime() + 1_000);
+      const { result } = renderHook(() => useReviewClock(START, tightEnd));
+      act(() => result.current.setSpeed(3));
+      act(() => { vi.advanceTimersByTime(5_000); });
+      // Legacy's `timerFire` zeroes the slider at the end of the window.
+      expect(result.current.speed).toBe(0);
+      expect(result.current.isPlaying).toBe(false);
+
+      act(() => result.current.play());
+      expect(result.current.speed).toBe(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('pause keeps the chosen speed so resume reads the same', () => {
+    const { result } = renderHook(() => useReviewClock(START, END));
+    act(() => result.current.setSpeed(5));
+    act(() => result.current.pause());
+    expect(result.current.isPlaying).toBe(false);
+    expect(result.current.speed).toBe(5);
+    act(() => result.current.togglePlay());
+    expect(result.current.isPlaying).toBe(true);
+  });
+});
+
+describe('playbackRateFor / isFrameStepping', () => {
+  it('caps at what a browser will decode', () => {
+    expect(playbackRateFor(1)).toBe(1);
+    expect(playbackRateFor(16)).toBe(REVIEW_MAX_PLAYBACK_RATE);
+    expect(playbackRateFor(50)).toBe(REVIEW_MAX_PLAYBACK_RATE);
+  });
+
+  it('is 0 at pause and for nonsense', () => {
+    expect(playbackRateFor(0)).toBe(0);
+    expect(playbackRateFor(Number.NaN)).toBe(0);
+  });
+
+  it('says when the cell has to step instead of play', () => {
+    expect(isFrameStepping(16)).toBe(false);
+    expect(isFrameStepping(20)).toBe(true);
+    expect(isFrameStepping(50)).toBe(true);
   });
 });

@@ -7,7 +7,7 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
 import { averageArea, reviewCanvasWidth } from '@/features/montagereview/reviewScale';
-import { REVIEW_SPEEDS, useMontageReviewPage, useReviewNotesOptions } from '@/features/montagereview/useMontageReviewPage';
+import { REVIEW_SPEEDS, reviewSpeedIndex, useMontageReviewPage, useReviewNotesOptions } from '@/features/montagereview/useMontageReviewPage';
 import { displayDimensions } from '@/features/monitors/orientation';
 import { maxFit } from '@/features/montage/maxfit';
 import { useAvailableHeight, useMeasuredBox } from '@/features/monitors/useStageFit';
@@ -121,6 +121,7 @@ export default function ClassicMontageReviewPage() {
                 type="range" min={0.1} max={1} step={0.1}
                 value={page.scale}
                 onChange={(e) => page.setScale(Number(e.target.value))}
+                aria-label={t('Scale')}
                 aria-valuetext={t('{{scale}} x', { scale: page.scale.toFixed(2) })}
               />
               <span className="tabular-nums w-14">{t('{{scale}} x', { scale: page.scale.toFixed(2) })}</span>
@@ -128,15 +129,20 @@ export default function ClassicMontageReviewPage() {
           )}
           <label className="flex items-center gap-2">
             <span className="font-semibold">{t('Speed')}</span>
-            <select
-              value={clock.speed}
-              onChange={(e) => clock.setSpeed(Number(e.target.value))}
-              className={selectClass}
-            >
-              {REVIEW_SPEEDS.map((s) => (
-                <option key={s} value={s}>{s}×</option>
-              ))}
-            </select>
+            {/* Legacy is a 13-step slider over REVIEW_SPEEDS, 0 = paused. */}
+            <input
+              type="range"
+              min={0}
+              max={REVIEW_SPEEDS.length - 1}
+              step={1}
+              value={reviewSpeedIndex(clock.speed)}
+              onChange={(e) => clock.setSpeed(REVIEW_SPEEDS[Number(e.target.value)])}
+              aria-label={t('Speed')}
+              aria-valuetext={t('{{speed}} fps', { speed: clock.speed })}
+            />
+            <span className="tabular-nums w-16" data-testid="review-speed">
+              {t('{{speed}} fps', { speed: clock.speed })}
+            </span>
           </label>
         </div>
         <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
@@ -207,11 +213,6 @@ export default function ClassicMontageReviewPage() {
           {page.fitEventsEmpty && (
             <span role="status" className="text-xs text-red-700">{t('No events to fit')}</span>
           )}
-          {!isLive && (
-            <ClassicButton tone={clock.isPlaying ? 'primary' : 'default'} onClick={clock.togglePlay} aria-pressed={clock.isPlaying}>
-              {clock.isPlaying ? t('Pause') : t('Play')}
-            </ClassicButton>
-          )}
         </div>
       </div>
 
@@ -249,7 +250,7 @@ export default function ClassicMontageReviewPage() {
             >
               {monitors.map((m) => {
                 const dims = displayDimensions(m);
-                const width = reviewCanvasWidth(dims, avgArea, page.scale);
+                const width = reviewCanvasWidth(dims, avgArea, page.scale, page.monitorZoom[m.id] ?? 1);
                 const fitted = fitStyles?.get(m.id);
                 return (
                   <div
@@ -273,6 +274,7 @@ export default function ClassicMontageReviewPage() {
                         speed={clock.speed}
                         filters={page.filters}
                         fill={!!fitted}
+                        onZoom={(factor) => page.zoomMonitor(m.id, factor)}
                       />
                     )}
                   </div>

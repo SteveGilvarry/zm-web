@@ -59,6 +59,9 @@ function stub(monitors: unknown[] = MONITORS) {
     http.get('/api/v3/configs', () => HttpResponse.json(paged([
       { id: 1, name: 'ZM_WEB_REFRESH_CYCLE', value: '10' },
     ], { per_page: 1000 }))),
+    http.get('/api/v3/servers', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/storage', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/me', () => new HttpResponse(null, { status: 404 })),
     http.get('/api/v3/groups', () => HttpResponse.json(paged([{ id: 3, name: 'Front Yard' }], { per_page: 200 }))),
     http.get('/api/v3/groups-monitors', () =>
       HttpResponse.json(paged([{ id: 1, group_id: 3, monitor_id: 1 }], { per_page: 1000 }))),
@@ -283,5 +286,20 @@ describe('ClassicCyclePage', () => {
     stub();
     const { container } = await mount();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('embeds a WebSite monitor on stage instead of streaming it', async () => {
+    // Legacy `Monitor::getStreamHTML` embeds the configured URL for the
+    // WebSite type.
+    stub([{
+      id: 4, name: 'Weather', capturing: 'Always', analysing: 'None', recording: 'None',
+      type: 'WebSite', host: null, path: 'https://example.test/wx', device: null,
+      width: 1920, height: 1080, orientation: 'ROTATE_0', enabled: 1,
+    }]);
+    await mount();
+    await pills();
+
+    expect(await screen.findByTestId('website-tile-4')).toHaveAttribute('src', 'https://example.test/wx');
+    expect(screen.queryByTestId('stream-cell')).toBeNull();
   });
 });

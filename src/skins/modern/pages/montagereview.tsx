@@ -159,28 +159,22 @@ export default function MontageReviewPage() {
                   {clock.isPlaying ? <Pause size={12} aria-hidden /> : <Play size={12} aria-hidden />}
                   {clock.isPlaying ? t('Pause') : t('Play')}
                 </button>
-                <div
-                  role="group"
-                  aria-label={t('Speed')}
-                  className="flex items-center gap-0.5 rounded border border-border-subtle p-0.5"
-                >
-                  <FastForward size={12} className="ms-1 text-fg-faint" aria-hidden />
-                  {REVIEW_SPEEDS.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => clock.setSpeed(s)}
-                      aria-pressed={clock.speed === s}
-                      aria-label={t('{{speed}}× speed', { speed: s })}
-                      className={clsx(
-                        'px-1.5 py-0.5 text-xs font-mono tabular-nums rounded transition-colors',
-                        clock.speed === s ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
-                      )}
-                    >
-                      {s}×
-                    </button>
-                  ))}
-                </div>
+                {/* 13 steps is too many chips: one dial, same values as the
+                    classic slider (0 = paused, scrub only). */}
+                <label className="flex items-center gap-1 text-xs text-fg-dim">
+                  <FastForward size={12} className="text-fg-faint" aria-hidden />
+                  <span className="sr-only">{t('Speed')}</span>
+                  <select
+                    aria-label={t('Speed')}
+                    value={clock.speed}
+                    onChange={(e) => clock.setSpeed(Number(e.target.value))}
+                    className={selectField}
+                  >
+                    {REVIEW_SPEEDS.map((s) => (
+                      <option key={s} value={s}>{s === 0 ? t('Paused') : t('{{speed}}×', { speed: s })}</option>
+                    ))}
+                  </select>
+                </label>
               </>
             )}
 

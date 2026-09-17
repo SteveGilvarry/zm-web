@@ -355,24 +355,13 @@ describe('MontageReviewPage (modern) — transport', () => {
     renderRoute(`/montagereview${WIDE_RANGE}`);
     await findChips();
 
-    const speeds = screen.getByRole('group', { name: 'Speed' });
-    expect(within(speeds).getByRole('button', { name: '1× speed' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    // One dial over legacy's 13 steps; 0 reads as Paused.
+    const speed = screen.getByRole('combobox', { name: 'Speed' }) as HTMLSelectElement;
+    expect(speed.value).toBe('1');
+    expect(within(speed).getByRole('option', { name: 'Paused' })).toHaveValue('0');
 
-    await user.click(within(speeds).getByRole('button', { name: '4× speed' }));
-
-    await waitFor(() => {
-      expect(within(speeds).getByRole('button', { name: '4× speed' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
-    });
-    expect(within(speeds).getByRole('button', { name: '1× speed' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    await user.selectOptions(speed, '3');
+    await waitFor(() => expect(speed.value).toBe('3'));
   });
 });
 

@@ -1,8 +1,9 @@
-import { useEffect, useRef } from 'react';
-import { Link } from '@tanstack/react-router';
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { Link, useNavigate, useRouter } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Download, Video } from 'lucide-react';
 import { useReviewEvents, findEventAt, DEFAULT_REVIEW_FILTERS, type ReviewEventFilters } from './useReviewEvents';
+import { playbackRateFor } from './useReviewClock';
 import { getEventVideoUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
 import { getOrientationStyle } from '@/types';
@@ -22,7 +23,16 @@ interface MontageReviewCellProps {
    * every cell itself, so the cell must take the height it is given.
    */
   fill?: boolean;
+  /**
+   * Legacy `clickMonitor`: the top-left quarter zooms in by 15 %, the
+   * top-right quarter back out. Without a handler the corners behave like
+   * the rest of the cell (the modern grid sizes its own cells).
+   */
+  onZoom?: (factor: number) => void;
 }
+
+/** Legacy `clickMonitor`: ±15 % per corner click. */
+export const REVIEW_ZOOM_STEP = 1.15;
 
 /**
  * One monitor's tile in the Review grid. Renders the past-event MP4 currently
@@ -43,8 +53,11 @@ export function MontageReviewCell({
   speed,
   filters = DEFAULT_REVIEW_FILTERS,
   fill = false,
+  onZoom,
 }: MontageReviewCellProps) {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const router = useRouter();
   const { events, isLoading } = useReviewEvents(monitor.id, rangeStart, rangeEnd, filters);
   const currentEvent = findEventAt(events, currentTime);
 
@@ -66,7 +79,9 @@ export function MontageReviewCell({
   useEffect(() => {
     const v = videoRef.current;
     if (!v || !currentEvent) return;
-    v.playbackRate = speed;
+    // Above ~16× the browser refuses to decode, so the cell stops playing
+    // faster and the clock's seeks step it through the event instead.
+    v.playbackRate = playbackRateFor(speed) || 1;
     if (isPlaying) {
       v.play().catch(() => {});
     } else {
@@ -74,13 +89,43 @@ export function MontageReviewCell({
     }
   }, [isPlaying, speed, currentEvent]);
 
+  // Legacy `clickMonitor` + `showOneMonitor`: the two top corners zoom the
+  // one monitor, anything else opens what is under the playhead — the event
+  // if the monitor was recording, its Watch page otherwise. Ctrl/⌘ opens a
+  // new tab.
+  const target = currentEvent
+    ? { to: '/events/$eventId' as const, params: { eventId: String(currentEvent.id) } }
+    : { to: '/monitors/$monitorId' as const, params: { monitorId: String(monitor.id) } };
+
+  const handleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
+    // The #id link and the download icon are their own targets.
+    if ((e.target as HTMLElement).closest('a,button')) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const x = e.clientX - rect.left;
+    const y = e.clientY - rect.top;
+    if (onZoom && rect.width > 0 && y < rect.height / 4) {
+      if (x < rect.width / 4) { onZoom(REVIEW_ZOOM_STEP); return; }
+      if (x > (rect.width * 3) / 4) { onZoom(1 / REVIEW_ZOOM_STEP); return; }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      window.open(router.buildLocation(target).href, '_blank', 'noopener');
+      return;
+    }
+    void navigate(target);
+  };
+
   const token = getAuthToken();
   const downloadHref = currentEvent
     ? getEventVideoUrl(currentEvent.id, token ?? undefined)
     : null;
 
   return (
-    <div dir="ltr" className={`relative bg-bg-sunken rounded overflow-hidden border border-border-subtle ${fill ? 'w-full h-full' : 'aspect-video'}`}>
+    <div
+      dir="ltr"
+      className={`relative bg-bg-sunken rounded overflow-hidden border border-border-subtle cursor-pointer ${fill ? 'w-full h-full' : 'aspect-video'}`}
+      onClick={handleClick}
+      data-testid={`review-cell-${monitor.id}`}
+    >
       {/* Monitor name overlay */}
       <div className="absolute top-1.5 start-1.5 z-10 px-1.5 py-0.5 rounded bg-black/60">
         <span className="text-xs font-medium text-white">{monitor.name}</span>
