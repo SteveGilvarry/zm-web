@@ -29,7 +29,7 @@ setupMockServer();
 beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
-  useMontageStore.setState({ tree: leaf(null), protocol: 'webrtc', statusPosition: 'inside' });
+  useMontageStore.setState({ tree: leaf(null), protocol: 'webrtc', statusPosition: 'inside', showZones: false });
   useMonitorFilterStore.getState().reset();
   useUiStore.setState({ maxLiveTiles: 12 });
 });
@@ -255,6 +255,19 @@ describe('MontagePage (modern) — toolbar', () => {
       expect(screen.queryByText('Connected · 15.0 fps')).not.toBeInTheDocument();
     });
     expect(screen.queryByText('Front Door')).not.toBeInTheDocument();
+  });
+
+  it('draws the zone polygons over the tiles once Show Zones is on', async () => {
+    const user = userEvent.setup();
+    renderRoute('/montage');
+    await findWall();
+
+    expect(screen.queryAllByTestId('zones-overlay')).toHaveLength(0);
+    await openDisplay(user);
+    await user.click(screen.getByLabelText('Show Zones'));
+
+    await waitFor(() => expect(screen.getAllByTestId('zones-overlay').length).toBeGreaterThan(0));
+    expect(useMontageStore.getState().showZones).toBe(true);
   });
 
   it('changes the live-tile budget', async () => {

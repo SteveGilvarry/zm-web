@@ -1,8 +1,8 @@
 /**
  * Montage Review page (classic skin) — legacy `?view=montagereview`: the
  * filter row, the Date Time >= / <= window, Scale + Speed, the range toolbar
- * (`< Pan`, `In +`, `Out -`, 24/8/1 Hour, All Events, Live, `Pan >`), the
- * timeline and the per-monitor canvases.
+ * (`< Pan`, `In +`, `Out -`, 24/8/1 Hour, All Events, Live, Fit, `Pan >`),
+ * the timeline and the per-monitor canvases.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -13,6 +13,7 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMontageStore } from '@/stores/montage';
 import type { UserClaims } from '@/types';
 
 let mockSearch: Record<string, unknown> = {};
@@ -61,13 +62,16 @@ function signIn(user: UserClaims = perms()) {
 
 const server = setupServer();
 beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
-beforeEach(() => { signIn(); });
+// Legacy opens fitted; the scaled sizing is what most of these assert, so
+// each test opts into fit explicitly.
+beforeEach(() => { signIn(); useMontageStore.setState({ reviewFit: false }); });
 afterEach(() => {
   server.resetHandlers();
   mockSearch = {};
   streamProps.length = 0;
   useToastStore.getState().clear();
   useMonitorFilterStore.getState().reset();
+  useMontageStore.setState({ reviewFit: false });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
@@ -105,6 +109,7 @@ function stub({ monitors = MONITORS, events = EVENTS }: { monitors?: unknown[]; 
     http.get('/api/v3/monitor-status', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/groups', () => HttpResponse.json(paged([{ id: 5, name: 'Outside', parent_id: null }]))),
     http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([{ id: 1, group_id: 5, monitor_id: 1 }]))),
+    http.get('/api/v3/tags', () => HttpResponse.json(paged([{ id: 4, name: 'Suspicious' }]))),
     http.get('/api/v3/events', ({ request }) => {
       const q = new URL(request.url).searchParams;
       eventRequests.push(q);
@@ -119,6 +124,26 @@ async function mount() {
   const { default: Page } = await import('./montagereview');
   return renderWithProviders(<Page />);
 }
+
+describe('ClassicMontageReviewPage — event filters', () => {
+  it('sends Archive Status, Tags and Notes with the event queries', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+    await waitFor(() => expect(eventRequests.length).toBeGreaterThan(0));
+    expect(eventRequests[0].has('archived')).toBe(false);
+
+    await user.selectOptions(screen.getByLabelText('Archive Status'), 'archived');
+    await waitFor(() => expect(eventRequests.some((q) => q.get('archived') === 'true')).toBe(true));
+
+    await user.selectOptions(await screen.findByLabelText('Tags'), '4');
+    await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === '4')).toBe(true));
+
+    await user.selectOptions(screen.getByLabelText('Notes'), 'person');
+    await waitFor(() => expect(eventRequests.some((q) => q.get('notes') === 'person')).toBe(true));
+  });
+});
 
 describe('ClassicMontageReviewPage', () => {
   it('reviews every capturing monitor with the timeline above the canvases', async () => {
@@ -385,5 +410,75 @@ describe('ClassicMontageReviewPage', () => {
 
     await screen.findByTestId('review-classic-grid');
     await waitFor(() => expect(screen.getAllByText('No Event')).toHaveLength(2));
+  });
+});
+
+describe('ClassicMontageReviewPage — Fit', () => {
+  it('opens fitted: no Scale slider, and the button leaves fit mode', async () => {
+    const user = userEvent.setup();
+    useMontageStore.setState({ reviewFit: true });
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+
+    // Legacy hides #ScaleDiv in fit mode and labels the button 'Scale'.
+    expect(screen.queryByRole('slider')).toBeNull();
+    const bar = screen.getByRole('toolbar', { name: 'Review range' });
+    await user.click(within(bar).getByRole('button', { name: 'Scale' }));
+
+    expect(screen.getByRole('slider')).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'Fit' })).toBeInTheDocument();
+    expect(useMontageStore.getState().reviewFit).toBe(false);
+  });
+
+  it('honours legacy `?fit=1` over the stored preference', async () => {
+    mockSearch = { fit: '1' };
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+
+    expect(useMontageStore.getState().reviewFit).toBe(true);
+    expect(screen.queryByRole('slider')).toBeNull();
+  });
+
+  it('packs the cells into the measured wall when fitted', async () => {
+    useMontageStore.setState({ reviewFit: true });
+    const innerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true });
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 1200, height: 0, top: 200, left: 0, right: 1200, bottom: 200, x: 0, y: 200,
+      toJSON: () => ({}),
+    } as DOMRect);
+    try {
+      stub();
+      await mount();
+      const grid = await screen.findByTestId('review-classic-grid');
+      await waitFor(() => expect(grid.getAttribute('data-fit')).toBe('true'));
+
+      // 900 − 200 (wall top) − 16 (legacy's bottom gap) = 684.
+      expect(grid.style.height).toBe('684px');
+      const cell = within(grid).getByTitle('1 Cam 1');
+      expect(cell.style.position).toBe('absolute');
+      expect(parseFloat(cell.style.width)).toBeGreaterThan(0);
+      expect(parseFloat(cell.style.height)).toBeGreaterThan(0);
+      // Fitted cells are sized outright, not by aspect ratio.
+      expect(cell.style.aspectRatio).toBe('');
+    } finally {
+      rect.mockRestore();
+      Object.defineProperty(window, 'innerHeight', { value: innerHeight, configurable: true });
+    }
+  });
+
+  it('All Events asks the API for each monitor\'s first and last event', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+
+    const bar = screen.getByRole('toolbar', { name: 'Review range' });
+    await user.click(within(bar).getByRole('button', { name: 'All Events' }));
+
+    await waitFor(() => expect(eventRequests.some((q) => q.get('page_size') === '1' && q.get('direction') === 'desc')).toBe(true));
+    expect(eventRequests.some((q) => q.get('page_size') === '1' && q.get('direction') === 'asc')).toBe(true);
   });
 });

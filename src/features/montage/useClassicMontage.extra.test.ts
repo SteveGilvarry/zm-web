@@ -3,7 +3,7 @@
  * Delete layout (their prompts and the requests they send), the reorder
  * guards, the Width / Height / Scale stage controls, and the error paths.
  */
-import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -13,6 +13,7 @@ import type { Monitor } from '@/types';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMontageStore } from '@/stores/montage';
+import { DEFAULT_STAGE_SIZE } from '@/features/monitors/watchStage';
 import { useClassicMontage } from './useClassicMontage';
 import { parsePositions, serialisePositions } from './layoutFormat';
 import { gridLayout, leafMonitors } from './mosaic';
@@ -40,26 +41,39 @@ beforeAll(() => {
   });
   server.listen({ onUnhandledRequest: 'error' });
 });
+// The montage store is global and persisted, so every selection a test makes
+// would otherwise leak into the next one.
+beforeEach(() => {
+  useMontageStore.setState({
+    statusPosition: 'inside',
+    protocol: 'webrtc',
+    classicLayoutId: 'preset:auto',
+    montageStage: { ...DEFAULT_STAGE_SIZE },
+  });
+});
 afterEach(() => {
   server.resetHandlers();
   posted = []; deleted = [];
   useToastStore.getState().clear();
-  useMontageStore.setState({ statusPosition: 'inside', protocol: 'webrtc' });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
-function stubLayouts(items: unknown[] = [
+function stubLayouts(seed: unknown[] = [
   { id: 12, name: 'Zulu wall', user_id: 1, positions: savedPositions },
   { id: 13, name: 'alpha wall', user_id: 1, positions: savedPositions },
   { id: 14, name: 'Corrupt', user_id: 1, positions: 'not-json' },
 ]) {
+  // A created layout joins the list the refetch sees, as it would on a box.
+  const items = [...seed];
   server.use(
     http.get('/api/v3/montage_layouts', () =>
       HttpResponse.json({ items, total: items.length, per_page: 200, current_page: 1, last_page: 1 })),
     http.post('/api/v3/montage_layouts', async ({ request }) => {
       const body = await request.json();
       posted.push({ url: request.url, body });
-      return HttpResponse.json({ id: 99, name: (body as { name: string }).name, positions: savedPositions, user_id: 7 });
+      const created = { id: 99, name: (body as { name: string }).name, positions: savedPositions, user_id: 7 };
+      items.push(created);
+      return HttpResponse.json(created);
     }),
     http.delete('/api/v3/montage_layouts/:id', ({ params }) => {
       deleted.push(String(params.id));

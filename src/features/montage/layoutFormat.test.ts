@@ -108,11 +108,15 @@ describe('serialisePositions — what legacy sees', () => {
 });
 
 describe('statusPositionFromLegacy', () => {
-  it('maps the four legacy values (hover collapses to inside) and rejects others', () => {
+  it('maps the four legacy values and rejects others', () => {
     expect(statusPositionFromLegacy('insideImgBottom')).toBe('inside');
-    expect(statusPositionFromLegacy('showOnHover')).toBe('inside');
+    expect(statusPositionFromLegacy('showOnHover')).toBe('hover');
     expect(statusPositionFromLegacy('outsideImgBottom')).toBe('outside');
     expect(statusPositionFromLegacy('hidden')).toBe('hidden');
     expect(statusPositionFromLegacy('nope')).toBeUndefined();
+  });
+
+  it('writes showOnHover back for the hover position', () => {
+    expect(JSON.parse(serialisePositions(leaf(1), 'hover')).monitorStatusPosition).toBe('showOnHover');
   });
 });

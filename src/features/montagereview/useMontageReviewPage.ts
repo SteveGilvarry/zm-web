@@ -4,9 +4,11 @@ import { useTranslation } from 'react-i18next';
 import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { getEvents } from '@/api/events';
+import { listTags, type Tag } from '@/api/tags';
 import { fitRange, type EventSpan } from './fitRange';
-import { eventEndMs } from './useReviewEvents';
+import { eventEndMs, DEFAULT_REVIEW_FILTERS, type ReviewEventFilters } from './useReviewEvents';
 import { useRouteSearch, searchInt, searchString } from '@/features/monitors/useRouteSearch';
+import { useMontageStore } from '@/stores/montage';
 import { useReviewClock, type ReviewClock } from './useReviewClock';
 import type { Monitor } from '@/types';
 
@@ -41,6 +43,43 @@ export const REVIEW_RANGE_PRESETS: ReviewRangePresetOption[] = [
   { value: '24h', label: '24 hours',   icon: 'cal' },
   { value: 'all', label: 'All events', icon: 'cal' },
   { value: 'live', label: 'Live',      icon: 'live' },
+];
+
+/**
+ * Legacy's Notes select (`includes/Filter.php`): the substrings ZoneMinder
+ * offers for a LIKE match against an event's notes. Values are matched as
+ * written; the label is what the operator reads.
+ */
+export function useReviewNotesOptions(): Array<{ value: string; label: string }> {
+  const { t } = useTranslation();
+  return useMemo(() => [
+    { value: 'Motion', label: t('Motion') },
+    { value: 'ONVIF', label: t('ONVIF') },
+    { value: 'Linked', label: t('Linked') },
+    { value: 'detected', label: t('Any Object') },
+    { value: 'aplr', label: t('Any license plate') },
+    { value: 'person', label: t('person') },
+    { value: 'boat', label: t('boat') },
+    { value: 'bus', label: t('bus') },
+    { value: 'car', label: t('car') },
+    { value: 'truck', label: t('truck') },
+    { value: 'vehicle', label: t('vehicle') },
+  ], [t]);
+}
+
+/** English-only snapshot of the Notes options, for callers that need the ids. */
+export const REVIEW_NOTES_OPTIONS: Array<{ value: string; label: string }> = [
+  { value: 'Motion', label: 'Motion' },
+  { value: 'ONVIF', label: 'ONVIF' },
+  { value: 'Linked', label: 'Linked' },
+  { value: 'detected', label: 'Any Object' },
+  { value: 'aplr', label: 'Any license plate' },
+  { value: 'person', label: 'person' },
+  { value: 'boat', label: 'boat' },
+  { value: 'bus', label: 'bus' },
+  { value: 'car', label: 'car' },
+  { value: 'truck', label: 'truck' },
+  { value: 'vehicle', label: 'vehicle' },
 ];
 
 /** Playback multipliers; browsers cap `playbackRate` around 16. */
@@ -107,15 +146,21 @@ export interface MontageReviewPageState {
   pan: (fraction: number) => void;
   zoom: (factor: number) => void;
   /** Legacy "Fit": shrink the window onto the events that exist. */
-  fit: () => void;
-  isFitting: boolean;
+  fitToEvents: () => void;
+  isFittingEvents: boolean;
   /** Set when Fit found nothing to fit; cleared on the next range change. */
-  fitEmpty: boolean;
+  fitEventsEmpty: boolean;
   isLive: boolean;
   clock: ReviewClock;
   /** Legacy scale slider 0.1–1.0 (cell size relative to the camera). */
   scale: number;
   setScale: (s: number) => void;
+  /**
+   * Legacy Fit (`montagereview.js` `setFit`): pack the cells into what is
+   * left of the viewport instead of sizing them from the Scale slider.
+   */
+  fit: boolean;
+  setFit: (fit: boolean) => void;
   /** Every monitor, for the filter bar. */
   allMonitors: Monitor[];
   setFilteredMonitors: (monitors: Monitor[]) => void;
@@ -125,6 +170,11 @@ export interface MontageReviewPageState {
   /** Enabled monitors whose chip is on — the grid. */
   selectedMonitors: Monitor[];
   toggleMonitor: (id: number) => void;
+  /** Legacy Archived / Tags / Notes event filters. */
+  filters: ReviewEventFilters;
+  setFilters: (patch: Partial<ReviewEventFilters>) => void;
+  /** Tags to choose from, for the Tags select. */
+  tags: Tag[];
 }
 
 export function useMontageReviewPage(): MontageReviewPageState {
@@ -142,6 +192,19 @@ export function useMontageReviewPage(): MontageReviewPageState {
     () => new Set(urlMonitorId != null ? [urlMonitorId] : []),
   );
   const [scale, setScale] = useState(1);
+  const { reviewFit: fit, setReviewFit: setFit } = useMontageStore();
+
+  // Legacy carries fit mode on the URL (`&fit=0|1`); it wins over the
+  // persisted preference, once, on mount.
+  useEffect(() => {
+    const raw = search.fit;
+    if (raw == null || raw === '') return;
+    setFit(raw === '1' || raw === 1 || raw === true || raw === 'true');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const [filters, setFiltersState] = useState<ReviewEventFilters>(DEFAULT_REVIEW_FILTERS);
+  const setFilters = (patch: Partial<ReviewEventFilters>) =>
+    setFiltersState((prev) => ({ ...prev, ...patch }));
   const isLive = preset === 'live';
 
   // Initial range: the URL's, else the last 24 h.
@@ -185,11 +248,11 @@ export function useMontageReviewPage(): MontageReviewPageState {
   // Fit. The tracks fetch their own events per monitor, so rather than hold a
   // second copy here we ask the API for each selected monitor's first and
   // last event — two tiny requests per monitor, and only when Fit is clicked.
-  const [isFitting, setIsFitting] = useState(false);
-  const [fitEmpty, setFitEmpty] = useState(false);
-  const fit = () => {
-    if (isFitting || selectedMonitors.length === 0) return;
-    setIsFitting(true);
+  const [isFittingEvents, setIsFittingEvents] = useState(false);
+  const [fitEventsEmpty, setFitEmpty] = useState(false);
+  const fitToEvents = () => {
+    if (isFittingEvents || selectedMonitors.length === 0) return;
+    setIsFittingEvents(true);
     setFitEmpty(false);
     const edge = (monitorId: number, direction: 'asc' | 'desc') =>
       qc.fetchQuery({
@@ -219,7 +282,7 @@ export function useMontageReviewPage(): MontageReviewPageState {
         applyRange(range.start, range.end);
       })
       .catch(() => setFitEmpty(true))
-      .finally(() => setIsFitting(false));
+      .finally(() => setIsFittingEvents(false));
   };
 
   // Fetch monitors (only enabled / capturing ones make sense for review).
@@ -229,6 +292,13 @@ export function useMontageReviewPage(): MontageReviewPageState {
     enabled: isAuthenticated,
   });
   const allMonitors: Monitor[] = monitorsQ.data?.items ?? [];
+
+  const tagsQ = useQuery({
+    queryKey: ['tags'],
+    queryFn: () => listTags({ page: 1, page_size: 200 }),
+    enabled: isAuthenticated,
+    staleTime: 60_000,
+  });
 
   // Shared <MonitorFilterBar/> output. Layered on top of the per-monitor
   // chip toggles further down — so the chip row only offers monitors that
@@ -267,18 +337,23 @@ export function useMontageReviewPage(): MontageReviewPageState {
     setCustomRange,
     pan,
     zoom,
-    fit,
-    isFitting,
-    fitEmpty,
+    fitToEvents,
+    isFittingEvents,
+    fitEventsEmpty,
     isLive,
     clock,
     scale,
     setScale,
+    fit,
+    setFit,
     allMonitors,
     setFilteredMonitors,
     enabled,
     selectedIds,
     selectedMonitors,
     toggleMonitor,
+    filters,
+    setFilters,
+    tags: tagsQ.data?.items ?? [],
   };
 }

@@ -11,7 +11,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useMontageStore, type MontageStatusPosition } from '@/stores/montage';
 import { useToast } from '@/components/common/toastStore';
 import { displayDimensions } from '@/features/monitors/orientation';
-import { DEFAULT_STAGE_SIZE, stageStyle, type StageSize } from '@/features/monitors/watchStage';
+import { stageStyle, type StageSize } from '@/features/monitors/watchStage';
 import type { Monitor, StreamProtocol } from '@/types';
 import { MONTAGE_PRESETS, autoColumns, DEFAULT_PRESET_ID } from './classicPresets';
 import { parsePositions, serialisePositions } from './layoutFormat';
@@ -46,6 +46,9 @@ export interface ClassicMontageState {
   busy: boolean;
   statusPosition: MontageStatusPosition;
   setStatusPosition: (p: MontageStatusPosition) => void;
+  /** Legacy `zmMontageShowZones`: draw zone polygons over the live tiles. */
+  showZones: boolean;
+  setShowZones: (show: boolean) => void;
   protocol: StreamProtocol;
   setProtocol: (p: StreamProtocol) => void;
   stage: {
@@ -75,12 +78,14 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
   const { isAuthenticated, user } = useAuthStore();
   const toast = useToast();
   const qc = useQueryClient();
-  const { protocol, setProtocol, statusPosition, setStatusPosition } = useMontageStore();
+  const {
+    protocol, setProtocol, statusPosition, setStatusPosition,
+    classicLayoutId, setClassicLayoutId, showZones, setShowZones,
+    montageStage: size, setMontageStage: setSize,
+  } = useMontageStore();
 
-  const [layoutId, setLayoutIdState] = useState(`preset:${DEFAULT_PRESET_ID}`);
   const [editMode, setEditMode] = useState(false);
   const [draftOrder, setDraftOrder] = useState<number[] | null>(null);
-  const [size, setSize] = useState<StageSize>(DEFAULT_STAGE_SIZE);
 
   const layoutsQ = useQuery({
     queryKey: QUERY_KEY,
@@ -103,9 +108,14 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     ...saved.map((l) => ({ value: `saved:${l.id}`, label: l.name })),
   ];
 
-  const activeSaved = layoutId.startsWith('saved:')
-    ? saved.find((l) => `saved:${l.id}` === layoutId)
+  const activeSaved = classicLayoutId.startsWith('saved:')
+    ? saved.find((l) => `saved:${l.id}` === classicLayoutId)
     : undefined;
+  // A persisted saved layout can be deleted from another tab or another
+  // session; once the list has loaded without it, fall back to Auto.
+  const layoutId = classicLayoutId.startsWith('saved:') && layoutsQ.isSuccess && !activeSaved
+    ? `preset:${DEFAULT_PRESET_ID}`
+    : classicLayoutId;
   const preset = MONTAGE_PRESETS.find((p) => `preset:${p.id}` === layoutId);
 
   // A saved layout fixes the order; the monitors it names come first, the
@@ -137,7 +147,7 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     },
     onSuccess: (created) => {
       invalidate();
-      setLayoutIdState(`saved:${created.id}`);
+      setClassicLayoutId(`saved:${created.id}`);
       setDraftOrder(null);
       setEditMode(false);
       toast.success(t('Layout "{{name}}" saved', { name: created.name }));
@@ -148,14 +158,14 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     mutationFn: (id: number) => deleteMontageLayout(id),
     onSuccess: () => {
       invalidate();
-      setLayoutIdState(`preset:${DEFAULT_PRESET_ID}`);
+      setClassicLayoutId(`preset:${DEFAULT_PRESET_ID}`);
       toast.success(t('Layout deleted'));
     },
     onError: toast.apiError,
   });
 
   const setLayoutId = (id: string) => {
-    setLayoutIdState(id);
+    setClassicLayoutId(id);
     setDraftOrder(null);
     setEditMode(false);
   };
@@ -200,13 +210,17 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     busy: createMutation.isPending || deleteMutation.isPending,
     statusPosition,
     setStatusPosition,
+    showZones,
+    setShowZones,
     protocol,
     setProtocol,
     stage: {
       size,
-      setWidth: (width) => setSize((s) => ({ ...s, width })),
-      setHeight: (height) => setSize((s) => ({ ...s, height })),
-      setScale: (scale) => setSize((s) => ({ ...s, scale })),
+      // Read the live store rather than this render's `size` so two setters
+      // fired in one batch (Width then Height) do not clobber each other.
+      setWidth: (width) => setSize({ ...useMontageStore.getState().montageStage, width }),
+      setHeight: (height) => setSize({ ...useMontageStore.getState().montageStage, height }),
+      setScale: (scale) => setSize({ ...useMontageStore.getState().montageStage, scale }),
       styleFor: (m) => stageStyle(size, displayDimensions(m)),
     },
   };

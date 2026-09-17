@@ -2,7 +2,7 @@ import { useEffect, useRef } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Download, Video } from 'lucide-react';
-import { useReviewEvents, findEventAt } from './useReviewEvents';
+import { useReviewEvents, findEventAt, DEFAULT_REVIEW_FILTERS, type ReviewEventFilters } from './useReviewEvents';
 import { getEventVideoUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
 import { getOrientationStyle } from '@/types';
@@ -15,6 +15,13 @@ interface MontageReviewCellProps {
   rangeEnd: Date;
   isPlaying: boolean;
   speed: number;
+  /** Archived / Tags / Notes filters from the toolbar. */
+  filters?: ReviewEventFilters;
+  /**
+   * Fill the parent instead of holding a 16:9 shape — the fitted wall sizes
+   * every cell itself, so the cell must take the height it is given.
+   */
+  fill?: boolean;
 }
 
 /**
@@ -34,9 +41,11 @@ export function MontageReviewCell({
   rangeEnd,
   isPlaying,
   speed,
+  filters = DEFAULT_REVIEW_FILTERS,
+  fill = false,
 }: MontageReviewCellProps) {
   const { t } = useTranslation();
-  const { events, isLoading } = useReviewEvents(monitor.id, rangeStart, rangeEnd);
+  const { events, isLoading } = useReviewEvents(monitor.id, rangeStart, rangeEnd, filters);
   const currentEvent = findEventAt(events, currentTime);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -71,7 +80,7 @@ export function MontageReviewCell({
     : null;
 
   return (
-    <div dir="ltr" className="relative bg-bg-sunken rounded overflow-hidden border border-border-subtle aspect-video">
+    <div dir="ltr" className={`relative bg-bg-sunken rounded overflow-hidden border border-border-subtle ${fill ? 'w-full h-full' : 'aspect-video'}`}>
       {/* Monitor name overlay */}
       <div className="absolute top-1.5 start-1.5 z-10 px-1.5 py-0.5 rounded bg-black/60">
         <span className="text-xs font-medium text-white">{monitor.name}</span>

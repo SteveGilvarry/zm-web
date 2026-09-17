@@ -1,11 +1,15 @@
-import { useState, type CSSProperties, type DragEvent } from 'react';
+import { useRef, useState, type CSSProperties, type DragEvent } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { StreamCell } from '@/components/common/StreamCell';
+import { ZonesOverlay } from '@/features/events/ZonesOverlay';
+import { displayDimensions } from '@/features/monitors/orientation';
 import { useMonitorStatuses, formatFps, runtimeTone, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import type { MontageStatusPosition } from '@/stores/montage';
 import type { Monitor, StreamProtocol } from '@/types';
+import { TileControls } from './TileControls';
+import { useTileZoom } from './tileZoom';
 
 export interface MontageClassicGridProps {
   /** Monitors to display, in display order. */
@@ -18,6 +22,13 @@ export interface MontageClassicGridProps {
   onReorder?: (fromId: number, toId: number) => void;
   /** Per-cell size from the Width / Height / Scale selects. */
   cellStyle?: (monitor: Monitor) => CSSProperties;
+  /** Draw each monitor's zone polygons over its tile. */
+  showZones?: boolean;
+  /**
+   * Legacy Fit: the wall becomes one absolutely-positioned canvas of this
+   * height, and `cellStyle` supplies each tile's packed position.
+   */
+  fitHeight?: number;
 }
 
 /**
@@ -31,6 +42,7 @@ export interface MontageClassicGridProps {
  */
 export function MontageClassicGrid({
   monitors, columns, protocol, statusPosition = 'outside', editMode = false, onReorder, cellStyle,
+  showZones = false, fitHeight,
 }: MontageClassicGridProps) {
   const { t } = useTranslation();
   const { byId: runtimeById } = useMonitorStatuses(monitors.length > 0 && statusPosition !== 'hidden');
@@ -53,8 +65,11 @@ export function MontageClassicGrid({
       dir="ltr"
       data-testid="montage-classic-grid"
       data-columns={columns}
-      className="grid gap-1"
-      style={{ gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }}
+      className={fitHeight == null ? 'grid gap-1' : 'relative'}
+      data-fit={fitHeight == null ? undefined : 'true'}
+      style={fitHeight == null
+        ? { gridTemplateColumns: `repeat(${columns}, minmax(0, 1fr))` }
+        : { height: fitHeight }}
     >
       {monitors.map((m) => (
         <ClassicCell
@@ -64,7 +79,9 @@ export function MontageClassicGrid({
           runtime={runtimeById[m.id]}
           statusPosition={statusPosition}
           style={cellStyle?.(m)}
+          showZones={showZones}
           editMode={editMode}
+          fitted={fitHeight != null}
           isDragging={draggingId === m.id}
           onDragStart={() => setDraggingId(m.id)}
           onDragEnd={() => setDraggingId(null)}
@@ -87,20 +104,25 @@ const TONE_DOT: Record<ReturnType<typeof runtimeTone>, string> = {
 };
 
 function ClassicCell({
-  monitor, protocol, runtime, statusPosition, style, editMode, isDragging, onDragStart, onDragEnd, onDrop,
+  monitor, protocol, runtime, statusPosition, style, showZones, editMode, fitted = false, isDragging, onDragStart, onDragEnd, onDrop,
 }: {
   monitor: Monitor;
   protocol: StreamProtocol;
   runtime: MonitorRuntime | undefined;
   statusPosition: MontageStatusPosition;
   style?: CSSProperties;
+  showZones: boolean;
   editMode: boolean;
+  /** Legacy Fit: the cell is a packed box, so the frame fills what the caption leaves. */
+  fitted?: boolean;
   isDragging: boolean;
   onDragStart: () => void;
   onDragEnd: () => void;
   onDrop: () => void;
 }) {
   const { t, i18n } = useTranslation();
+  const frameRef = useRef<HTMLDivElement>(null);
+  const zoom = useTileZoom();
   const tone = runtimeTone(runtime?.status);
   const caption = runtime
     ? `${runtime.status} · ${formatFps(runtime.captureFps, i18n.language)}`
@@ -116,25 +138,48 @@ function ClassicCell({
     <div
       data-testid={`montage-classic-cell-${monitor.id}`}
       className={clsx(
-        'bg-white border border-zinc-300 rounded-sm overflow-hidden flex flex-col min-w-0',
+        'group bg-white border border-zinc-300 rounded-sm overflow-hidden flex flex-col min-w-0',
         editMode && 'cursor-grab ring-2 ring-[#337ab7]/60',
         isDragging && 'opacity-40',
       )}
       style={style}
       {...dragProps}
     >
-      <div className="relative w-full bg-zinc-900" style={{ aspectRatio: style?.aspectRatio ?? '16 / 9' }}>
-        <StreamCell
-          protocol={protocol}
-          monitorId={monitor.id}
-          monitorName={monitor.name}
-          orientation={monitor.orientation}
-          showName={statusPosition === 'inside'}
-          statusText={statusPosition === 'inside' && runtime ? caption : undefined}
-          autoStart
-          gated
-          compact
-        />
+      <div
+        ref={frameRef}
+        className={clsx('relative w-full overflow-hidden bg-zinc-900', fitted && 'flex-1 min-h-0')}
+        style={fitted ? undefined : { aspectRatio: style?.aspectRatio ?? '16 / 9' }}
+      >
+        <div className="absolute inset-0" style={zoom.style}>
+          <StreamCell
+            protocol={protocol}
+            monitorId={monitor.id}
+            monitorName={monitor.name}
+            orientation={monitor.orientation}
+            showName={statusPosition === 'inside'}
+            statusText={statusPosition === 'inside' && runtime ? caption : undefined}
+            autoStart
+            gated
+            compact
+          />
+          {showZones && (
+            <ZonesOverlay
+              monitorId={monitor.id}
+              monitorWidth={displayDimensions(monitor).width}
+              monitorHeight={displayDimensions(monitor).height}
+            />
+          )}
+        </div>
+        {!editMode && <TileControls monitorId={monitor.id} targetRef={frameRef} zoom={zoom} />}
+        {statusPosition === 'hover' && (
+          <div
+            data-testid={`montage-classic-hover-${monitor.id}`}
+            className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 px-2 py-1 bg-black/60 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
+          >
+            <span className="truncate">{monitor.name}</span>
+            <span className="ms-auto font-mono tabular-nums whitespace-nowrap">{caption}</span>
+          </div>
+        )}
       </div>
       {statusPosition === 'outside' && (
         <div

@@ -322,7 +322,7 @@ describe('useMontageReviewPage — backend trouble', () => {
   });
 });
 
-describe('fit — legacy "Fit" button', () => {
+describe('fitToEvents — legacy "Fit" button', () => {
   const page = (items: unknown[]) => ({
     items, total: items.length, per_page: 1, current_page: 1, last_page: 1,
   });
@@ -349,13 +349,13 @@ describe('fit — legacy "Fit" button', () => {
     const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.selectedMonitors.length).toBeGreaterThan(0));
 
-    act(() => result.current.fit());
-    await waitFor(() => expect(result.current.isFitting).toBe(false));
+    act(() => result.current.fitToEvents());
+    await waitFor(() => expect(result.current.isFittingEvents).toBe(false));
 
     // First and last event asked for, per selected monitor.
     expect(asked.some((a) => a.endsWith(':asc'))).toBe(true);
     expect(asked.some((a) => a.endsWith(':desc'))).toBe(true);
-    expect(result.current.fitEmpty).toBe(false);
+    expect(result.current.fitEventsEmpty).toBe(false);
     expect(result.current.preset).toBe('custom');
     expect(result.current.clock.rangeStart.getTime())
       .toBeLessThanOrEqual(Date.parse('2026-08-21T10:00:00Z'));
@@ -373,8 +373,8 @@ describe('fit — legacy "Fit" button', () => {
     await waitFor(() => expect(result.current.selectedMonitors.length).toBeGreaterThan(0));
     const before = result.current.clock.rangeStart.getTime();
 
-    act(() => result.current.fit());
-    await waitFor(() => expect(result.current.fitEmpty).toBe(true));
+    act(() => result.current.fitToEvents());
+    await waitFor(() => expect(result.current.fitEventsEmpty).toBe(true));
     expect(result.current.clock.rangeStart.getTime()).toBe(before);
   });
 });

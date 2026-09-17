@@ -1,7 +1,7 @@
 import { useRef, useMemo, type PointerEvent as ReactPointerEvent } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { eventEndMs, useReviewEvents } from './useReviewEvents';
+import { eventEndMs, useReviewEvents, DEFAULT_REVIEW_FILTERS, type ReviewEventFilters } from './useReviewEvents';
 import type { Monitor, ZmEvent } from '@/types';
 
 interface MontageReviewTimelineProps {
@@ -10,6 +10,8 @@ interface MontageReviewTimelineProps {
   rangeEnd: Date;
   currentTime: Date;
   onSeek: (t: Date) => void;
+  /** Archived / Tags / Notes filters from the toolbar. */
+  filters?: ReviewEventFilters;
 }
 
 /**
@@ -24,6 +26,7 @@ export function MontageReviewTimeline({
   rangeEnd,
   currentTime,
   onSeek,
+  filters = DEFAULT_REVIEW_FILTERS,
 }: MontageReviewTimelineProps) {
   const { t } = useTranslation();
   const bodyRef = useRef<HTMLDivElement | null>(null);
@@ -102,6 +105,7 @@ export function MontageReviewTimeline({
             monitor={monitor}
             rangeStart={rangeStart}
             rangeEnd={rangeEnd}
+            filters={filters}
           />
         ))}
 
@@ -122,10 +126,11 @@ interface TrackProps {
   monitor: Monitor;
   rangeStart: Date;
   rangeEnd: Date;
+  filters: ReviewEventFilters;
 }
 
-function Track({ monitor, rangeStart, rangeEnd }: TrackProps) {
-  const { events } = useReviewEvents(monitor.id, rangeStart, rangeEnd);
+function Track({ monitor, rangeStart, rangeEnd, filters }: TrackProps) {
+  const { events } = useReviewEvents(monitor.id, rangeStart, rangeEnd, filters);
   const durationMs = rangeEnd.getTime() - rangeStart.getTime();
 
   return (

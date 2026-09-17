@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { Monitor } from '@/types';
 import { autoColumns, MONTAGE_PRESETS } from './classicPresets';
@@ -21,6 +21,11 @@ vi.mock('@/components/common/StreamCell', () => ({
     streamCellProps.push(props);
     return <div data-testid={`stream-${props.monitorId}`} />;
   },
+}));
+
+// TileControls asks for monitor-edit rights; grant them without a query client.
+vi.mock('@/features/auth/usePerms', () => ({
+  usePerms: () => ({ can: () => true, level: () => 'Edit', known: true, perms: {} }),
 }));
 
 // Runtime status comes from a polled query; stub the hook with fixed rows.
@@ -122,6 +127,19 @@ describe('MontageClassicGrid — live cells', () => {
     expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
     expect(streamCellProps.at(-1)).toMatchObject({ showName: false });
   });
+
+  it('draws the legacy showOnHover caption inside the picture, revealed on hover', () => {
+    render(
+      <MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="hls" statusPosition="hover" />,
+    );
+    const caption = screen.getByTestId('montage-classic-hover-1');
+    expect(caption).toHaveTextContent('Front Door');
+    expect(caption).toHaveTextContent('Connected · 10.9 fps');
+    expect(caption.className).toContain('group-hover:opacity-100');
+    // Nothing outside the picture, and the stream's own caption stays off.
+    expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
+    expect(streamCellProps.at(-1)).toMatchObject({ showName: false });
+  });
 });
 
 describe('MontageClassicGrid — rendering', () => {
@@ -167,6 +185,24 @@ describe('MontageClassicGrid — rendering', () => {
     );
     expect(screen.getByTestId('montage-classic-cell-1')).toHaveStyle({ width: '320px' });
   });
+
+  it('in Fit mode the frame fills the packed box instead of forcing 16:9', () => {
+    // Legacy `maxfit2` hands each tile an absolute box; a fixed aspect on the
+    // picture would leave the caption floating mid-tile above empty space.
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 })]}
+        columns={1}
+        protocol="webrtc"
+        fitHeight={600}
+        cellStyle={() => ({ position: 'absolute', top: 0, width: 300, height: 520 })}
+      />,
+    );
+    expect(screen.getByTestId('montage-classic-grid')).toHaveStyle({ height: '600px' });
+    const frame = screen.getByTestId('montage-classic-cell-1').firstElementChild as HTMLElement;
+    expect(frame.className).toContain('flex-1');
+    expect(frame.style.aspectRatio).toBe('');
+  });
 });
 
 describe('MontageClassicGrid — edit layout', () => {
@@ -193,5 +229,39 @@ describe('MontageClassicGrid — edit layout', () => {
   it('is inert outside edit mode', () => {
     render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" />);
     expect(screen.getByTestId('montage-classic-cell-1')).not.toHaveAttribute('draggable');
+  });
+});
+
+describe('MontageClassicGrid — tile controls', () => {
+  it('offers zoom / fullscreen / watch per tile and scales the stream on zoom in', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" />);
+    const controls = screen.getByTestId('tile-controls-1');
+    const stream = screen.getByTestId('stream-1').parentElement!;
+    expect(stream).not.toHaveStyle({ transform: 'scale(1.3)' });
+
+    const zoomOut = within(controls).getByRole('button', { name: 'Zoom OUT' });
+    expect(zoomOut).toBeDisabled(); // already at the natural fit
+    fireEvent.click(within(controls).getByRole('button', { name: 'Zoom IN' }));
+    expect(screen.getByTestId('stream-1').parentElement).toHaveStyle({ transform: 'scale(1.3)' });
+    fireEvent.click(within(controls).getByRole('button', { name: 'Zoom OUT' }));
+    expect(screen.getByTestId('stream-1').parentElement).not.toHaveStyle({ transform: 'scale(1.3)' });
+
+    expect(within(controls).getByRole('button', { name: 'Open full screen' })).toBeInTheDocument();
+    expect(within(controls).getByRole('link', { name: 'Open watch page' })).toBeInTheDocument();
+    expect(within(controls).getByRole('link', { name: 'Edit monitor' })).toBeInTheDocument();
+  });
+
+  it('asks the browser to full-screen the tile frame', () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" />);
+    const frame = screen.getByTestId('stream-1').parentElement!.parentElement!;
+    frame.requestFullscreen = request;
+    fireEvent.click(within(screen.getByTestId('tile-controls-1')).getByRole('button', { name: 'Open full screen' }));
+    expect(request).toHaveBeenCalled();
+  });
+
+  it('hides the controls while the layout is being edited', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" editMode />);
+    expect(screen.queryByTestId('tile-controls-1')).not.toBeInTheDocument();
   });
 });

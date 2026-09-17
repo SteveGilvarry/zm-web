@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import type { Monitor } from '@/types';
 import { useAuthStore } from '@/stores/auth';
-import { useCyclePage, useCycleRotation } from './useCyclePage';
+import { CYCLE_DEFAULT_INTERVAL_S, useCyclePage, useCycleRotation } from './useCyclePage';
 
 let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => mockSearch, useNavigate: () => vi.fn() }));
@@ -66,9 +66,13 @@ describe('useCycleRotation', () => {
   });
 });
 
+const configs = (rows: Array<{ name: string; value: string }>) =>
+  HttpResponse.json({ items: rows.map((r, i) => ({ id: i + 1, ...r })), total: rows.length, per_page: 1000, current_page: 1, last_page: 1 });
+
 const server = setupServer(
   http.get('/api/v3/monitors', () =>
     HttpResponse.json({ items: [m(1), m(2, { capturing: 'None' }), m(3)], total: 3, per_page: 100, current_page: 1, last_page: 1 })),
+  http.get('/api/v3/configs', () => configs([{ name: 'ZM_WEB_REFRESH_CYCLE', value: '30' }])),
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
@@ -101,6 +105,23 @@ describe('useCyclePage', () => {
     expect(result.current.viewMode).toBe('stills');
     act(() => result.current.stage.setScale('640px'));
     expect(result.current.stage.style).toMatchObject({ maxWidth: '640px' });
+  });
+
+  it('takes the dwell time from ZM_WEB_REFRESH_CYCLE, and lets the operator override it', async () => {
+    const { result } = renderHook(() => useCyclePage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.intervalS).toBe(30));
+    expect(result.current.countdown).toBe(30);
+
+    act(() => result.current.setInterval(5));
+    expect(result.current.intervalS).toBe(5);
+    expect(result.current.countdown).toBe(5);
+  });
+
+  it('falls back to the built-in dwell time when the config is missing', async () => {
+    server.use(http.get('/api/v3/configs', () => configs([])));
+    const { result } = renderHook(() => useCyclePage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.monitors).toHaveLength(2));
+    expect(result.current.intervalS).toBe(CYCLE_DEFAULT_INTERVAL_S);
   });
 
   it('accepts an explicit rotation source (classic filter row)', async () => {

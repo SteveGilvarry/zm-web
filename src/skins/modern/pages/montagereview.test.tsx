@@ -405,3 +405,27 @@ describe('MontageReviewPage (modern) — monitor selection', () => {
     expect(within(chips).getByRole('button', { name: 'Front Door' })).toBeInTheDocument();
   });
 });
+
+
+describe('MontageReviewPage (modern) — event filters', () => {
+  it('sends Archive Status / Tags / Notes with the event queries and counts them', async () => {
+    const user = userEvent.setup();
+    const seen: URLSearchParams[] = [];
+    server.use(http.get('*/api/v3/events', ({ request }) => {
+      seen.push(new URL(request.url).searchParams);
+      return HttpResponse.json({ items: [], total: 0, per_page: 500, current_page: 1, last_page: 1 });
+    }));
+    renderRoute(`/montagereview${WIDE_RANGE}`);
+    await findChips();
+
+    await user.click(screen.getByRole('button', { name: 'Filters' }));
+    await user.selectOptions(screen.getByLabelText('Archive Status'), 'unarchived');
+    await waitFor(() => expect(seen.some((q) => q.get('archived') === 'false')).toBe(true));
+
+    await user.selectOptions(screen.getByLabelText('Notes'), 'Motion');
+    await waitFor(() => expect(seen.some((q) => q.get('notes') === 'Motion')).toBe(true));
+
+    // Both show on the Filters badge.
+    expect(screen.getAllByRole('button', { name: /Filters/ })[0]).toHaveTextContent('2');
+  });
+});

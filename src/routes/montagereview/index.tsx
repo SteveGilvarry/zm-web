@@ -10,6 +10,8 @@ interface MontageReviewSearchParams {
   monitor_id?: number;
   min_time?: string;
   max_time?: string;
+  /** Legacy `&fit=0|1`: open fitted or scaled. */
+  fit?: string;
 }
 
 export const Route = createFileRoute('/montagereview/')({
@@ -18,6 +20,7 @@ export const Route = createFileRoute('/montagereview/')({
     monitor_id: toInt(search.monitor_id),
     min_time: toStr(search.min_time),
     max_time: toStr(search.max_time),
+    fit: toStr(search.fit),
   }),
 });
 

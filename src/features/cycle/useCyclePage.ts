@@ -4,7 +4,9 @@ import { getMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useRouteSearch, searchInt } from '@/features/monitors/useRouteSearch';
 import { displayDimensions } from '@/features/monitors/orientation';
-import { DEFAULT_STAGE_SIZE, stageStyle, type StageSize } from '@/features/monitors/watchStage';
+import { stageStyle, type StageSize } from '@/features/monitors/watchStage';
+import { useMontageStore } from '@/stores/montage';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import type { Monitor } from '@/types';
 
 export const CYCLE_DEFAULT_INTERVAL_S = 10;
@@ -32,6 +34,12 @@ export interface CycleRotationState {
 export interface CycleRotationOptions {
   /** Start on this monitor (legacy `?mid=`) once it appears in the list. */
   startMonitorId?: number;
+  /**
+   * Seconds per monitor before the operator touches the control — legacy
+   * `ZM_WEB_REFRESH_CYCLE`. Arrives asynchronously with the config table, so
+   * it is a *default*: an operator override outlives it.
+   */
+  defaultIntervalS?: number;
 }
 
 /**
@@ -41,8 +49,18 @@ export interface CycleRotationOptions {
 export function useCycleRotation(monitors: Monitor[], options: CycleRotationOptions = {}): CycleRotationState {
   const [index, setIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
-  const [intervalS, setIntervalS] = useState<number>(CYCLE_DEFAULT_INTERVAL_S);
-  const [countdown, setCountdown] = useState<number>(CYCLE_DEFAULT_INTERVAL_S);
+  const defaultIntervalS = options.defaultIntervalS ?? CYCLE_DEFAULT_INTERVAL_S;
+  // The operator's choice wins over the configured default for the session.
+  const [overrideIntervalS, setOverrideIntervalS] = useState<number | null>(null);
+  const intervalS = overrideIntervalS ?? defaultIntervalS;
+  const [countdown, setCountdown] = useState<number>(intervalS);
+  // The config lands a render or two after mount; restart the countdown on it
+  // during render rather than from an effect (no double paint).
+  const [countdownFor, setCountdownFor] = useState<number>(intervalS);
+  if (countdownFor !== intervalS) {
+    setCountdownFor(intervalS);
+    setCountdown(intervalS);
+  }
   // The requested start monitor wins until the operator moves off it.
   const [pendingStart, setPendingStart] = useState<number | undefined>(options.startMonitorId);
 
@@ -93,7 +111,7 @@ export function useCycleRotation(monitors: Monitor[], options: CycleRotationOpti
         return !p;
       });
     },
-    setInterval: (seconds) => { setIntervalS(seconds); setCountdown(seconds); },
+    setInterval: (seconds) => { setOverrideIntervalS(seconds); setCountdown(seconds); },
     jumpTo: move,
   };
 }
@@ -169,9 +187,12 @@ export function useCyclePage(options: CyclePageOptions = {}): CyclePageState {
     return allMonitors.filter((m) => m.capturing !== 'None' && (!ids || ids.has(m.id)));
   }, [allMonitors, source]);
 
-  const rotation = useCycleRotation(monitors, { startMonitorId });
+  // Legacy `ZM_WEB_REFRESH_CYCLE` — seconds each monitor holds the stage.
+  const configIntervalS = useZmConfig('ZM_WEB_REFRESH_CYCLE', CYCLE_DEFAULT_INTERVAL_S);
+  const rotation = useCycleRotation(monitors, { startMonitorId, defaultIntervalS: configIntervalS });
   const [viewMode, setViewMode] = useState<CycleViewMode>('stream');
-  const [size, setSize] = useState<StageSize>(DEFAULT_STAGE_SIZE);
+  const size = useMontageStore((s) => s.cycleStage);
+  const setSize = useMontageStore((s) => s.setCycleStage);
 
   return {
     ...rotation,
@@ -187,9 +208,11 @@ export function useCyclePage(options: CyclePageOptions = {}): CyclePageState {
     setViewMode,
     stage: {
       size,
-      setWidth: (width) => setSize((s) => ({ ...s, width })),
-      setHeight: (height) => setSize((s) => ({ ...s, height })),
-      setScale: (scale) => setSize((s) => ({ ...s, scale })),
+      // Read the live store, not this render's `size`, so two setters fired
+      // in one batch do not clobber each other.
+      setWidth: (width) => setSize({ ...useMontageStore.getState().cycleStage, width }),
+      setHeight: (height) => setSize({ ...useMontageStore.getState().cycleStage, height }),
+      setScale: (scale) => setSize({ ...useMontageStore.getState().cycleStage, scale }),
       style: stageStyle(size, rotation.current ? displayDimensions(rotation.current) : { width: 16, height: 9 }),
     },
   };

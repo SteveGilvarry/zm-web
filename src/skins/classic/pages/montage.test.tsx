@@ -65,7 +65,7 @@ afterEach(() => {
   streamProps.length = 0;
   useToastStore.getState().clear();
   useMonitorFilterStore.getState().reset();
-  useMontageStore.setState({ protocol: 'webrtc', statusPosition: 'inside' });
+  useMontageStore.setState({ protocol: 'webrtc', statusPosition: 'inside', showZones: false });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
@@ -98,6 +98,9 @@ function stub({
     http.get('/api/v3/montage_layouts', () => HttpResponse.json(paged(layouts))),
     http.get('/api/v3/groups', () => HttpResponse.json(paged(groups))),
     http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([{ id: 1, group_id: 5, monitor_id: 1 }]))),
+    http.get('/api/v3/monitors/:id/zones', ({ params }) => HttpResponse.json(paged([
+      { id: Number(params.id) * 10, monitor_id: Number(params.id), name: 'Whole', type: 'Active', coords: '0,0 1919,0 1919,1079 0,1079' },
+    ]))),
   );
 }
 
@@ -120,6 +123,31 @@ describe('ClassicMontagePage', () => {
     expect(screen.queryByTestId('montage-classic-cell-4')).toBeNull();
   });
 
+  it('draws the zone polygons over the wall once Show Zones is on', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByTestId('montage-classic-grid');
+    expect(screen.queryAllByTestId('zones-overlay')).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Show Zones' }));
+    await waitFor(() => expect(screen.getAllByTestId('zones-overlay').length).toBe(3));
+    expect(useMontageStore.getState().showZones).toBe(true);
+  });
+
+  it('full-screens the wall, not the whole page', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    const grid = await screen.findByTestId('montage-classic-grid');
+    const wall = grid.closest('div[class*="flex-1"]')!;
+    const request = vi.fn().mockResolvedValue(undefined);
+    (wall as HTMLElement).requestFullscreen = request;
+
+    await user.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    expect(request).toHaveBeenCalled();
+  });
+
   it('renders the legacy settings band', async () => {
     stub();
     await mount();
@@ -132,6 +160,8 @@ describe('ClassicMontagePage', () => {
     expect(screen.getByLabelText('Layout')).toBeInTheDocument();
     expect(screen.getByLabelText('Width')).toBeInTheDocument();
     expect(screen.getByLabelText('Height')).toBeInTheDocument();
+    // Legacy montage.php has no Fit button — that lives on Montage Review.
+    expect(screen.queryByRole('button', { name: 'Fit' })).toBeNull();
   });
 
   it('narrows the wall through the filter row', async () => {

@@ -18,6 +18,7 @@ import {
   useReviewEvents,
   REVIEW_MAX_PAGES,
   REVIEW_PAGE_SIZE,
+  DEFAULT_REVIEW_FILTERS,
 } from './useReviewEvents';
 
 const server = setupServer();
@@ -195,5 +196,55 @@ describe('eventEndMs / findEventAt — missing timestamps', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+
+describe('fetchReviewEvents — Archived / Tags / Notes filters', () => {
+  /** Query strings of every /events request the call made. */
+  function capture(): URLSearchParams[] {
+    const seen: URLSearchParams[] = [];
+    server.use(http.get('/api/v3/events', ({ request }) => {
+      seen.push(new URL(request.url).searchParams);
+      return HttpResponse.json({ items: [], total: 0, per_page: REVIEW_PAGE_SIZE, current_page: 1, last_page: 1 });
+    }));
+    return seen;
+  }
+
+  it('sends nothing extra by default', async () => {
+    const seen = capture();
+    await fetchReviewEvents(1, RANGE_START.toISOString(), RANGE_END.toISOString());
+    expect(seen[0].has('archived')).toBe(false);
+    expect(seen[0].has('tag_id')).toBe(false);
+    expect(seen[0].has('notes')).toBe(false);
+  });
+
+  it('maps the three controls onto the backend params', async () => {
+    const seen = capture();
+    await fetchReviewEvents(1, RANGE_START.toISOString(), RANGE_END.toISOString(), {
+      archived: 'archived', tagIds: [4, 9], notes: '  person  ',
+    });
+    expect(seen[0].get('archived')).toBe('true');
+    expect(seen[0].get('tag_id')).toBe('4,9');
+    expect(seen[0].get('notes')).toBe('person');
+
+    await fetchReviewEvents(1, RANGE_START.toISOString(), RANGE_END.toISOString(), {
+      ...DEFAULT_REVIEW_FILTERS, archived: 'unarchived',
+    });
+    expect(seen[1].get('archived')).toBe('false');
+  });
+
+  it('caches per filter — changing one refetches', async () => {
+    const seen = capture();
+    const wrapper = makeWrapper();
+    const { rerender } = renderHook(
+      ({ notes }: { notes: string }) =>
+        useReviewEvents(1, RANGE_START, RANGE_END, { ...DEFAULT_REVIEW_FILTERS, notes }),
+      { wrapper, initialProps: { notes: '' } },
+    );
+    await waitFor(() => expect(seen.length).toBe(1));
+    rerender({ notes: 'Motion' });
+    await waitFor(() => expect(seen.length).toBe(2));
+    expect(seen[1].get('notes')).toBe('Motion');
   });
 });

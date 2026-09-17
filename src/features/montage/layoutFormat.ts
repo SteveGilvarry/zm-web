@@ -55,13 +55,15 @@ const STATUS_TO_LEGACY: Record<MontageStatusPosition, LegacyStatusPosition> = {
   inside: 'insideImgBottom',
   outside: 'outsideImgBottom',
   hidden: 'hidden',
+  hover: 'showOnHover',
 };
 
 export function statusPositionFromLegacy(value: unknown): MontageStatusPosition | undefined {
   switch (value) {
     case 'insideImgBottom':
-    case 'showOnHover':
       return 'inside';
+    case 'showOnHover':
+      return 'hover';
     case 'outsideImgBottom':
       return 'outside';
     case 'hidden':

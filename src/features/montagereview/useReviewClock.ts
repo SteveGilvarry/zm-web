@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMontageStore } from '@/stores/montage';
 
 export interface ReviewClock {
   /** Current playhead time. */
@@ -35,7 +36,9 @@ export function useReviewClock(initialStart: Date, initialEnd: Date): ReviewCloc
   const [rangeEnd, setRangeEnd] = useState(initialEnd);
   const [currentTime, setCurrentTimeState] = useState(initialStart);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  // Legacy keeps `speed` in a cookie, so it survives a reload.
+  const speed = useMontageStore((st) => st.reviewSpeed);
+  const setSpeed = useMontageStore((st) => st.setReviewSpeed);
 
   // Clamp helper
   const clamp = useCallback((t: Date) => {
