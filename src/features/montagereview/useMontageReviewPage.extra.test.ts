@@ -26,6 +26,8 @@ const {
   zoomRange,
   REVIEW_RANGE_PRESETS,
   REVIEW_SPEEDS,
+  reviewSpeedIndex,
+  parseZoomParams,
 } = await import('./useMontageReviewPage');
 
 const server = setupServer();
@@ -69,7 +71,14 @@ function stubMonitors(items: unknown[] = monitors) {
 describe('pure range helpers', () => {
   it('exposes the preset ids in legacy order and the speed ladder', () => {
     expect(REVIEW_RANGE_PRESETS.map((p) => p.value)).toEqual(['1h', '8h', '24h', 'all', 'live']);
-    expect(REVIEW_SPEEDS).toEqual([0.25, 0.5, 1, 2, 4, 8, 16]);
+    // Legacy's 13-step slider, 0 = paused (montagereview.php:254).
+    expect(REVIEW_SPEEDS).toEqual([0, 0.1, 0.25, 0.5, 0.75, 1, 1.5, 2, 3, 5, 10, 20, 50]);
+    // The slider snaps an off-list speed (an old cookie) to the nearest step.
+    expect(reviewSpeedIndex(1)).toBe(5);
+    expect(reviewSpeedIndex(0)).toBe(0);
+    expect(reviewSpeedIndex(2.9)).toBe(REVIEW_SPEEDS.indexOf(3));
+    // A tie keeps the lower step.
+    expect(reviewSpeedIndex(4)).toBe(REVIEW_SPEEDS.indexOf(3));
   });
 
   it('translates the preset labels through the active catalogue', () => {
@@ -243,6 +252,13 @@ describe('useMontageReviewPage — custom range, pan and zoom', () => {
   });
 });
 
+describe('parseZoomParams', () => {
+  it('reads only `z<id>` keys with a usable scale', () => {
+    expect(parseZoomParams({ z1: '1.2', z2: 2, zoom: '3', z3: '-1', other: 'x' }))
+      .toEqual({ 1: 1.2, 2: 2 });
+  });
+});
+
 describe('useMontageReviewPage — URL search params', () => {
   it('a min_time/max_time pair opens as a custom range', () => {
     mockSearch = { min_time: '2026-08-21 06:00:00', max_time: '2026-08-21 07:00:00' };
@@ -270,6 +286,54 @@ describe('useMontageReviewPage — URL search params', () => {
 
     await waitFor(() => expect(result.current.allMonitors).toHaveLength(3));
     expect(result.current.selectedMonitors.map((m) => m.id)).toEqual([2]);
+  });
+
+  it('honours ?live=1, ?scale=, ?speed= and ?current=', async () => {
+    mockSearch = { live: '1', scale: '0.4', speed: '5', current: '2026-08-21 06:30:00' };
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+
+    expect(result.current.isLive).toBe(true);
+    expect(result.current.scale).toBe(0.4);
+    await waitFor(() => expect(result.current.clock.speed).toBe(5));
+    // `current` alone opens a window half an hour each side of it.
+    const current = new Date('2026-08-21T06:30:00');
+    expect(result.current.clock.currentTime.getTime()).toBe(current.getTime());
+    expect(result.current.clock.rangeStart.getTime()).toBe(current.getTime() - 1800_000);
+    expect(result.current.clock.rangeEnd.getTime()).toBe(current.getTime() + 1800_000);
+  });
+
+  it('ignores a scale outside legacy\'s 0.1–1.0 slider', () => {
+    mockSearch = { scale: '9' };
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    expect(result.current.scale).toBe(1);
+  });
+
+  it('seeds each monitor\'s zoom from ?z<id>= and steps it by a corner click', () => {
+    mockSearch = { z2: '1.5', zed: '3', z9: 'nonsense' };
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+
+    expect(result.current.monitorZoom).toEqual({ 2: 1.5 });
+
+    act(() => result.current.zoomMonitor(2, 2));
+    expect(result.current.monitorZoom[2]).toBe(3);
+    // Clamped so a runaway click cannot blow the canvas up or vanish it.
+    act(() => result.current.zoomMonitor(2, 100));
+    expect(result.current.monitorZoom[2]).toBe(8);
+    act(() => result.current.zoomMonitor(2, 0.001));
+    expect(result.current.monitorZoom[2]).toBe(0.25);
+  });
+
+  it('orders the wall by the MontageSort user preference', async () => {
+    stubMonitors();
+    server.use(http.get('/api/v3/user_preferences', () => HttpResponse.json({
+      items: [{ id: 1, user_id: 7, name: 'MontageSort', value: '2,1' }],
+      total: 1, per_page: 200, current_page: 1, last_page: 1,
+    })));
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.enabled.map((m) => m.id)).toEqual([2, 1]));
   });
 
   it('the filter bar narrows which monitors the chip row offers', async () => {
@@ -322,7 +386,7 @@ describe('useMontageReviewPage — backend trouble', () => {
   });
 });
 
-describe('fit — legacy "Fit" button', () => {
+describe('fitToEvents — legacy "Fit" button', () => {
   const page = (items: unknown[]) => ({
     items, total: items.length, per_page: 1, current_page: 1, last_page: 1,
   });
@@ -349,13 +413,13 @@ describe('fit — legacy "Fit" button', () => {
     const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
     await waitFor(() => expect(result.current.selectedMonitors.length).toBeGreaterThan(0));
 
-    act(() => result.current.fit());
-    await waitFor(() => expect(result.current.isFitting).toBe(false));
+    act(() => result.current.fitToEvents());
+    await waitFor(() => expect(result.current.isFittingEvents).toBe(false));
 
     // First and last event asked for, per selected monitor.
     expect(asked.some((a) => a.endsWith(':asc'))).toBe(true);
     expect(asked.some((a) => a.endsWith(':desc'))).toBe(true);
-    expect(result.current.fitEmpty).toBe(false);
+    expect(result.current.fitEventsEmpty).toBe(false);
     expect(result.current.preset).toBe('custom');
     expect(result.current.clock.rangeStart.getTime())
       .toBeLessThanOrEqual(Date.parse('2026-08-21T10:00:00Z'));
@@ -373,8 +437,8 @@ describe('fit — legacy "Fit" button', () => {
     await waitFor(() => expect(result.current.selectedMonitors.length).toBeGreaterThan(0));
     const before = result.current.clock.rangeStart.getTime();
 
-    act(() => result.current.fit());
-    await waitFor(() => expect(result.current.fitEmpty).toBe(true));
+    act(() => result.current.fitToEvents());
+    await waitFor(() => expect(result.current.fitEventsEmpty).toBe(true));
     expect(result.current.clock.rangeStart.getTime()).toBe(before);
   });
 });

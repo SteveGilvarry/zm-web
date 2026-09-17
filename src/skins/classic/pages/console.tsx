@@ -11,16 +11,22 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { AddMonitorDialog } from '@/features/monitors/AddMonitorDialog';
-import { BulkModeDialog } from '@/features/console/BulkModeDialog';
 import { ScanNetworkButton } from '@/features/console/ScanNetworkButton';
-import { useClassicConsolePage, type ClassicConsolePageState } from '@/features/console/useClassicConsolePage';
+import { useClassicConsolePage, type ClassicConsolePageState, type EventsScope } from '@/features/console/useClassicConsolePage';
 import { CONSOLE_COLUMNS, consoleColumnLabel, type ConsoleColumnKey } from '@/features/console/consoleColumns';
-import { functionLines, type ConsoleRow, type ConsoleSortKey } from '@/features/console/consoleTable';
+import {
+  functionLines, isOffline, periodStart, runtimeLine, sourceClass, streamAvailable,
+  type ConsoleRow, type ConsoleSortKey, type CountPeriod, type SourceClass,
+} from '@/features/console/consoleTable';
+import { useMonitorGroupPaths, type GroupPath } from '@/features/console/monitorGroupPaths';
 import { monitorSource } from '@/features/monitors/useMonitorFilterRow';
 import {
-  formatBandwidth, formatFps, runtimeTone, type RuntimeTone,
+  formatBandwidthLegacy, formatFpsLegacy, type RuntimeTone,
 } from '@/features/monitors/useMonitorStatuses';
-import { formatBytes } from '@/lib/format';
+import { humanFilesize } from '@/lib/format';
+import { usePerms } from '@/features/auth/usePerms';
+import { useUiStore } from '@/stores/ui';
+import { isDeleted } from '@/types';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicDropdown, ClassicFilterRow, ClassicIconButton, ClassicPage, ClassicPagination,
@@ -36,12 +42,28 @@ const LENS: Record<RuntimeTone, string> = {
   unknown: 'bg-zinc-400',
 };
 
+/** skin.css `.infoText` / `.warnText` / `.errorText`, as the dot fill and the Source text. */
+const SOURCE_DOT: Record<SourceClass, string> = {
+  info: 'bg-[#0fb9b1]',
+  warn: 'bg-[#ffa801]',
+  error: 'bg-[#ff3f34]',
+};
+const SOURCE_TEXT: Record<SourceClass, string> = {
+  info: 'text-[#0fb9b1]',
+  warn: 'text-[#ffa801]',
+  error: 'text-[#ff3f34]',
+};
+
 /** Console — classic skin: the legacy `?view=console` table, verb for verb. */
 export default function ClassicConsolePage() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   useDocumentTitle(t('Console'));
   const page = useClassicConsolePage();
-  const [showFilters, setShowFilters] = useState(true);
+  const { can } = usePerms();
+  // Legacy keeps the filter panel's state in the `zmFilterBarFlip#fbpanel` cookie.
+  const showFilters = useUiStore((s) => s.classicFilterPanelOpen);
+  const setShowFilters = useUiStore((s) => s.setClassicFilterPanelOpen);
+  const groupPathsFor = useMonitorGroupPaths(can('groups', 'View'));
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
   if (!page.isAuthenticated) return null;
@@ -156,18 +178,28 @@ export default function ClassicConsolePage() {
           )}
           <RequirePerm feature="monitors" level="Edit">
             <ScanNetworkButton />
-            <ClassicButton tone="primary" icon={<Plus size={14} />} onClick={page.openAdd}>{t('Add')}</ClassicButton>
+            {/* Legacy shows the button to any Monitors editor but disables it
+                without Create (console.php:196). */}
+            <ClassicButton
+              tone="primary"
+              icon={<Plus size={14} />}
+              onClick={page.openAdd}
+              disabled={!can('monitors', 'Create')}
+              title={can('monitors', 'Create') ? t('Add Monitor') : t('Your user is not allowed to add a new monitor')}
+            >
+              {t('Add')}
+            </ClassicButton>
             <ClassicButton icon={<Copy size={14} />} disabled={!hasSelection || page.busy} onClick={page.cloneSelected}>{t('Clone')}</ClassicButton>
             <ClassicButton icon={<Pencil size={14} />} disabled={!hasSelection} onClick={page.editSelected}>{t('Edit')}</ClassicButton>
             <ClassicButton icon={<Trash2 size={14} />} disabled={!hasSelection || page.busy} onClick={page.deleteSelected}>{t('Delete')}</ClassicButton>
-            <ClassicButton icon={<ListChecks size={14} />} disabled={!hasSelection} onClick={page.openBulk}>{t('Select')}</ClassicButton>
+            <ClassicButton icon={<ListChecks size={14} />} disabled={!hasSelection} onClick={page.narrowToSelected} title={t('Show only the selected monitors')}>{t('Select')}</ClassicButton>
             <ClassicButton tone={sortMode ? 'primary' : 'default'} icon={<ArrowDownUp size={14} />} aria-pressed={sortMode} onClick={page.toggleSortMode} title={t('Drag rows to change the sequence')}>
               {t('Sort')}
             </ClassicButton>
           </RequirePerm>
           <button
             type="button"
-            onClick={() => setShowFilters((v) => !v)}
+            onClick={() => setShowFilters(!showFilters)}
             aria-pressed={showFilters}
             aria-label={showFilters ? t('Hide filters') : t('Show filters')}
             title={showFilters ? t('Hide filters') : t('Show filters')}
@@ -224,8 +256,9 @@ export default function ClassicConsolePage() {
                   row={row}
                   page={page}
                   visible={visible}
-                  locale={i18n.language}
                   names={names}
+                  groupPaths={groupPathsFor(row.monitor.id)}
+                  canViewStream={can('stream', 'View')}
                   dragEnabled={sortMode && canEdit}
                   isDragging={draggingId === row.monitor.id}
                   onDragStart={() => setDraggingId(row.monitor.id)}
@@ -246,8 +279,8 @@ export default function ClassicConsolePage() {
                   <ClassicTd className="text-center whitespace-nowrap" data-testid="console-runtime-totals">
                     {hasRuntime && (
                       <>
-                        {formatBandwidth(runtimeTotals.bandwidth, i18n.language)}{' '}
-                        {formatFps(runtimeTotals.captureFps, i18n.language)} / {formatFps(runtimeTotals.analysisFps, i18n.language)}
+                        {formatBandwidthLegacy(runtimeTotals.bandwidth)}{' '}
+                        {formatFpsLegacy(runtimeTotals.captureFps)} / {formatFpsLegacy(runtimeTotals.analysisFps)}
                       </>
                     )}
                   </ClassicTd>
@@ -255,13 +288,16 @@ export default function ClassicConsolePage() {
                 {visible('server') && <ClassicTd />}
                 {visible('source') && <ClassicTd />}
                 {visible('storage') && <ClassicTd />}
-                {visible('events') && <FootCount count={totals.events.count} disk={totals.events.disk} />}
-                {visible('hour') && <FootCount count={totals.hour.count} disk={totals.hour.disk} />}
-                {visible('day') && <FootCount count={totals.day.count} disk={totals.day.disk} />}
-                {visible('week') && <FootCount count={totals.week.count} disk={totals.week.disk} />}
-                {visible('month') && <FootCount count={totals.month.count} disk={totals.month.disk} />}
-                {visible('archived') && <FootCount count={totals.archived.count} disk={totals.archived.disk} />}
-                {visible('zones') && <ClassicTd numeric className={classicLinkClass}>{totals.zones}</ClassicTd>}
+                {visible('events') && <CountCell period="events" scope={page.eventsScope} count={totals.events.count} disk={totals.events.disk} foot />}
+                {visible('hour') && <CountCell period="hour" scope={page.eventsScope} count={totals.hour.count} disk={totals.hour.disk} foot />}
+                {visible('day') && <CountCell period="day" scope={page.eventsScope} count={totals.day.count} disk={totals.day.disk} foot />}
+                {visible('week') && <CountCell period="week" scope={page.eventsScope} count={totals.week.count} disk={totals.week.disk} foot />}
+                {visible('month') && <CountCell period="month" scope={page.eventsScope} count={totals.month.count} disk={totals.month.disk} foot />}
+                {visible('archived') && <CountCell period="archived" scope={page.eventsScope} count={totals.archived.count} disk={totals.archived.disk} foot />}
+                {/* Legacy links this total to `?view=zones` (every monitor's
+                    zones). zm-web has no all-zones page, so it is plain text
+                    rather than a link that goes nowhere. */}
+                {visible('zones') && <ClassicTd numeric>{totals.zones}</ClassicTd>}
                 {visible('sequence') && <ClassicTd />}
               </tr>
             </ClassicTfoot>
@@ -278,13 +314,11 @@ export default function ClassicConsolePage() {
         />
       </ClassicPage>
 
-      <AddMonitorDialog open={page.addOpen} onClose={page.closeAdd} />
-      <BulkModeDialog
-        open={page.bulkOpen}
-        count={selectedIds.size}
-        busy={page.busy}
-        onClose={page.closeBulk}
-        onApply={page.applyBulk}
+      <AddMonitorDialog
+        open={page.addOpen}
+        onClose={page.closeAdd}
+        initial={page.cloneSeed?.values}
+        clonedFrom={page.cloneSeed?.from}
       />
     </AppShell>
   );
@@ -293,13 +327,16 @@ export default function ClassicConsolePage() {
 /* ------------------------------------------------------------------------ */
 
 function ConsoleTableRow({
-  row, page, visible, locale, names, dragEnabled, isDragging, onDragStart, onDragEnd, onDrop,
+  row, page, visible, names, groupPaths, canViewStream, dragEnabled, isDragging,
+  onDragStart, onDragEnd, onDrop,
 }: {
   row: ConsoleRow;
   page: ClassicConsolePageState;
   visible: (k: ConsoleColumnKey) => boolean;
-  locale: string;
   names: ClassicConsolePageState['names'];
+  /** Group ancestry lines under the name (empty without Groups permission). */
+  groupPaths: GroupPath[];
+  canViewStream: boolean;
   dragEnabled: boolean;
   isDragging: boolean;
   onDragStart: () => void;
@@ -309,9 +346,13 @@ function ConsoleTableRow({
   const { t } = useTranslation();
   const { monitor: m, summary: s, runtime } = row;
   const isActive = m.capturing !== 'None';
-  const tone: RuntimeTone = isActive ? runtimeTone(runtime?.status) : 'down';
   const watchParams = { monitorId: String(m.id) };
-  const lines = functionLines(m);
+  const lines = functionLines(m, runtime);
+  const offline = isOffline(runtime);
+  const source = sourceClass(m, runtime);
+  // console.js:206 — no stream, no link on Id or Name.
+  const linked = streamAvailable(m, runtime, canViewStream);
+  const deleted = isDeleted(m);
 
   const dragProps = dragEnabled ? {
     draggable: true,
@@ -343,7 +384,9 @@ function ConsoleTableRow({
       )}
       {visible('id') && (
         <ClassicTd className="text-center">
-          <Link to="/monitors/$monitorId" params={watchParams} className={classicLinkClass}>{m.id}</Link>
+          {linked
+            ? <Link to="/monitors/$monitorId" params={watchParams} className={classicLinkClass}>{m.id}</Link>
+            : m.id}
         </ClassicTd>
       )}
       {visible('thumbnail') && (
@@ -359,15 +402,38 @@ function ConsoleTableRow({
       )}
       {visible('name') && (
         <ClassicTd>
-          <Link to="/monitors/$monitorId" params={watchParams} className={clsx(classicLinkClass, 'inline-flex items-center gap-2')}>
+          <span className="inline-flex items-center gap-2">
             <span
-              className={clsx('w-4 h-4 rounded-full shrink-0', LENS[tone])}
+              className={clsx('w-4 h-4 rounded-full shrink-0', SOURCE_DOT[source.cls])}
               role="img"
-              aria-label={isActive ? (runtime?.status ?? t('Unknown')) : t('Not Running')}
-              title={runtime?.status}
+              aria-label={source.reason || (runtime?.status ?? t('Unknown'))}
+              title={source.reason}
             />
-            {m.name}
-          </Link>
+            {linked
+              ? <Link to="/monitors/$monitorId" params={watchParams} className={classicLinkClass}>{m.name}</Link>
+              : m.name}
+            {deleted && <span className={SOURCE_TEXT.error}>{t('(deleted)')}</span>}
+          </span>
+          {groupPaths.length > 0 && (
+            <div className="text-[11px] text-zinc-500 whitespace-nowrap" data-testid={`console-groups-${m.id}`}>
+              {groupPaths.map((path) => (
+                <div key={path.map((g) => g.id).join('-')}>
+                  {path.map((group, i) => (
+                    <span key={group.id}>
+                      {i > 0 && ' > '}
+                      {/* Legacy links each segment to
+                          `?view=montagereview&GroupId=`; zm-web's Montage
+                          Review route takes no group, so the group wall is
+                          the working equivalent. */}
+                      <Link to="/montage" search={{ group: group.id }} className={classicLinkClass}>
+                        {group.name}
+                      </Link>
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </ClassicTd>
       )}
       {visible('manufacturer') && <ClassicTd>{names.manufacturerName(m.manufacturer_id) || '—'}</ClassicTd>}
@@ -375,9 +441,9 @@ function ConsoleTableRow({
       {visible('function') && (
         <ClassicTd className="text-center">
           {lines.map((l) => <div key={l}>{l}</div>)}
-          {isActive && runtime && (
-            <div className="text-[11px] text-zinc-600 mt-1 tabular-nums" data-testid={`console-runtime-${m.id}`}>
-              {formatFps(runtime.captureFps, locale)} {formatBandwidth(runtime.bandwidth, locale)}
+          {!offline && runtime && (
+            <div className="text-[11px] text-zinc-600 mt-1 tabular-nums whitespace-nowrap" data-testid={`console-runtime-${m.id}`}>
+              {runtimeLine(m, runtime)}
             </div>
           )}
         </ClassicTd>
@@ -388,18 +454,18 @@ function ConsoleTableRow({
           <Link to="/monitors/$monitorId" params={watchParams} search={{ edit: true }} className={classicLinkClass}>
             {monitorSource(m) || t('({{count}})', { count: m.id })}
           </Link>
-          <div className={clsx('text-[13px]', isActive ? 'text-[#2ab5d6]' : 'text-red-600')}>
+          <div className={clsx('text-[13px]', SOURCE_TEXT[source.cls])}>
             {m.width}x{m.height}
           </div>
         </ClassicTd>
       )}
       {visible('storage') && <ClassicTd>{names.storageName(m.storage_id) || m.storage_id}</ClassicTd>}
-      {visible('events') && <CountCell monitorId={m.id} count={s.total_events} disk={s.total_event_disk_space} />}
-      {visible('hour') && <CountCell monitorId={m.id} count={s.hour_events} disk={s.hour_event_disk_space} />}
-      {visible('day') && <CountCell monitorId={m.id} count={s.day_events} disk={s.day_event_disk_space} />}
-      {visible('week') && <CountCell monitorId={m.id} count={s.week_events} disk={s.week_event_disk_space} />}
-      {visible('month') && <CountCell monitorId={m.id} count={s.month_events} disk={s.month_event_disk_space} />}
-      {visible('archived') && <CountCell monitorId={m.id} count={s.archived_events} disk={s.archived_event_disk_space} archived />}
+      {visible('events') && <CountCell period="events" scope={{ monitor_id: m.id }} count={s.total_events} disk={s.total_event_disk_space} />}
+      {visible('hour') && <CountCell period="hour" scope={{ monitor_id: m.id }} count={s.hour_events} disk={s.hour_event_disk_space} />}
+      {visible('day') && <CountCell period="day" scope={{ monitor_id: m.id }} count={s.day_events} disk={s.day_event_disk_space} />}
+      {visible('week') && <CountCell period="week" scope={{ monitor_id: m.id }} count={s.week_events} disk={s.week_event_disk_space} />}
+      {visible('month') && <CountCell period="month" scope={{ monitor_id: m.id }} count={s.month_events} disk={s.month_event_disk_space} />}
+      {visible('archived') && <CountCell period="archived" scope={{ monitor_id: m.id }} count={s.archived_events} disk={s.archived_event_disk_space} />}
       {visible('zones') && (
         <ClassicTd numeric>
           <Link to="/monitors/$monitorId/zones" params={watchParams} className={classicLinkClass}>{m.zone_count ?? 0}</Link>
@@ -410,31 +476,32 @@ function ConsoleTableRow({
   );
 }
 
-function CountCell({ monitorId, count, disk, archived }: { monitorId: number; count: number; disk: number; archived?: boolean }) {
+/**
+ * A count linking to the events list for that period (console.js:314-327):
+ * `StartDateTime >= -1 hour` and so on, plus the monitor scope. The footer
+ * row uses the same cell with the whole table's scope.
+ */
+function CountCell({ period, scope, count, disk, foot }: {
+  period: CountPeriod;
+  scope: EventsScope;
+  count: number;
+  disk: number;
+  foot?: boolean;
+}) {
+  const start = periodStart(period);
+  const search: EventsScope & { start?: string; archived?: boolean } = { ...scope };
+  if (start) search.start = start;
+  if (period === 'archived') search.archived = true;
   return (
     <ClassicTd numeric>
-      <Link
-        to="/events"
-        search={archived ? { monitor_id: monitorId, archived: true } : { monitor_id: monitorId }}
-        className={classicLinkClass}
-      >
-        {count}
-      </Link>
-      {/* Yes, the literal string. ZoneMinder's own `human_filesize()`
-          returns 'null' for a null size (functions.php), and a monitor with
-          no events makes `SUM(DiskSpace)` NULL — so this is what the legacy
-          console prints in that cell. Faithful, not a bug: don't "fix" it to
-          0 B or an em dash without changing legacy too. */}
-      <div className="text-[11px] text-zinc-500">{count > 0 && disk > 0 ? formatBytes(disk) : 'null'}</div>
-    </ClassicTd>
-  );
-}
-
-function FootCount({ count, disk }: { count: number; disk: number }) {
-  return (
-    <ClassicTd numeric>
-      <span className={classicLinkClass}>{count}</span>
-      <div className="text-[11px] font-normal text-zinc-500">{disk > 0 ? formatBytes(disk) : 'null'}</div>
+      <Link to="/events" search={search} className={classicLinkClass}>{count}</Link>
+      {/* `null` is the literal string ZoneMinder prints: `SUM(DiskSpace)` is
+          NULL for a monitor with no events and legacy interpolates it
+          straight in. Zero is a different case and prints `0.00B` — checked
+          on 1.39.16, where a monitor with 3 events and no bytes reads
+          `3 / 0.00B`. Faithful, not a bug: don't "fix" either to an em dash
+          without changing legacy too. */}
+      <div className={clsx('text-[11px] text-zinc-500', foot && 'font-normal')}>{humanFilesize(count > 0 ? disk : null)}</div>
     </ClassicTd>
   );
 }

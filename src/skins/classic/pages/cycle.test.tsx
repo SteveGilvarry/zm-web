@@ -17,6 +17,9 @@ let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => mockSearch,
   useNavigate: () => vi.fn(),
+  Link: ({ children, to, ...rest }: { children: ReactNode; to?: string; [k: string]: unknown }) => (
+    <a href={to ?? '#'} {...rest}>{children}</a>
+  ),
 }));
 
 vi.mock('@/skins/AppShell', () => ({
@@ -53,6 +56,12 @@ function stub(monitors: unknown[] = MONITORS) {
     http.get('/api/v3/monitor-status', () => HttpResponse.json(paged([
       { monitor_id: 1, status: 'Connected', capture_fps: '10.00', analysis_fps: '5.00', capture_bandwidth: 2048, updated_on: '2026-08-21T00:00:00Z' },
     ], { per_page: 1000 }))),
+    http.get('/api/v3/configs', () => HttpResponse.json(paged([
+      { id: 1, name: 'ZM_WEB_REFRESH_CYCLE', value: '10' },
+    ], { per_page: 1000 }))),
+    http.get('/api/v3/servers', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/storage', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/me', () => new HttpResponse(null, { status: 404 })),
     http.get('/api/v3/groups', () => HttpResponse.json(paged([{ id: 3, name: 'Front Yard' }], { per_page: 200 }))),
     http.get('/api/v3/groups-monitors', () =>
       HttpResponse.json(paged([{ id: 1, group_id: 3, monitor_id: 1 }], { per_page: 1000 }))),
@@ -103,6 +112,30 @@ describe('ClassicCyclePage', () => {
     expect(buttons[0]).toHaveAttribute('aria-current', 'true');
     expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:1');
     expect(screen.getByTestId('cycle-stage')).toHaveAttribute('dir', 'ltr');
+  });
+
+  it('shows the dwell time ZoneMinder is configured for', async () => {
+    stub();
+    server.use(http.get('/api/v3/configs', () => HttpResponse.json(paged([
+      { id: 1, name: 'ZM_WEB_REFRESH_CYCLE', value: '45' },
+    ], { per_page: 1000 }))));
+    await mount();
+    await pills();
+    expect(await screen.findByText('45s')).toBeInTheDocument();
+  });
+
+  it('puts the zoom / fullscreen / watch controls over the stage', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await pills();
+
+    const controls = within(screen.getByTestId('cycle-stage')).getByTestId('tile-controls-1');
+    const framed = screen.getByTestId('stream-cell').parentElement!;
+    expect(framed).not.toHaveStyle({ transform: 'scale(1.3)' });
+    await user.click(within(controls).getByRole('button', { name: 'Zoom IN' }));
+    expect(screen.getByTestId('stream-cell').parentElement).toHaveStyle({ transform: 'scale(1.3)' });
+    expect(within(controls).getByRole('link', { name: 'Open watch page' })).toBeInTheDocument();
   });
 
   it('walks the rotation with the transport buttons and wraps at both ends', async () => {
@@ -253,5 +286,20 @@ describe('ClassicCyclePage', () => {
     stub();
     const { container } = await mount();
     expect(container).toBeEmptyDOMElement();
+  });
+
+  it('embeds a WebSite monitor on stage instead of streaming it', async () => {
+    // Legacy `Monitor::getStreamHTML` embeds the configured URL for the
+    // WebSite type.
+    stub([{
+      id: 4, name: 'Weather', capturing: 'Always', analysing: 'None', recording: 'None',
+      type: 'WebSite', host: null, path: 'https://example.test/wx', device: null,
+      width: 1920, height: 1080, orientation: 'ROTATE_0', enabled: 1,
+    }]);
+    await mount();
+    await pills();
+
+    expect(await screen.findByTestId('website-tile-4')).toHaveAttribute('src', 'https://example.test/wx');
+    expect(screen.queryByTestId('stream-cell')).toBeNull();
   });
 });

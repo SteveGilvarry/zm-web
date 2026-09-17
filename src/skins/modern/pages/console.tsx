@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import type { StreamProtocol, Monitor as MonitorType } from '@/types';
 import { isOrientationRotated } from '@/types';
 import { AppShell } from '@/skins/AppShell';
@@ -30,6 +31,8 @@ const noop = () => {};
 
 export default function ConsolePage() {
   const { t } = useTranslation();
+  const showServerStats = useZmConfig('ZM_WEB_SHOW_SERVER_STATS', true);
+  const consoleBanner = useZmConfig('ZM_WEB_CONSOLE_BANNER', '');
   useDocumentTitle(t('Console'));
   const page = useConsolePage();
   const {
@@ -89,25 +92,41 @@ export default function ConsolePage() {
               label: t('Events (24h)'),
               value: `${eventCount24h}`,
             },
-            {
-              label: t('Disk'),
-              value: systemStats?.disk_usage_percent != null
-                ? `${systemStats.disk_usage_percent.toFixed(0)}%`
-                : '—',
-              tone: systemStats?.disk_usage_percent == null
-                ? 'normal'
-                : systemStats.disk_usage_percent > 90
-                  ? 'danger'
-                  : systemStats.disk_usage_percent > 75
-                    ? 'warn'
-                    : 'normal',
-            },
+            // Host telemetry only when ZoneMinder is configured to show it —
+            // `ZM_WEB_SHOW_SERVER_STATS` is off on installs where operators
+            // are not meant to see the server's health.
+            ...(showServerStats
+              ? [{
+                  label: t('Disk'),
+                  value: systemStats?.disk_usage_percent != null
+                    ? `${systemStats.disk_usage_percent.toFixed(0)}%`
+                    : '—',
+                  tone: systemStats?.disk_usage_percent == null
+                    ? 'normal' as const
+                    : systemStats.disk_usage_percent > 90
+                      ? 'danger' as const
+                      : systemStats.disk_usage_percent > 75
+                        ? 'warn' as const
+                        : 'normal' as const,
+                }]
+              : []),
           ]}
           filterPanel={<MonitorFilterBar monitors={monitors} onChange={noop} />}
           systemPanel={
             <SystemStatus daemons={daemons} isRunning={isSystemRunning} stats={systemStats} />
           }
         />
+
+        {/* `ZM_WEB_CONSOLE_BANNER`: a site-wide notice an administrator sets
+            in Options. Empty on most installs, so it takes no space then. */}
+        {consoleBanner.trim() !== '' && (
+          <p
+            role="status"
+            className="shrink-0 px-4 py-2 text-sm border-b border-border-subtle bg-surface-2 text-fg"
+          >
+            {consoleBanner}
+          </p>
+        )}
 
         <div className="flex-1 min-h-0 flex">
           <section aria-label={t('Cameras')} className="flex-1 min-w-0 min-h-0 p-1">

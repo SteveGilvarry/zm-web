@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getMonitor, getMonitors, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
@@ -13,6 +13,8 @@ import { useWebRtcStream, type StreamHookResult } from '@/hooks/useWebRtcStream'
 import { useHlsStream } from '@/hooks/useHlsStream';
 import { usePtzCapabilities, type PtzState } from '@/features/ptz/usePtz';
 import { useMonitorStatus, type MonitorRuntime } from './useMonitorStatuses';
+import { useViewingTimeout, type ViewingTimeoutState } from './useViewingTimeout';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import type { LiveStats, Monitor, StreamProtocol, ZmEvent } from '@/types';
 
 export interface WatchModeUpdate {
@@ -82,6 +84,12 @@ export interface WatchPageState {
   volume: number;
   setVolume: (v: number) => void;
   isFullscreen: boolean;
+  /**
+   * Attach to the page's content area (legacy `#content`: stage, PTZ panel
+   * and events table). `toggleFullscreen` fullscreens that element; with
+   * nothing attached it falls back to the video's container.
+   */
+  contentRef: RefObject<HTMLDivElement | null>;
   /** Viewport is at least 1024px wide. */
   isWide: boolean;
   editorOpen: boolean;
@@ -113,6 +121,11 @@ export interface WatchPageState {
   siblingIndex: number;
   prevMonitorId: number | null;
   nextMonitorId: number | null;
+  /**
+   * `ZM_WEB_VIEWING_TIMEOUT`: the stream stops itself after that long with no
+   * input and `idle.prompted` asks "Are you still watching?".
+   */
+  idle: ViewingTimeoutState;
 }
 
 /**
@@ -161,6 +174,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
     if (clamped > 0) setIsMuted(false);
   }, []);
   const [isFullscreen, setIsFullscreen] = useState(false);
+  const contentRef = useRef<HTMLDivElement | null>(null);
   // `?edit=true` (legacy `?view=monitor&mid=`) opens the editor on load.
   const [editorOpen, setEditorOpen] = useState(() => searchFlag(search, 'edit'));
   const [viewMode, setViewModeState] = useState<WatchViewMode>('stream');
@@ -189,7 +203,6 @@ export function useWatchPage(monitorId: number): WatchPageState {
   // Streaming hooks — both always mounted, only active one gets start() called
   const webrtc = useWebRtcStream(id);
   const hls = useHlsStream(id);
-  const ptzState = usePtzCapabilities(id, isAuthenticated && !isNaN(id));
   const runtime = useMonitorStatus(id, isAuthenticated && !isNaN(id));
 
   const activeStream = protocol === 'webrtc' ? webrtc : hls;
@@ -204,6 +217,14 @@ export function useWatchPage(monitorId: number): WatchPageState {
     enabled: isAuthenticated && !isNaN(id),
     refetchInterval: 30000,
   });
+
+  // Only controllable cameras have capabilities to fetch; asking for the rest
+  // is a guaranteed 400 on every watch page load.
+  const ptzState = usePtzCapabilities(
+    id,
+    isAuthenticated && !isNaN(id),
+    monitor ? monitor.controllable === 1 : null,
+  );
 
   // Fetch live stats when streaming
   const { data: liveStats } = useQuery({
@@ -317,12 +338,14 @@ export function useWatchPage(monitorId: number): WatchPageState {
       document.exitFullscreen();
       return;
     }
-    // Fullscreen the container — not the <video> directly — so the CSS
-    // rotation transform on the video is preserved. Browsers route a
-    // fullscreened <video> through the native player which strips CSS.
+    // Legacy fullscreens the whole content area (`watch.js` watchFullscreen:
+    // `#content`), so the PTZ panel and events stay usable. Fall back to the
+    // video's container — not the <video> itself — so the CSS rotation
+    // transform survives: a fullscreened <video> goes through the native
+    // player, which strips CSS.
     const video = activeStream.videoRef.current;
-    const container = video?.parentElement;
-    if (container) container.requestFullscreen().catch(() => {});
+    const target = contentRef.current ?? video?.parentElement;
+    if (target) target.requestFullscreen().catch(() => {});
   };
 
   // The <video> is re-attached on a protocol switch, so the level is applied
@@ -335,6 +358,19 @@ export function useWatchPage(monitorId: number): WatchPageState {
     const muted = flipMuted(activeStream.videoRef.current);
     if (muted !== null) setIsMuted(muted);
   };
+
+  // Legacy stops playback and puts up the "are you still watching" modal
+  // after `ZM_WEB_VIEWING_TIMEOUT` seconds of no input.
+  const viewingTimeoutS = useZmConfig('ZM_WEB_VIEWING_TIMEOUT', 0);
+  const idle = useViewingTimeout({
+    enabled: isActive && viewMode === 'stream',
+    timeoutS: viewingTimeoutS,
+    onIdle: () => {
+      activeStream.stop();
+      queryClient.invalidateQueries({ queryKey: ['liveSessions'] });
+    },
+    onResume: () => activeStream.start(),
+  });
 
   const retry = () => {
     activeStream.stop();
@@ -438,6 +474,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
     volume,
     setVolume,
     isFullscreen,
+    contentRef,
     isWide,
     editorOpen,
     openEditor: () => setEditorOpen(true),
@@ -460,5 +497,6 @@ export function useWatchPage(monitorId: number): WatchPageState {
     siblingIndex,
     prevMonitorId: neighbour(-1),
     nextMonitorId: neighbour(1),
+    idle,
   };
 }

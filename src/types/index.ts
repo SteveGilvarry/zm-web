@@ -153,6 +153,12 @@ export interface Monitor {
   output_container?: string | null;
   encoder_parameters?: string | null;
   record_audio: number;
+  /** `Camera` or `Speaker` (ZM 1.39.30). */
+  device_class: string;
+  /** Audio-level alarm detection (ZM 1.39.31): on/off, trigger level, alarm score. */
+  audio_detection: number;
+  audio_threshold: number;
+  audio_alarm_score: number;
   recording_source: string;
   rtsp_describe?: number | null;
   brightness?: number | null;
@@ -175,7 +181,6 @@ export interface Monitor {
   section_length_warn: number;
   event_close_mode: string;
   min_section_length: number;
-  frame_skip: number;
   motion_frame_skip: number;
   analysis_fps_limit?: number | null;
   analysis_update_delay: number;
@@ -523,10 +528,17 @@ export interface User {
   api_enabled?: number;
   /** Route the operator lands on after signing in ('console', …). */
   home_view?: string;
+  /** ZoneMinder language file (`en_gb`, …); null/empty means the site default. */
+  language?: string | null;
+  /** Bandwidth profile name; null when unset. Not edited here (see MEMORY.md). */
+  max_bandwidth?: string | null;
 }
 
-// Orientation values from API
-export type Orientation = 'Rotate0' | 'Rotate90' | 'Rotate180' | 'Rotate270' | 'FlipHori' | 'FlipVert';
+// Orientation values from the API. Since zm-api#59 these are the raw
+// ZoneMinder DB strings; older builds sent CamelCase (`Rotate90`), which the
+// helpers below still accept.
+export type Orientation =
+  | 'ROTATE_0' | 'ROTATE_90' | 'ROTATE_180' | 'ROTATE_270' | 'FLIP_HORI' | 'FLIP_VERT';
 
 // Whether an orientation swaps the displayed width and height — i.e. a
 // landscape sensor mounted sideways. Accepts both formats the API may

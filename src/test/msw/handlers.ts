@@ -7,6 +7,7 @@ import type { Monitor, PaginatedResponse, User, ZmConfig, ZmEvent, ZmStorage } f
 import type { Control } from '@/api/controls';
 import type { Filter } from '@/api/filters';
 import type { Frame } from '@/api/frames';
+import type { UserPreference } from '@/api/userPreferences';
 import type { Group, GroupMonitor } from '@/api/groups';
 import type { LogEntry } from '@/api/logs';
 import type { MonitorStatusRecord } from '@/api/monitorStatus';
@@ -16,8 +17,12 @@ import type { Server } from '@/api/servers';
 import type { State } from '@/api/states';
 import type { Tag } from '@/api/tags';
 import type { Zone } from '@/api/zones';
+import type { AiDataset, AiModel, AiObjectClass } from '@/api/ai';
 
 import {
+  makeAiDataset,
+  makeAiModel,
+  makeAiObjectClass,
   makeConfig,
   makeControl,
   makeEvent,
@@ -85,6 +90,10 @@ export interface MockDb {
   reports: Report[];
   users: User[];
   montageLayouts: MontageLayout[];
+  userPreferences: UserPreference[];
+  aiDatasets: AiDataset[];
+  aiModels: AiModel[];
+  aiClasses: AiObjectClass[];
   systemStatus: SystemStatusFixture;
 }
 
@@ -99,7 +108,7 @@ function seed(): MockDb {
         sequence: 2,
         width: 2160,
         height: 3840,
-        orientation: 'Rotate90',
+        orientation: 'ROTATE_90',
         analysing: 'None',
         recording: 'None',
         controllable: 1,
@@ -151,6 +160,12 @@ function seed(): MockDb {
         category: 'system',
         hint: 'yes|no',
       }),
+      // The filter editor gates its optional actions on these; on for tests
+      // so every action is reachable (a real box usually has the last three off).
+      makeConfig({ id: 3, name: 'ZM_OPT_FFMPEG', value: '1', type: 'boolean', category: 'images' }),
+      makeConfig({ id: 4, name: 'ZM_OPT_EMAIL', value: '1', type: 'boolean', category: 'mail' }),
+      makeConfig({ id: 5, name: 'ZM_OPT_MESSAGE', value: '1', type: 'boolean', category: 'mail' }),
+      makeConfig({ id: 6, name: 'ZM_OPT_UPLOAD', value: '1', type: 'boolean', category: 'upload' }),
     ],
     storage: [makeStorage({ id: 1 })],
     servers: [makeServer({ id: 1 })],
@@ -161,6 +176,13 @@ function seed(): MockDb {
     reports: [makeReport({ id: 1 })],
     users: [makeUser({ id: 1 })],
     montageLayouts: [makeMontageLayout({ id: 1 })],
+    userPreferences: [],
+    aiDatasets: [makeAiDataset({ id: 1 })],
+    aiModels: [makeAiModel({ id: 1 })],
+    aiClasses: [
+      makeAiObjectClass({ id: 1 }),
+      makeAiObjectClass({ id: 2, class_name: 'car', class_index: 2, description: 'Car' }),
+    ],
     systemStatus: makeSystemStatus(),
   };
 }
@@ -455,6 +477,31 @@ const events: HttpHandler[] = [
       status: 200,
       headers: { 'Content-Type': 'image/jpeg' },
     })),
+  // Per-frame JPEGs: `/frames/{id}/image` and `/events/{id}/frames/{fid}/image`.
+  // `fid` is a frame number or one of ZoneMinder's names (`alarm`, `snapshot`);
+  // an unknown one 404s, which is what an event with no alarm frame answers.
+  http.get(`${API}/frames/:id/image`, ({ params }) =>
+    db.frames.some((f) => f.id === Number(params.id))
+      ? HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
+        status: 200,
+        headers: { 'Content-Type': 'image/jpeg' },
+      })
+      : notFound()),
+  http.get(`${API}/events/:id/frames/:fid/image`, ({ params }) => {
+    const fid = String(params.fid);
+    const frames = db.frames.filter((f) => f.event_id === Number(params.id));
+    const found = fid === 'snapshot'
+      ? frames.length > 0
+      : fid === 'alarm'
+        ? frames.some((f) => f.type === 'Alarm')
+        : frames.some((f) => f.frame_id === Number(fid));
+    return found
+      ? HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
+        status: 200,
+        headers: { 'Content-Type': 'image/jpeg' },
+      })
+      : notFound();
+  }),
   http.get(`${API}/events/:id/video`, () =>
     HttpResponse.arrayBuffer(new Uint8Array([0x00, 0x00, 0x00, 0x18]).buffer, {
       status: 200,
@@ -564,6 +611,34 @@ const groups: HttpHandler[] = [
   http.patch(`${API}/groups-permissions/:id`, () => HttpResponse.json({ message: 'ok' })),
   http.delete(`${API}/groups-permissions/:id`, () => HttpResponse.json({ message: 'ok' })),
 ];
+
+/**
+ * A `GET /configs` handler for tests that need specific `ZM_*` values.
+ *
+ * `useZmConfig` reads the whole table through one shared query rather than
+ * fetching each row — a page reading five settings used to make five round
+ * trips, which trips zm-api's rate limiter on a real box. Tests therefore
+ * override the *list*, not `/configs/:name`.
+ *
+ * Overrides are merged over the seeded rows, so naming one value does not
+ * blank the rest of the table the way replacing the list wholesale would.
+ */
+export function configListHandler(overrides: Record<string, string>): HttpHandler {
+  return http.get(`${API}/configs`, ({ request }) => {
+    const rows = db.configs.map((c) =>
+      c.name in overrides ? { ...c, value: overrides[c.name] } : c,
+    );
+    for (const [name, value] of Object.entries(overrides)) {
+      if (!rows.some((r) => r.name === name)) {
+        rows.push({
+          id: rows.length + 1, name, value,
+          type: 'string', category: 'web', readonly: 0, private: 0, system: 0,
+        } as (typeof db.configs)[number]);
+      }
+    }
+    return HttpResponse.json(pageOf(request, rows));
+  });
+}
 
 const configs: HttpHandler[] = [
   http.get(`${API}/configs/categories`, () =>
@@ -733,11 +808,34 @@ const misc: HttpHandler[] = [
     makeUser({ ...(body as Partial<User>), id }), { update: 'PUT' }),
   ...crud<MontageLayout>('/montage_layouts', () => db.montageLayouts, (body, id) =>
     makeMontageLayout({ ...(body as Partial<MontageLayout>), id })),
+  http.get(`${API}/user_preferences`, ({ request }) =>
+    HttpResponse.json(pageOf(request, db.userPreferences)),
+  ),
   http.post(`${API}/server/control/:action`, () =>
     HttpResponse.json({ success: true, message: 'ok' }),
   ),
   ...crud<State>('/states', () => db.states, (body, id) =>
     makeState({ ...(body as Partial<State>), id })),
+];
+
+/**
+ * The AI catalogue (`_options_ai_*.php`). The object-class list is filtered
+ * server-side by `dataset_id`, so that GET goes ahead of the generic one.
+ */
+const ai: HttpHandler[] = [
+  http.get(`${API}/ai/object-classes`, ({ request }) => {
+    const datasetId = num(new URL(request.url).searchParams.get('dataset_id'));
+    const rows = datasetId == null
+      ? db.aiClasses
+      : db.aiClasses.filter((c) => c.dataset_id === datasetId);
+    return HttpResponse.json(pageOf(request, rows));
+  }),
+  ...crud<AiDataset>('/ai/datasets', () => db.aiDatasets, (body, id) =>
+    makeAiDataset({ ...(body as Partial<AiDataset>), id })),
+  ...crud<AiModel>('/ai/models', () => db.aiModels, (body, id) =>
+    makeAiModel({ ...(body as Partial<AiModel>), id })),
+  ...crud<AiObjectClass>('/ai/object-classes', () => db.aiClasses, (body, id) =>
+    makeAiObjectClass({ ...(body as Partial<AiObjectClass>), id })),
 ];
 
 /**
@@ -755,5 +853,6 @@ export const handlers: HttpHandler[] = [
   ...system,
   ...ptz,
   ...filters,
+  ...ai,
   ...misc,
 ];

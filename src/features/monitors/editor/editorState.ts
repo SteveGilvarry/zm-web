@@ -4,9 +4,23 @@
  * of the component files so Fast Refresh keeps working and tests can hit
  * them without rendering.
  */
+import { canonicalEnum } from '@/api/monitors';
 import type { Monitor } from '@/types';
-import { TABS, type FieldValue } from './fields';
+import { TABS, type FieldValue, type FieldDef } from './fields';
 
+
+/**
+ * Fold a stored select value onto one of the field's option values, so a
+ * monitor read off an older zm-api (`Rotate90`, `Curl`, `WebRtc`, `System`)
+ * still shows its stored setting rather than silently reverting to the first
+ * option. Since zm-api#59 the wire values already match; this only covers
+ * the older spellings. Numeric option lists are left alone.
+ */
+function canonicalSelectValue(field: FieldDef, raw: FieldValue): FieldValue {
+  if (field.kind !== 'select' || typeof raw !== 'string' || !field.options) return raw;
+  const members = field.options.map((o) => o.value).filter((v): v is string => typeof v === 'string');
+  return members.length ? canonicalEnum(raw, members) : raw;
+}
 
 /**
  * Snapshot every editable field from a Monitor record into draft shape.
@@ -22,7 +36,7 @@ export function extractEditableFields(monitor: Monitor): Record<string, FieldVal
       const raw = m[f.key];
       if (raw == null) out[f.key] = null;
       else if (typeof raw === 'object') out[f.key] = String(raw);
-      else out[f.key] = raw as FieldValue;
+      else out[f.key] = canonicalSelectValue(f, raw as FieldValue);
     }
   }
   return out;

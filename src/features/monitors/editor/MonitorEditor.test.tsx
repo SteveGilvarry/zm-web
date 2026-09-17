@@ -56,7 +56,7 @@ const monitor: Monitor = {
   notes: 'driveway-facing',
   width: 1920,
   height: 1080,
-  orientation: 'Rotate0',
+  orientation: 'ROTATE_0',
   capturing: 'Always',
   analysing: 'Always',
   recording: 'OnMotion',
@@ -364,7 +364,7 @@ describe('MonitorEditor — type-dependent Source tab', () => {
   it('changing the type on General swaps the Source widgets', async () => {
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
-    fireEvent.change(screen.getByDisplayValue('FFmpeg'), { target: { value: 'Vnc' } });
+    fireEvent.change(screen.getByDisplayValue('FFmpeg'), { target: { value: 'VNC' } });
     await user.click(screen.getByRole('button', { name: /^source$/i }));
     expect(screen.getByText('Host')).toBeInTheDocument();
     expect(screen.queryByText('Decoder')).not.toBeInTheDocument();
@@ -499,15 +499,15 @@ describe('MonitorEditor — General relationships', () => {
 /* ------------------------------------------------------------------------ */
 
 describe('MonitorEditor — record as the API returns it', () => {
-  // Copied from GET /monitors/1 on the dev box (zm-api#18): enums already
-  // carry the request spelling, and `pass` / `onvif_password` are absent —
-  // they are write-only, so no read ever reveals them.
+  // Copied from GET /monitors/1 on the dev box (zm-api#59): enums are the raw
+  // ZoneMinder DB strings, and `pass` / `onvif_password` are absent — they are
+  // write-only, so no read ever reveals them.
   const live = {
     ...monitor,
-    orientation: 'Rotate90',
-    event_close_mode: 'System',
-    default_codec: 'Auto',
-    rtsp2_web_type: 'WebRtc',
+    orientation: 'ROTATE_90',
+    event_close_mode: 'system',
+    default_codec: 'auto',
+    rtsp2_web_type: 'WebRTC',
     output_container: null,
     method: 'rtpRtsp',
     save_jpe_gs: 3,
@@ -525,20 +525,20 @@ describe('MonitorEditor — record as the API returns it', () => {
     expect(screen.getByText(/no pending changes/i)).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^source$/i }));
-    expect((screen.getByDisplayValue('Rotate right (90°)') as HTMLSelectElement).value).toBe('Rotate90');
+    expect((screen.getByDisplayValue('Rotate right (90°)') as HTMLSelectElement).value).toBe('ROTATE_90');
     expect((screen.getByDisplayValue('TCP') as HTMLSelectElement).value).toBe('rtpRtsp');
 
     await user.click(screen.getByRole('button', { name: /^recording$/i }));
-    expect((screen.getByDisplayValue('System') as HTMLSelectElement).value).toBe('System');
+    expect((screen.getByDisplayValue('System') as HTMLSelectElement).value).toBe('system');
     expect((screen.getByDisplayValue('Frames + Analysis images') as HTMLSelectElement).value).toBe('3');
     expect((screen.getByDisplayValue('Camera passthrough') as HTMLSelectElement).value).toBe('2');
 
     await user.click(screen.getByRole('button', { name: /^viewing$/i }));
-    expect((screen.getByDisplayValue('WebRTC') as HTMLSelectElement).value).toBe('WebRtc');
+    expect((screen.getByDisplayValue('WebRTC') as HTMLSelectElement).value).toBe('WebRTC');
     expect((screen.getByDisplayValue('1x') as HTMLSelectElement).value).toBe('100');
     // Default scale "Auto" is stored as '0'; Default event view "Auto" is the enum member.
     const autos = screen.getAllByDisplayValue('Auto') as HTMLSelectElement[];
-    expect(autos.map((s) => s.value).sort()).toEqual(['0', 'Auto']);
+    expect(autos.map((s) => s.value).sort()).toEqual(['0', 'auto']);
 
     await user.click(screen.getByRole('button', { name: /^timestamp$/i }));
     expect((screen.getByDisplayValue('Default') as HTMLSelectElement).value).toBe('2');
@@ -550,12 +550,12 @@ describe('MonitorEditor — record as the API returns it', () => {
     renderWithProviders(<MonitorEditor monitor={live} onClose={() => {}} />);
 
     await user.click(screen.getByRole('button', { name: /^source$/i }));
-    fireEvent.change(screen.getByDisplayValue('Rotate right (90°)'), { target: { value: 'Rotate180' } });
+    fireEvent.change(screen.getByDisplayValue('Rotate right (90°)'), { target: { value: 'ROTATE_180' } });
     await user.click(screen.getByRole('button', { name: /^recording$/i }));
     fireEvent.change(screen.getByDisplayValue('Frames + Analysis images'), { target: { value: '1' } });
     await user.click(screen.getByRole('button', { name: /^save 2$/i }));
 
-    await waitFor(() => expect(captured()).toEqual({ orientation: 'Rotate180', save_jpe_gs: 1 }));
+    await waitFor(() => expect(captured()).toEqual({ orientation: 'ROTATE_180', save_jpe_gs: 1 }));
   });
 
   it('shows the write-only passwords as "unchanged" rather than empty boxes', async () => {

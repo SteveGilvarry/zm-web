@@ -6,6 +6,7 @@
  * size / page URL round-trip and the outgoing `/frames` query are all real.
  */
 import { describe, expect, it } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
@@ -45,13 +46,11 @@ describe('EventFramesPage — modern skin', () => {
       await screen.findAllByRole('heading', { level: 1, name: 'Frames — Event 101' }),
     ).toHaveLength(2);
     expect(await screen.findByText('Event-101')).toBeVisible();
-    expect(screen.getByRole('link', { name: 'Back to event' })).toHaveAttribute(
-      'href',
-      '/events/101',
-    );
+    // Legacy's Back is `history.back()`, and Event Id is off by default.
+    expect(screen.getByRole('button', { name: 'Back' })).toBeVisible();
 
     expect(table.getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
-      'Event Id', 'Frame Id', 'Type', 'Time Stamp', 'Time Delta', 'Score', 'Thumbnail',
+      'Frame Id', 'Type', 'Time Stamp', 'Time Delta', 'Score', 'Thumbnail',
     ]);
 
     const alarm = screen.getByTestId('frame-row-2');
@@ -65,13 +64,10 @@ describe('EventFramesPage — modern skin', () => {
     expect(normal).toHaveAttribute('data-frame-type', 'Normal');
     expect(within(normal).getByText('0.00')).toBeVisible();
 
-    // Thumbnails are still blocked on the API — one note per row.
-    const notes = table.getAllByText('needs zm-api#26');
-    expect(notes).toHaveLength(3);
-    expect(notes[0].closest('td')).toHaveAttribute(
-      'title',
-      'Per-frame images are not served by the API yet.',
-    );
+    // One thumbnail per row, keyed off the `Frames` row id like legacy.
+    const thumbs = table.getAllByTestId(/^frame-thumb-/);
+    expect(thumbs).toHaveLength(3);
+    expect(thumbs[0].getAttribute('src')).toMatch(/^\/api\/v3\/frames\/\d+\/image\?token=/);
   });
 
   it('asks the API only for this event, one page at a time', async () => {
@@ -166,8 +162,9 @@ describe('EventFramesPage — modern skin', () => {
     await screen.findByTestId('frames-table');
 
     const select = screen.getByRole('combobox', { name: 'Rows per page' });
+    // `0` is legacy's "All".
     expect([...(select as HTMLSelectElement).options].map((o) => o.value)).toEqual([
-      '10', '25', '50', '100', '200',
+      '10', '25', '50', '100', '200', '0',
     ]);
 
     await user.selectOptions(select, '50');
@@ -190,12 +187,7 @@ describe('EventFramesPage — modern skin', () => {
   it('honours ZM_WEB_EVENTS_PER_PAGE for the default page size', async () => {
     const urls = recordFrameQueries(() => HttpResponse.json(paginated(db.frames)));
     server.use(
-      http.get('/api/v3/configs/ZM_WEB_EVENTS_PER_PAGE', () =>
-        HttpResponse.json({
-          id: 9, name: 'ZM_WEB_EVENTS_PER_PAGE', value: '100',
-          type: 'integer', category: 'web',
-        }),
-      ),
+      configListHandler({ ZM_WEB_EVENTS_PER_PAGE: '100' }),
     );
     renderRoute('/events/101/frames');
     await screen.findByTestId('frames-table');
@@ -214,5 +206,59 @@ describe('EventFramesPage — modern skin', () => {
 
     expect(await screen.findByTestId('frames-table')).toBeVisible();
     expect(screen.queryByText('Event-101')).toBeNull();
+  });
+});
+
+describe('EventFramesPage — client-side table controls', () => {
+  function seed() {
+    db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
+    db.frames = [
+      makeFrame({ id: 1, event_id: 101, frame_id: 1, score: 0, delta: '0.00' }),
+      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ id: 3, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+    ];
+  }
+
+  it('searches and sorts the rows on screen', async () => {
+    const user = userEvent.setup();
+    seed();
+    renderRoute('/events/101/frames');
+    await screen.findByTestId('frames-table');
+
+    const rowIds = () => screen.getAllByTestId(/^frame-row-/).map((r) => r.getAttribute('data-testid'));
+    await user.click(screen.getByRole('button', { name: /^Score/ }));
+    expect(rowIds()).toEqual(['frame-row-1', 'frame-row-3', 'frame-row-2']);
+    await user.click(screen.getByRole('button', { name: /^Score/ }));
+    expect(rowIds()).toEqual(['frame-row-2', 'frame-row-3', 'frame-row-1']);
+
+    await user.type(screen.getByLabelText('Search frames'), 'Alarm');
+    await waitFor(() => expect(rowIds()).toEqual(['frame-row-2']));
+  });
+
+  it('shows Event Id again from the column chooser', async () => {
+    const user = userEvent.setup();
+    seed();
+    renderRoute('/events/101/frames');
+    const table = within(await screen.findByTestId('frames-table'));
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }));
+    await user.click(within(screen.getByTestId('frames-column-chooser')).getByRole('button', { name: 'Event Id' }));
+
+    expect(table.getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
+      'Event Id', 'Frame Id', 'Type', 'Time Stamp', 'Time Delta', 'Score', 'Thumbnail',
+    ]);
+  });
+
+  it('asks the backend for every frame when the page size is All', async () => {
+    const user = userEvent.setup();
+    seed();
+    const urls = recordFrameQueries(() => HttpResponse.json(paginated(db.frames)));
+    const { router } = renderRoute('/events/101/frames');
+    await screen.findByTestId('frames-table');
+
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Rows per page' }), '0');
+
+    await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 0 }));
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('page_size')).toBe('500'));
   });
 });

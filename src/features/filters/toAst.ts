@@ -42,7 +42,8 @@ function scalar(kind: FilterAttrKind, raw: string): FilterAstValue | null {
   switch (kind) {
     case 'number':
     case 'monitor':
-    case 'storage': {
+    case 'storage':
+    case 'state': {
       if (v === '') return null;
       const n = Number(v);
       return Number.isFinite(n) ? n : null;
@@ -55,9 +56,17 @@ function scalar(kind: FilterAttrKind, raw: string): FilterAstValue | null {
     case 'string':
     case 'monitorName':
       return raw;
+    // Group / Tags / AlarmedZoneId / *ServerId / ExistsInFileSystem have no
+    // AST field at all, so those kinds never reach `leafToAst`; they are
+    // listed so the switch stays exhaustive.
     case 'date':
     case 'time':
     case 'weekday':
+    case 'group':
+    case 'tags':
+    case 'zone':
+    case 'server':
+    case 'exists':
       return null;
   }
 }

@@ -54,7 +54,7 @@ describe('Classic login page', () => {
     await user.type(screen.getByPlaceholderText('Username'), 'admin');
     await user.type(screen.getByPlaceholderText('Password'), 'secret');
     await user.click(screen.getByRole('button', { name: 'Login' }));
-    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true }));
+    await waitFor(() => expect(navigate).toHaveBeenCalledWith({ href: '/', replace: true }));
   });
 
   it('shows the session-expired notice for ?reason=expired', () => {

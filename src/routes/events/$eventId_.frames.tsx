@@ -11,6 +11,12 @@ function toPositiveInt(v: unknown): number | undefined {
   return Number.isInteger(n) && n > 0 ? n : undefined;
 }
 
+/** Page size, where `0` is legacy's "All" and everything else is positive. */
+function toPageSize(v: unknown): number | undefined {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v !== '' ? Number(v) : NaN;
+  return Number.isInteger(n) && n >= 0 ? n : undefined;
+}
+
 /**
  * Legacy `?view=frames&eid=`. Trailing underscore keeps it a standalone
  * route: `$eventId.tsx` renders no <Outlet/>, so nesting would show the
@@ -20,6 +26,6 @@ export const Route = createFileRoute('/events/$eventId_/frames')({
   component: EventFramesRoute,
   validateSearch: (search: Record<string, unknown>): EventFramesSearchParams => ({
     page: toPositiveInt(search.page),
-    page_size: toPositiveInt(search.page_size),
+    page_size: toPageSize(search.page_size),
   }),
 });

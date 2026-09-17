@@ -4,20 +4,25 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, RefreshCw, Archive, ArchiveRestore, Pencil, ExternalLink, Download, Trash2,
   Film, Info, Layers, LayoutGrid, SkipBack, SkipForward, Rewind, FastForward, Play, Pause,
-  Maximize2, Volume2, VolumeX,
+  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { EventKeyFrames } from '@/features/events/EventKeyFrames';
 import { EventEditForm } from '@/features/events/EventEditForm';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
+import { PlayerOverlayControls } from '@/features/events/PlayerOverlayControls';
 import { TagChips } from '@/features/events/TagChips';
 import { ZonesOverlay } from '@/features/events/ZonesOverlay';
-import { useReplayModeOptions, useScaleOptions } from '@/features/events/playbackOptions';
+import { usePinchZoom } from '@/features/events/usePinchZoom';
+import {
+  useCodecOptions, useRateOptions, useReplayModeOptions, useScaleOptions,
+} from '@/features/events/playbackOptions';
 import { formatDurationHms } from '@/features/events/duration';
-import { formatTime, useEventDetailPage } from '@/features/events/useEventDetailPage';
+import { useEventDetailPage } from '@/features/events/useEventDetailPage';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { formatBytes } from '@/lib/format';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
@@ -38,11 +43,17 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
   const { t } = useTranslation();
   const replayModeOptions = useReplayModeOptions();
   const scaleOptions = useScaleOptions();
+  const rateOptions = useRateOptions();
+  const codecOptions = useCodecOptions();
   // Event stamps render through ZoneMinder's own patterns / server zone.
   const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
-  // Pull the ref out so the remaining `s.*` reads are plain values.
-  const { event, monitor, videoRef } = s;
+  // Click, pinch or trackpad-pinch to zoom into the picture, as legacy's
+  // panzoom does; the overlay buttons drive the same state.
+  const { ref: zoomRef, style: zoomStyle, scale: zoomScale, zoomIn, zoomOut } =
+    usePinchZoom<HTMLDivElement>(true, true);
+  // Pull the refs out so the remaining `s.*` reads are plain values.
+  const { event, monitor, videoRef, playerRef, tagApiRef } = s;
   useDocumentTitle(event ? t('Event {{id}}', { id: event.id }) : t('Event'));
 
   if (!s.isAuthenticated) return null;
@@ -53,9 +64,11 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
         {/* Dark control bar */}
         <div className="flex flex-wrap items-center gap-3 px-3 py-1.5 bg-[#485563] text-white">
           <div className="flex items-center gap-1">
-            <Link to="/events" className="inline-flex items-center px-2.5 py-1.5 rounded-sm bg-[#e9ecef] border border-[#adb5bd] text-zinc-700" title={t('Back')} aria-label={t('Back')}>
+            {/* Legacy's Back is `history.back()`, not a link to the list —
+                it returns to wherever the operator came from. */}
+            <ClassicButton onClick={() => window.history.back()} title={t('Back')} aria-label={t('Back')}>
               <ArrowLeft size={14} className="rtl:-scale-x-100" />
-            </Link>
+            </ClassicButton>
             <ClassicButton tone="primary" onClick={() => window.location.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
               <RefreshCw size={14} />
             </ClassicButton>
@@ -84,17 +97,21 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
             </label>
             <label className="flex items-center gap-1" title={t('Source codec: {{codec}}', { codec: s.codecHint })}>
               <span className="font-semibold">{t('Codec')}</span>
-              <select aria-label={t('Codec')} disabled value={s.playbackMode ?? 'auto'} className={barSelect}>
-                <option value="auto">{t('Auto')}</option>
-                <option value="direct">MP4 ({s.codecHint})</option>
-                <option value="hls">HLS ({s.codecHint})</option>
-                <option value="unsupported">{t('Unsupported')}</option>
+              <select
+                aria-label={t('Codec')}
+                value={s.codec}
+                onChange={(e) => s.setCodec(e.target.value as typeof s.codec)}
+                className={barSelect}
+              >
+                {codecOptions.map((o) => (
+                  <option key={o.value} value={o.value} disabled={o.disabled}>{o.label}</option>
+                ))}
               </select>
             </label>
             <label className="flex items-center gap-1">
               <span className="font-semibold">{t('Rate')}</span>
               <select aria-label={t('Playback speed')} value={s.rate} onChange={(e) => s.setRate(Number(e.target.value))} className={barSelect}>
-                {s.rateOptions.map((r) => <option key={r} value={r}>{r}×</option>)}
+                {rateOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
           </div>
@@ -119,12 +136,20 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   <ExternalLink size={14} />
                   {t('Export')}
                 </ClassicButton>
-                <ClassicLinkButton href={s.downloadUrl} download title={t('Download video')}>
-                  <Download size={14} />
-                  {t('Download')}
-                </ClassicLinkButton>
+                {/* No stored video file, no download (legacy hides it). */}
+                {s.downloadFileName && (
+                  <ClassicLinkButton href={s.downloadUrl} download title={t('Download {{file}}', { file: s.downloadFileName })}>
+                    <Download size={14} />
+                    {t('Download')}
+                  </ClassicLinkButton>
+                )}
                 <RequirePerm feature="events" level="Edit">
-                  <ClassicButton tone="danger" onClick={s.requestDelete} disabled={s.deletePending} title={t('Delete')}>
+                  <ClassicButton
+                    tone="danger"
+                    onClick={(e) => s.requestDelete(e.shiftKey)}
+                    disabled={s.deletePending || !s.canDelete}
+                    title={s.deleteBlockedReason ?? t('Delete')}
+                  >
                     <Trash2 size={14} />
                     {t('Delete')}
                   </ClassicButton>
@@ -137,10 +162,13 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   <Info size={14} />
                   {t('Stats')}
                 </ClassicButton>
-                <ClassicButton onClick={() => s.setShowZones(!s.showZones)} aria-pressed={s.showZones} title={s.showZones ? t('Hide Zones') : t('Show Zones')}>
-                  <Layers size={14} />
-                  {t('Zones')}
-                </ClassicButton>
+                {/* Zones are a System-permission view in legacy. */}
+                <RequirePerm feature="system" level="View">
+                  <ClassicButton onClick={() => s.setShowZones(!s.showZones)} aria-pressed={s.showZones} title={s.showZones ? t('Hide Zones') : t('Show Zones')}>
+                    <Layers size={14} />
+                    {t('Zones')}
+                  </ClassicButton>
+                </RequirePerm>
                 {s.reviewSearch && (
                   <Link to="/montagereview" search={s.reviewSearch} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm border rounded-sm font-medium bg-[#e9ecef] border-[#adb5bd] text-zinc-800 hover:bg-[#dde1e5]">
                     <LayoutGrid size={14} />
@@ -153,68 +181,110 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-zinc-600">{t('Tags')}</span>
                 <RequirePerm feature="events" level="Edit" fallback={<span>{(event.tags ?? []).map((tag) => tag.name).join(', ') || t('No tags')}</span>}>
-                  <TagChips eventId={event.id} currentTags={event.tags ?? []} />
+                  <TagChips eventId={event.id} currentTags={event.tags ?? []} apiRef={tagApiRef} />
+                  <ClassicButton
+                    onClick={s.tagAndPrev}
+                    disabled={s.prevEventId == null}
+                    title={t('Apply the last tag, then play the previous event')}
+                  >
+                    <ChevronsLeft size={14} className="rtl:-scale-x-100" />
+                    {t('Tag & Prev')}
+                  </ClassicButton>
+                  <ClassicButton
+                    onClick={s.tagAndNext}
+                    disabled={s.nextEventId == null}
+                    title={t('Apply the last tag, then play the next event')}
+                  >
+                    {t('Tag & Next')}
+                    <ChevronsRight size={14} className="rtl:-scale-x-100" />
+                  </ClassicButton>
                 </RequirePerm>
               </div>
 
               <div className="flex flex-col lg:flex-row gap-3">
-                {/* Stats table */}
+                {/* Stats table, with legacy's two stills under it */}
                 {s.showStats && (
-                  <table className="text-sm lg:w-80 shrink-0 self-start" data-testid="event-stats-panel">
-                    <tbody className="[&>tr>th]:text-end [&>tr>th]:pe-3 [&>tr>th]:py-0.5 [&>tr>th]:font-semibold [&>tr>th]:text-zinc-600 [&>tr>td]:py-0.5 [&>tr>td]:tabular-nums">
-                      <tr><th scope="row">{t('Id')}</th><td>{event.id}</td></tr>
-                      <tr><th scope="row">{t('Name')}</th><td>{event.name}</td></tr>
-                      <tr>
-                        <th scope="row">{t('Monitor')}</th>
-                        <td>
-                          <Link to="/monitors/$monitorId" params={{ monitorId: String(event.monitor_id) }} className={classicLink}>
-                            {monitor?.name ?? t('Monitor {{id}}', { id: event.monitor_id })}
-                          </Link>
-                        </td>
-                      </tr>
-                      <tr><th scope="row">{t('Cause')}</th><td>{event.cause ?? '—'}</td></tr>
-                      {event.notes && <tr><th scope="row">{t('Notes')}</th><td className="whitespace-pre-wrap">{event.notes}</td></tr>}
-                      <tr><th scope="row">{t('Start')}</th><td>{s.startTime ? formatDateTime(s.startTime) : '—'}</td></tr>
-                      <tr><th scope="row">{t('End')}</th><td>{s.endTime ? formatDateTime(s.endTime) : '—'}</td></tr>
-                      <tr><th scope="row">{t('Duration')}</th><td>{formatDurationHms(event.length)}</td></tr>
-                      <tr><th scope="row">{t('Frames')}</th><td>{event.frames ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Alarm Frames')}</th><td>{event.alarm_frames ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Total Score')}</th><td>{event.tot_score ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Avg. Score')}</th><td>{event.avg_score ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Max. Score')}</th><td>{event.max_score ?? 0}</td></tr>
-                      <tr><th scope="row">{t('Disk Space')}</th><td>{formatBytes(event.disk_space ?? 0)}</td></tr>
-                      <tr><th scope="row">{t('Storage')}</th><td data-testid="event-storage">{s.storageName ?? t('ID: {{id}}', { id: event.storage_id })}</td></tr>
-                      <tr><th scope="row">{t('Archived')}</th><td>{event.archived === 1 ? t('Yes') : t('No')}</td></tr>
-                      <tr><th scope="row">{t('Emailed')}</th><td>{event.emailed === 1 ? t('Yes') : t('No')}</td></tr>
-                      <tr><th scope="row">{t('Resolution')}</th><td>{event.width}x{event.height}</td></tr>
-                      <tr><th scope="row">{t('Codec')}</th><td>{s.codecHint}</td></tr>
-                    </tbody>
-                  </table>
+                  <div className="lg:w-80 shrink-0 self-start space-y-2">
+                    <table className="text-sm w-full" data-testid="event-stats-panel">
+                      <tbody className="[&>tr>th]:text-end [&>tr>th]:pe-3 [&>tr>th]:py-0.5 [&>tr>th]:font-semibold [&>tr>th]:text-zinc-600 [&>tr>td]:py-0.5 [&>tr>td]:tabular-nums">
+                        <tr><th scope="row">{t('Id')}</th><td>{event.id}</td></tr>
+                        <tr><th scope="row">{t('Name')}</th><td>{event.name}</td></tr>
+                        <tr>
+                          <th scope="row">{t('Monitor')}</th>
+                          <td>
+                            <Link to="/monitors/$monitorId" params={{ monitorId: String(event.monitor_id) }} className={classicLink}>
+                              {monitor?.name ?? t('Monitor {{id}}', { id: event.monitor_id })}
+                            </Link>
+                          </td>
+                        </tr>
+                        <tr><th scope="row">{t('Cause')}</th><td>{event.cause ?? '—'}</td></tr>
+                        {event.notes && <tr><th scope="row">{t('Notes')}</th><td className="whitespace-pre-wrap">{event.notes}</td></tr>}
+                        <tr><th scope="row">{t('Start')}</th><td>{s.startTime ? formatDateTime(s.startTime) : '—'}</td></tr>
+                        <tr><th scope="row">{t('End')}</th><td>{s.endTime ? formatDateTime(s.endTime) : '—'}</td></tr>
+                        <tr><th scope="row">{t('Duration')}</th><td>{formatDurationHms(event.length)}</td></tr>
+                        <tr><th scope="row">{t('Frames')}</th><td>{event.frames ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Alarm Frames')}</th><td>{event.alarm_frames ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Total Score')}</th><td>{event.tot_score ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Avg. Score')}</th><td>{event.avg_score ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Max. Score')}</th><td>{event.max_score ?? 0}</td></tr>
+                        <tr><th scope="row">{t('Disk Space')}</th><td>{formatBytes(event.disk_space ?? 0)}</td></tr>
+                        <tr><th scope="row">{t('Storage')}</th><td data-testid="event-storage">{s.storageName ?? t('ID: {{id}}', { id: event.storage_id })}</td></tr>
+                        <tr><th scope="row">{t('Archived')}</th><td>{event.archived === 1 ? t('Yes') : t('No')}</td></tr>
+                        <tr><th scope="row">{t('Emailed')}</th><td>{event.emailed === 1 ? t('Yes') : t('No')}</td></tr>
+                        <tr><th scope="row">{t('Resolution')}</th><td>{event.width}x{event.height}</td></tr>
+                        <tr><th scope="row">{t('Codec')}</th><td>{s.codecHint}</td></tr>
+                      </tbody>
+                    </table>
+                    <EventKeyFrames eventId={event.id} />
+                  </div>
                 )}
 
                 {/* Player */}
                 <div className="flex-1 min-w-0 space-y-1">
                   <div
+                    ref={playerRef}
                     dir="ltr"
-                    className="relative bg-black mx-auto"
+                    className="group relative bg-black mx-auto overflow-hidden"
                     style={{ aspectRatio: `${s.videoContainerW} / ${s.videoContainerH}`, maxWidth: s.playerMaxWidth }}
                   >
-                    <video
-                      ref={videoRef}
-                      poster={s.thumbnailUrl}
-                      className={s.useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
-                      style={s.videoElementStyle}
-                      onTimeUpdate={(e) => s.setCurrentTime(e.currentTarget.currentTime)}
-                      onLoadedMetadata={(e) => {
-                        const d = e.currentTarget.duration;
-                        if (Number.isFinite(d) && d > 0) s.setDuration(d);
-                      }}
-                      onPlay={() => s.setIsPlaying(true)}
-                      onPause={() => s.setIsPlaying(false)}
-                      onEnded={s.handleVideoEnded}
-                    />
-                    {s.showZones && event.monitor_id > 0 && (
-                      <ZonesOverlay monitorId={event.monitor_id} monitorWidth={event.width || 1920} monitorHeight={event.height || 1080} />
+                    {/* Everything that is the picture zooms together; the
+                        controls over it stay where they are. */}
+                    <div ref={zoomRef} style={zoomStyle} className="absolute inset-0">
+                      <video
+                        ref={videoRef}
+                        poster={s.thumbnailUrl}
+                        className={s.useSwappedRotation ? 'object-contain bg-black' : 'w-full h-full object-contain bg-black'}
+                        style={s.videoElementStyle}
+                        onTimeUpdate={(e) => s.setCurrentTime(e.currentTarget.currentTime)}
+                        onLoadedMetadata={(e) => {
+                          const d = e.currentTarget.duration;
+                          if (Number.isFinite(d) && d > 0) s.setDuration(d);
+                        }}
+                        onPlay={() => s.setIsPlaying(true)}
+                        onPause={() => s.setIsPlaying(false)}
+                        onEnded={s.handleVideoEnded}
+                      />
+                      {s.showZones && event.monitor_id > 0 && (
+                        <ZonesOverlay monitorId={event.monitor_id} monitorWidth={event.width || 1920} monitorHeight={event.height || 1080} />
+                      )}
+                    </div>
+                    {event.monitor_id > 0 && (
+                      <PlayerOverlayControls
+                        monitorId={event.monitor_id}
+                        scale={zoomScale}
+                        onZoomIn={zoomIn}
+                        onZoomOut={zoomOut}
+                        onFullscreen={s.handleToggleFullscreen}
+                      />
+                    )}
+                    {/* Legacy's `.vjsMessage`: the replay run has nowhere
+                        left to go, or is waiting out the real gap. */}
+                    {(s.noMoreEvents || s.gapCountdown) && (
+                      <p data-testid="event-replay-message" className="absolute inset-0 flex items-center justify-center bg-black/70 text-white text-lg">
+                        {s.noMoreEvents
+                          ? t('No more events')
+                          : t('{{time}} to next event.', { time: s.gapCountdown })}
+                      </p>
                     )}
                     {s.playbackMode === 'unsupported' && (
                       <div data-testid="event-unsupported-overlay" className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/80 p-4 text-center text-white text-sm">
@@ -231,6 +301,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                       durationSec={s.duration || Number(event.length) || 0}
                       currentTimeSec={s.currentTime}
                       onSeek={s.seekTo}
+                      startTime={s.startTime}
                     />
                   </div>
 
@@ -241,22 +312,27 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   {/* DVR controls */}
                   <div dir="ltr" className="flex items-center justify-center gap-1">
                     <button type="button" onClick={s.navPrev} disabled={s.prevEventId == null} className={dvrBtn} title={t('Prev')} aria-label={t('Previous event')}><SkipBack size={18} /></button>
-                    <button type="button" onClick={() => s.handleSkip(-10)} className={dvrBtn} title={t('Rewind')} aria-label={t('Rewind')}><Rewind size={18} /></button>
+                    <button type="button" onClick={s.scanBack} disabled={!s.canScan} className={dvrBtn} title={t('Rewind')} aria-label={t('Rewind')}><Rewind size={18} /></button>
+                    <button type="button" onClick={s.stepBack} disabled={!s.canStep} className={dvrBtn} title={t('Step Back')} aria-label={t('Step Back')}><ChevronsLeft size={18} /></button>
                     <button type="button" onClick={s.handlePlayPause} className={dvrBtn} title={s.isPlaying ? t('Pause') : t('Play')} aria-label={s.isPlaying ? t('Pause') : t('Play')}>
                       {s.isPlaying ? <Pause size={18} /> : <Play size={18} />}
                     </button>
-                    <button type="button" onClick={() => s.handleSkip(10)} className={dvrBtn} title={t('Fast Forward')} aria-label={t('Fast Forward')}><FastForward size={18} /></button>
+                    <button type="button" onClick={s.stepForward} disabled={!s.canStep} className={dvrBtn} title={t('Step Forward')} aria-label={t('Step Forward')}><ChevronsRight size={18} /></button>
+                    <button type="button" onClick={s.scanForward} disabled={!s.canScan} className={dvrBtn} title={t('Fast Forward')} aria-label={t('Fast Forward')}><FastForward size={18} /></button>
                     <button type="button" onClick={s.handleToggleMute} className={dvrBtn} aria-label={s.isMuted ? t('Unmute') : t('Mute')}>{s.isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
                     <button type="button" onClick={s.handleToggleFullscreen} className={dvrBtn} title={t('Fullscreen')} aria-label={t('Fullscreen')}><Maximize2 size={18} /></button>
                     <button type="button" onClick={s.navNext} disabled={s.nextEventId == null} className={dvrBtn} title={t('Next')} aria-label={t('Next event')}><SkipForward size={18} /></button>
                   </div>
 
                   {/* Replay status */}
-                  <p className="flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-700">
-                    <span>{t('Mode')}: <b>{replayModeOptions.find((o) => o.value === s.replayMode)?.label}</b></span>
-                    <span>{t('Rate')}: <b>{s.rate}×</b></span>
-                    <span>{t('Progress')}: <b>{formatTime(s.currentTime)}</b> / {formatTime(s.duration)}</span>
+                  <p data-testid="event-replay-status" className="flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-700">
+                    {/* Legacy's `#replayStatus`: Mode is the transport, not the
+                        replay-mode select next to it. */}
+                    <span>{t('Mode')}: <b>{s.isPlaying ? t('Replay') : t('Paused')}</b></span>
+                    <span>{t('Rate')}: <b>{rateOptions.find((o) => o.value === s.rate)?.label}</b></span>
+                    <span>{t('Progress')}: <b>{Math.floor(s.currentTime)}</b>s</span>
                     <span>{t('Time')}: <b>{s.startTime ? new Date(s.startTime.getTime() + s.currentTime * 1000).toLocaleTimeString() : '—'}</b></span>
+                    <span>{t('Zoom')}: <b>{zoomScale.toFixed(1)}</b>x</span>
                   </p>
                 </div>
               </div>

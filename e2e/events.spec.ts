@@ -1,5 +1,5 @@
 import type { Page, Response } from '@playwright/test';
-import { test, expect, gotoSkin, SKINS, seededOnly, type Skin } from './fixtures';
+import { test, expect, eventLink, gotoSkin, SKINS, seededOnly, type Skin } from './fixtures';
 import { SEED } from './seed/seed-data';
 
 /**
@@ -15,13 +15,21 @@ import { SEED } from './seed/seed-data';
 /** Skin-specific handles for the same controls. */
 const UI = {
   modern: {
-    monitorSelect: (p: Page) => p.getByLabel('Monitor', { exact: true }),
+    // Modern's Monitor filter is a chip popover of checkboxes, not a
+    // <select>; legacy's multi-select became one control per skin.
+    pickMonitor: async (p: Page, name: string) => {
+      await p.getByRole('button', { name: 'Monitor filter' }).click();
+      await p.getByRole('checkbox', { name, exact: true }).check();
+      await p.keyboard.press('Escape');
+    },
     sortByDuration: (p: Page) => p.getByRole('button', { name: /^sort by duration$/i }),
     perPage: (p: Page) => p.getByLabel(/per page/i).first(),
     archivedOnly: async (p: Page) => p.getByRole('button', { name: /^archived$/i }).click(),
   },
   classic: {
-    monitorSelect: (p: Page) => p.getByLabel('Monitor =', { exact: true }),
+    pickMonitor: async (p: Page, name: string) => {
+      await p.getByLabel('Monitor =', { exact: true }).selectOption({ label: name });
+    },
     sortByDuration: (p: Page) => p.getByRole('button', { name: /^duration/i }),
     perPage: (p: Page) => p.getByLabel(/rows per page/i).first(),
     archivedOnly: async (p: Page) =>
@@ -70,7 +78,7 @@ test.describe('Events list', () => {
       const resp = await openAllEvents(page, skin);
       expect(await total(resp)).toBe(SEED.events.count);
       await expect(page.getByTestId('default-hour-hint')).toHaveCount(0);
-      await expect(page.locator(`a[href="/events/${SEED.events.last}"]`).first()).toBeVisible();
+      await expect(eventLink(page, SEED.events.last).first()).toBeVisible();
     });
 
     test(`${skin}: filtering by monitor narrows the request and the result @route:events.list`, async ({
@@ -79,7 +87,7 @@ test.describe('Events list', () => {
       await openAllEvents(page, skin);
 
       const pending = eventsList(page, (q) => q.has('monitor_id'));
-      await UI[skin].monitorSelect(page).selectOption(String(SEED.monitors.driveway));
+      await UI[skin].pickMonitor(page, SEED.monitors.names[SEED.monitors.driveway]);
       const resp = await pending;
 
       expect(new URL(resp.url()).searchParams.get('monitor_id')).toBe(
@@ -134,7 +142,7 @@ test.describe('Events list', () => {
       // round-trip specs run in parallel and have rows archived meanwhile.
       expect(await total(resp)).toBeGreaterThanOrEqual(SEED.events.archived.length);
       for (const id of SEED.events.archived) {
-        await expect(page.locator(`a[href="/events/${id}"]`).first()).toBeVisible();
+        await expect(eventLink(page, id).first()).toBeVisible();
       }
     });
 
@@ -150,8 +158,8 @@ test.describe('Events list', () => {
       const resp = await pending;
 
       expect(await total(resp)).toBe(1);
-      await expect(page.locator(`a[href="/events/${SEED.events.last}"]`).first()).toBeVisible();
-      await expect(page.locator(`a[href="/events/${SEED.events.open}"]`)).toHaveCount(0);
+      await expect(eventLink(page, SEED.events.last).first()).toBeVisible();
+      await expect(eventLink(page, SEED.events.open)).toHaveCount(0);
     });
   }
 });

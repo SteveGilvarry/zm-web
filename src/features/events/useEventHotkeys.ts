@@ -1,9 +1,11 @@
 import { useEffect, useRef } from 'react';
 
 /**
- * Map of `KeyboardEvent.key` → handler. A handler returning `false` leaves
- * the event alone; anything else (including `undefined`) marks it handled
- * and `preventDefault()` runs, so Space does not scroll the page.
+ * Map of `KeyboardEvent.key` → handler, with `Ctrl+<key>` for the control
+ * chord (legacy binds Ctrl+↓ to "tag it and move on"). A handler returning
+ * `false` leaves the event alone; anything else (including `undefined`)
+ * marks it handled and `preventDefault()` runs, so Space does not scroll
+ * the page.
  */
 export type HotkeyBindings = Record<string, (e: KeyboardEvent) => void | boolean>;
 
@@ -34,9 +36,12 @@ export function useEventHotkeys(bindings: HotkeyBindings, enabled = true): void 
   useEffect(() => {
     if (!enabled) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+      if (e.defaultPrevented || e.altKey) return;
       if (isTypingTarget(e.target)) return;
-      const handler = latest.current[e.key];
+      // Ctrl and Cmd are the same chord here; an unbound chord falls through
+      // to the browser exactly as it did before chords existed.
+      const chord = e.ctrlKey || e.metaKey;
+      const handler = latest.current[chord ? `Ctrl+${e.key}` : e.key];
       if (!handler) return;
       if (handler(e) === false) return;
       e.preventDefault();

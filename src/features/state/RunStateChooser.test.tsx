@@ -13,7 +13,7 @@ import { createElement, type ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { RunStateChooser } from './RunStateChooser';
-import { isDaemonAction, useRunStateChooser } from './useRunStateChooser';
+import { isDaemonAction, isDeletableState, useRunStateChooser } from './useRunStateChooser';
 
 const server = setupServer();
 beforeAll(() => {
@@ -37,11 +37,34 @@ const STATES = [
   { id: 3, name: 'Restart', definition: '', is_active: 0 },
 ];
 
+/** Save snapshots every monitor's modes, so the hook loads the list too. */
+const MONITORS = [
+  { id: 2, name: 'Back', capturing: 'Always', analysing: 'Always', recording: 'OnMotion' },
+  { id: 1, name: 'Front', capturing: 'Always', analysing: 'None', recording: 'Always' },
+];
+
 function stubStates(items: unknown[] = STATES) {
   server.use(
     http.get('/api/v3/states', () =>
       HttpResponse.json({ items, total: items.length, per_page: 200, current_page: 1, last_page: 1 }),
     ),
+    http.get('/api/v3/monitors', () =>
+      HttpResponse.json({
+        items: MONITORS, total: MONITORS.length, per_page: 1000, current_page: 1, last_page: 1,
+      }),
+    ),
+    http.post('/api/v3/states', async ({ request }) => {
+      requests.push({ method: 'POST', url: '/api/v3/states', body: await request.json() });
+      return HttpResponse.json({ id: 9, name: 'x', definition: '', is_active: 0 }, { status: 201 });
+    }),
+    http.patch('/api/v3/states/:id', async ({ request, params }) => {
+      requests.push({ method: 'PATCH', url: `/api/v3/states/${params.id}`, body: await request.json() });
+      return HttpResponse.json({ id: Number(params.id), name: 'x', definition: '', is_active: 0 });
+    }),
+    http.delete('/api/v3/states/:id', ({ params }) => {
+      requests.push({ method: 'DELETE', url: `/api/v3/states/${params.id}`, body: null });
+      return new HttpResponse(null, { status: 204 });
+    }),
     http.post('/api/v3/system/state', async ({ request }) => {
       requests.push({ method: 'POST', url: '/api/v3/system/state', body: await request.json() });
       return HttpResponse.json({ success: true, message: 'applied' });
@@ -104,7 +127,7 @@ describe('useRunStateChooser', () => {
     await waitFor(() => expect(result.current.states).toHaveLength(2));
 
     result.current.requestApply();
-    await waitFor(() => expect(result.current.confirming).toBe(false));
+    await waitFor(() => expect(result.current.confirming).toBeNull());
 
     result.current.confirmApply();
     expect(requests).toHaveLength(0);
@@ -118,11 +141,11 @@ describe('useRunStateChooser', () => {
     await waitFor(() => { result.current.setChoice('Night'); });
     await waitFor(() => expect(result.current.choice).toBe('Night'));
     await waitFor(() => { result.current.requestApply(); });
-    await waitFor(() => expect(result.current.confirming).toBe(true));
+    await waitFor(() => expect(result.current.confirming).toBe('apply'));
 
     await waitFor(() => { result.current.reset(); });
     await waitFor(() => expect(result.current.choice).toBe(''));
-    expect(result.current.confirming).toBe(false);
+    expect(result.current.confirming).toBeNull();
     expect(result.current.error).toBeNull();
   });
 });
@@ -132,7 +155,7 @@ describe('RunStateChooser — the modal', () => {
     stubStates();
     renderChooser();
 
-    const select = screen.getByLabelText('New state');
+    const select = screen.getByLabelText('Change State');
     await waitFor(() => expect(within(select).getByRole('option', { name: 'Night' })).toBeInTheDocument());
 
     expect(within(select).getByRole('option', { name: 'Start' })).toBeInTheDocument();
@@ -163,7 +186,7 @@ describe('RunStateChooser — the modal', () => {
 
     const user = userEvent.setup();
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
-    await user.selectOptions(screen.getByLabelText('New state'), 'Night');
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
     expect(apply).toBeEnabled();
   });
 
@@ -176,6 +199,7 @@ describe('RunStateChooser — the modal', () => {
   });
 
   it('shows a loading note while the states are in flight', () => {
+    stubStates();
     server.use(http.get('/api/v3/states', () => new Promise(() => {})));
     renderChooser();
     expect(screen.getByText('Loading states…')).toBeInTheDocument();
@@ -189,7 +213,7 @@ describe('RunStateChooser — apply a saved state', () => {
     const { onClose } = renderChooser();
 
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
-    await user.selectOptions(screen.getByLabelText('New state'), 'Night');
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     // Nothing has gone out yet — the confirm step stands between.
@@ -211,14 +235,14 @@ describe('RunStateChooser — apply a saved state', () => {
     renderChooser();
 
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
-    await user.selectOptions(screen.getByLabelText('New state'), 'Night');
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     const dialog = confirmDialog('Apply run state');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
 
     expect(requests).toHaveLength(0);
-    await waitFor(() => expect(screen.getByLabelText('New state')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('Change State')).toBeInTheDocument());
   });
 
   it('Cancel on the chooser closes it without a request', async () => {
@@ -245,7 +269,7 @@ describe('RunStateChooser — daemon actions', () => {
     renderChooser();
 
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
-    await user.selectOptions(screen.getByLabelText('New state'), action);
+    await user.selectOptions(screen.getByLabelText('Change State'), action);
     await user.click(screen.getByRole('button', { name: 'Apply' }));
 
     const dialog = confirmDialog(title);
@@ -272,7 +296,7 @@ describe('RunStateChooser — failures', () => {
     const { onClose } = renderChooser();
 
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
-    await user.selectOptions(screen.getByLabelText('New state'), 'Night');
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
     await user.click(within(confirmDialog('Apply run state')).getByRole('button', { name: 'Apply' }));
 
@@ -287,7 +311,7 @@ describe('RunStateChooser — failures', () => {
     renderChooser();
 
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
-    await user.selectOptions(screen.getByLabelText('New state'), 'stop');
+    await user.selectOptions(screen.getByLabelText('Change State'), 'stop');
     await user.click(screen.getByRole('button', { name: 'Apply' }));
     await user.click(within(confirmDialog('Stop ZoneMinder')).getByRole('button', { name: 'Stop' }));
 
@@ -297,7 +321,180 @@ describe('RunStateChooser — failures', () => {
   it('renders nothing at all while closed', () => {
     stubStates();
     renderChooser({ isOpen: false });
-    expect(screen.queryByLabelText('New state')).toBeNull();
+    expect(screen.queryByLabelText('Change State')).toBeNull();
     expect(screen.queryByRole('dialog')).toBeNull();
+  });
+});
+
+const DEFINITION = '1:Always:None:Always,2:Always:Always:OnMotion';
+
+describe('RunStateChooser — save a state', () => {
+  it('disables Save until there is a name to save under', async () => {
+    stubStates();
+    renderChooser();
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('POSTs a new state holding every monitor\'s current modes', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.type(screen.getByLabelText('New State'), 'Evening');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(requests).toEqual([
+      {
+        method: 'POST',
+        url: '/api/v3/states',
+        body: { name: 'Evening', definition: DEFINITION, is_active: 0 },
+      },
+    ]));
+    // Legacy leaves the modal up after Save; a note confirms it landed.
+    expect(await screen.findByRole('status')).toHaveTextContent('State saved.');
+    expect(screen.getByLabelText('Change State')).toBeInTheDocument();
+  });
+
+  it('PATCHes instead when the name already exists (legacy REPLACE INTO)', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.type(screen.getByLabelText('New State'), 'Night');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(requests).toEqual([
+      { method: 'PATCH', url: '/api/v3/states/2', body: { definition: DEFINITION } },
+    ]));
+  });
+
+  it('falls back to the selected state name when the box is empty', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(requests).toEqual([
+      { method: 'PATCH', url: '/api/v3/states/2', body: { definition: DEFINITION } },
+    ]));
+  });
+
+  it('never turns a daemon verb into a state name', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText('Change State'), 'stop');
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+  });
+
+  it('shows the backend error when the save fails', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    server.use(
+      http.post('/api/v3/states', () =>
+        HttpResponse.json({ kind: 'CONFLICT', error_message: 'duplicate' }, { status: 409 }),
+      ),
+    );
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.type(screen.getByLabelText('New State'), 'Evening');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Failed:/);
+  });
+});
+
+describe('RunStateChooser — delete a state', () => {
+  it('leaves Delete disabled for daemon verbs, "default" and no choice', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    const del = screen.getByRole('button', { name: 'Delete' });
+    expect(del).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText('Change State'), 'default');
+    expect(del).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText('Change State'), 'stop');
+    expect(del).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
+    expect(del).toBeEnabled();
+  });
+
+  it('confirms first, then DELETEs the row and clears the choice', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    const { onClose } = renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+
+    expect(requests).toHaveLength(0);
+    const dialog = confirmDialog('Delete run state');
+    expect(within(dialog).getByText(/Delete the saved state "Night"\?/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(requests).toEqual([
+      { method: 'DELETE', url: '/api/v3/states/2', body: null },
+    ]));
+    // Deleting is not applying: the modal stays open and nothing closed it.
+    await waitFor(() => expect(screen.getByLabelText('Change State')).toHaveValue(''));
+    expect(onClose).not.toHaveBeenCalled();
+  });
+
+  it('Cancel on the delete confirm drops back without a request', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(within(confirmDialog('Delete run state')).getByRole('button', { name: 'Cancel' }));
+
+    expect(requests).toHaveLength(0);
+    await waitFor(() => expect(screen.getByLabelText('Change State')).toBeInTheDocument());
+  });
+
+  it('surfaces a delete failure inline', async () => {
+    const user = userEvent.setup();
+    stubStates();
+    server.use(
+      http.delete('/api/v3/states/:id', () =>
+        HttpResponse.json({ kind: 'INTERNAL', error_message: 'in use' }, { status: 500 }),
+      ),
+    );
+    renderChooser();
+
+    await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    await user.selectOptions(screen.getByLabelText('Change State'), 'Night');
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(within(confirmDialog('Delete run state')).getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/Failed:/);
+  });
+});
+
+describe('isDeletableState', () => {
+  it('is false for nothing, daemon verbs and the built-in default', () => {
+    expect(isDeletableState('')).toBe(false);
+    expect(isDeletableState('stop')).toBe(false);
+    expect(isDeletableState('Restart')).toBe(false);
+    expect(isDeletableState('default')).toBe(false);
+    expect(isDeletableState('Default')).toBe(false);
+    expect(isDeletableState('Night')).toBe(true);
   });
 });

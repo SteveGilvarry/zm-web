@@ -18,12 +18,17 @@ import {
   REVIEW_SPEEDS,
   reviewGridColumns,
   useMontageReviewPage,
+  useReviewNotesOptions,
   type ReviewRangePreset,
 } from '@/features/montagereview/useMontageReviewPage';
 import { ToolbarDisclosure } from '../components/ToolbarDisclosure';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
 const toolBtn = 'p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-50';
+const selectField = clsx(
+  'bg-surface border border-border-subtle rounded px-2 py-1 text-sm cursor-pointer',
+  'text-fg focus:outline-none focus:border-accent transition-colors',
+);
 
 // The bar reports through the shared filter store, which the page reads for
 // itself (useMonitorFilter below), so its callback has nothing left to do.
@@ -42,6 +47,7 @@ export default function MontageReviewPage() {
   const { t, i18n } = useTranslation();
   const page = useMontageReviewPage();
   const rangePresets = useReviewRangePresets();
+  const notesOptions = useReviewNotesOptions();
   useDocumentTitle(t('Montage Review'));
   const {
     preset, setPreset, isLive, clock, allMonitors, setFilteredMonitors,
@@ -51,6 +57,13 @@ export default function MontageReviewPage() {
   // The filter bar lives behind a disclosure, so the page applies the shared
   // selections itself rather than waiting for the bar to be on screen.
   const { filtered, activeCount } = useMonitorFilter(allMonitors);
+  // Archived / Tags / Notes count towards the Filters badge alongside the
+  // monitor filter bar's own selections.
+  const eventFilterCount = [
+    page.filters.archived !== 'all',
+    page.filters.tagIds.length > 0,
+    page.filters.notes !== '',
+  ].filter(Boolean).length;
   useEffect(() => {
     setFilteredMonitors(filtered);
   }, [filtered, setFilteredMonitors]);
@@ -115,8 +128,8 @@ export default function MontageReviewPage() {
               </button>
               <button
                 type="button"
-                onClick={page.fit}
-                disabled={page.isFitting || page.selectedMonitors.length === 0}
+                onClick={page.fitToEvents}
+                disabled={page.isFittingEvents || page.selectedMonitors.length === 0}
                 aria-label={t('Fit the window to the recorded events')}
                 title={t('Fit the window to the recorded events')}
                 className={toolBtn}
@@ -126,7 +139,7 @@ export default function MontageReviewPage() {
               <span className={clsx('text-xs font-mono tabular-nums whitespace-nowrap', preset === 'custom' ? 'text-fg' : 'text-fg-dim')}>
                 {fmt(clock.rangeStart)} – {fmt(clock.rangeEnd)}
               </span>
-              {page.fitEmpty && (
+              {page.fitEventsEmpty && (
                 <span role="status" className="text-xs text-warn">
                   {t('No events to fit')}
                 </span>
@@ -146,33 +159,77 @@ export default function MontageReviewPage() {
                   {clock.isPlaying ? <Pause size={12} aria-hidden /> : <Play size={12} aria-hidden />}
                   {clock.isPlaying ? t('Pause') : t('Play')}
                 </button>
-                <div
-                  role="group"
-                  aria-label={t('Speed')}
-                  className="flex items-center gap-0.5 rounded border border-border-subtle p-0.5"
-                >
-                  <FastForward size={12} className="ms-1 text-fg-faint" aria-hidden />
-                  {REVIEW_SPEEDS.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => clock.setSpeed(s)}
-                      aria-pressed={clock.speed === s}
-                      aria-label={t('{{speed}}× speed', { speed: s })}
-                      className={clsx(
-                        'px-1.5 py-0.5 text-xs font-mono tabular-nums rounded transition-colors',
-                        clock.speed === s ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
-                      )}
-                    >
-                      {s}×
-                    </button>
-                  ))}
-                </div>
+                {/* 13 steps is too many chips: one dial, same values as the
+                    classic slider (0 = paused, scrub only). */}
+                <label className="flex items-center gap-1 text-xs text-fg-dim">
+                  <FastForward size={12} className="text-fg-faint" aria-hidden />
+                  <span className="sr-only">{t('Speed')}</span>
+                  <select
+                    aria-label={t('Speed')}
+                    value={clock.speed}
+                    onChange={(e) => clock.setSpeed(Number(e.target.value))}
+                    className={selectField}
+                  >
+                    {REVIEW_SPEEDS.map((s) => (
+                      <option key={s} value={s}>{s === 0 ? t('Paused') : t('{{speed}}×', { speed: s })}</option>
+                    ))}
+                  </select>
+                </label>
               </>
             )}
 
-            <ToolbarDisclosure label={t('Filters')} icon={Filter} count={activeCount} align="end">
-              <MonitorFilterBar monitors={allMonitors} onChange={noop} />
+            <ToolbarDisclosure
+              label={t('Filters')}
+              icon={Filter}
+              count={activeCount + eventFilterCount}
+              align="end"
+            >
+              <div className="space-y-3">
+                <MonitorFilterBar monitors={allMonitors} onChange={noop} />
+                <div className="space-y-2 pt-3 border-t border-border-subtle">
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('Archive Status')}
+                    <select
+                      aria-label={t('Archive Status')}
+                      value={page.filters.archived}
+                      onChange={(e) => page.setFilters({ archived: e.target.value as 'all' | 'unarchived' | 'archived' })}
+                      className={selectField}
+                    >
+                      <option value="all">{t('All')}</option>
+                      <option value="unarchived">{t('Unarchived Only')}</option>
+                      <option value="archived">{t('Archived Only')}</option>
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('Tags')}
+                    <select
+                      aria-label={t('Tags')}
+                      value={page.filters.tagIds[0] != null ? String(page.filters.tagIds[0]) : ''}
+                      onChange={(e) => page.setFilters({ tagIds: e.target.value ? [Number(e.target.value)] : [] })}
+                      className={selectField}
+                    >
+                      <option value="">{t('All Tags')}</option>
+                      {page.tags.map((tag) => (
+                        <option key={tag.id} value={tag.id}>{tag.name}</option>
+                      ))}
+                    </select>
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('Notes')}
+                    <select
+                      aria-label={t('Notes')}
+                      value={page.filters.notes}
+                      onChange={(e) => page.setFilters({ notes: e.target.value })}
+                      className={selectField}
+                    >
+                      <option value="">{t('Any')}</option>
+                      {notesOptions.map((o) => (
+                        <option key={o.value} value={o.value}>{o.label}</option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+              </div>
             </ToolbarDisclosure>
           </div>
         </div>
@@ -235,6 +292,7 @@ export default function MontageReviewPage() {
                       rangeEnd={clock.rangeEnd}
                       isPlaying={clock.isPlaying}
                       speed={clock.speed}
+                      filters={page.filters}
                     />
                   ),
                 )}
@@ -250,6 +308,7 @@ export default function MontageReviewPage() {
                   rangeEnd={clock.rangeEnd}
                   currentTime={clock.currentTime}
                   onSeek={clock.setCurrentTime}
+                  filters={page.filters}
                 />
               </div>
             )}

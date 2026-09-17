@@ -10,7 +10,11 @@ import { serverCoords, serverDaemons, serverUrl, type ServerDaemonFlag } from '.
 
 export interface ServerRow {
   server: Server;
-  /** Monitors whose `server_id` points here. */
+  /**
+   * Monitors whose `server_id` points here — `ServerResponse.monitor_count`
+   * when the backend counted them, else counted from `/monitors` for an older
+   * zm-api.
+   */
   monitorCount: number;
   /** Newest `zmstats.pl` sample for this server, if any. */
   load: ServerLoadSummary | null;
@@ -63,7 +67,7 @@ export function useServersPage() {
       const stat = statsQ.data?.get(server.id);
       return {
         server,
-        monitorCount: counts.get(server.id) ?? 0,
+        monitorCount: server.monitor_count ?? counts.get(server.id) ?? 0,
         load: stat ? summarizeStat(stat) : null,
         url: serverUrl(server),
         daemons: serverDaemons(server),

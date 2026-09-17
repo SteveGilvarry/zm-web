@@ -1,13 +1,25 @@
-import { useState, useMemo, type KeyboardEvent } from 'react';
+import {
+  useState, useMemo, useImperativeHandle, useRef, type KeyboardEvent, type RefObject,
+} from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Tag as TagIcon, Plus, X } from 'lucide-react';
 import { listTags, createTag, attachTag, detachTag, type Tag } from '@/api/tags';
 
+/** What the page's keyboard shortcuts can ask of the editor (legacy J:77–83). */
+export interface TagChipsApi {
+  /** ↓ — put the caret in the tag box and open its dropdown. */
+  focus: () => void;
+  /** Ctrl+↓ / tagPrev / tagNext — attach the first tag not already on. */
+  addFirst: () => void;
+}
+
 interface TagChipsProps {
   eventId: number;
   currentTags: Array<{ id: number; name: string }>;
+  /** Filled with the `TagChipsApi` while the editor is mounted. */
+  apiRef?: RefObject<TagChipsApi | null>;
 }
 
 /**
@@ -18,11 +30,12 @@ interface TagChipsProps {
  * Invalidates the parent event query on every mutation so the event detail
  * refreshes its `tags` array without a manual refetch.
  */
-export function TagChips({ eventId, currentTags }: TagChipsProps) {
+export function TagChips({ eventId, currentTags, apiRef }: TagChipsProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [input, setInput] = useState('');
   const [focused, setFocused] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const { data: allTagsData } = useQuery({
     queryKey: ['tags'],
@@ -62,6 +75,27 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
       .filter((tag) => tag.name.toLowerCase().includes(q))
       .slice(0, 6);
   }, [allTags, input, attachedIds]);
+
+  // Legacy's `availableTags`: every tag not already on this event, in the
+  // order the backend listed them.
+  const availableTags = useMemo(
+    () => allTags.filter((tag) => !attachedIds.has(tag.id)),
+    [allTags, attachedIds],
+  );
+
+  useImperativeHandle(apiRef, () => ({
+    focus: () => {
+      inputRef.current?.focus();
+      setFocused(true);
+    },
+    addFirst: () => {
+      const first = availableTags[0];
+      if (first) attachMutation.mutate({ tagId: first.id });
+    },
+    // `attachMutation` is stable enough for this (react-query keeps the
+    // identity per render, and the handle is read on demand, not stored).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [availableTags]);
 
   const exactMatch = useMemo(() => {
     const q = input.trim().toLowerCase();
@@ -129,6 +163,8 @@ export function TagChips({ eventId, currentTags }: TagChipsProps) {
         )}>
           <Plus size={12} className="text-fg-dim" aria-hidden />
           <input
+            ref={inputRef}
+            data-testid="tag-input"
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={onKey}

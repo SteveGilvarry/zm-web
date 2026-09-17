@@ -95,6 +95,9 @@ export interface MontagePageState {
   /** Where each cell's name + runtime caption sits (persisted). */
   statusPosition: MontageStatusPosition;
   setStatusPosition: (position: MontageStatusPosition) => void;
+  /** Legacy `zmMontageShowZones`: draw zone polygons over the live tiles. */
+  showZones: boolean;
+  setShowZones: (show: boolean) => void;
   /** Simultaneous live tiles allowed on this browser (persisted, `useUiStore`). */
   maxLiveTiles: number;
   setMaxLiveTiles: (n: number) => void;
@@ -127,7 +130,9 @@ export function useMontagePage(): MontagePageState {
   const gridRef = useRef<HTMLDivElement>(null);
   useMontageGroupParam();
 
-  const { tree, protocol, setTree, setProtocol, statusPosition, setStatusPosition } = useMontageStore();
+  const {
+    tree, protocol, setTree, setProtocol, statusPosition, setStatusPosition, showZones, setShowZones,
+  } = useMontageStore();
   const maxLiveTiles = useUiStore((s) => s.maxLiveTiles);
   const setMaxLiveTiles = useUiStore((s) => s.setMaxLiveTiles);
 
@@ -246,6 +251,8 @@ export function useMontagePage(): MontagePageState {
     protocol,
     statusPosition,
     setStatusPosition,
+    showZones,
+    setShowZones,
     maxLiveTiles,
     setMaxLiveTiles,
     monitors,

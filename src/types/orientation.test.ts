@@ -8,13 +8,14 @@ describe('isOrientationRotated', () => {
     expect(isOrientationRotated('')).toBe(false);
   });
 
-  it('returns true for Rotate90 / Rotate270 (CamelCase, the API default)', () => {
+  it('returns true for Rotate90 / Rotate270 (CamelCase, pre-#59 backends)', () => {
     expect(isOrientationRotated('Rotate90')).toBe(true);
     expect(isOrientationRotated('Rotate270')).toBe(true);
   });
 
-  it('returns true for ROTATE_90 / ROTATE_270 (uppercase-underscore variant)', () => {
-    // Some backends return this form; both must be handled.
+  it('returns true for ROTATE_90 / ROTATE_270 (what the API sends now)', () => {
+    // Since zm-api#59 this is the wire form; the CamelCase one above still
+    // turns up on older boxes, so both must be handled.
     expect(isOrientationRotated('ROTATE_90')).toBe(true);
     expect(isOrientationRotated('ROTATE_270')).toBe(true);
   });

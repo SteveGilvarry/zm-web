@@ -9,12 +9,14 @@ import {
   Archive,
   Tag as TagIcon,
   Download,
+  Mail,
 } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { getEventThumbnailUrl, getEventVideoUrl } from '@/api/events';
 import type { ZmEvent } from '@/types';
 import { eventDurationSeconds } from '@/features/events/duration';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import type { EventNavSearch } from '@/features/events/eventsSearch';
 
 // Rotation transform for events-list thumbnails (square layout footprint,
 // object-contain). No scale factor — the 1:1 footprint already handles
@@ -42,6 +44,7 @@ export function EventCard({
   isSelected,
   onToggleSelected,
   showThumbnail = true,
+  detailSearch,
 }: {
   event: ZmEvent;
   monitorName: string;
@@ -50,6 +53,11 @@ export function EventCard({
   onToggleSelected: () => void;
   /** `ZM_WEB_LIST_THUMBS` — off hides the image column entirely. */
   showThumbnail?: boolean;
+  /**
+   * List context carried on the event link, so Prev / Next on the detail
+   * page walk this list in this order (legacy `filterQuery` + `sortQuery`).
+   */
+  detailSearch?: EventNavSearch;
 }) {
   const { t } = useTranslation();
   // ZoneMinder's configured patterns and server zone, not the raw locale.
@@ -82,6 +90,7 @@ export function EventCard({
       <Link
         to="/events/$eventId"
         params={{ eventId: String(event.id) }}
+        search={detailSearch}
         className="flex items-center gap-4 flex-1 min-w-0"
       >
       {showThumbnail && (
@@ -115,6 +124,12 @@ export function EventCard({
             <span className="flex items-center gap-1 text-xs text-fg-dim">
               <Archive size={12} aria-hidden />
               {t('Archived')}
+            </span>
+          )}
+          {event.emailed === 1 && (
+            <span className="flex items-center gap-1 text-xs text-fg-dim">
+              <Mail size={12} aria-hidden />
+              {t('Emailed')}
             </span>
           )}
         </div>

@@ -138,8 +138,8 @@ describe('Users page — legacy list features', () => {
 
     const editor = await screen.findByRole('dialog', { name: /edit admin/i });
     // Your own password does not go through PUT /users/{id} at all, so the
-    // dead password inputs are replaced by a route to PUT /me/password.
-    expect(within(editor).queryByPlaceholderText('Not editable yet')).not.toBeInTheDocument();
+    // password inputs are replaced by a route to PUT /me/password.
+    expect(within(editor).queryByPlaceholderText('Leave blank to keep')).not.toBeInTheDocument();
     await user.click(within(editor).getByRole('button', { name: /change password/i }));
 
     // The editor closes first — no dialog stacked inside a dialog.
@@ -155,7 +155,7 @@ describe('Users page — legacy list features', () => {
 
     const editor = await screen.findByRole('dialog', { name: /edit viewer/i });
     expect(within(editor).queryByRole('button', { name: /change password/i })).not.toBeInTheDocument();
-    expect(within(editor).getByPlaceholderText('Not editable yet')).toBeDisabled();
+    expect(within(editor).getByPlaceholderText('Leave blank to keep')).toBeEnabled();
   });
 
   it('marks rows and bulk-deletes them, never the signed-in user', async () => {

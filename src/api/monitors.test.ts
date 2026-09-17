@@ -45,12 +45,12 @@ describe('getMonitors', () => {
   });
 });
 
-describe('monitor enums come back ready to write (zm-api#18)', () => {
-  // Values exactly as the dev box returns them: the request spelling, and
-  // `deleted` as a JSON boolean. No client-side normalisation left.
+describe('monitor enums come back ready to write (zm-api#59)', () => {
+  // Values exactly as the dev box returns them: the raw ZoneMinder DB
+  // strings, and `deleted` as a JSON boolean. No client-side normalisation.
   const raw = {
-    id: 1, name: 'HIKVISION', orientation: 'Rotate90', event_close_mode: 'System',
-    default_codec: 'Auto', rtsp2_web_type: 'WebRtc', output_container: null,
+    id: 1, name: 'HIKVISION', orientation: 'ROTATE_90', event_close_mode: 'system',
+    default_codec: 'auto', rtsp2_web_type: 'WebRTC', output_container: null,
     capturing: 'Always', decoding: 'Ondemand', analysing: 'None', recording: 'Always',
     type: 'Ffmpeg', function: 'Monitor', importance: 'Normal', deleted: false,
   };
@@ -58,23 +58,27 @@ describe('monitor enums come back ready to write (zm-api#18)', () => {
   it('passes reads through untouched', async () => {
     server.use(
       http.get('/api/v3/monitors', () => HttpResponse.json({
-        items: [raw, { ...raw, id: 2, orientation: 'Rotate270' }],
+        items: [raw, { ...raw, id: 2, orientation: 'ROTATE_270' }],
         total: 2, per_page: 20, current_page: 1, last_page: 1,
       })),
       http.get('/api/v3/monitors/1', () => HttpResponse.json(raw)),
     );
     const page = await getMonitors();
-    expect(page.items.map((m) => m.orientation)).toEqual(['Rotate90', 'Rotate270']);
+    expect(page.items.map((m) => m.orientation)).toEqual(['ROTATE_90', 'ROTATE_270']);
     const one = await getMonitor(1);
-    expect(one.rtsp2_web_type).toBe('WebRtc');
-    expect(one.event_close_mode).toBe('System');
+    expect(one.rtsp2_web_type).toBe('WebRTC');
+    expect(one.event_close_mode).toBe('system');
     expect(isDeleted(one)).toBe(false);
   });
 
-  it('canonicalEnum still folds the loose spellings the camera presets use', () => {
-    expect(canonicalEnum('FLIP_HORI', ['FlipHori'])).toBe('FlipHori');
-    expect(canonicalEnum('WebRTC', MONITOR_ENUMS.rtsp2_web_type)).toBe('WebRtc');
-    expect(canonicalEnum('Sideways', ['Rotate0'])).toBe('Sideways');
+  it('canonicalEnum folds the loose spellings — presets, and pre-#59 boxes', () => {
+    expect(canonicalEnum('FlipHori', MONITOR_ENUMS.orientation)).toBe('FLIP_HORI');
+    expect(canonicalEnum('Rotate90', MONITOR_ENUMS.orientation)).toBe('ROTATE_90');
+    expect(canonicalEnum('WebRtc', MONITOR_ENUMS.rtsp2_web_type)).toBe('WebRTC');
+    expect(canonicalEnum('Curl', MONITOR_ENUMS.type)).toBe('cURL');
+    expect(canonicalEnum('KeyFramesOndemand', MONITOR_ENUMS.decoding)).toBe('KeyFrames+Ondemand');
+    expect(canonicalEnum('Mp4', MONITOR_ENUMS.default_codec)).toBe('MP4');
+    expect(canonicalEnum('Sideways', MONITOR_ENUMS.orientation)).toBe('Sideways');
   });
 });
 

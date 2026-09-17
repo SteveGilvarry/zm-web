@@ -355,24 +355,13 @@ describe('MontageReviewPage (modern) — transport', () => {
     renderRoute(`/montagereview${WIDE_RANGE}`);
     await findChips();
 
-    const speeds = screen.getByRole('group', { name: 'Speed' });
-    expect(within(speeds).getByRole('button', { name: '1× speed' })).toHaveAttribute(
-      'aria-pressed',
-      'true',
-    );
+    // One dial over legacy's 13 steps; 0 reads as Paused.
+    const speed = screen.getByRole('combobox', { name: 'Speed' }) as HTMLSelectElement;
+    expect(speed.value).toBe('1');
+    expect(within(speed).getByRole('option', { name: 'Paused' })).toHaveValue('0');
 
-    await user.click(within(speeds).getByRole('button', { name: '4× speed' }));
-
-    await waitFor(() => {
-      expect(within(speeds).getByRole('button', { name: '4× speed' })).toHaveAttribute(
-        'aria-pressed',
-        'true',
-      );
-    });
-    expect(within(speeds).getByRole('button', { name: '1× speed' })).toHaveAttribute(
-      'aria-pressed',
-      'false',
-    );
+    await user.selectOptions(speed, '3');
+    await waitFor(() => expect(speed.value).toBe('3'));
   });
 });
 
@@ -403,5 +392,29 @@ describe('MontageReviewPage (modern) — monitor selection', () => {
       expect(within(chips).queryByRole('button', { name: 'Driveway' })).not.toBeInTheDocument();
     });
     expect(within(chips).getByRole('button', { name: 'Front Door' })).toBeInTheDocument();
+  });
+});
+
+
+describe('MontageReviewPage (modern) — event filters', () => {
+  it('sends Archive Status / Tags / Notes with the event queries and counts them', async () => {
+    const user = userEvent.setup();
+    const seen: URLSearchParams[] = [];
+    server.use(http.get('*/api/v3/events', ({ request }) => {
+      seen.push(new URL(request.url).searchParams);
+      return HttpResponse.json({ items: [], total: 0, per_page: 500, current_page: 1, last_page: 1 });
+    }));
+    renderRoute(`/montagereview${WIDE_RANGE}`);
+    await findChips();
+
+    await user.click(screen.getByRole('button', { name: 'Filters' }));
+    await user.selectOptions(screen.getByLabelText('Archive Status'), 'unarchived');
+    await waitFor(() => expect(seen.some((q) => q.get('archived') === 'false')).toBe(true));
+
+    await user.selectOptions(screen.getByLabelText('Notes'), 'Motion');
+    await waitFor(() => expect(seen.some((q) => q.get('notes') === 'Motion')).toBe(true));
+
+    // Both show on the Filters badge.
+    expect(screen.getAllByRole('button', { name: /Filters/ })[0]).toHaveTextContent('2');
   });
 });

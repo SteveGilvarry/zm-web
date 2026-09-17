@@ -35,7 +35,7 @@ export function makeEvent(overrides: Partial<ZmEvent> = {}): ZmEvent {
     executed: 0,
     notes: null,
     state_id: 1,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     disk_space: 41943040,
     scheme: 'Deep',
     locked: 0,

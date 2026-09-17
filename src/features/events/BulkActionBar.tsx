@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type MouseEvent, type ReactNode } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { clsx } from 'clsx';
@@ -6,14 +6,24 @@ import { useTranslation } from 'react-i18next';
 import { Archive, ArchiveRestore, Download, Eye, Pencil, Trash2, X, AlertTriangle } from 'lucide-react';
 import { updateEvent, deleteEvent, getEventVideoUrl } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
+import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { useToast } from '@/components/common/toastStore';
+import type { ZmEvent } from '@/types';
 import { EventEditForm, type EventEditValues } from './EventEditForm';
 import { bulkEditPayload } from './bulkEdit';
 import { useBulkFanOut } from './bulkFanOut';
 
 interface BulkActionBarProps {
   selectedIds: Set<number>;
+  /**
+   * The rows on screen. Fixes the order View walks the selection in, and
+   * tells Unarchive / Delete which selected rows are archived (legacy reads
+   * both off the table too, so a selection carried over from another page
+   * is treated as unarchived).
+   */
+  events?: ZmEvent[];
   onClear: () => void;
   /**
    * `modern` floats a neutral bar at the bottom once rows are selected;
@@ -23,22 +33,29 @@ interface BulkActionBarProps {
   variant?: 'modern' | 'classic';
 }
 
+/** Which confirmation is open. Archive needs none (legacy fires it straight away). */
+type Pending = 'unarchive' | 'delete' | null;
+
 /**
  * Sticky action bar that appears at the bottom of the events list once one
- * or more rows are checked: View (open the first selected), Edit (name /
- * cause / notes / archived across the selection), Archive, Unarchive and
- * Delete. The backend has no bulk endpoint, so each action fans out one
- * request per id; the bar shows progress while it runs and lists any ids
- * that failed instead of pretending the whole batch went through.
+ * or more rows are checked: View (open the first selected, Prev/Next walk
+ * the rest), Edit (name / cause / notes / archived across the selection),
+ * Archive, Unarchive and Delete. The backend has no bulk endpoint, so each
+ * action fans out one request per id, ten at a time; the bar shows progress
+ * while it runs and lists any ids that failed instead of pretending the
+ * whole batch went through. Unarchive and Delete confirm first — Shift+click
+ * skips the dialog, as in legacy.
  */
-export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: BulkActionBarProps) {
+export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'modern' }: BulkActionBarProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { progress, start, dismiss } = useBulkFanOut();
   const toast = useToast();
   const accessToken = useAuthStore((s) => s.accessToken);
+  const setNavScope = useEventPlaybackStore((s) => s.setNavScope);
   const [editOpen, setEditOpen] = useState(false);
+  const [pending, setPending] = useState<Pending>(null);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['events'] });
@@ -49,8 +66,16 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
   const classic = variant === 'classic';
   if (!classic && ids.length === 0 && !progress.action) return null;
 
-  const runAction = async (label: string, run: (id: number) => Promise<unknown>) => {
-    const failed = await start(label, ids, run);
+  // Selected rows in table order first, then anything checked on another page.
+  const onPage = events.filter((e) => selectedIds.has(e.id));
+  const orderedIds = [
+    ...onPage.map((e) => e.id),
+    ...ids.filter((id) => !onPage.some((e) => e.id === id)),
+  ];
+  const archivedSelected = new Set(onPage.filter((e) => e.archived === 1).map((e) => e.id));
+
+  const runAction = async (label: string, run: (id: number) => Promise<unknown>, targets: number[] = ids) => {
+    const failed = await start(label, targets, run);
     invalidate();
     // Full success: clear the selection and the progress so the bar goes
     // away (legacy clears the selection after an action). Failures keep the
@@ -61,6 +86,35 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
     } else {
       toast.error(t('{{action}}: {{count}} event failed', { action: label, count: failed.length }));
     }
+  };
+
+  // Legacy View: open the first checked event with the checked ids as the
+  // Prev/Next scope and playback started (`Id =[] …` + `play=1`).
+  const view = () => {
+    const monitorId = useEventPlaybackStore.getState().navScope?.monitorId ?? null;
+    setNavScope({ monitorId, ids: orderedIds, autoplay: true });
+    navigate({ to: '/events/$eventId', params: { eventId: String(orderedIds[0]) } });
+  };
+
+  const unarchive = () => runAction(t('Unarchive'), (id) => updateEvent(id, { archived: false }));
+
+  // Legacy refuses to delete an archived event ("Event N is archived, cannot
+  // delete it."); we skip those up front and say how many.
+  const remove = async () => {
+    const targets = ids.filter((id) => !archivedSelected.has(id));
+    if (archivedSelected.size > 0) {
+      toast.error(t('{{count}} archived event not deleted. Unarchive first.', { count: archivedSelected.size }));
+    }
+    if (targets.length > 0) await runAction(t('Delete'), (id) => deleteEvent(id), targets);
+  };
+
+  const guarded = (e: MouseEvent, action: Exclude<Pending, null>, run: () => Promise<void>) => {
+    if (e.shiftKey) void run();
+    else setPending(action);
+  };
+  const confirmPending = async () => {
+    await (pending === 'delete' ? remove() : unarchive());
+    setPending(null);
   };
 
   // Legacy "Download Video": one MP4 per selected event. Browsers only allow
@@ -80,6 +134,9 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
 
   const busy = progress.running;
   const finishedWithFailures = !busy && progress.action && progress.failed.length > 0;
+  const progressText = t('{{action}}: {{done}} / {{total}}', {
+    action: progress.action, done: progress.done, total: progress.total,
+  });
 
   const onEdit = (values: EventEditValues) => {
     const payload = bulkEditPayload(values);
@@ -114,7 +171,7 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
           variant={variant}
           icon={<Eye size={12} />}
           label={t('View')}
-          onClick={() => navigate({ to: '/events/$eventId', params: { eventId: String(ids[0]) } })}
+          onClick={view}
           disabled={busy || ids.length === 0}
         />
         <BulkBtn
@@ -126,36 +183,33 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
         />
         <RequirePerm feature="events" level="Edit">
           <BulkBtn
-          variant={variant}
+            variant={variant}
             icon={<Pencil size={12} />}
             label={t('Edit')}
             onClick={() => setEditOpen(true)}
             disabled={busy || ids.length === 0}
           />
           <BulkBtn
-          variant={variant}
+            variant={variant}
             icon={<Archive size={12} />}
             label={t('Archive')}
             onClick={() => void runAction(t('Archive'), (id) => updateEvent(id, { archived: true }))}
             disabled={busy || ids.length === 0}
           />
           <BulkBtn
-          variant={variant}
+            variant={variant}
             icon={<ArchiveRestore size={12} />}
             label={t('Unarchive')}
-            onClick={() => void runAction(t('Unarchive'), (id) => updateEvent(id, { archived: false }))}
-            disabled={busy || ids.length === 0}
+            title={archivedSelected.size === 0 ? t('Please select an event that is archived.') : t('Unarchive')}
+            onClick={(e) => guarded(e, 'unarchive', unarchive)}
+            disabled={busy || archivedSelected.size === 0}
           />
           <BulkBtn
-          variant={variant}
+            variant={variant}
             icon={<Trash2 size={12} />}
             label={t('Delete')}
             tone="danger"
-            onClick={() => {
-              if (confirm(t("Delete {{count}} event? This can't be undone.", { count: ids.length }))) {
-                void runAction(t('Delete'), (id) => deleteEvent(id));
-              }
-            }}
+            onClick={(e) => guarded(e, 'delete', remove)}
             disabled={busy || ids.length === 0}
           />
         </RequirePerm>
@@ -181,7 +235,7 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
           className="flex items-center gap-2 px-2 text-xs font-mono tabular-nums text-fg-muted"
           data-testid="bulk-progress"
         >
-          <span>{t('{{action}}: {{done}} / {{total}}', { action: progress.action, done: progress.done, total: progress.total })}</span>
+          <span>{progressText}</span>
           <progress
             className="h-1 w-32 [&::-webkit-progress-bar]:bg-surface-2 [&::-webkit-progress-value]:bg-accent"
             value={progress.done}
@@ -207,6 +261,22 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
         </div>
       )}
 
+      {/* Legacy's delconfirm / eventunarchive modals, with the progress
+          ticker inside while the chunks go out. */}
+      <ConfirmDialog
+        isOpen={pending !== null}
+        onClose={() => { if (!busy) setPending(null); }}
+        onConfirm={() => void confirmPending()}
+        title={pending === 'delete' ? t('Delete Confirmation') : t('Confirm Unarchive')}
+        message={busy
+          ? progressText
+          : pending === 'delete'
+            ? t('Are you sure you wish to delete the selected events?')
+            : t('Are you sure you wish to unarchive the selected events?')}
+        confirmText={pending === 'delete' ? t('Delete') : t('Unarchive')}
+        isLoading={busy}
+      />
+
       {editOpen && (
         <EventEditForm
           isOpen
@@ -221,11 +291,12 @@ export function BulkActionBar({ selectedIds, onClear, variant = 'modern' }: Bulk
 }
 
 function BulkBtn({
-  icon, label, onClick, disabled, tone = 'neutral', variant = 'modern',
+  icon, label, title, onClick, disabled, tone = 'neutral', variant = 'modern',
 }: {
-  icon: React.ReactNode;
+  icon: ReactNode;
   label: string;
-  onClick: () => void;
+  title?: string;
+  onClick: (e: MouseEvent<HTMLButtonElement>) => void;
   disabled: boolean;
   tone?: 'neutral' | 'danger';
   variant?: 'modern' | 'classic';
@@ -241,6 +312,7 @@ function BulkBtn({
     <button
       onClick={onClick}
       disabled={disabled}
+      title={title}
       className={clsx(
         'flex items-center gap-1.5 px-2 py-1 border text-xs font-medium transition-colors',
         cls,

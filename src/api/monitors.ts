@@ -4,40 +4,41 @@ import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, St
 
 /**
  * Enum vocabularies of `Create/UpdateMonitorRequest` (OpenAPI components).
- * Since zm-api #18 (dev box 2026-08-22) GET responses use exactly this
- * spelling too, so a record read from the API can be written straight back
- * — verified live: `GET /monitors/1` returns `Rotate90`, `System`, `Auto`,
- * `WebRtc`. Older builds echoed the raw DB strings (`ROTATE_90`, `system`,
- * `auto`, `WebRTC`) and needed a normalising pass on every read; that pass
- * is gone. Against such a build the enum selects would show their first
- * option instead of the stored value. `contract.test.ts` checks these lists
- * against the OpenAPI snapshot.
+ * Since zm-api#59 (dev box 2026-09-18) these are the raw ZoneMinder DB
+ * strings — `ROTATE_90`, `cURL`, `KeyFrames+Ondemand`, `system`, `auto`,
+ * `WebRTC` — and GET responses use exactly the same spelling, so a record
+ * read from the API can be written straight back. Builds between #18 and
+ * #59 echoed a CamelCase spelling (`Rotate90`, `Curl`, `WebRtc`); reads stay
+ * tolerant of those via {@link canonicalEnum} and the orientation helpers,
+ * but everything the UI *sends* uses the list below. `contract.test.ts`
+ * checks these lists against the OpenAPI snapshot.
  */
 export const MONITOR_ENUMS = {
-  type: ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'Curl', 'WebSite', 'Vnc'],
+  type: ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'cURL', 'WebSite', 'VNC'],
   function: ['None', 'Monitor', 'Modect', 'Record', 'Mocord', 'Nodect'],
   capturing: ['None', 'Ondemand', 'Always'],
-  decoding: ['None', 'Ondemand', 'KeyFrames', 'KeyFramesOndemand', 'Always'],
+  decoding: ['None', 'Ondemand', 'KeyFrames', 'KeyFrames+Ondemand', 'Always'],
   analysing: ['None', 'Always'],
   analysis_source: ['Primary', 'Secondary'],
   analysis_image: ['FullColour', 'YChannel'],
   recording: ['None', 'OnMotion', 'Always'],
   recording_source: ['Primary', 'Secondary', 'Both'],
-  orientation: ['Rotate0', 'Rotate90', 'Rotate180', 'Rotate270', 'FlipHori', 'FlipVert'],
-  event_close_mode: ['System', 'Time', 'Duration', 'Idle', 'Alarm'],
-  default_codec: ['Auto', 'Mp4', 'Mjpeg'],
-  output_container: ['Auto', 'Mp4', 'Mkv', 'Webm'],
-  rtsp2_web_type: ['Hls', 'Mse', 'WebRtc'],
+  orientation: ['ROTATE_0', 'ROTATE_90', 'ROTATE_180', 'ROTATE_270', 'FLIP_HORI', 'FLIP_VERT'],
+  event_close_mode: ['system', 'time', 'duration', 'idle', 'alarm'],
+  default_codec: ['auto', 'MP4', 'MJPEG'],
+  output_container: ['auto', 'mp4', 'mkv', 'webm'],
+  rtsp2_web_type: ['HLS', 'MSE', 'WebRTC'],
   importance: ['Normal', 'Less', 'Not'],
 } as const satisfies Partial<Record<keyof Monitor, readonly string[]>>;
 
-const foldEnum = (s: string) => s.replace(/_/g, '').toLowerCase();
+const foldEnum = (s: string) => s.replace(/[_+\s]/g, '').toLowerCase();
 
 /**
- * Fold a loosely-spelled enum value onto its request member: `ROTATE_90` →
- * `Rotate90`, `WebRTC` → `WebRtc`. Unknown values pass through untouched.
- * The API no longer needs this; the bundled camera presets do, because
- * their JSON is transcribed from ZoneMinder's own preset files.
+ * Fold a loosely-spelled enum value onto its request member: `Rotate90` →
+ * `ROTATE_90`, `WebRtc` → `WebRTC`, `KeyFramesOndemand` →
+ * `KeyFrames+Ondemand`. Unknown values pass through untouched. Used for the
+ * bundled camera presets (transcribed from ZoneMinder's own preset files)
+ * and for monitors read off an older zm-api that still sends CamelCase.
  */
 export function canonicalEnum(value: string, members: readonly string[]): string {
   const key = foldEnum(value);

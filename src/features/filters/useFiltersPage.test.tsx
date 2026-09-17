@@ -6,6 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useFiltersPage, columnsOf } from './useFiltersPage';
+import type { Filter as FilterModel } from '@/api/filters';
 import { PURGE_WHEN_FULL_QUERY_JSON, PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW } from './liveFixtures';
 
 let mockSearch: Record<string, unknown> = {};
@@ -37,6 +38,10 @@ function wrapper() {
   );
 }
 
+/** The list is sorted by name now, so tests pick a row by name, not index. */
+const row = (result: { current: { filters: FilterModel[] } }, name: string) =>
+  result.current.filters.find((f) => f.name === name)!;
+
 const legacyPrivateFormat = {
   ...UPDATE_DISK_SPACE_ROW,
   id: 9,
@@ -58,6 +63,19 @@ function stub(items: unknown[] = [PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW, le
     http.get('/api/v3/storage', () =>
       HttpResponse.json({ items: [{ id: 1, name: 'Default', path: '/e', type: 'local', enabled: 1 }], total: 1, per_page: 200, current_page: 1, last_page: 1 }),
     ),
+    // `useFiltersPage` reads the ZM_OPT_* rows (option gating) and /me (who
+    // owns the filter). Everything on, so the whole form is exercised.
+    http.get('/api/v3/configs', () => HttpResponse.json({
+      items: [
+        { name: 'ZM_WEB_ID_ON_FILTER', value: '0' },
+        { name: 'ZM_OPT_FFMPEG', value: '1' },
+        { name: 'ZM_OPT_UPLOAD', value: '1' },
+        { name: 'ZM_OPT_EMAIL', value: '1' },
+        { name: 'ZM_OPT_MESSAGE', value: '1' },
+      ],
+      total: 5, per_page: 1000, current_page: 1, last_page: 1,
+    })),
+    http.get('/api/v3/me', () => HttpResponse.json({ user: { id: 1, username: 'admin', system: 'Edit', events: 'Edit' } })),
   );
 }
 
@@ -79,7 +97,7 @@ describe('useFiltersPage', () => {
     const { result } = renderHook(() => useFiltersPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.filters).toHaveLength(3));
 
-    act(() => result.current.startEditing(result.current.filters[0]));
+    act(() => result.current.startEditing(row(result, 'PurgeWhenFull')));
     expect(result.current.selectedId).toBe(1);
     expect(result.current.draftName).toBe('PurgeWhenFull');
     expect(result.current.unreadable).toBeNull();
@@ -103,7 +121,7 @@ describe('useFiltersPage', () => {
     const { result } = renderHook(() => useFiltersPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.filters).toHaveLength(3));
 
-    act(() => result.current.startEditing(result.current.filters[2]));
+    act(() => result.current.startEditing(row(result, 'Old dashboard filter')));
     expect(result.current.draftQuery).toBeNull();
     expect(result.current.unreadable).toMatchObject({ raw: legacyPrivateFormat.query_json });
     expect(result.current.canSave).toBe(false);
@@ -121,7 +139,7 @@ describe('useFiltersPage', () => {
     );
     const { result } = renderHook(() => useFiltersPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.filters).toHaveLength(3));
-    act(() => result.current.startEditing(result.current.filters[0]));
+    act(() => result.current.startEditing(row(result, 'PurgeWhenFull')));
     act(() => result.current.save());
     await waitFor(() => expect(body.query_json).toBe(PURGE_WHEN_FULL_QUERY_JSON));
     expect(body).toMatchObject({

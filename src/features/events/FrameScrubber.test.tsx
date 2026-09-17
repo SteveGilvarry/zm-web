@@ -68,6 +68,87 @@ describe('FrameScrubber — empty state', () => {
   });
 });
 
+describe('FrameScrubber — legacy progress bar', () => {
+  it('draws ten wall-clock labels from the event start', async () => {
+    server.use(http.get('/api/v3/frames', () => HttpResponse.json(frameFixture(5))));
+    const start = new Date('2026-05-24T12:00:00Z');
+
+    renderWithProviders(
+      <FrameScrubber
+        eventId={1}
+        durationSec={100}
+        currentTimeSec={0}
+        onSeek={() => {}}
+        startTime={start}
+      />,
+    );
+
+    const labels = await screen.findByTestId('scrubber-time-labels');
+    expect(labels.children).toHaveLength(10);
+    // Each label is one tenth of the event later than the one before it.
+    expect(labels.children[0].textContent).toBe(start.toLocaleTimeString());
+    expect(labels.children[1].textContent).toBe(
+      new Date(start.getTime() + 10_000).toLocaleTimeString(),
+    );
+  });
+
+  it('renders no labels without a start time to count from', async () => {
+    server.use(http.get('/api/v3/frames', () => HttpResponse.json(frameFixture(5))));
+    renderWithProviders(
+      <FrameScrubber eventId={1} durationSec={10} currentTimeSec={0} onSeek={() => {}} />,
+    );
+    await waitFor(() => expect(screen.getByLabelText(/next frame/i)).toBeEnabled());
+    expect(screen.queryByTestId('scrubber-time-labels')).not.toBeInTheDocument();
+  });
+
+  it('draws one alarm span per stretch, with a height that follows its score', async () => {
+    // Frames 1 and 4 are alarms (every third), so two separate stretches.
+    server.use(http.get('/api/v3/frames', () => HttpResponse.json(frameFixture(7))));
+    renderWithProviders(
+      <FrameScrubber eventId={1} durationSec={10} currentTimeSec={0} onSeek={() => {}} />,
+    );
+
+    const cues = await screen.findAllByTestId('alarm-cue');
+    expect(cues).toHaveLength(3);
+    // Scores are (i+1)*5, so the peak of the event is the last alarm frame's.
+    const heights = cues.map((c) => parseFloat((c as HTMLElement).style.height));
+    expect(heights[0]).toBeLessThan(heights[2]);
+    expect(heights[2]).toBe(100);
+  });
+
+  it('follows the pointer with an indicator showing the time under it', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v3/frames', () => HttpResponse.json(frameFixture(5))));
+    const start = new Date('2026-05-24T12:00:00Z');
+
+    const { container } = renderWithProviders(
+      <FrameScrubber
+        eventId={1}
+        durationSec={100}
+        currentTimeSec={0}
+        onSeek={() => {}}
+        startTime={start}
+      />,
+    );
+    await screen.findAllByTestId('alarm-cue');
+
+    // jsdom gives every element a zero-size box; the track needs a real one
+    // for the pointer position to mean anything.
+    const track = container.querySelector('[dir="ltr"].relative') as HTMLElement;
+    track.getBoundingClientRect = () => ({
+      left: 0, top: 0, right: 200, bottom: 32, width: 200, height: 32, x: 0, y: 0,
+      toJSON: () => ({}),
+    });
+
+    await user.pointer({ target: track, coords: { clientX: 50, clientY: 5 } });
+
+    const indicator = await screen.findByTestId('scrubber-indicator');
+    // A quarter of the way along a 100 s event is 25 s past the start.
+    expect(indicator.textContent).toBe(new Date(start.getTime() + 25_000).toLocaleTimeString());
+    expect(indicator.style.left).toBe('25%');
+  });
+});
+
 describe('FrameScrubber — navigation buttons', () => {
   it('advances to the next frame on the > button', async () => {
     const user = userEvent.setup();

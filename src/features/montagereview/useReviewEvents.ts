@@ -8,6 +8,31 @@ export const REVIEW_PAGE_SIZE = 500;
 /** Hard stop so a runaway window cannot pull a box's whole history. */
 export const REVIEW_MAX_PAGES = 40;
 
+/** Legacy montage-review event filters: Archived, Tags, Notes. */
+export interface ReviewEventFilters {
+  /** Legacy Archive Status select. */
+  archived: 'all' | 'unarchived' | 'archived';
+  /** Any-of tag ids (`tag_id=1,2`). */
+  tagIds: number[];
+  /** Substring of the event notes (legacy's LIKE match). */
+  notes: string;
+}
+
+export const DEFAULT_REVIEW_FILTERS: ReviewEventFilters = {
+  archived: 'all',
+  tagIds: [],
+  notes: '',
+};
+
+/** The filter half of the events query — also the cache key's filter part. */
+function filterParams(filters: ReviewEventFilters): Partial<EventQueryParams> {
+  return {
+    ...(filters.archived === 'all' ? {} : { archived: filters.archived === 'archived' }),
+    ...(filters.tagIds.length > 0 ? { tag_id: filters.tagIds.join(',') } : {}),
+    ...(filters.notes.trim() ? { notes: filters.notes.trim() } : {}),
+  };
+}
+
 /**
  * Every event for one monitor in the window, oldest first, following the
  * pagination until the last page. The server sorts (`sort=start_time`), so
@@ -20,6 +45,7 @@ export async function fetchReviewEvents(
   monitorId: number,
   startISO: string,
   endISO: string,
+  filters: ReviewEventFilters = DEFAULT_REVIEW_FILTERS,
 ): Promise<ZmEvent[]> {
   const out: ZmEvent[] = [];
   for (let page = 1; page <= REVIEW_MAX_PAGES; page++) {
@@ -33,6 +59,7 @@ export async function fetchReviewEvents(
       // end_time, alarm_frames, max_score, avg_score, tot_score, length, id).
       sort: 'start_time',
       direction: 'asc',
+      ...filterParams(filters),
     } as EventQueryParams);
     out.push(...res.items);
     if (res.items.length === 0 || res.current_page >= res.last_page) break;
@@ -49,14 +76,15 @@ export function useReviewEvents(
   monitorId: number,
   rangeStart: Date,
   rangeEnd: Date,
+  filters: ReviewEventFilters = DEFAULT_REVIEW_FILTERS,
 ): { events: ZmEvent[]; isLoading: boolean } {
   const { isAuthenticated } = useAuthStore();
   const startISO = rangeStart.toISOString();
   const endISO = rangeEnd.toISOString();
 
   const q = useQuery({
-    queryKey: ['reviewEvents', monitorId, startISO, endISO],
-    queryFn: () => fetchReviewEvents(monitorId, startISO, endISO),
+    queryKey: ['reviewEvents', monitorId, startISO, endISO, filterParams(filters)],
+    queryFn: () => fetchReviewEvents(monitorId, startISO, endISO, filters),
     enabled: isAuthenticated && !isNaN(monitorId),
     staleTime: 30_000,
   });

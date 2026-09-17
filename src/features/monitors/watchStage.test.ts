@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { heightOptions, stageStyle, widthOptions } from './watchStage';
 
-const cam = { width: 2688, height: 1520, orientation: 'Rotate0' };
-const portrait = { width: 1920, height: 1080, orientation: 'Rotate90' };
+const cam = { width: 2688, height: 1520, orientation: 'ROTATE_0' };
+const portrait = { width: 1920, height: 1080, orientation: 'ROTATE_90' };
 
 describe('width / height options', () => {
   it('appends each camera\'s native size once, after the legacy list', () => {

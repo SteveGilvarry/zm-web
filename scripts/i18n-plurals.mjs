@@ -30,6 +30,7 @@ const PLURALS = {
   report: 'reports', daemon: 'daemons', result: 'results', match: 'matches',
   file: 'files', second: 'seconds', minute: 'minutes', hour: 'hours', day: 'days',
   item: 'items', entry: 'entries', page: 'pages', camera: 'cameras', retry: 'retries', control: 'controls', setting: 'settings',
+  dataset: 'datasets', class: 'classes', model: 'models', token: 'tokens',
 };
 const SINGULARS = Object.fromEntries(Object.entries(PLURALS).map(([s, p]) => [p, s]));
 

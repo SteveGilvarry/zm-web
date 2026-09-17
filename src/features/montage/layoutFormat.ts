@@ -46,7 +46,15 @@ export interface MontagePositions {
 
 export interface ParsedLayout {
   tree: LayoutNode;
+  /**
+   * The tile geometry the classic wall lays out with: the row's own
+   * `gridStack` items where it had them (mixed tile sizes survive), else a
+   * projection of the tree. Always non-empty.
+   */
+  items: GridStackItem[];
   statusPosition?: MontageStatusPosition;
+  /** Per-monitor Ratio select, legacy `Positions.monitorRatio`. */
+  monitorRatio?: Record<number, string>;
   /** Where the tree came from — `gridstack` rows were converted lossily. */
   source: 'dashboard' | 'gridstack';
 }
@@ -55,13 +63,15 @@ const STATUS_TO_LEGACY: Record<MontageStatusPosition, LegacyStatusPosition> = {
   inside: 'insideImgBottom',
   outside: 'outsideImgBottom',
   hidden: 'hidden',
+  hover: 'showOnHover',
 };
 
 export function statusPositionFromLegacy(value: unknown): MontageStatusPosition | undefined {
   switch (value) {
     case 'insideImgBottom':
-    case 'showOnHover':
       return 'inside';
+    case 'showOnHover':
+      return 'hover';
     case 'outsideImgBottom':
       return 'outside';
     case 'hidden':
@@ -69,6 +79,18 @@ export function statusPositionFromLegacy(value: unknown): MontageStatusPosition 
     default:
       return undefined;
   }
+}
+
+/** `{"3": "16:9"}` → `{3: '16:9'}`; junk entries are dropped. */
+export function parseMonitorRatio(raw: unknown): Record<number, string> | undefined {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
+  const out: Record<number, string> = {};
+  for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
+    const id = Number(key);
+    if (!Number.isInteger(id) || id <= 0 || typeof value !== 'string' || !value) continue;
+    out[id] = value;
+  }
+  return Object.keys(out).length ? out : undefined;
 }
 
 function isLayoutNode(v: unknown): v is LayoutNode {
@@ -168,37 +190,74 @@ export function parsePositions(positions: string | null | undefined): ParsedLayo
 
   // Pre-2024 legacy: a bare list of {monitor_id,x,y,w,h}.
   if (Array.isArray(raw)) {
-    const tree = gridStackToTree(toItems(raw));
-    return tree ? { tree, source: 'gridstack' } : null;
+    const items = toItems(raw);
+    const tree = gridStackToTree(items);
+    return tree ? { tree, items, source: 'gridstack' } : null;
   }
 
   const obj = raw as MontagePositions & { version?: unknown; tree?: unknown };
   const statusPosition = statusPositionFromLegacy(obj.monitorStatusPosition);
+  const monitorRatio = parseMonitorRatio(obj.monitorRatio);
+  // The tree may win below, but the tile sizes only exist here.
+  const saved = Array.isArray(obj.gridStack) ? toItems(obj.gridStack) : [];
 
   if (obj.dashboard?.version === 1 && isLayoutNode(obj.dashboard.tree)) {
-    return { tree: obj.dashboard.tree, statusPosition, source: 'dashboard' };
+    const tree = obj.dashboard.tree;
+    return { tree, items: saved.length ? saved : treeToGridStack(tree), statusPosition, monitorRatio, source: 'dashboard' };
   }
   // Rows written by this dashboard before it learned to speak gridstack.
   if (obj.version === 1 && isLayoutNode(obj.tree)) {
-    return { tree: obj.tree, statusPosition, source: 'dashboard' };
+    const tree = obj.tree;
+    return { tree, items: saved.length ? saved : treeToGridStack(tree), statusPosition, monitorRatio, source: 'dashboard' };
   }
-  if (Array.isArray(obj.gridStack)) {
-    const tree = gridStackToTree(toItems(obj.gridStack));
-    return tree ? { tree, statusPosition, source: 'gridstack' } : null;
+  if (saved.length) {
+    const tree = gridStackToTree(saved);
+    return tree ? { tree, items: saved, statusPosition, monitorRatio, source: 'gridstack' } : null;
   }
   return null;
 }
 
-/** Serialise for `positions`: legacy-loadable gridStack + our exact tree. */
-export function serialisePositions(tree: LayoutNode, statusPosition: MontageStatusPosition): string {
-  const gridStack = treeToGridStack(tree);
+/**
+ * Serialise for `positions`: legacy-loadable gridStack + our exact tree.
+ * `ratios` is the Ratio select per monitor (legacy `monitorRatio`); tiles it
+ * does not name keep `auto`, as legacy's default does.
+ */
+export function serialisePositions(
+  tree: LayoutNode,
+  statusPosition: MontageStatusPosition,
+  ratios: Record<number, string> = {},
+): string {
+  return serialiseGridStack(treeToGridStack(tree), statusPosition, ratios, tree);
+}
+
+/**
+ * Serialise the classic wall's own tile geometry. `gridStack` is exactly
+ * what legacy's `objGridStack.save(false, false)` produces — `{id, x, y, w,
+ * h}` per tile — so the PHP UI loads this layout unchanged; the `dashboard`
+ * tree beside it is the same arrangement in the shape the modern mosaic
+ * reads.
+ */
+export function serialiseGridStackPositions(
+  items: GridStackItem[],
+  statusPosition: MontageStatusPosition,
+  ratios: Record<number, string> = {},
+): string {
+  return serialiseGridStack(items, statusPosition, ratios, gridStackToTree(items));
+}
+
+function serialiseGridStack(
+  gridStack: GridStackItem[],
+  statusPosition: MontageStatusPosition,
+  ratios: Record<number, string>,
+  tree: LayoutNode | null,
+): string {
   const monitorRatio: Record<string, string> = {};
-  for (const item of gridStack) monitorRatio[item.id] = 'auto';
+  for (const item of gridStack) monitorRatio[item.id] = ratios[Number(item.id)] ?? 'auto';
   const payload: MontagePositions = {
     gridStack,
     monitorStatusPosition: STATUS_TO_LEGACY[statusPosition],
     monitorRatio,
-    dashboard: { version: 1, tree },
+    ...(tree ? { dashboard: { version: 1 as const, tree } } : {}),
   };
   return JSON.stringify(payload);
 }

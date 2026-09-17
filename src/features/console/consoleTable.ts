@@ -1,7 +1,7 @@
 import type { EventSummary } from '@/api/eventSummaries';
-import type { Monitor } from '@/types';
-import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
+import { isDeleted, type Monitor } from '@/types';
 import { monitorSource } from '@/features/monitors/useMonitorFilterRow';
+import { formatBandwidthLegacy, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import type { ConsoleColumnKey } from './consoleColumns';
 
 /** One table row: the config record, its event rollups and its runtime row. */
@@ -14,17 +14,103 @@ export interface ConsoleRow {
 export type ConsoleSortKey = Exclude<ConsoleColumnKey, 'thumbnail'>;
 export type SortDir = 'asc' | 'desc';
 
-/** Legacy "Function" cell, one entry per line. `Offline` when not capturing. */
-export function functionLines(m: Monitor): string[] {
-  if (!m.capturing || m.capturing === 'None') return ['Offline'];
+/**
+ * A status row older than this is treated as a dead capture process. Legacy
+ * console.js: "FPS report interval: 60 seconds base + 30 seconds buffer".
+ */
+export const FPS_REPORT_STALE_MS = 90_000;
+
+/** True when the monitor's status row is missing or older than 90 s (console.js `Offline`). */
+export function isOffline(runtime: MonitorRuntime | undefined, now: number = Date.now()): boolean {
+  if (!runtime?.updatedOn) return true;
+  const stamp = Date.parse(runtime.updatedOn);
+  return !Number.isFinite(stamp) || stamp < now - FPS_REPORT_STALE_MS;
+}
+
+/**
+ * Legacy "Function" cell, one entry per line (console.js:265-283). `Offline`
+ * when the status row is stale; otherwise the raw Analysing / Recording modes
+ * plus the ONVIF alarm text when the event listener is on. Legacy prints the
+ * enum values verbatim (`Recording: OnMotion`), so no relabelling here.
+ */
+export function functionLines(m: Monitor, runtime?: MonitorRuntime, now: number = Date.now()): string[] {
+  if (isOffline(runtime, now)) return ['Offline'];
   const lines: string[] = [];
-  if (m.capturing === 'Ondemand') lines.push('Capturing: On Demand');
-  if (m.onvif_event_listener === 1) lines.push("Use ONVIF 'MotionAlarm'");
-  else if (m.analysing === 'Always') lines.push('Analysing: Always');
-  if (m.recording && m.recording !== 'None') {
-    lines.push(`Recording: ${m.recording === 'OnMotion' ? 'On Motion' : m.recording}`);
+  if (m.analysing && m.analysing !== 'None') lines.push(`Analysing: ${m.analysing}`);
+  // ajax/console.php hands the JS `ONVIF_Alarm_Text` when the listener is on,
+  // and the JS skips the line when that text is empty.
+  if (m.onvif_event_listener && m.onvif_alarm_text) lines.push(`Use ONVIF '${m.onvif_alarm_text}'`);
+  if (m.recording && m.recording !== 'None') lines.push(`Recording: ${m.recording}`);
+  return lines;
+}
+
+/**
+ * The small line under the Function cell (console.js:284-298):
+ * `CaptureFPS[/AnalysisFPS] fps CaptureBandwidth`. The analysis fps only
+ * shows while analysing; the bandwidth only when non-zero.
+ */
+export function runtimeLine(m: Monitor, runtime: MonitorRuntime): string {
+  let fps = runtime.captureFpsRaw;
+  if (m.analysing !== 'None') fps += `/${runtime.analysisFpsRaw}`;
+  fps += ' fps';
+  if (runtime.bandwidth > 0) fps += ` ${formatBandwidthLegacy(runtime.bandwidth)}`;
+  return fps;
+}
+
+/**
+ * console.js:205-207 — whether the Id and Name cells link to the watch view.
+ * A deleted monitor has no capture daemon, a WebSite monitor has a page to
+ * open whatever its status says, and everything else needs Stream permission,
+ * a capture mode and an fps reading. Legacy tests `row.CaptureFPS` for
+ * truthiness on the raw string, so `'0.00'` counts as present.
+ */
+export function streamAvailable(
+  m: Monitor,
+  runtime: MonitorRuntime | undefined,
+  canViewStream: boolean,
+): boolean {
+  if (isDeleted(m) || !canViewStream) return false;
+  if (m.type === 'WebSite') return true;
+  return !!runtime?.captureFpsRaw && m.capturing !== 'None';
+}
+
+/** Legacy `infoText` / `warnText` / `errorText` on the lens dot and Source cell. */
+export type SourceClass = 'info' | 'warn' | 'error';
+
+/**
+ * console.js:210-232: which colour the row's lens dot and Source cell take,
+ * and the reason the dot's tooltip gives. The status row decides, not the
+ * configured mode: a monitor set to capture whose process is down is red.
+ */
+export function sourceClass(m: Monitor, runtime: MonitorRuntime | undefined): { cls: SourceClass; reason: string } {
+  if (isDeleted(m)) return { cls: 'error', reason: 'Deleted' };
+  if ((!runtime?.status || runtime.status === 'NotRunning') && m.type !== 'WebSite') {
+    return { cls: 'error', reason: 'Not Running' };
   }
-  return lines.length ? lines : ['Capturing'];
+  if (runtime?.captureFpsRaw === '0.00') return { cls: 'error', reason: 'No capture FPS' };
+  if (runtime && !runtime.analysisFps && m.analysing !== 'None') return { cls: 'warn', reason: 'No analysis FPS' };
+  return { cls: 'info', reason: '' };
+}
+
+/** The six count columns; `events` is legacy's `Total`. */
+export type CountPeriod = 'events' | 'hour' | 'day' | 'week' | 'month' | 'archived';
+
+/**
+ * Lower bound for a period's events-list link, as the ISO stamp the events
+ * page accepts. Legacy passes MySQL's `-1 hour` / `-1 day` / `-7 day` /
+ * `-1 month`; the month case is calendar arithmetic (same day last month),
+ * like MySQL's, not 30 days. `events` and `archived` carry no bound.
+ */
+export function periodStart(period: CountPeriod, now: Date = new Date()): string | undefined {
+  const d = new Date(now.getTime());
+  switch (period) {
+    case 'hour': d.setHours(d.getHours() - 1); break;
+    case 'day': d.setDate(d.getDate() - 1); break;
+    case 'week': d.setDate(d.getDate() - 7); break;
+    case 'month': d.setMonth(d.getMonth() - 1); break;
+    default: return undefined;
+  }
+  return d.toISOString().replace(/\.\d{3}Z$/, 'Z');
 }
 
 export interface SortContext {
@@ -43,7 +129,7 @@ export function compareRows(a: ConsoleRow, b: ConsoleRow, key: ConsoleSortKey, c
     case 'name': return byText(am.name, bm.name);
     case 'manufacturer': return byText(ctx.manufacturerName?.(am.manufacturer_id) ?? '', ctx.manufacturerName?.(bm.manufacturer_id) ?? '');
     case 'model': return byText(ctx.modelName?.(am.model_id) ?? '', ctx.modelName?.(bm.model_id) ?? '');
-    case 'function': return byText(functionLines(am).join(' '), functionLines(bm).join(' '));
+    case 'function': return byText(functionLines(am, a.runtime).join(' '), functionLines(bm, b.runtime).join(' '));
     case 'server': return byText(ctx.serverName?.(am.server_id) ?? String(am.server_id ?? ''), ctx.serverName?.(bm.server_id) ?? String(bm.server_id ?? ''));
     case 'source': return byText(monitorSource(am), monitorSource(bm));
     case 'storage': return byText(ctx.storageName?.(am.storage_id) ?? String(am.storage_id), ctx.storageName?.(bm.storage_id) ?? String(bm.storage_id));
@@ -68,8 +154,8 @@ export function sortRows(rows: ConsoleRow[], key: ConsoleSortKey, dir: SortDir, 
 export function searchRows(rows: ConsoleRow[], query: string): ConsoleRow[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows;
-  return rows.filter(({ monitor: m }) =>
-    [String(m.id), m.name, monitorSource(m), m.type, ...functionLines(m)]
+  return rows.filter(({ monitor: m, runtime }) =>
+    [String(m.id), m.name, monitorSource(m), m.type, ...functionLines(m, runtime)]
       .some((v) => v.toLowerCase().includes(q)),
   );
 }
@@ -115,7 +201,7 @@ export function exportColumns(ctx: SortContext = {}): ExportColumn[] {
     { key: 'name', label: 'Name', value: (r) => r.monitor.name },
     { key: 'manufacturer', label: 'Manufacturer', value: (r) => ctx.manufacturerName?.(r.monitor.manufacturer_id) ?? '' },
     { key: 'model', label: 'Model', value: (r) => ctx.modelName?.(r.monitor.model_id) ?? '' },
-    { key: 'function', label: 'Function', value: (r) => functionLines(r.monitor).join(' ') },
+    { key: 'function', label: 'Function', value: (r) => functionLines(r.monitor, r.runtime).join(' ') },
     { key: 'status', label: 'Status', value: (r) => r.runtime?.status ?? 'Unknown' },
     { key: 'capture_fps', label: 'CaptureFPS', value: (r) => r.runtime?.captureFps ?? '' },
     { key: 'source', label: 'Source', value: (r) => monitorSource(r.monitor) },

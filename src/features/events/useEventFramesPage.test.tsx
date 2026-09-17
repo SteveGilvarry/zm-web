@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -73,6 +74,7 @@ function stub(
         current_page: Number(q.get('page') ?? 1), last_page: Math.ceil(total / per),
       });
     }),
+    configListHandler(configs),
     http.get('/api/v3/configs/:name', ({ params }) => {
       const name = String(params.name);
       return name in configs
@@ -105,7 +107,8 @@ describe('useEventFramesPage', () => {
     expect(result.current.total).toBe(120);
     expect(result.current.totalPages).toBe(5);
     expect(result.current.maxScore).toBe(37);
-    expect(result.current.pageSizeOptions).toEqual([10, 25, 50, 100, 200]);
+    // 0 is legacy's "All".
+    expect(result.current.pageSizeOptions).toEqual([10, 25, 50, 100, 200, 0]);
     await waitFor(() => expect(result.current.event?.name).toBe('Event 42'));
   });
 
@@ -162,5 +165,90 @@ describe('useEventFramesPage', () => {
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(result.current.frames).toEqual([]);
     expect(result.current.maxScore).toBe(0);
+  });
+});
+
+describe('useEventFramesPage — client-side table controls', () => {
+  it('sorts by any column, flipping direction on a second click', async () => {
+    stub();
+    const { result } = renderHook(() => useEventFramesPage(42), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.frames).toHaveLength(3));
+
+    act(() => result.current.toggleSort('score'));
+    expect(result.current.dir).toBe('asc');
+    expect(result.current.frames.map((f) => f.score)).toEqual([0, 12, 37]);
+
+    act(() => result.current.toggleSort('score'));
+    expect(result.current.dir).toBe('desc');
+    expect(result.current.frames.map((f) => f.score)).toEqual([37, 12, 0]);
+
+    act(() => result.current.toggleSort('frame_id'));
+    expect(result.current.sort).toBe('frame_id');
+    expect(result.current.dir).toBe('asc');
+  });
+
+  it('searches the visible columns', async () => {
+    stub();
+    const { result } = renderHook(() => useEventFramesPage(42), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.frames).toHaveLength(3));
+
+    act(() => result.current.setQuery('alarm'));
+    expect(result.current.frames.map((f) => f.frame_id)).toEqual([2]);
+
+    // Hide Type and the same search matches nothing.
+    act(() => result.current.toggleColumn('type'));
+    expect(result.current.frames).toHaveLength(0);
+  });
+
+  it('starts with Event Id hidden and restores the defaults on reset', async () => {
+    stub();
+    const { result } = renderHook(() => useEventFramesPage(42), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.frames).toHaveLength(3));
+
+    expect(result.current.isVisible('event_id')).toBe(false);
+    expect(result.current.visibleColumns).not.toContain('event_id');
+
+    act(() => result.current.toggleColumn('event_id'));
+    expect(result.current.isVisible('event_id')).toBe(true);
+
+    act(() => result.current.toggleColumn('score'));
+    act(() => result.current.resetColumns());
+    expect(result.current.isVisible('score')).toBe(true);
+    expect(result.current.isVisible('event_id')).toBe(false);
+  });
+
+  it('fetches every frame of the event for the "All" page size', async () => {
+    mockSearch = { page_size: 0 };
+    stub();
+    const { result } = renderHook(() => useEventFramesPage(42), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.frames).toHaveLength(3));
+
+    // `getAllFramesForEvent` walks pages of 500 and stops at the last one.
+    expect(frameRequests.at(0)!.get('page_size')).toBe('500');
+    expect(result.current.totalPages).toBe(1);
+    expect(result.current.total).toBe(3);
+  });
+
+  it('exports the visible rows as CSV', async () => {
+    stub();
+    const { result } = renderHook(() => useEventFramesPage(42), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.frames).toHaveLength(3));
+
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    act(() => result.current.setQuery('Alarm'));
+    act(() => result.current.exportCsv());
+
+    expect(click).toHaveBeenCalled();
+    const blob = created.mock.calls[0][0] as Blob;
+    const text = await blob.text();
+    expect(text).toContain('Frame Id,Type,Time Stamp,Time Delta,Score');
+    expect(text).toContain('Alarm');
+    // The search narrowed the export to the one matching row.
+    expect(text.trim().split('\n')).toHaveLength(2);
+
+    vi.restoreAllMocks();
   });
 });

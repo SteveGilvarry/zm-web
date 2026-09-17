@@ -61,12 +61,16 @@ function seed(x10 = '0') {
     http.get('/api/v3/system/status', () => HttpResponse.json({ running: true, daemons: [] })),
     http.get('/api/v3/host/getVersion', () => HttpResponse.json({ version: '1.37.0', api_version: '3.0' })),
     http.get('/api/v3/daemons', () => HttpResponse.json({ daemons: [] })),
-    http.get('/api/v3/configs/:name', ({ params }) => HttpResponse.json({
-      id: 0, name: params.name, value: params.name === 'ZM_OPT_X10' ? x10 : '', type: 'boolean', category: 'x10', readonly: 0, private: 0, system: 0,
-    })),
-    http.get('/api/v3/configs', () => HttpResponse.json({
-      items: CONFIGS, total: CONFIGS.length, per_page: 500, current_page: 1, last_page: 1,
-    })),
+    // `useZmConfig` reads the whole table in one request (`page_size=1000`);
+    // the page lists only the rows it renders. The gate belongs to the
+    // former, or it would change the rail's category counts.
+    http.get('/api/v3/configs', ({ request }) => {
+      const wholeTable = new URL(request.url).searchParams.get('page_size') === '1000';
+      const items = wholeTable
+        ? [...CONFIGS, { id: 0, name: 'ZM_OPT_X10', value: x10, type: 'boolean', category: 'x10', readonly: 0, private: 0, system: 0 }]
+        : CONFIGS;
+      return HttpResponse.json({ items, total: items.length, per_page: 500, current_page: 1, last_page: 1 });
+    }),
   );
 }
 
@@ -80,7 +84,12 @@ describe('Classic Options page', () => {
     await waitFor(() => expect(screen.getByText('Authenticate user logins')).toBeInTheDocument());
     const rail = screen.getByRole('navigation', { name: 'Options' });
     const labels = within(rail).getAllByRole('listitem').map((li) => li.textContent);
-    expect(labels).toEqual(['Display', 'System', 'Servers', 'Storage', 'Web', 'Control', 'MQTT', 'Users', 'Groups', 'Run State']);
+    expect(labels).toEqual([
+      'Display', 'System', 'API', 'Servers', 'Storage', 'Web', 'Control', 'MQTT',
+      'Users', 'Groups', 'AI Datasets', 'AI Models', 'AI Classes', 'Run State',
+    ]);
+    expect(within(rail).getByRole('link', { name: 'API' })).toHaveAttribute('href', '/settings/api-tokens');
+    expect(within(rail).getByRole('link', { name: 'AI Models' })).toHaveAttribute('href', '/settings/ai/models');
     expect(within(rail).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/settings/users');
     expect(within(rail).getByRole('link', { name: 'Groups' })).toHaveAttribute('href', '/groups');
     // bandwidth rows never show, even under "All"

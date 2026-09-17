@@ -7,7 +7,7 @@ const ev = (over: Partial<ZmEvent>): ZmEvent => ({
   start_date_time: '2026-06-02T10:54:35Z', end_date_time: '2026-06-02T10:55:05Z',
   width: 1920, height: 1080, length: '30.00', frames: 300, alarm_frames: 12, default_video: '',
   tot_score: 40, avg_score: 3, max_score: 9, archived: 0, videoed: 0, uploaded: 0, emailed: 1,
-  messaged: 0, executed: 0, notes: null, state_id: 1, orientation: 'Rotate0', disk_space: 1024,
+  messaged: 0, executed: 0, notes: null, state_id: 1, orientation: 'ROTATE_0', disk_space: 1024,
   scheme: 'Medium', locked: 0, tags: [{ id: 1, name: 'parcel' }, { id: 2, name: 'night' }],
   ...over,
 });

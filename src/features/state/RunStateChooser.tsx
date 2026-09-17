@@ -15,14 +15,16 @@ interface RunStateChooserProps {
 }
 
 /**
- * Legacy-style run-state modal: choose Start / Stop / Restart or a saved
- * state, Apply, confirm. Opened from the header RUNNING badge.
+ * Legacy `?view=state` modal (`web/ajax/modals/state.php`): a Change State
+ * select holding Start / Stop / Restart plus every saved state, a New State
+ * box, and Apply / Save / Delete. Opened from the header RUNNING badge.
  */
 export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserProps) {
   const { t } = useTranslation();
   const c = useRunStateChooser(isOpen);
 
-  // Close once the action lands so the badge can show the new status.
+  // Close once the action lands so the badge can show the new status. Save
+  // and Delete stay put — legacy leaves the modal up for those.
   useEffect(() => {
     if (c.succeeded) {
       c.reset();
@@ -59,7 +61,7 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
 
   return (
     <>
-      <Modal isOpen={isOpen && !c.confirming} onClose={close} title={t('Run State')}>
+      <Modal isOpen={isOpen && c.confirming === null} onClose={close} title={t('Run State')}>
         <div className="space-y-3">
           <p className="text-label text-fg-dim">
             {running === false
@@ -67,7 +69,7 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
               : t('Change the run state: stop or restart the daemons, or apply a saved state to every monitor.')}
           </p>
           <label className="block text-label text-fg-dim">
-            {t('New state')}
+            {t('Change State')}
             <select
               value={c.choice}
               onChange={(e) => c.setChoice(e.target.value)}
@@ -90,10 +92,27 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
               )}
             </select>
           </label>
+          <label className="block text-label text-fg-dim">
+            {t('New State')}
+            <input
+              type="text"
+              value={c.newName}
+              onChange={(e) => c.setNewName(e.target.value)}
+              className={clsx('mt-1 text-fg', fieldClasses('md'))}
+            />
+          </label>
+          <p className="text-label text-fg-faint">
+            {t('Save stores every monitor\'s current Capturing / Analysing / Recording mode under that name.')}
+          </p>
           {c.statesLoading && (
             <p className="text-label text-fg-dim flex items-center gap-1">
               <Loader2 size={11} className="animate-spin" />
               {t('Loading states…')}
+            </p>
+          )}
+          {c.saved && (
+            <p role="status" className="text-label text-ok">
+              {t('State saved.')}
             </p>
           )}
           {c.error && (
@@ -111,12 +130,27 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
             </button>
             <button
               type="button"
+              onClick={c.requestDelete}
+              disabled={!c.canDelete || c.deleting}
+              className={buttonClasses('danger', 'md')}
+            >
+              {c.deleting && <Loader2 size={14} className="animate-spin" />}
+              {t('Delete')}
+            </button>
+            <button
+              type="button"
+              onClick={c.save}
+              disabled={!c.canSave || c.saving}
+              className={buttonClasses('secondary', 'md')}
+            >
+              {c.saving && <Loader2 size={14} className="animate-spin" />}
+              {t('Save')}
+            </button>
+            <button
+              type="button"
               onClick={c.requestApply}
               disabled={!c.choice || c.pending}
-              className={clsx(
-                buttonClasses('primary', 'md'),
-                (!c.choice || c.pending) && 'opacity-50 cursor-not-allowed',
-              )}
+              className={buttonClasses('primary', 'md')}
             >
               {c.pending && <Loader2 size={14} className="animate-spin" />}
               {t('Apply')}
@@ -126,7 +160,7 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
       </Modal>
 
       <ConfirmDialog
-        isOpen={isOpen && c.confirming}
+        isOpen={isOpen && c.confirming === 'apply'}
         onClose={c.cancelConfirm}
         onConfirm={c.confirmApply}
         title={confirmTitle()}
@@ -134,6 +168,17 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
         confirmText={isDaemonAction(c.choice) ? choiceLabel(c.choice.toLowerCase()) : t('Apply')}
         variant={c.choice.toLowerCase() === 'stop' ? 'danger' : 'warning'}
         isLoading={c.pending}
+      />
+
+      <ConfirmDialog
+        isOpen={isOpen && c.confirming === 'delete'}
+        onClose={c.cancelConfirm}
+        onConfirm={c.confirmDelete}
+        title={t('Delete run state')}
+        message={t('Delete the saved state "{{name}}"? The monitors it describes are not changed.', { name: c.choice })}
+        confirmText={t('Delete')}
+        variant="danger"
+        isLoading={c.deleting}
       />
     </>
   );

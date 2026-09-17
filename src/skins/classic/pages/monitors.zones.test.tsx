@@ -232,6 +232,18 @@ describe('ClassicMonitorZonesPage', () => {
     await waitFor(() => expect(screen.getByTestId('zones-picture')).toBeInTheDocument());
   });
 
+  it('opens a zone by clicking its polygon on the picture, as legacy does', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+
+    await waitFor(() => expect(screen.getByTestId('zones-picture')).toBeInTheDocument());
+    await user.click(screen.getByTestId('zone-polygon-12'));
+
+    expect(await screen.findByText('Edit zone')).toBeInTheDocument();
+    expect(screen.queryByTestId('zones-picture')).toBeNull();
+  });
+
   it('shows the opened zone\'s legacy motion settings, read-only', async () => {
     stubOk();
     const user = userEvent.setup();
@@ -239,9 +251,9 @@ describe('ClassicMonitorZonesPage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Porch' }));
 
-    const settings = await screen.findByRole('table', { name: 'Motion settings' });
+    const settings = await screen.findByRole('table', { name: 'Stored settings' });
     expect(screen.getByText(
-      'Motion settings are read-only: the API accepts only the zone name and polygon.',
+      'The zone as the backend has it — the form beside the canvas is what changes it.',
     )).toBeInTheDocument();
 
     const row = (label: string) =>
@@ -277,7 +289,7 @@ describe('ClassicMonitorZonesPage', () => {
     await mount();
 
     await user.click(await screen.findByRole('button', { name: 'All' }));
-    const settings = await screen.findByRole('table', { name: 'Motion settings' });
+    const settings = await screen.findByRole('table', { name: 'Stored settings' });
 
     expect(within(settings).getByText('0.05% / 75.06%')).toBeInTheDocument();
     expect(within(settings).getByText('— / —')).toBeInTheDocument();
@@ -291,11 +303,11 @@ describe('ClassicMonitorZonesPage', () => {
     await mount();
 
     await screen.findByRole('button', { name: 'All' });
-    expect(screen.queryByRole('table', { name: 'Motion settings' })).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Stored settings' })).toBeNull();
 
     // A brand-new zone has no stored settings either.
     await user.click(screen.getByRole('button', { name: 'Add New Zone' }));
-    expect(screen.queryByRole('table', { name: 'Motion settings' })).toBeNull();
+    expect(screen.queryByRole('table', { name: 'Stored settings' })).toBeNull();
   });
 
   it('opens the editor in "new" mode from Add New Zone', async () => {

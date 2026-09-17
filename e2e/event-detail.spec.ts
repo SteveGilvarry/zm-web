@@ -140,8 +140,10 @@ test.describe('Event detail', () => {
       await expect(table.locator('tbody tr')).toHaveCount(10);
       await expect(page.getByTestId('frame-row-5')).toContainText('Alarm');
 
-      // And back to the event it belongs to.
-      await page.getByRole('link', { name: /back to event/i }).click();
+      // And back where the operator came from. Legacy's Back is history, not
+      // a link to the event, so both skins render a button that pops the
+      // stack — here, straight back to the event page.
+      await page.getByRole('button', { name: /^back$/i }).click();
       await expect(page).toHaveURL(new RegExp(`/events/${EVENT}(\\?|$)`));
     });
   }

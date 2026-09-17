@@ -12,7 +12,12 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
+import { WebsiteTile } from '@/features/montage/WebsiteTile';
+import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
+import { ZonesOverlay } from '@/features/events/ZonesOverlay';
+import { displayDimensions } from '@/features/monitors/orientation';
 import { MosaicView } from '@/features/montage/MosaicView';
 import { SavedLayoutsMenu } from '@/features/montage/SavedLayoutsMenu';
 import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
@@ -73,7 +78,9 @@ export default function MontagePage() {
     tree, setTree, protocol, monitors, enabledMonitors, monitorById, filteredIds,
     setFilteredMonitors, streamGeneration, cellsOnScreen, gridRef, picking,
     statusPosition, setStatusPosition, maxLiveTiles, setMaxLiveTiles,
+    showZones, setShowZones,
   } = page;
+  const { can } = usePerms();
   const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated && statusPosition !== 'hidden');
 
   // The filter bar lives behind a disclosure, so the wall applies the shared
@@ -97,6 +104,7 @@ export default function MontagePage() {
       case 'inside': return t('Inside bottom');
       case 'outside': return t('Outside bottom');
       case 'hidden': return t('Hidden');
+      case 'hover': return t('Show on hover');
     }
   };
 
@@ -191,7 +199,7 @@ export default function MontagePage() {
                     onChange={(e) => setStatusPosition(e.target.value as MontageStatusPosition)}
                     className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
                   >
-                    {(['inside', 'outside', 'hidden'] as const).map((p) => (
+                    {(['inside', 'outside', 'hidden', 'hover'] as const).map((p) => (
                       <option key={p} value={p}>{positionLabel(p)}</option>
                     ))}
                   </select>
@@ -215,6 +223,18 @@ export default function MontagePage() {
                       ))}
                   </select>
                 </label>
+
+                {can('system', 'View') && (
+                  <label className="flex items-center gap-2 text-xs text-fg-dim">
+                    <input
+                      type="checkbox"
+                      checked={showZones}
+                      onChange={(e) => setShowZones(e.target.checked)}
+                      className="accent-accent"
+                    />
+                    {t('Show Zones')}
+                  </label>
+                )}
               </div>
             </ToolbarDisclosure>
 
@@ -267,7 +287,18 @@ export default function MontagePage() {
                 );
               }
               const runtime = runtimeById[m.id];
-              const cell = (
+              const zones = showZones ? (
+                <ZonesOverlay
+                  key={`zones-${m.id}`}
+                  monitorId={m.id}
+                  monitorWidth={displayDimensions(m).width}
+                  monitorHeight={displayDimensions(m).height}
+                />
+              ) : null;
+              const cell = isWebsiteMonitor(m) ? (
+                // A WebSite monitor is a page, not a camera.
+                <WebsiteTile key={`${m.id}-site`} monitor={m} />
+              ) : (
                 <StreamCell
                   key={`${m.id}-${protocol}-${streamGeneration}`}
                   protocol={protocol}
@@ -284,10 +315,19 @@ export default function MontagePage() {
                   // ends up portrait, fit otherwise.
                 />
               );
-              if (statusPosition !== 'outside') return cell;
+              if (statusPosition === 'hover') {
+                return (
+                  <>
+                    {cell}
+                    {zones}
+                    <HoverCaption monitor={m} caption={captionFor(runtime)} />
+                  </>
+                );
+              }
+              if (statusPosition !== 'outside') return <>{cell}{zones}</>;
               return (
                 <div className="absolute inset-0 flex flex-col">
-                  <div className="relative flex-1 min-h-0">{cell}</div>
+                  <div className="relative flex-1 min-h-0">{cell}{zones}</div>
                   <OutsideCaption monitor={m} runtime={runtime} caption={captionFor(runtime)} />
                 </div>
               );
@@ -309,6 +349,22 @@ export default function MontagePage() {
         )}
       </main>
     </AppShell>
+  );
+}
+
+/**
+ * Legacy `showOnHover`: the inside-bottom caption, shown only while the
+ * pointer is over the tile (MosaicView's cell carries `group/cell`).
+ */
+function HoverCaption({ monitor, caption }: { monitor: Monitor; caption: string | undefined }) {
+  return (
+    <div
+      data-testid={`hover-caption-${monitor.id}`}
+      className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 px-2 py-1 bg-black/60 text-white opacity-0 group-hover/cell:opacity-100 transition-opacity pointer-events-none"
+    >
+      <span className="text-xs truncate">{monitor.name}</span>
+      {caption && <span className="ms-auto text-xs font-mono tabular-nums whitespace-nowrap">{caption}</span>}
+    </div>
   );
 }
 

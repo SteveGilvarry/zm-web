@@ -20,7 +20,7 @@ const RECORDING_OPTS = ['None', 'OnMotion', 'Always'] as const;
 
 // Monitor.type values come from the legacy ZM source-camera-driver list.
 // Anything else (newer backend additions) shows up as a freeform string.
-const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'NVSocket', 'cURL', 'WebSite'] as const;
+const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'cURL', 'WebSite', 'VNC'] as const;
 
 // "Status" in legacy ZM is a derived boolean: capturing != None ⇒ Active.
 const STATUS_OPTS = ['active', 'disabled'] as const;
@@ -185,12 +185,12 @@ export function MonitorFilterBar({ monitors, onChange, className }: MonitorFilte
 /*  Chip — a single multi-select dropdown                                     */
 /* -------------------------------------------------------------------------- */
 
-interface ChipOption {
+export interface ChipOption {
   value: string;
   label: string;
 }
 
-interface ChipProps {
+export interface ChipProps {
   label: string;
   /** Tooltip / placeholder shown when nothing is selected. */
   emptyLabel: string;
@@ -199,7 +199,7 @@ interface ChipProps {
   onChange: (next: string[]) => void;
 }
 
-function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
+export function Chip({ label, emptyLabel, options, selected, onChange }: ChipProps) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);

@@ -2,8 +2,8 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { updateMonitor } from '@/api/monitors';
-import { cloneMonitor, deleteMonitor } from '@/api/monitors-crud';
+import { getMonitor, updateMonitor } from '@/api/monitors';
+import { deleteMonitor, toCreatePayload, type MonitorCreateInput } from '@/api/monitors-crud';
 import { listManufacturers } from '@/api/manufacturers';
 import { listModels } from '@/api/models';
 import { listServers } from '@/api/servers';
@@ -34,11 +34,38 @@ import {
   type SortDir,
 } from './consoleTable';
 
-/** Legacy bulk "Select" dialog: the three mode columns, blank = leave as is. */
-export interface BulkModeUpdate {
-  capturing?: string;
-  analysing?: string;
-  recording?: string;
+/**
+ * The Add form's starting values when CLONE opened it: the legacy
+ * `?view=monitor&dupId=N` page, prefilled and unsaved.
+ */
+export interface CloneSeed {
+  /** Name of the monitor the values came from, for the form's notice. */
+  from: string;
+  values: MonitorCreateInput;
+}
+
+/**
+ * Legacy `monitor.php` names a clone `Clone of <name>`, and keeps prefixing
+ * `Clone of ` until the name is free.
+ */
+export function cloneName(source: string, taken: Iterable<string>): string {
+  const names = new Set(taken);
+  let name = `Clone of ${source}`;
+  while (names.has(name)) name = `Clone of ${name}`;
+  return name;
+}
+
+/**
+ * Monitor scope for the footer's events-list links. The events page takes one
+ * `monitor_id` or one `group`; it has no `monitor_ids`, so any other subset
+ * falls back to "every monitor" (legacy sends `Monitor IN (…)`).
+ */
+export type EventsScope = { monitor_id: number } | { group: number } | Record<string, never>;
+
+export function eventsScopeFor(visibleIds: number[], filter: Pick<MonitorFilterRowState, 'values' | 'activeCount'>): EventsScope {
+  if (visibleIds.length === 1) return { monitor_id: visibleIds[0] };
+  if (filter.activeCount === 1 && filter.values.groupId) return { group: Number(filter.values.groupId) };
+  return {};
 }
 
 export interface ClassicConsolePageState {
@@ -58,6 +85,8 @@ export interface ClassicConsolePageState {
   hasRuntime: boolean;
   /** Names for the id columns (empty string when unknown). */
   names: Required<SortContext>;
+  /** Footer count links: the visible monitors, as far as the events page can express them. */
+  eventsScope: EventsScope;
 
   search: string;
   setSearch: (q: string) => void;
@@ -91,13 +120,13 @@ export interface ClassicConsolePageState {
   addOpen: boolean;
   openAdd: () => void;
   closeAdd: () => void;
+  /** Set while the Add form was opened by CLONE; null for a plain ADD. */
+  cloneSeed: CloneSeed | null;
   cloneSelected: () => void;
   editSelected: () => void;
   deleteSelected: () => void;
-  bulkOpen: boolean;
-  openBulk: () => void;
-  closeBulk: () => void;
-  applyBulk: (update: BulkModeUpdate) => void;
+  /** Legacy SELECT: narrow the console to the checked rows (`?MonitorId[]=…`). */
+  narrowToSelected: () => void;
   busy: boolean;
   refresh: () => void;
   exportRows: (format: 'csv' | 'json') => void;
@@ -138,7 +167,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // `?new=true` (legacy `?view=monitor` with no id) opens the Add dialog on load.
   const [addOpen, setAddOpen] = useState(() => searchFlag(search, 'new'));
-  const [bulkOpen, setBulkOpen] = useState(false);
+  const [cloneSeed, setCloneSeed] = useState<CloneSeed | null>(null);
 
   /* ----- Lookup tables for the id columns ------------------------------- */
   const manufacturersQ = useQuery({
@@ -197,6 +226,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     [data.runtimeById, allRows],
   );
   const hasRuntime = allRows.some((r) => r.runtime != null);
+  const eventsScope = eventsScopeFor(allRows.map((r) => r.monitor.id), filter);
 
   const setPage = (p: number) => setPageState(Math.max(1, p));
   const setPageSize = (n: number) => { setPageSizeOverride(n); setPageState(1); };
@@ -236,9 +266,22 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     qc.invalidateQueries({ queryKey: ['monitors'] });
     qc.invalidateQueries({ queryKey: ['eventSummaries'] });
   };
+  // CLONE fetches the full source row and opens the Add form with it;
+  // nothing is written until the operator saves (legacy `dupId`).
   const cloneMutation = useMutation({
-    mutationFn: (m: Monitor) => cloneMonitor(m.id),
-    onSuccess: (created) => { invalidate(); toast.success(t('Cloned as "{{name}}"', { name: created.name })); },
+    mutationFn: async (m: Monitor): Promise<CloneSeed> => {
+      const src = await getMonitor(m.id);
+      const payload = toCreatePayload(src, { name: cloneName(src.name, data.monitors.map((x) => x.name)) });
+      return {
+        from: src.name,
+        values: {
+          ...payload,
+          type: payload.type as MonitorCreateInput['type'],
+          function: payload.function as MonitorCreateInput['function'],
+        },
+      };
+    },
+    onSuccess: (seed) => { setCloneSeed(seed); setAddOpen(true); },
     onError: toast.apiError,
   });
   const deleteMutation = useMutation({
@@ -249,17 +292,6 @@ export function useClassicConsolePage(): ClassicConsolePageState {
       return ids.length;
     },
     onSuccess: (n) => { invalidate(); clearSelection(); toast.success(t('{{count}} monitor deleted', { count: n })); },
-    onError: (err) => { invalidate(); toast.apiError(err); },
-  });
-  const bulkMutation = useMutation({
-    mutationFn: async ({ ids, update }: { ids: number[]; update: BulkModeUpdate }) => {
-      const patch = Object.fromEntries(Object.entries(update).filter(([, v]) => v)) as Partial<Monitor>;
-      const results = await Promise.allSettled(ids.map((id) => updateMonitor(id, patch)));
-      const failed = results.filter((r) => r.status === 'rejected') as PromiseRejectedResult[];
-      if (failed.length) throw failed[0].reason;
-      return ids.length;
-    },
-    onSuccess: (n) => { invalidate(); setBulkOpen(false); toast.success(t('{{count}} monitor updated', { count: n })); },
     onError: (err) => { invalidate(); toast.apiError(err); },
   });
   const reorderMutation = useMutation({
@@ -286,10 +318,15 @@ export function useClassicConsolePage(): ClassicConsolePageState {
       deleteMutation.mutate(ids);
     }
   };
-  const applyBulk = (update: BulkModeUpdate) => {
-    const ids = [...selectedIds];
+  // console.js `selectMonitor`: reload the console with `MonitorId[]=` for
+  // every checked row. Here that is the shared filter's monitor set; the
+  // reload also dropped the checkboxes, so clear them too.
+  const narrowToSelected = () => {
+    const ids = allRows.filter((r) => selectedIds.has(r.monitor.id)).map((r) => r.monitor.id);
     if (ids.length === 0) return;
-    bulkMutation.mutate({ ids, update });
+    filter.set('monitorId', ids.join(','));
+    clearSelection();
+    setPageState(1);
   };
 
   const refresh = () => {
@@ -317,6 +354,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     runtimeTotals,
     hasRuntime,
     names,
+    eventsScope,
     search: query,
     setSearch,
     sortKey,
@@ -341,16 +379,14 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     showStorage: storageCount > 1 && can('system', 'Edit'),
     canEdit: can('monitors', 'Edit'),
     addOpen,
-    openAdd: () => setAddOpen(true),
-    closeAdd: () => setAddOpen(false),
+    openAdd: () => { setCloneSeed(null); setAddOpen(true); },
+    closeAdd: () => { setAddOpen(false); setCloneSeed(null); },
+    cloneSeed,
     cloneSelected,
     editSelected,
     deleteSelected,
-    bulkOpen,
-    openBulk: () => setBulkOpen(true),
-    closeBulk: () => setBulkOpen(false),
-    applyBulk,
-    busy: cloneMutation.isPending || deleteMutation.isPending || bulkMutation.isPending || reorderMutation.isPending,
+    narrowToSelected,
+    busy: cloneMutation.isPending || deleteMutation.isPending || reorderMutation.isPending,
     refresh,
     exportRows,
   };

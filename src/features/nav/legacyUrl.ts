@@ -111,6 +111,15 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
       const max = params.get('maxTime');
       if (min) search.min_time = min;
       if (max) search.max_time = max;
+      // Playhead, speed, scale, live and fit ride along unchanged; `z<id>`
+      // is one zoom scale per monitor.
+      for (const key of ['current', 'speed', 'scale', 'live', 'fit'] as const) {
+        const value = params.get(key);
+        if (value) search[key] = value;
+      }
+      for (const [key, value] of params.entries()) {
+        if (/^z\d+$/.test(key) && value) search[key] = value;
+      }
       return { to: '/montagereview', search };
     }
     case 'cycle':

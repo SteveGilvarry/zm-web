@@ -1,5 +1,36 @@
-import { test, expect, gotoSkin, SKINS, seededOnly, apiFetch } from './fixtures';
+import type { Page } from '@playwright/test';
+import { test, expect, gotoSkin, SKINS, seededOnly, apiFetch, type Skin } from './fixtures';
 import { SEED } from './seed/seed-data';
+
+/**
+ * The same three affordances in two shapes. Modern lists groups with a
+ * per-row Edit and Delete button and a Members panel beside them; classic
+ * is legacy `?view=groups` — Mark / Name / Monitors, where the name itself
+ * is the edit link, New and Delete sit in the toolbar, and deleting means
+ * ticking a row first.
+ */
+const UI = {
+  modern: {
+    newGroup: (p: Page) => p.getByRole('button', { name: /^new group$/i }),
+    edit: (p: Page, name: string) => p.getByRole('button', { name: `Edit group ${name}` }),
+    del: async (p: Page, name: string) => {
+      p.once('dialog', (d) => void d.accept());
+      await p.getByRole('button', { name: `Delete group ${name}` }).click();
+    },
+    membersLabel: /members/i,
+  },
+  classic: {
+    newGroup: (p: Page) => p.getByRole('button', { name: /^new$/i }),
+    // Legacy prints "Id Name" and hangs the edit dialog off it.
+    edit: (p: Page, name: string) => p.getByRole('button', { name: new RegExp(`\\d+ ${name}$`) }),
+    del: async (p: Page, name: string) => {
+      await p.getByRole('checkbox', { name: `Mark ${name}` }).check();
+      p.once('dialog', (d) => void d.accept());
+      await p.getByRole('button', { name: /^delete$/i }).click();
+    },
+    membersLabel: /monitors/i,
+  },
+} satisfies Record<Skin, unknown>;
 
 /**
  * Groups (`/groups`) in both skins. The seed has `e2e-Outdoor` (three
@@ -20,11 +51,10 @@ test.describe('Groups', () => {
 
       await expect(page.getByText('e2e-Outdoor').first()).toBeVisible();
       await expect(page.getByText('e2e-Front').first()).toBeVisible();
-      // Both skins offer per-group edit/delete affordances by name.
-      await expect(page.getByRole('button', { name: /^edit group e2e-Outdoor$/i })).toBeVisible();
-      await expect(page.getByRole('button', { name: /^delete group e2e-Outdoor$/i })).toBeVisible();
-      // Selecting a group shows its members.
-      await expect(page.getByText(/members/i).first()).toBeVisible();
+      // Both skins let an operator open a group for editing by its name.
+      await expect(UI[skin].edit(page, 'e2e-Outdoor')).toBeVisible();
+      // …and both say somewhere which monitors are in it.
+      await expect(page.getByText(UI[skin].membersLabel).first()).toBeVisible();
     });
 
     test(`${skin}: create and delete a group round-trips @route:groups`, async ({
@@ -37,7 +67,7 @@ test.describe('Groups', () => {
       // when the groups query lands, which would blank a half-typed field.
       await expect(page.getByText('e2e-Outdoor').first()).toBeVisible();
 
-      await page.getByRole('button', { name: /^new group$/i }).click();
+      await UI[skin].newGroup(page).click();
       const dialog = page.getByRole('dialog', { name: /create group/i });
       await expect(dialog).toBeVisible();
       await dialog.getByLabel('Name', { exact: true }).fill(name);
@@ -58,8 +88,7 @@ test.describe('Groups', () => {
           (r) => r.url().endsWith(`/api/v3/groups/${id}`) && r.request().method() === 'DELETE',
           { timeout: 15_000 },
         );
-        page.once('dialog', (d) => void d.accept());
-        await page.getByRole('button', { name: `Delete group ${name}` }).click();
+        await UI[skin].del(page, name);
         await deleted;
         await expect(page.getByText(name)).toHaveCount(0, { timeout: 10_000 });
       } finally {

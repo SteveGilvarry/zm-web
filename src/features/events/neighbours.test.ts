@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { pickNextEvent, pickPrevEvent } from './useEventDetailPage';
+import { formatGap, pickNextEvent, pickPrevEvent } from './useEventDetailPage';
 
 const ev = (id: number, start: string | null) => ({ id, start_date_time: start });
 
@@ -49,5 +49,19 @@ describe('pickPrevEvent', () => {
   it('breaks same-second ties by id', () => {
     const cur = ev(50, '2026-08-21T00:20:11Z');
     expect(pickPrevEvent(cur, [ev(48, '2026-08-21T00:20:11Z'), ev(49, '2026-08-21T00:20:11Z'), cur])).toBe(49);
+  });
+});
+
+// Legacy prints the wait between two events as `HH:MM:SS to next event.`
+describe('formatGap', () => {
+  it('renders a wait as HH:MM:SS', () => {
+    expect(formatGap(0)).toBe('00:00:00');
+    expect(formatGap(59_400)).toBe('00:00:59');
+    expect(formatGap(90_000)).toBe('00:01:30');
+    expect(formatGap(3_661_000)).toBe('01:01:01');
+  });
+
+  it('floors a wait that has already passed at zero', () => {
+    expect(formatGap(-5000)).toBe('00:00:00');
   });
 });

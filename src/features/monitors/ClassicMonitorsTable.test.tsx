@@ -26,7 +26,7 @@ function makeMonitor(over: Partial<Monitor> = {}): Monitor {
     name: 'Front Door',
     width: 1920,
     height: 1080,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     capturing: 'Always',
     analysing: 'Always',
     recording: 'OnMotion',
@@ -166,7 +166,7 @@ describe('ClassicMonitorsTable — runtime status badge', () => {
       <ClassicMonitorsTable
         monitors={[makeMonitor({ id: 1, capturing: 'Always' })]}
         liveSessionIds={new Set()}
-        runtimeById={{ 1: { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, bandwidth: 0, updatedOn: '' } }}
+        runtimeById={{ 1: { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, captureFpsRaw: '0', analysisFpsRaw: '0', bandwidth: 0, updatedOn: '' } }}
       />,
     );
     const badge = screen.getByTestId('monitor-status-1');

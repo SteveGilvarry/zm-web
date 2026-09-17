@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { test as base, expect, type Page } from '@playwright/test';
+import { test as base, expect, type Locator, type Page } from '@playwright/test';
 import { SEED } from './seed/seed-data';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -182,6 +182,32 @@ export const test = base.extend<{ loggedInPage: Page; viewerPage: Page }, Worker
 
 /** `test.use({ storageState: ANONYMOUS })` for specs that must start signed out. */
 export const ANONYMOUS = { cookies: [], origins: [] };
+
+/**
+ * The row link for an event, in either skin.
+ *
+ * Both event tables now carry the list context on every row link (the
+ * legacy `filterQuery` + `sortQuery`, so Prev/Next on the detail page walk
+ * the list the operator came from), so the href is `/events/9032?…` as often
+ * as it is bare. Matching the id and either end lets a spec say "the link to
+ * this event" without caring what the list put in the query string, and
+ * without the prefix match `a[href^="/events/900"]` would give.
+ */
+export function eventLink(page: Page, id: number | string): Locator {
+  return page.locator(`a[href="/events/${id}"], a[href^="/events/${id}?"]`);
+}
+
+/**
+ * Montage Review's transport, per skin. Modern has a Play/Pause chip beside a
+ * speed dial; classic is legacy `?view=montagereview`, where the only
+ * transport is the 13-step Speed slider whose zero stop is "paused" — there
+ * is no Play button to look for.
+ */
+export function reviewTransport(page: Page, skin: Skin): Locator {
+  return skin === 'classic'
+    ? page.getByRole('slider', { name: 'Speed' })
+    : page.getByRole('button', { name: 'PLAY' });
+}
 
 /**
  * A seeded event this test may mutate. Browser projects and skins run

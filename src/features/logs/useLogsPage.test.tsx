@@ -51,9 +51,12 @@ const logs = [
 ];
 
 let logRequests: URLSearchParams[] = [];
+/** `ZM_WEB_REFRESH_LOGS` the stubbed config table reports; 0 = auto refresh off. */
+let refreshLogs = 30;
 
 function stub() {
   logRequests = [];
+  refreshLogs = 30;
   server.use(
     http.get('/api/v3/logs', ({ request }) => {
       logRequests.push(new URL(request.url).searchParams);
@@ -68,6 +71,11 @@ function stub() {
     // means "locale default", which is what these tests want.
     http.get('/api/v3/configs/:name', ({ params }) =>
       HttpResponse.json({ name: String(params.name), value: '' })),
+    http.get('/api/v3/configs', () =>
+      HttpResponse.json({
+        items: [{ id: 1, name: 'ZM_WEB_REFRESH_LOGS', value: String(refreshLogs), type: 'integer', category: 'web', readonly: 0, private: 0, system: 0 }],
+        total: 1, per_page: 1000, current_page: 1, last_page: 1,
+      })),
   );
 }
 
@@ -173,8 +181,9 @@ describe('useLogsPage', () => {
     stub();
     const { result } = renderHook(() => useLogsPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    expect(result.current.pageSize).toBe(50);
-    expect(result.current.pageSizeOptions).toEqual([25, 50, 100, 200, 500]);
+    // Legacy: default 25, page list [10 … 500] (`log.php:27,140`).
+    expect(result.current.pageSize).toBe(25);
+    expect(result.current.pageSizeOptions).toEqual([10, 25, 50, 100, 200, 300, 400, 500]);
 
     act(() => result.current.setPageSize(200));
     expect(result.current.pageSize).toBe(200);
@@ -184,6 +193,30 @@ describe('useLogsPage', () => {
 
     act(() => result.current.setPageSize(7));
     expect(result.current.pageSize).toBe(200);
+  });
+
+  it('starts auto refresh on when ZM_WEB_REFRESH_LOGS is set, and the toggle flips it', async () => {
+    stub();
+    const { result } = renderHook(() => useLogsPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.autoRefresh).toBe(true));
+    expect(result.current.refreshSeconds).toBe(30);
+
+    act(() => result.current.toggleAutoRefresh());
+    expect(result.current.autoRefresh).toBe(false);
+    act(() => result.current.toggleAutoRefresh());
+    expect(result.current.autoRefresh).toBe(true);
+  });
+
+  it('starts auto refresh off when ZM_WEB_REFRESH_LOGS is 0, as legacy does', async () => {
+    stub();
+    refreshLogs = 0;
+    const { result } = renderHook(() => useLogsPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    await waitFor(() => expect(result.current.autoRefresh).toBe(false));
+    // The toggle still works, and falls back to a sane interval.
+    act(() => result.current.toggleAutoRefresh());
+    expect(result.current.autoRefresh).toBe(true);
+    expect(result.current.refreshSeconds).toBe(30);
   });
 
   it('mirrors the URL q param into the search box draft', async () => {

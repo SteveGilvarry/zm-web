@@ -1,7 +1,7 @@
 /**
- * Groups page (classic skin) — legacy `?view=groups`: the indented group
- * table with monitor counts, the membership checkbox list, the New/Edit/
- * Delete verbs and the re-parent save path.
+ * Groups page (classic skin) — legacy `?view=groups`: Mark / Name /
+ * Monitors, the New and Delete toolbar verbs, and the modal that saves
+ * name, parent and the whole `MonitorIds[]` set at once.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -90,68 +90,36 @@ async function mount() {
 }
 
 describe('ClassicGroupsPage', () => {
-  it('renders the indented tree with parent names and monitor counts', async () => {
+  it('renders the legacy Mark / Name / Monitors table, indented by depth', async () => {
     stub();
     await mount();
 
     const table = await screen.findByRole('table');
-    const rows = within(table).getAllByRole('row').slice(1); // drop the header
+    const header = within(table).getAllByRole('row')[0];
+    expect(within(header).getAllByRole('columnheader').map((th) => th.textContent))
+      .toEqual(['Mark', 'Name', 'Monitors']);
+
+    const rows = within(table).getAllByRole('row').slice(1);
     expect(rows).toHaveLength(3);
 
-    // Depth-first: Outside, its child Front, then Garage.
-    expect(within(rows[0]).getByText('Outside')).toBeInTheDocument();
+    // Depth-first: Outside, its child Front, then Garage. Names read "Id Name".
+    expect(within(rows[0]).getByRole('button', { name: '1 Outside' })).toBeInTheDocument();
     expect(rows[0].getAttribute('data-depth')).toBe('0');
-    expect(within(rows[1]).getByText('Front')).toBeInTheDocument();
+    expect(within(rows[1]).getByRole('button', { name: '2 Front' })).toBeInTheDocument();
     expect(rows[1].getAttribute('data-depth')).toBe('1');
-    // Child row names its parent.
-    expect(within(rows[1]).getByText('Outside')).toBeInTheDocument();
     expect(rows[2].getAttribute('data-depth')).toBe('0');
 
-    // Monitor counts come from groups-monitors: Outside 2, Front 0, Garage 1.
-    expect(within(rows[0]).getByText('2')).toBeInTheDocument();
-    expect(within(rows[1]).getByText('0')).toBeInTheDocument();
-    expect(within(rows[2]).getByText('1')).toBeInTheDocument();
-  });
-
-  it('defaults the member panel to the first group and ticks its monitors', async () => {
-    stub();
-    await mount();
-
-    expect(await screen.findByText('Members — Outside')).toBeInTheDocument();
-    const front = screen.getByRole('checkbox', { name: 'Remove Front Door from group' });
-    const drive = screen.getByRole('checkbox', { name: 'Remove Driveway from group' });
-    expect(front).toBeChecked();
-    expect(drive).toBeChecked();
-  });
-
-  it('switches the member panel when another group row is clicked', async () => {
-    const user = userEvent.setup();
-    stub();
-    await mount();
-
-    await screen.findByText('Members — Outside');
-    await user.click(screen.getByText('Garage'));
-
-    expect(await screen.findByText('Members — Garage')).toBeInTheDocument();
-    // Garage only holds monitor 2.
-    expect(screen.getByRole('checkbox', { name: 'Add Front Door to group' })).not.toBeChecked();
-    expect(screen.getByRole('checkbox', { name: 'Remove Driveway from group' })).toBeChecked();
+    // Monitors column lists names, joined — Outside holds both, Front none.
+    expect(within(rows[0]).getByText('Front Door, Driveway')).toBeInTheDocument();
+    expect(within(rows[2]).getByText('Driveway')).toBeInTheDocument();
   });
 
   it('shows the empty state when there are no groups', async () => {
     stub({ groups: [], groupMonitors: [] });
     await mount();
 
-    expect(await screen.findByText('No groups yet. Click "New group" to create one.')).toBeInTheDocument();
-    expect(screen.getByText('Select a group to manage its monitors.')).toBeInTheDocument();
+    expect(await screen.findByText('No groups yet. Click "New" to create one.')).toBeInTheDocument();
     expect(screen.queryByRole('table')).toBeNull();
-  });
-
-  it('says so when the group list has no monitors to offer', async () => {
-    stub({ monitors: [] });
-    await mount();
-
-    expect(await screen.findByText('No monitors configured.')).toBeInTheDocument();
   });
 
   it('renders the backend error instead of an empty table', async () => {
@@ -181,39 +149,49 @@ describe('ClassicGroupsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Cannot reach the server.');
   });
 
-  it('hides every verb and freezes the checkboxes for a groups-View user', async () => {
+  it('drops the verbs and the Mark column for a groups-View user', async () => {
     signIn(VIEW_ONLY);
     stub();
     await mount();
 
-    await screen.findByRole('table');
-    expect(screen.queryByRole('button', { name: 'New group' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Edit group Outside' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Delete group Outside' })).toBeNull();
-    expect(screen.getByRole('checkbox', { name: 'Remove Front Door from group' })).toBeDisabled();
+    const table = await screen.findByRole('table');
+    expect(within(table).getAllByRole('columnheader').map((th) => th.textContent))
+      .toEqual(['Name', 'Monitors']);
+    expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    // Plain text, no edit link.
+    expect(screen.getByText('Outside')).toBeInTheDocument();
   });
 
-  it('POSTs a new group with the chosen parent', async () => {
+  it('POSTs a new group with the chosen parent and its monitors', async () => {
     const user = userEvent.setup();
     stub();
     let body: unknown;
+    const attached: unknown[] = [];
     server.use(
       http.post('/api/v3/groups', async ({ request }) => {
         body = await request.json();
         return HttpResponse.json({ id: 9, name: 'Side Gate', parent_id: 1 });
       }),
+      http.post('/api/v3/groups-monitors', async ({ request }) => {
+        attached.push(await request.json());
+        return HttpResponse.json({ id: 300, group_id: 9, monitor_id: 1 });
+      }),
     );
     await mount();
 
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: 'New group' }));
+    await user.click(screen.getByRole('button', { name: 'New' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Create group' });
     await user.type(within(dialog).getByLabelText('Name'), 'Side Gate');
     await user.selectOptions(within(dialog).getByLabelText('Parent'), '1');
+    await user.selectOptions(within(dialog).getByLabelText('Monitors'), '1');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(body).toEqual({ name: 'Side Gate', parent_id: 1 }));
+    await waitFor(() => expect(attached).toEqual([{ group_id: 9, monitor_id: 1 }]));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
@@ -226,11 +204,12 @@ describe('ClassicGroupsPage', () => {
         requests.push({ url: `/groups/${params.id}`, method: request.method, body: await request.json() });
         return HttpResponse.json({ id: 3, name: 'Garage Bay', parent_id: 1 });
       }),
+      http.delete('/api/v3/groups-monitors/:id', () => new HttpResponse(null, { status: 204 })),
     );
     await mount();
 
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: 'Edit group Garage' }));
+    await user.click(screen.getByRole('button', { name: '3 Garage' }));
 
     const dialog = await screen.findByRole('dialog', { name: 'Edit group' });
     const name = within(dialog).getByLabelText('Name');
@@ -249,7 +228,41 @@ describe('ClassicGroupsPage', () => {
     expect(screen.queryByRole('status')).toBeNull();
   });
 
-  it('confirms (listing descendants) before DELETEing a group', async () => {
+  it('seeds the modal with the group monitors and saves the whole set as a diff', async () => {
+    const user = userEvent.setup();
+    stub();
+    const attached: unknown[] = [];
+    const detached: string[] = [];
+    server.use(
+      http.put('/api/v3/groups/:id', () => HttpResponse.json({ id: 1, name: 'Outside', parent_id: null })),
+      http.post('/api/v3/groups-monitors', async ({ request }) => {
+        attached.push(await request.json());
+        return HttpResponse.json({ id: 301, group_id: 1, monitor_id: 1 });
+      }),
+      http.delete('/api/v3/groups-monitors/:id', ({ params }) => {
+        detached.push(String(params.id));
+        return new HttpResponse(null, { status: 204 });
+      }),
+    );
+    await mount();
+
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('button', { name: '1 Outside' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Edit group' });
+    const select = within(dialog).getByLabelText('Monitors') as HTMLSelectElement;
+    // Both of Outside's monitors arrive selected.
+    expect(Array.from(select.selectedOptions, (o) => o.value)).toEqual(['1', '2']);
+
+    // Keep only Driveway (2): row 100 (Front Door) is detached, nothing added.
+    await user.deselectOptions(select, '1');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(detached).toEqual(['100']));
+    expect(attached).toEqual([]);
+  });
+
+  it('confirms (listing marked groups) before DELETEing them', async () => {
     const user = userEvent.setup();
     stub();
     const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
@@ -263,11 +276,14 @@ describe('ClassicGroupsPage', () => {
     await mount();
 
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: 'Delete group Outside' }));
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Mark Outside' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Mark Garage' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
 
-    await waitFor(() => expect(deleted).toEqual(['1']));
-    // Outside has one descendant (Front) so the prompt lists it.
-    expect(confirm.mock.calls[0][0]).toContain('Front');
+    await waitFor(() => expect(deleted.sort()).toEqual(['1', '3']));
+    expect(confirm.mock.calls[0][0]).toContain('Outside');
+    expect(confirm.mock.calls[0][0]).toContain('Garage');
   });
 
   it('does not DELETE when the confirm is dismissed', async () => {
@@ -284,49 +300,11 @@ describe('ClassicGroupsPage', () => {
     await mount();
 
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: 'Delete group Garage' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Mark Garage' }));
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
 
     await new Promise((r) => setTimeout(r, 20));
     expect(deleted).toEqual([]);
-  });
-
-  it('POSTs groups-monitors when a monitor is ticked into the group', async () => {
-    const user = userEvent.setup();
-    stub();
-    let body: unknown;
-    server.use(
-      http.post('/api/v3/groups-monitors', async ({ request }) => {
-        body = await request.json();
-        return HttpResponse.json({ id: 200, group_id: 3, monitor_id: 1 });
-      }),
-    );
-    await mount();
-
-    await screen.findByText('Members — Outside');
-    await user.click(screen.getByText('Garage'));
-    await screen.findByText('Members — Garage');
-
-    await user.click(screen.getByRole('checkbox', { name: 'Add Front Door to group' }));
-    await waitFor(() => expect(body).toEqual({ group_id: 3, monitor_id: 1 }));
-  });
-
-  it('DELETEs the membership row when a monitor is unticked', async () => {
-    const user = userEvent.setup();
-    stub();
-    const deleted: string[] = [];
-    server.use(
-      http.delete('/api/v3/groups-monitors/:id', ({ params }) => {
-        deleted.push(String(params.id));
-        return new HttpResponse(null, { status: 204 });
-      }),
-    );
-    await mount();
-
-    await screen.findByText('Members — Outside');
-    await user.click(screen.getByRole('checkbox', { name: 'Remove Driveway from group' }));
-
-    // Membership row 101 links Outside (1) to Driveway (2).
-    await waitFor(() => expect(deleted).toEqual(['101']));
   });
 
   it('surfaces a create failure in the dialog instead of closing it', async () => {
@@ -339,7 +317,7 @@ describe('ClassicGroupsPage', () => {
     await mount();
 
     await screen.findByRole('table');
-    await user.click(screen.getByRole('button', { name: 'New group' }));
+    await user.click(screen.getByRole('button', { name: 'New' }));
     const dialog = await screen.findByRole('dialog', { name: 'Create group' });
     await user.type(within(dialog).getByLabelText('Name'), 'Outside');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));

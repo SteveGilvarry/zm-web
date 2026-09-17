@@ -50,7 +50,9 @@ describe('Login page', () => {
 
     await waitFor(() => expect(body).toEqual({ username: 'admin', password: 'secret' }));
     await waitFor(() => expect(useAuthStore.getState().accessToken).toBe('a.b.c'));
-    expect(navigate).toHaveBeenCalledWith({ to: '/', replace: true });
+    // Destination, not call shape: the target comes from `ZM_WEB_HOMEVIEW`
+    // and defaults to the console, so this goes through `href`.
+    expect(navigate).toHaveBeenCalledWith({ href: '/', replace: true });
   });
 
   it('shows the backend error message when login fails', async () => {

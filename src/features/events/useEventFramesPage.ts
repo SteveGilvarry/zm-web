@@ -1,18 +1,27 @@
+import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 
 import { getEvent } from '@/api/events';
-import { listFrames, type Frame } from '@/api/frames';
+import { getAllFramesForEvent, listFrames, type Frame } from '@/api/frames';
+import { downloadCsv } from '@/features/logs/csv';
 import { useZmConfig } from '@/features/config/useZmConfig';
 import type { EventFramesSearchParams } from '@/routes/events/$eventId_.frames';
 import { useAuthStore } from '@/stores/auth';
 import type { ZmEvent } from '@/types';
+import {
+  FRAMES_COLUMNS, FRAMES_DEFAULT_HIDDEN, filterFrames, framesToCsv, sortFrames,
+  type FramesColumnKey, type FramesSortKey, type SortDir,
+} from './framesTable';
 
-export const FRAMES_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200] as const;
+/** `0` is legacy's "All": every frame of the event on one page. */
+export const FRAMES_ALL_PAGE_SIZE = 0;
+export const FRAMES_PAGE_SIZE_OPTIONS = [10, 25, 50, 100, 200, FRAMES_ALL_PAGE_SIZE] as const;
 
 export interface EventFramesPageState {
   isAuthenticated: boolean;
   event: ZmEvent | undefined;
+  /** The rows to render: the fetched page, searched and sorted. */
   frames: Frame[];
   total: number;
   page: number;
@@ -27,21 +36,58 @@ export interface EventFramesPageState {
   refetch: () => void;
   /** Highest score on the current page; scales the inline score bars. */
   maxScore: number;
+
+  /** Search box over the visible columns (client-side: `/frames` has none). */
+  query: string;
+  setQuery: (q: string) => void;
+  /** Sort column and direction; clicking the active column flips it. */
+  sort: FramesSortKey | null;
+  dir: SortDir;
+  toggleSort: (key: FramesSortKey) => void;
+  /** Column chooser state. */
+  hiddenColumns: FramesColumnKey[];
+  isVisible: (key: FramesColumnKey) => boolean;
+  visibleColumns: FramesColumnKey[];
+  toggleColumn: (key: FramesColumnKey) => void;
+  resetColumns: () => void;
+  /** Export the rows on screen as CSV. */
+  exportCsv: () => void;
+
+  /** `ZM_WEB_LIST_THUMBS` — legacy skips the thumbnail images when it is off. */
+  showThumbs: boolean;
+  /** `ZM_WEB_LIST_THUMB_WIDTH`. */
+  thumbWidth: number;
+  /** Access token for the `<img>` URLs, which cannot send a header. */
+  token: string | null;
 }
 
 /**
  * Legacy `?view=frames&eid=`: the per-frame table for one event. The URL
  * carries `page` / `page_size`; the page-size default follows the same
  * `ZM_WEB_EVENTS_PER_PAGE` row the events list uses.
+ *
+ * Sorting, searching, the column chooser and the CSV export are all client
+ * side over the fetched rows, because `/frames` accepts only
+ * `event_id`/`page`/`page_size` — with the page size set to All that is the
+ * whole event, which is what legacy's bootstrap-table does too.
  */
 export function useEventFramesPage(eventId: number): EventFramesPageState {
-  const { isAuthenticated } = useAuthStore();
+  const { isAuthenticated, accessToken } = useAuthStore();
   const search = useSearch({ from: '/events/$eventId_/frames' });
   const navigate = useNavigate({ from: '/events/$eventId/frames' });
   const defaultPageSize = useZmConfig('ZM_WEB_EVENTS_PER_PAGE', 25);
+  const showThumbs = useZmConfig('ZM_WEB_LIST_THUMBS', true);
+  const configThumbWidth = useZmConfig('ZM_WEB_LIST_THUMB_WIDTH', 48);
+  const thumbWidth = configThumbWidth > 0 ? configThumbWidth : 48;
 
   const page = search.page ?? 1;
   const pageSize = search.page_size ?? defaultPageSize;
+  const showAll = pageSize === FRAMES_ALL_PAGE_SIZE;
+
+  const [query, setQuery] = useState('');
+  const [sort, setSort] = useState<FramesSortKey | null>(null);
+  const [dir, setDir] = useState<SortDir>('asc');
+  const [hiddenColumns, setHiddenColumns] = useState<FramesColumnKey[]>([...FRAMES_DEFAULT_HIDDEN]);
 
   const setSearch = (patch: EventFramesSearchParams) => {
     navigate({
@@ -63,14 +109,32 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
   });
 
   const framesQuery = useQuery({
-    queryKey: ['frames', eventId, page, pageSize],
-    queryFn: () => listFrames({ event_id: eventId, page, page_size: pageSize }),
+    queryKey: ['frames', eventId, showAll ? 'all' : page, pageSize],
+    queryFn: async () => {
+      if (showAll) {
+        const items = await getAllFramesForEvent(eventId);
+        return { items, total: items.length, per_page: items.length, current_page: 1, last_page: 1 };
+      }
+      return listFrames({ event_id: eventId, page, page_size: pageSize });
+    },
     enabled: isAuthenticated,
   });
 
-  const frames = framesQuery.data?.items ?? [];
+  const fetched = useMemo(() => framesQuery.data?.items ?? [], [framesQuery.data]);
   const total = framesQuery.data?.total ?? 0;
-  const totalPages = Math.max(1, framesQuery.data?.last_page ?? Math.ceil(total / pageSize));
+  const totalPages = showAll
+    ? 1
+    : Math.max(1, framesQuery.data?.last_page ?? Math.ceil(total / Math.max(pageSize, 1)));
+
+  const visibleColumns = useMemo(
+    () => FRAMES_COLUMNS.map((c) => c.key).filter((k) => !hiddenColumns.includes(k)),
+    [hiddenColumns],
+  );
+
+  const frames = useMemo(
+    () => sortFrames(filterFrames(fetched, query, visibleColumns), sort, dir),
+    [fetched, query, visibleColumns, sort, dir],
+  );
   const maxScore = frames.reduce((m, f) => Math.max(m, f.score), 0);
 
   return {
@@ -90,5 +154,29 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
     error: framesQuery.error,
     refetch: () => { void framesQuery.refetch(); },
     maxScore,
+
+    query,
+    setQuery,
+    sort,
+    dir,
+    toggleSort: (key) => {
+      if (key === sort) {
+        setDir((d) => (d === 'asc' ? 'desc' : 'asc'));
+      } else {
+        setSort(key);
+        setDir('asc');
+      }
+    },
+    hiddenColumns,
+    isVisible: (key) => !hiddenColumns.includes(key),
+    visibleColumns,
+    toggleColumn: (key) => setHiddenColumns((prev) => (
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key]
+    )),
+    resetColumns: () => setHiddenColumns([...FRAMES_DEFAULT_HIDDEN]),
+    exportCsv: () => downloadCsv(`event-${eventId}-frames.csv`, framesToCsv(frames, visibleColumns)),
+    showThumbs,
+    thumbWidth,
+    token: accessToken,
   };
 }

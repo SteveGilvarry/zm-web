@@ -15,7 +15,7 @@ vi.mock('@tanstack/react-router', () => ({
   ),
 }));
 
-const { ClassicEventsTable } = await import('./ClassicEventsTable');
+const { ClassicEventsTable, WATCH_EVENT_COLUMNS } = await import('./ClassicEventsTable');
 const { useEventsColumnsStore } = await import('@/stores/eventsColumns');
 
 // Reset column-visibility to defaults before each test so suite ordering
@@ -50,7 +50,7 @@ function makeEvent(over: Partial<ZmEvent> = {}): ZmEvent {
     executed: 0,
     notes: null,
     state_id: 1,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     disk_space: 0,
     scheme: 'Deep',
     locked: 0,
@@ -153,7 +153,8 @@ describe('ClassicEventsTable — header', () => {
     expect(screen.getByText('Store 3')).toBeInTheDocument();
     expect(screen.getByText('00:01:05')).toBeInTheDocument();
     expect(screen.getByTestId('events-total-duration').textContent).toBe('00:01:10');
-    expect(screen.getByTestId('events-total-disk-space').textContent).toBe('3.0 KB');
+    // ZoneMinder's `human_filesize()`: two decimals, no space, lowercase k.
+    expect(screen.getByTestId('events-total-disk-space').textContent).toBe('3.00kB');
   });
 });
 
@@ -266,6 +267,180 @@ describe('ClassicEventsTable — archived / emailed', () => {
     expect(screen.getByText('Emailed')).toBeInTheDocument();
     const row = screen.getAllByRole('row')[1];
     const cells = within(row).getAllByRole('cell').map((td) => td.textContent);
-    expect(cells.slice(1, 5)).toEqual(['1', 'Event-0001', 'Yes', 'No']);
+    // Legacy repeats the flags in small type under the name (events.js:97).
+    expect(cells.slice(1, 5)).toEqual(['1', 'Event-0001Archived', 'Yes', 'No']);
+  });
+});
+
+describe('ClassicEventsTable — fixed column set (legacy watch table)', () => {
+  it('uses the columns prop verbatim and ignores the operator column store', () => {
+    // A hidden column in the store must not shrink an explicitly passed set.
+    useEventsColumnsStore.getState().toggle('cause');
+    render(
+      <ClassicEventsTable
+        events={[makeEvent()]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        columns={WATCH_EVENT_COLUMNS}
+      />,
+    );
+    const header = screen.getAllByRole('rowgroup')[0];
+    const labels = within(header).getAllByRole('columnheader')
+      .map((th) => th.textContent?.replace(/[▲▼⇵]/g, '').trim());
+    expect(labels.slice(1)).toEqual([
+      'Id', 'Name', 'Cause', 'Tags', 'Notes', 'Start Time', 'End Time', 'Duration',
+      'Frames', 'Alarm Frames', 'Avg. Score', 'Max. Score',
+    ]);
+    // Columns the legacy watch table doesn't carry.
+    expect(within(header).queryByText('Monitor')).toBeNull();
+    expect(within(header).queryByText('Storage')).toBeNull();
+    expect(within(header).queryByText('DiskSpace')).toBeNull();
+  });
+
+  it('renders the event notes in the Notes cell', () => {
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 1, notes: 'Forced Web: alarm' })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        columns={WATCH_EVENT_COLUMNS}
+      />,
+    );
+    // Also under the Cause, the way legacy prints it (events.js:104).
+    const row = screen.getAllByRole('row')[1];
+    const cells = within(row).getAllByRole('cell');
+    expect(cells.some((td) => td.textContent === 'Forced Web: alarm')).toBe(true);
+  });
+
+  it('leaves the Notes cell empty when the event has none', () => {
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 1, notes: null })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        columns={['id', 'notes']}
+      />,
+    );
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell');
+    expect(cells[2]).toHaveTextContent('');
+  });
+});
+
+describe('ClassicEventsTable — thumbnail placement', () => {
+  it('puts the thumbnail first by default and last with thumbsAtEnd', () => {
+    const headers = () =>
+      within(screen.getAllByRole('rowgroup')[0]).getAllByRole('columnheader')
+        .map((th) => th.textContent?.replace(/[▲▼⇵]/g, '').trim());
+
+    const { unmount } = render(
+      <ClassicEventsTable
+        events={[makeEvent()]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        columns={['id', 'name']}
+        showThumbs
+      />,
+    );
+    expect(headers()).toEqual(['', 'Thumbnail', 'Id', 'Name']);
+    unmount();
+
+    render(
+      <ClassicEventsTable
+        events={[makeEvent()]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        columns={['id', 'name']}
+        showThumbs
+        thumbsAtEnd
+      />,
+    );
+    expect(headers()).toEqual(['', 'Id', 'Name', 'Thumbnail']);
+    // …and the body row follows the header.
+    const cells = within(screen.getAllByRole('row')[1]).getAllByRole('cell');
+    expect(within(cells[3]).getByRole('img')).toBeInTheDocument();
+  });
+});
+
+describe('ClassicEventsTable — per-row delete', () => {
+  it('replaces the selection column with a Delete column', () => {
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 1 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        columns={WATCH_EVENT_COLUMNS}
+        onDeleteRow={() => {}}
+      />,
+    );
+    expect(screen.getByText('Delete')).toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Delete event 1' })).toBeInTheDocument();
+  });
+
+  it('passes the row id and whether shift was held', async () => {
+    const user = userEvent.setup();
+    const onDeleteRow = vi.fn();
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 1 }), makeEvent({ id: 2 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        columns={WATCH_EVENT_COLUMNS}
+        onDeleteRow={onDeleteRow}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Delete event 2' }));
+    expect(onDeleteRow).toHaveBeenLastCalledWith(2, false);
+
+    // Legacy skips the confirmation on shift+click, so the flag has to travel.
+    await user.keyboard('{Shift>}');
+    await user.click(screen.getByRole('button', { name: 'Delete event 1' }));
+    await user.keyboard('{/Shift}');
+    expect(onDeleteRow).toHaveBeenLastCalledWith(1, true);
+  });
+});
+
+describe('ClassicEventsTable — click to select', () => {
+  it('toggles the row when the row itself is clicked', async () => {
+    const user = userEvent.setup();
+    const onToggleSelected = vi.fn();
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 4 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={onToggleSelected}
+      />,
+    );
+    // bootstrap-table's `data-click-to-select`.
+    const row = screen.getAllByRole('row')[1];
+    await user.click(within(row).getAllByRole('cell').at(-1)!);
+    expect(onToggleSelected).toHaveBeenCalledWith(4);
+  });
+
+  it('leaves a click on a link or a control alone', async () => {
+    const user = userEvent.setup();
+    const onToggleSelected = vi.fn();
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 4 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={onToggleSelected}
+      />,
+    );
+    await user.click(screen.getByRole('link', { name: 'Event-0001' }));
+    expect(onToggleSelected).not.toHaveBeenCalled();
+
+    // The checkbox still toggles, once, through its own handler.
+    await user.click(screen.getByRole('checkbox', { name: 'Select event 4' }));
+    expect(onToggleSelected).toHaveBeenCalledTimes(1);
   });
 });
