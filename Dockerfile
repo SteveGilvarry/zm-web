@@ -6,7 +6,7 @@
 #   docker build -t zm-web .
 #   docker run -p 8080:8080 -e ZM_API_URL=http://zm-api-host:8080 zm-web
 
-FROM node:22-alpine AS build
+FROM node:26-alpine AS build
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -19,7 +19,7 @@ ARG VITE_API_BASE=
 ENV VITE_BASE=$VITE_BASE VITE_API_BASE=$VITE_API_BASE
 RUN npm run build
 
-FROM nginx:1.27-alpine
+FROM nginx:1.31-alpine
 LABEL org.opencontainers.image.source="https://github.com/SteveGilvarry/zm-web" \
       org.opencontainers.image.licenses="AGPL-3.0"
 # Runtime env:
