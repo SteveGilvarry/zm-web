@@ -21,6 +21,13 @@ export const SEED = {
     /** 1280x720, ROTATE_0, Mocord, PTZ via control 9001 with presets 1-3. */
     ptzDome: 9004,
     all: [9001, 9002, 9003, 9004],
+    /** Names as the seed writes them — for controls that pick by label. */
+    names: {
+      9001: 'e2e-Front Door',
+      9002: 'e2e-Driveway',
+      9003: 'e2e-Garage',
+      9004: 'e2e-PTZ Dome',
+    } as Record<number, string>,
   },
 
   events: {

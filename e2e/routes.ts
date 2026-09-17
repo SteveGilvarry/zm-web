@@ -47,6 +47,10 @@ export const ROUTES: readonly RouteEntry[] = [
   { key: 'settings.storage', path: '/settings/storage', auth: true },
   { key: 'settings.state', path: '/settings/state', auth: true },
   { key: 'settings.ptzControls', path: '/settings/ptz-controls', auth: true },
+  { key: 'settings.apiTokens', path: '/settings/api-tokens', auth: true },
+  // Three URLs, one page key: /settings/ai/{datasets,models,classes}. The
+  // sweeps take the tab the nav opens on.
+  { key: 'settings.ai', path: '/settings/ai/datasets', auth: true },
 ];
 
 /** Page keys the registry knows about but this table has no URL for. */

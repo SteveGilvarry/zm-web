@@ -2,7 +2,9 @@ import type { Locator, Page } from '@playwright/test';
 import {
   test,
   expect,
+  eventLink,
   gotoSkin,
+  reviewTransport,
   SKINS,
   seededOnly,
   ANONYMOUS,
@@ -44,13 +46,15 @@ const ANCHORS: Record<PageKey, Anchor> = {
       // The presets moved behind the toolbar's Layout disclosure, so the
       // anchor is the disclosure itself.
       : p.getByRole('button', { name: 'Layout' }),
-  montagereview: (p) => p.getByRole('button', { name: 'PLAY' }),
+  montagereview: (p, skin) => reviewTransport(p, skin),
   cycle: (p) => p.getByRole('button', { name: /next monitor/i }),
-  'events.list': (p) => p.locator(`a[href="/events/${SEED.events.open}"]`).first(),
+  'events.list': (p) => eventLink(p, SEED.events.open).first(),
   'events.detail': (p) => p.locator(`a[href="/events/${SEED.events.withFrames[0]}/frames"]`).first(),
   'events.frames': (p) => p.getByTestId('frames-table'),
   filters: (p) => p.getByRole('button', { name: /add condition/i }),
-  groups: (p) => p.getByRole('button', { name: /new group/i }),
+  // Classic's toolbar is legacy's bare [New]; modern spells it out.
+  groups: (p, skin) =>
+    p.getByRole('button', { name: skin === 'classic' ? /^new$/i : /new group/i }),
   logs: (p) => p.getByRole('button', { name: /download csv/i }),
   'reports.list': (p) => p.locator(`a[href="/reports/${SEED.report}"]`).first(),
   'reports.detail': (p) => p.getByRole('heading', { name: /events per hour/i }),
@@ -58,9 +62,17 @@ const ANCHORS: Record<PageKey, Anchor> = {
   'settings.options': (p) => p.getByRole('heading', { name: /appearance/i }),
   'settings.users': (p) => p.getByText(SEED.viewer.username).first(),
   'settings.servers': (p) => p.getByRole('button', { name: /^edit e2e-server-1$/i }),
-  'settings.storage': (p) => p.getByRole('button', { name: /^edit e2e-events$/i }),
+  // Classic hangs the edit form off the name itself, as legacy does.
+  'settings.storage': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('button', { name: 'e2e-events', exact: true })
+      : p.getByRole('button', { name: /^edit e2e-events$/i }),
   'settings.state': (p) => p.getByRole('button', { name: /^apply state e2e-night$/i }),
   'settings.ptzControls': (p) => p.getByText('e2e-PTZ Dome (Pelco-D)').first(),
+  'settings.apiTokens': (p) =>
+    p.getByRole('checkbox', { name: `API enabled for ${SEED.viewer.username}` }),
+  // Opens on Datasets; the stock COCO row is what a fresh schema ships.
+  'settings.ai': (p) => p.getByRole('row', { name: /COCO/ }).first(),
 };
 
 test.describe('Route happy paths', () => {

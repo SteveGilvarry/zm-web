@@ -24,10 +24,17 @@ const UI = {
 
 function logsRequest(p: Page, match: (q: URLSearchParams) => boolean = () => true) {
   return p.waitForResponse(
-    (r) =>
-      /\/api\/v3\/logs(\?|$)/.test(r.url()) &&
-      r.request().method() === 'GET' &&
-      match(new URL(r.url()).searchParams),
+    (r) => {
+      if (!/\/api\/v3\/logs(\?|$)/.test(r.url())) return false;
+      if (r.request().method() !== 'GET') return false;
+      const q = new URL(r.url()).searchParams;
+      // The shell's severity indicator polls `/logs` four times with
+      // `page_size=1` (one count per level, see `useLogState`). Those land
+      // before the table's own read and would otherwise be what a waiter
+      // catches; the table never asks for a single row.
+      if (q.get('page_size') === '1') return false;
+      return match(q);
+    },
     { timeout: 15_000 },
   );
 }

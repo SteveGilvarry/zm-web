@@ -2,6 +2,7 @@ import type { Page } from '@playwright/test';
 import {
   test,
   expect,
+  eventLink,
   gotoSkin,
   SKINS,
   seededOnly,
@@ -42,7 +43,7 @@ test.describe('Bulk events', () => {
       await page.getByTestId('default-hour-hint').getByRole('button', { name: /clear/i }).click();
       await page.getByLabel(/(rows )?per page/i).first().selectOption('50');
       for (const id of ids) {
-        await expect(page.locator(`a[href="/events/${id}"]`).first()).toBeVisible({
+        await expect(eventLink(page, id).first()).toBeVisible({
           timeout: 15_000,
         });
       }

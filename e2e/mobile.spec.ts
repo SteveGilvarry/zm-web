@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, gotoSkin, SKINS, seededOnly } from './fixtures';
+import { test, expect, eventLink, gotoSkin, SKINS, seededOnly } from './fixtures';
 import { SEED } from './seed/seed-data';
 
 /**
@@ -86,7 +86,7 @@ test.describe('Mobile (390 px)', () => {
     }) => {
       await gotoSkin(page, '/events', skin);
       await page.getByTestId('default-hour-hint').getByRole('button', { name: /clear/i }).click();
-      await expect(page.locator(`a[href="/events/${SEED.events.last}"]`).first()).toBeVisible({
+      await expect(eventLink(page, SEED.events.last).first()).toBeVisible({
         timeout: 15_000,
       });
 
