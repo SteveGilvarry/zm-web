@@ -20,7 +20,7 @@ vi.mock('@tanstack/react-router', () => ({
 const { MonitorThumbnail } = await import('./MonitorThumbnail');
 
 const monitor = {
-  id: 1, name: 'Front Door', width: 1920, height: 1080, orientation: 'Rotate0',
+  id: 1, name: 'Front Door', width: 1920, height: 1080, orientation: 'ROTATE_0',
   capturing: 'Always', analysing: 'Always', recording: 'OnMotion',
 } as unknown as Monitor;
 

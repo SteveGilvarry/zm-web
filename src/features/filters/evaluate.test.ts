@@ -23,7 +23,7 @@ const e = (overrides: Partial<ZmEvent>): ZmEvent =>
     length: '60',
     width: 1920,
     height: 1080,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     state_id: 1,
     ...overrides,
   } as unknown as ZmEvent);

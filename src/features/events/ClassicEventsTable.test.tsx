@@ -50,7 +50,7 @@ function makeEvent(over: Partial<ZmEvent> = {}): ZmEvent {
     executed: 0,
     notes: null,
     state_id: 1,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     disk_space: 0,
     scheme: 'Deep',
     locked: 0,

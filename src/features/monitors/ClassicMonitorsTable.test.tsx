@@ -26,7 +26,7 @@ function makeMonitor(over: Partial<Monitor> = {}): Monitor {
     name: 'Front Door',
     width: 1920,
     height: 1080,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     capturing: 'Always',
     analysing: 'Always',
     recording: 'OnMotion',

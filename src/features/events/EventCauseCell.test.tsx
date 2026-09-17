@@ -36,7 +36,7 @@ function makeEvent(over: Partial<ZmEvent> = {}): ZmEvent {
     width: 1920, height: 1080, length: 10, frames: 30, alarm_frames: 2,
     default_video: '', tot_score: 0, avg_score: 0, max_score: 0,
     archived: 0, videoed: 0, uploaded: 0, emailed: 0, messaged: 0, executed: 0,
-    notes: null, state_id: 1, orientation: 'Rotate0', disk_space: 0,
+    notes: null, state_id: 1, orientation: 'ROTATE_0', disk_space: 0,
     scheme: 'Deep', locked: 0, tags: null, ...over,
   } as ZmEvent;
 }

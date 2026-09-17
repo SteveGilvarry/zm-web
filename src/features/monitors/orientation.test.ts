@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { displayDimensions, stageVideoClass, stageVideoStyle } from './orientation';
 
 describe('displayDimensions', () => {
-  it('keeps the sensor shape for Rotate0 / flips / 180°', () => {
+  it('keeps the sensor shape for ROTATE_0 / flips / 180°', () => {
     expect(displayDimensions({ width: 1920, height: 1080, orientation: 'Rotate0' }))
       .toEqual({ width: 1920, height: 1080, rotated: false, rotationDeg: 0 });
     expect(displayDimensions({ width: 1920, height: 1080, orientation: 'ROTATE_180' }).rotationDeg).toBe(180);

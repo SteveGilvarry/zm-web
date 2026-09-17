@@ -12,7 +12,7 @@ let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => mockSearch, useNavigate: () => vi.fn() }));
 
 const m = (id: number, over: Partial<Monitor> = {}): Monitor =>
-  ({ id, name: `Cam ${id}`, capturing: 'Always', width: 1920, height: 1080, orientation: 'Rotate0', ...over }) as unknown as Monitor;
+  ({ id, name: `Cam ${id}`, capturing: 'Always', width: 1920, height: 1080, orientation: 'ROTATE_0', ...over }) as unknown as Monitor;
 
 describe('useCycleRotation', () => {
   it('wraps in both directions and resets the countdown on a move', () => {

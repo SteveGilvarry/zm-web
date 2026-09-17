@@ -74,12 +74,16 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   decoder_hw_accel_name: null,
   encoder: null,
   encoder_parameters: null,
-  default_codec: 'Auto',
-  output_container: 'Auto',
+  default_codec: 'auto',
+  output_container: 'auto',
   output_codec: null,
   video_writer: 1,
   save_jpe_gs: 0,
   record_audio: 0,
+  device_class: 'Camera',
+  audio_detection: 0,
+  audio_threshold: 0,
+  audio_alarm_score: 9,
   default_rate: 100,
   default_scale: '0',
 
@@ -91,7 +95,6 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   fps_report_interval: 250,
   ref_blend_perc: 6,
   alarm_ref_blend_perc: 6,
-  frame_skip: 0,
   motion_frame_skip: 0,
 
   // PTZ
@@ -117,7 +120,7 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   section_length: 600,
   section_length_warn: 0,
   min_section_length: 30,
-  event_close_mode: 'Idle',
+  event_close_mode: 'idle',
   event_prefix: 'Event-',
   event_start_command: '',
   event_end_command: '',
@@ -137,7 +140,7 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   contrast: -1,
   hue: -1,
   colour: -1,
-  orientation: 'Rotate0',
+  orientation: 'ROTATE_0',
   label_format: null,
   label_x: 0,
   label_y: 0,
@@ -175,7 +178,7 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   restream: 0,
   rtsp_user: null,
   rtsp2_web_enabled: 0,
-  rtsp2_web_type: 'Mse',
+  rtsp2_web_type: 'MSE',
   rtsp_server: 0,
   rtsp_stream_name: '',
   mqtt_enabled: 0,
@@ -228,7 +231,7 @@ export function toCreatePayload(
 export type MonitorCreateInput =
   Partial<Omit<MonitorCreatePayload, 'name' | 'type' | 'function' | 'storage_id'>> & {
     name: string;
-    type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'Libvlc' | 'Curl' | 'WebSite' | 'Vnc';
+    type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'Libvlc' | 'cURL' | 'WebSite' | 'VNC';
     function?: 'None' | 'Monitor' | 'Modect' | 'Record' | 'Mocord' | 'Nodect';
     /** Defaults to 0 — ZoneMinder's "Default" storage area. */
     storage_id?: number;

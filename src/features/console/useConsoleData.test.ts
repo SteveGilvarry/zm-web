@@ -22,8 +22,8 @@ let seen: string[] = [];
 const record = (path: string) => { seen.push(path); };
 
 const MONITORS = [
-  { id: 1, name: 'Front Door', capturing: 'Always', analysing: 'Always', recording: 'OnMotion', orientation: 'Rotate90', width: 1920, height: 1080 },
-  { id: 2, name: 'Driveway', capturing: 'None', analysing: 'None', recording: 'None', orientation: 'Rotate0', width: 640, height: 480 },
+  { id: 1, name: 'Front Door', capturing: 'Always', analysing: 'Always', recording: 'OnMotion', orientation: 'ROTATE_90', width: 1920, height: 1080 },
+  { id: 2, name: 'Driveway', capturing: 'None', analysing: 'None', recording: 'None', orientation: 'ROTATE_0', width: 640, height: 480 },
 ];
 const SUMMARIES = [
   {
@@ -126,7 +126,7 @@ describe('useConsoleData', () => {
     await waitFor(() => expect(result.current.summariesByMonitor).toHaveLength(1));
 
     expect(result.current.monitors.map((m) => m.name)).toEqual(['Front Door', 'Driveway']);
-    expect(result.current.monitors[0].orientation).toBe('Rotate90');
+    expect(result.current.monitors[0].orientation).toBe('ROTATE_90');
 
     expect(result.current.liveSessions).toEqual([1]);
     expect(result.current.events.map((e) => e.id)).toEqual([9]);

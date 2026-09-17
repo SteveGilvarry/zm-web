@@ -80,6 +80,15 @@ export interface components {
         } | {
             InvalidPayloadError: string;
         } | {
+            /** @description A pipeline graph failed validation; each detail is `(path, message)`. */
+            InvalidPipelineError: {
+                errors: [
+                    string,
+                    string
+                ][];
+                message: string;
+            };
+        } | {
             HashError: string;
         } | {
             InternalServerError: string;
@@ -939,6 +948,21 @@ export interface components {
             analysis_source: components["schemas"]["AnalysisSource"];
             /** Format: int32 */
             analysis_update_delay: number;
+            /**
+             * Format: int32
+             * @description Score an audio alarm contributes; upstream default 9.
+             */
+            audio_alarm_score?: number | null;
+            /**
+             * Format: int32
+             * @description Audio-level alarm detection on the recorded audio (1.39.31); 0 = off.
+             */
+            audio_detection?: number | null;
+            /**
+             * Format: int32
+             * @description Audio level (0-255) above which audio detection alarms.
+             */
+            audio_threshold?: number | null;
             /** Format: double */
             auto_stop_timeout?: number | null;
             /** Format: int32 */
@@ -972,6 +996,7 @@ export interface components {
             deinterlacing: number;
             deleted: boolean;
             device: string;
+            device_class?: null | components["schemas"]["DeviceClass"];
             /**
              * Format: int32
              * @description Whether the monitor is enabled (ZoneMinder's `Monitors.Enabled`).
@@ -990,8 +1015,6 @@ export interface components {
             format: number;
             /** Format: int32 */
             fps_report_interval: number;
-            /** Format: int32 */
-            frame_skip: number;
             function: components["schemas"]["Function"];
             /** Format: int32 */
             height: number;
@@ -1063,7 +1086,10 @@ export interface components {
             /** Format: int32 */
             pre_event_count: number;
             protocol?: string | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Boolean. The old `min = -1` accepted a value the column has no meaning for.
+             */
             record_audio: number;
             recording: components["schemas"]["Recording"];
             recording_source: components["schemas"]["RecordingSource"];
@@ -1087,7 +1113,12 @@ export interface components {
             rtsp_stream_name: string;
             /** Format: int32 */
             rtsp_user?: number | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description `Monitors.SaveJPEGs` is a two-bit mask, not a flag: bit 0 saves
+             *     captured frames and bit 1 saves analysis images, so 3 means both — and
+             *     3 is the column default, which the old `max = 1` rejected (GH #39).
+             */
             save_jpe_gs: number;
             second_path?: string | null;
             /** Format: int32 */
@@ -1123,7 +1154,10 @@ export interface components {
             v4l_captures_per_frame?: number | null;
             /** Format: int32 */
             v4l_multi_buffer?: number | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description 0 disabled, 1 encode, 2 camera passthrough.
+             */
             video_writer: number;
             /** Format: int32 */
             warmup_count: number;
@@ -1166,10 +1200,25 @@ export interface components {
         };
         CreateServerRequest: {
             hostname?: string | null;
+            /** Format: double */
+            latitude?: number | null;
+            /** Format: double */
+            longitude?: number | null;
             name: string;
+            path_to_api?: string | null;
+            path_to_index?: string | null;
+            path_to_zms?: string | null;
             /** Format: int32 */
             port?: number | null;
+            /** @description `http` or `https`, as the legacy Servers modal offers. */
+            protocol?: string | null;
+            /** @description `Unknown`, `NotRunning` or `Running`. */
             status?: string | null;
+            zmaudit?: boolean | null;
+            zmeventnotification?: boolean | null;
+            /** @description Run this daemon on this server. */
+            zmstats?: boolean | null;
+            zmtrigger?: boolean | null;
         };
         CreateServerStatRequest: {
             /** @example 69.2 */
@@ -1277,6 +1326,13 @@ export interface components {
             name: string;
         };
         CreateStorageRequest: {
+            /**
+             * Format: int32
+             * @description Whether deleting an event may remove its media from this storage.
+             *     Defaults to `1`, matching the column and ZoneMinder's own UI — a
+             *     storage created with `0` cannot be reclaimed by retention.
+             */
+            do_delete?: number | null;
             /** Format: int32 */
             enabled: number;
             name: string;
@@ -1300,7 +1356,11 @@ export interface components {
             monitor_id: number;
         };
         CreateUserPreferenceRequest: {
-            name?: string | null;
+            /**
+             * @description Required since ZoneMinder 1.39.19 (`User_Preferences.Name` is NOT NULL
+             *     and unique per user).
+             */
+            name: string;
             /** Format: int32 */
             user_id: number;
             value?: string | null;
@@ -1329,12 +1389,53 @@ export interface components {
             units: string;
         };
         CreateZoneRequest: {
-            check_method?: string | null;
-            coords: string;
-            name: string;
             /** Format: int32 */
-            num_coords: number;
+            alarm_rgb?: number | null;
+            /** @description `AlarmedPixels` (default), `FilteredPixels` or `Blobs`. */
+            check_method?: string | null;
+            /** @description Polygon, `"x1,y1 x2,y2 ..."`. `Zones.Coords` is TINYTEXT (255 bytes). */
+            coords: string;
+            /** Format: int32 */
+            extend_alarm_frames?: number | null;
+            /** Format: int32 */
+            filter_x?: number | null;
+            /** Format: int32 */
+            filter_y?: number | null;
+            /** Format: double */
+            max_alarm_pixels?: number | null;
+            /** Format: double */
+            max_blob_pixels?: number | null;
+            /** Format: int32 */
+            max_blobs?: number | null;
+            /** Format: double */
+            max_filter_pixels?: number | null;
+            /** Format: int32 */
+            max_pixel_threshold?: number | null;
+            /** Format: double */
+            min_alarm_pixels?: number | null;
+            /** Format: double */
+            min_blob_pixels?: number | null;
+            /** Format: int32 */
+            min_blobs?: number | null;
+            /** Format: double */
+            min_filter_pixels?: number | null;
+            /**
+             * Format: int32
+             * @description Pixel difference, 0-255.
+             */
+            min_pixel_threshold?: number | null;
+            name: string;
+            /**
+             * Format: int32
+             * @description Ignored: the count is taken from `coords`. Kept so existing clients
+             *     that send it still validate.
+             */
+            num_coords?: number;
+            /** Format: int32 */
+            overload_frames?: number | null;
+            /** @description `Active`, `Inclusive`, `Exclusive`, `Preclusive`, `Inactive` or `Privacy`. */
             type: string;
+            /** @description `Pixels` or `Percent`. */
             units: string;
         };
         /** @description Response for daemon control actions. */
@@ -1351,8 +1452,18 @@ export interface components {
         };
         /** @description Response containing a single daemon's status. */
         DaemonStatusResponse: {
+            /**
+             * @description Why supervision stopped restarting this daemon. It stays stopped until
+             *     started again explicitly.
+             */
+            failure_reason?: string | null;
             /** @description Process identifier */
             id: string;
+            /**
+             * Format: int32
+             * @description Exit status of the most recent exit, when it exited normally
+             */
+            last_exit_code?: number | null;
             /**
              * Format: int32
              * @description Associated monitor ID if applicable
@@ -1386,9 +1497,43 @@ export interface components {
         /** @example 123.45 */
         DecimalWrapper: string;
         /** @enum {string} */
-        Decoding: "None" | "Ondemand" | "KeyFrames" | "KeyFramesOndemand" | "Always";
+        Decoding: "None" | "Ondemand" | "KeyFrames" | "KeyFrames+Ondemand" | "Always";
         /** @enum {string} */
-        DefaultCodec: "Auto" | "Mp4" | "Mjpeg";
+        DefaultCodec: "auto" | "MP4" | "MJPEG";
+        /** @description `POST /api/v3/monitors/{monitor_id}/describe` body. Every field is optional. */
+        DescribeNowRequest: {
+            /** @description One-off prompt replacing the pipeline's configured one for this call. */
+            prompt?: string | null;
+            /**
+             * Format: int32
+             * @description Worker stream to describe. Omit to use whichever instance answers.
+             */
+            stream_id?: number | null;
+        };
+        /** @description A scene description produced on request by the monitor's `describe_vlm`. */
+        DescribeNowResponse: {
+            /**
+             * Format: int32
+             * @description Frames sent to the model.
+             */
+            frames?: number | null;
+            model?: string | null;
+            /** Format: int32 */
+            monitor_id: number;
+            /** @description Prompt the model was given. */
+            prompt?: string | null;
+            /**
+             * Format: int64
+             * @description Presentation timestamp of the described frame, microseconds.
+             */
+            pts_usec?: number | null;
+            /** Format: int32 */
+            stream_id?: number | null;
+            /** @description The model's description. */
+            text: string;
+        };
+        /** @enum {string} */
+        DeviceClass: "Camera" | "Speaker";
         DeviceResponse: {
             /** Format: int32 */
             id: number;
@@ -1399,7 +1544,7 @@ export interface components {
         /** @enum {string} */
         DeviceType: "X10";
         /** @enum {string} */
-        EventCloseMode: "System" | "Time" | "Duration" | "Idle" | "Alarm";
+        EventCloseMode: "system" | "time" | "duration" | "idle" | "alarm";
         EventCountResponse: {
             /** Format: int64 */
             count: number;
@@ -2394,6 +2539,15 @@ export interface components {
             analysis_source: string;
             /** Format: int32 */
             analysis_update_delay: number;
+            /** Format: int32 */
+            audio_alarm_score: number;
+            /**
+             * Format: int32
+             * @description Audio-level alarm detection (1.39.31): on/off, trigger level, alarm score.
+             */
+            audio_detection: number;
+            /** Format: int32 */
+            audio_threshold: number;
             /** Format: double */
             auto_stop_timeout?: number | null;
             /** Format: int32 */
@@ -2428,6 +2582,8 @@ export interface components {
             deinterlacing: number;
             deleted: boolean;
             device: string;
+            /** @description `Camera` or `Speaker` (1.39.30). */
+            device_class: string;
             /**
              * Format: int32
              * @description Whether the monitor is enabled (ZoneMinder's `Monitors.Enabled`).
@@ -2447,8 +2603,6 @@ export interface components {
             format: number;
             /** Format: int32 */
             fps_report_interval: number;
-            /** Format: int32 */
-            frame_skip: number;
             function: string;
             /** Format: int32 */
             go2rtc_enabled: number;
@@ -2626,7 +2780,7 @@ export interface components {
             updated_on: string;
         };
         /** @enum {string} */
-        MonitorType: "Local" | "Remote" | "File" | "Ffmpeg" | "Libvlc" | "Curl" | "WebSite" | "Vnc";
+        MonitorType: "Local" | "Remote" | "File" | "Ffmpeg" | "Libvlc" | "cURL" | "WebSite" | "VNC";
         MontageLayoutResponse: {
             /** Format: int32 */
             id: number;
@@ -2636,7 +2790,7 @@ export interface components {
             user_id: number;
         };
         /**
-         * Format: date-time
+         * @description Local wall-clock time with no offset, as stored by ZoneMinder
          * @example 2025-04-24T12:34:56
          */
         NaiveDateTimeWrapper: string;
@@ -2672,9 +2826,9 @@ export interface components {
             xaddr: string;
         };
         /** @enum {string} */
-        Orientation: "Rotate0" | "Rotate90" | "Rotate180" | "Rotate270" | "FlipHori" | "FlipVert";
+        Orientation: "ROTATE_0" | "ROTATE_90" | "ROTATE_180" | "ROTATE_270" | "FLIP_HORI" | "FLIP_VERT";
         /** @enum {string} */
-        OutputContainer: "Auto" | "Mp4" | "Mkv" | "Webm";
+        OutputContainer: "auto" | "mp4" | "mkv" | "webm";
         PaginatedAiDatasetsResponse: {
             /** Format: int64 */
             current_page: number;
@@ -3199,6 +3353,24 @@ export interface components {
             /** @description Turbo tilt speed */
             tilt_turbo: components["schemas"]["TurboSpeed"];
         };
+        /**
+         * @description One validation or configure error, located by path, e.g.
+         *     `plugins[0].children[1].cfg.iou_threshold`.
+         */
+        PathError: {
+            message: string;
+            path: string;
+        };
+        /** @description Result of checking a pipeline graph without saving it. */
+        PipelineValidationResponse: {
+            /**
+             * @description `builtin` (zm-api's plugin list, for a worker that offers no schemas) or
+             *     the zm-next version whose plugin schemas were used.
+             */
+            checked_against: string;
+            errors: components["schemas"]["PathError"][];
+            valid: boolean;
+        };
         /** @description Power control capabilities */
         PowerCapabilities: {
             can_reboot: boolean;
@@ -3448,6 +3620,12 @@ export interface components {
             token: string;
         };
         ReportResponse: {
+            /**
+             * Format: int32
+             * @description User who created the report. Set by the server from the authenticated
+             *     caller, never accepted from the request.
+             */
+            created_by?: number | null;
             end_date_time?: string | null;
             /** Format: int32 */
             filter_id?: number | null;
@@ -3471,7 +3649,7 @@ export interface components {
         /** @enum {string} */
         ResourceType: "User" | "File" | "Session" | "Message" | "Monitor" | "Config" | "EventTag" | "EventSummary" | "Event";
         /** @enum {string} */
-        Rtsp2WebType: "Hls" | "Mse" | "WebRtc";
+        Rtsp2WebType: "HLS" | "MSE" | "WebRTC";
         /** @description Auto-scan capabilities */
         ScanCapabilities: {
             can_auto_scan: boolean;
@@ -3561,6 +3739,11 @@ export interface components {
             latitude?: number | null;
             /** Format: double */
             longitude?: number | null;
+            /**
+             * Format: int64
+             * @description Monitors assigned to this server (`Monitors.ServerId`).
+             */
+            monitor_count?: number;
             name: string;
             path_to_api?: string | null;
             path_to_index?: string | null;
@@ -3716,6 +3899,21 @@ export interface components {
             is_active: number;
             name: string;
         };
+        /** @description One change, as sent to SSE subscribers. */
+        StatusChange: {
+            /** Format: int64 */
+            at_ms: number;
+            /** @description The event's detail as the worker sent it (empty for hello/disconnect). */
+            detail: Record<string, never>;
+            /**
+             * @description `hello`, `worker_state`, `stream_auth_failed`, `worker_degraded`,
+             *     `connection_failed`, `connection_restored`, `capture_failed`,
+             *     `capture_resumed` or `disconnected`.
+             */
+            kind: string;
+            /** Format: int32 */
+            monitor_id: number;
+        };
         StorageResponse: {
             /**
              * Format: int64
@@ -3742,6 +3940,27 @@ export interface components {
             webrtc: string;
             webrtc_api: string;
         };
+        StreamHealth: {
+            /**
+             * Format: int64
+             * @description Consecutive failed attempts, when the worker reports it.
+             */
+            attempt?: number | null;
+            error?: string | null;
+            /** Format: double */
+            retry_in_sec?: number | null;
+            /**
+             * Format: int64
+             * @description Unix milliseconds of the event that set this state.
+             */
+            since_ms: number;
+            state: components["schemas"]["StreamState"];
+        };
+        /**
+         * @description Health of one capture stream.
+         * @enum {string}
+         */
+        StreamState: "streaming" | "connection_failed" | "capture_failed" | "auth_failed";
         /** @description Response containing system statistics. */
         SystemStatsResponse: {
             /**
@@ -4281,6 +4500,12 @@ export interface components {
             analysis_source?: null | components["schemas"]["AnalysisSource"];
             /** Format: int32 */
             analysis_update_delay?: number | null;
+            /** Format: int32 */
+            audio_alarm_score?: number | null;
+            /** Format: int32 */
+            audio_detection?: number | null;
+            /** Format: int32 */
+            audio_threshold?: number | null;
             /** Format: double */
             auto_stop_timeout?: number | null;
             /** Format: int32 */
@@ -4314,6 +4539,7 @@ export interface components {
             deinterlacing?: number | null;
             deleted?: boolean | null;
             device?: string | null;
+            device_class?: null | components["schemas"]["DeviceClass"];
             /**
              * Format: int32
              * @description Enable/disable the monitor (ZoneMinder's `Monitors.Enabled`).
@@ -4331,8 +4557,6 @@ export interface components {
             format?: number | null;
             /** Format: int32 */
             fps_report_interval?: number | null;
-            /** Format: int32 */
-            frame_skip?: number | null;
             function?: null | components["schemas"]["Function"];
             /** Format: int32 */
             height?: number | null;
@@ -4418,7 +4642,10 @@ export interface components {
             /** Format: int32 */
             pre_event_count?: number | null;
             protocol?: string | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Boolean. The old `min = -1` accepted a value the column has no meaning for.
+             */
             record_audio?: number | null;
             recording?: null | components["schemas"]["Recording"];
             recording_source?: null | components["schemas"]["RecordingSource"];
@@ -4442,7 +4669,12 @@ export interface components {
             rtsp_stream_name?: string | null;
             /** Format: int32 */
             rtsp_user?: number | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description `Monitors.SaveJPEGs` is a two-bit mask, not a flag: bit 0 saves
+             *     captured frames and bit 1 saves analysis images, so 3 means both — and
+             *     3 is the column default, which the old `max = 1` rejected (GH #39).
+             */
             save_jpe_gs?: number | null;
             second_path?: string | null;
             /** Format: int32 */
@@ -4478,7 +4710,10 @@ export interface components {
             v4l_captures_per_frame?: number | null;
             /** Format: int32 */
             v4l_multi_buffer?: number | null;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description 0 disabled, 1 encode, 2 camera passthrough.
+             */
             video_writer?: number | null;
             /** Format: int32 */
             warmup_count?: number | null;
@@ -4532,12 +4767,25 @@ export interface components {
             /** @example 2025-01-01T00:00:00Z */
             start_date_time: string;
         };
+        /** @description Partial update: a field left out is unchanged; `null` clears a nullable one. */
         UpdateServerRequest: {
             hostname?: string | null;
+            /** Format: double */
+            latitude?: number | null;
+            /** Format: double */
+            longitude?: number | null;
             name?: string | null;
+            path_to_api?: string | null;
+            path_to_index?: string | null;
+            path_to_zms?: string | null;
             /** Format: int32 */
             port?: number | null;
+            protocol?: string | null;
             status?: string | null;
+            zmaudit?: boolean | null;
+            zmeventnotification?: boolean | null;
+            zmstats?: boolean | null;
+            zmtrigger?: boolean | null;
         };
         UpdateSessionRequest: {
             /** Format: int32 */
@@ -4646,9 +4894,46 @@ export interface components {
             type?: string | null;
             units?: string | null;
         };
+        /** @description Partial update: a field left out is unchanged; `null` clears a nullable one. */
         UpdateZoneRequest: {
+            /** Format: int32 */
+            alarm_rgb?: number | null;
+            check_method?: string | null;
+            /** @description New polygon; `num_coords` and `area` are recomputed from it. */
+            coords?: string | null;
+            /** Format: int32 */
+            extend_alarm_frames?: number | null;
+            /** Format: int32 */
+            filter_x?: number | null;
+            /** Format: int32 */
+            filter_y?: number | null;
+            /** Format: double */
+            max_alarm_pixels?: number | null;
+            /** Format: double */
+            max_blob_pixels?: number | null;
+            /** Format: int32 */
+            max_blobs?: number | null;
+            /** Format: double */
+            max_filter_pixels?: number | null;
+            /** Format: int32 */
+            max_pixel_threshold?: number | null;
+            /** Format: double */
+            min_alarm_pixels?: number | null;
+            /** Format: double */
+            min_blob_pixels?: number | null;
+            /** Format: int32 */
+            min_blobs?: number | null;
+            /** Format: double */
+            min_filter_pixels?: number | null;
+            /** Format: int32 */
+            min_pixel_threshold?: number | null;
             name?: string | null;
+            /** Format: int32 */
+            overload_frames?: number | null;
+            /** @description Earlier name for `coords`, still accepted. */
             polygon?: string | null;
+            type?: string | null;
+            units?: string | null;
         };
         UserClaims: {
             /** Format: int64 */
@@ -4696,7 +4981,7 @@ export interface components {
         UserPreferenceResponse: {
             /** Format: int32 */
             id: number;
-            name?: string | null;
+            name: string;
             /** Format: int32 */
             user_id: number;
             value?: string | null;
@@ -4815,6 +5100,44 @@ export interface components {
             offer_ms?: number | null;
             /** @description Reader was already hot at connect (no reader spin-up on the offer path). */
             warm_start: boolean;
+        };
+        /** @description What zm-api knows about a worker right now. */
+        WorkerStatus: {
+            control_peer: boolean;
+            /**
+             * Format: int32
+             * @description Control protocol version from the hello; absent for a worker that
+             *     predates it.
+             */
+            control_protocol?: number | null;
+            /** @description Component → effect, for each dependency the worker reports as down. */
+            degraded: {
+                [key: string]: string;
+            };
+            pipeline_hash?: string | null;
+            reason?: string | null;
+            /**
+             * @description `unconfigured` | `configuring` | `running` | `stopping`, from the hello
+             *     or the latest worker_state event.
+             */
+            state?: string | null;
+            /** @description Keyed by the worker's stream id. */
+            streams: {
+                [key: string]: components["schemas"]["StreamHealth"];
+            };
+            /** @description zm-next version and commit from the hello. */
+            zm_next_version?: string | null;
+        };
+        /** @description A monitor's zm-next worker, as the daemon manager sees it. */
+        ZmNextWorkerStatusResponse: {
+            live?: null | components["schemas"]["WorkerStatus"];
+            /** Format: int32 */
+            monitor_id: number;
+            /** @description zm-api supervises daemons on this server (not passive mode). */
+            supervised: boolean;
+            /** @description `UseZmNext` is set and `[zmnext].enabled` is on. */
+            use_zmnext: boolean;
+            worker?: null | components["schemas"]["DaemonStatusResponse"];
         };
         ZonePresetResponse: {
             check_method: string;

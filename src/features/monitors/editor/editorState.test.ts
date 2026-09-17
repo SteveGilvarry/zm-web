@@ -4,13 +4,44 @@ import { extractEditableFields, isUnsetSecret, sameValue, sameIdSet, parseIdList
 
 describe('extractEditableFields', () => {
   it('keeps the stored enum values and every catalogue key', () => {
-    const m = { id: 1, name: 'A', orientation: 'Rotate90', event_close_mode: 'System', width: 640, height: 480 } as unknown as Monitor;
+    const m = { id: 1, name: 'A', orientation: 'ROTATE_90', event_close_mode: 'system', width: 640, height: 480 } as unknown as Monitor;
     const draft = extractEditableFields(m);
-    expect(draft.orientation).toBe('Rotate90');
-    expect(draft.event_close_mode).toBe('System');
+    expect(draft.orientation).toBe('ROTATE_90');
+    expect(draft.event_close_mode).toBe('system');
     expect(draft.height).toBe(480);
     expect(draft.decoder).toBeNull();
     expect('linked_monitors' in draft).toBe(true);
+  });
+
+  it('folds the pre-#59 CamelCase spellings onto the option values', () => {
+    // An older zm-api sends `Rotate90` / `System` / `WebRtc` / `Curl`. Without
+    // the fold the selects would silently show their first option instead of
+    // what is stored, and saving would overwrite it.
+    const m = {
+      id: 1, name: 'A', orientation: 'Rotate90', event_close_mode: 'System',
+      rtsp2_web_type: 'WebRtc', type: 'Curl', decoding: 'KeyFramesOndemand',
+      default_codec: 'Mp4',
+    } as unknown as Monitor;
+    const draft = extractEditableFields(m);
+    expect(draft.orientation).toBe('ROTATE_90');
+    expect(draft.event_close_mode).toBe('system');
+    expect(draft.rtsp2_web_type).toBe('WebRTC');
+    expect(draft.type).toBe('cURL');
+    expect(draft.decoding).toBe('KeyFrames+Ondemand');
+    expect(draft.default_codec).toBe('MP4');
+  });
+
+  it('carries the 1.39.30/31 audio + device-class fields', () => {
+    const m = {
+      id: 1, name: 'A', device_class: 'Speaker',
+      audio_detection: 1, audio_threshold: 40, audio_alarm_score: 9,
+    } as unknown as Monitor;
+    const draft = extractEditableFields(m);
+    expect(draft.device_class).toBe('Speaker');
+    expect(draft.audio_detection).toBe(1);
+    expect(draft.audio_threshold).toBe(40);
+    expect(draft.audio_alarm_score).toBe(9);
+    expect('frame_skip' in draft).toBe(false);
   });
 
   it('leaves the write-only secrets blank — the API never sends them back', () => {

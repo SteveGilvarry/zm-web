@@ -48,7 +48,7 @@ describe('CONTROL_TABS', () => {
 
   it('offers exactly the five types legacy lists, and no Misc tab', () => {
     // `controlcap.php:219-225`: Local, Remote, Ffmpeg, Libvlc, cURL.
-    expect([...CONTROL_TYPES]).toEqual(['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'Curl']);
+    expect([...CONTROL_TYPES]).toEqual(['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'cURL']);
     expect(CONTROL_TABS.some((tab) => (tab.key as string) === 'misc')).toBe(false);
   });
 

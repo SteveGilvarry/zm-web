@@ -33,10 +33,10 @@ export interface ControlTab {
 /**
  * The Type select, exactly the five `controlcap.php:219-225` offers — a
  * control profile is a PTZ driver, and the backend's `MonitorType` enum
- * carries three more (`WebSite`, `Vnc`, `File`) that no ZoneMinder PTZ
- * driver can be. `Curl` is the enum's spelling of legacy's `cURL` label.
+ * carries three more (`WebSite`, `VNC`, `File`) that no ZoneMinder PTZ
+ * driver can be.
  */
-export const CONTROL_TYPES = ['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'Curl'] as const;
+export const CONTROL_TYPES = ['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'cURL'] as const;
 
 const flag = (key: ControlFieldKey): ControlField => ({ key, kind: 'flag' });
 const num = (key: ControlFieldKey): ControlField => ({ key, kind: 'number' });

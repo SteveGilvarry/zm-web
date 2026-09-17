@@ -69,7 +69,7 @@ function event(id: number, over: Record<string, unknown> = {}) {
     width: 1920, height: 1080, length: 30, frames: 100, alarm_frames: 5,
     tot_score: 0, avg_score: 0, max_score: 0, archived: 0, videoed: 1,
     uploaded: 0, emailed: 0, messaged: 0, executed: 0, notes: null, state_id: 1,
-    orientation: 'Rotate0', disk_space: 1_048_576, scheme: 'Medium', locked: 0,
+    orientation: 'ROTATE_0', disk_space: 1_048_576, scheme: 'Medium', locked: 0,
     tags: [], storage_id: 1, ...over,
   };
 }

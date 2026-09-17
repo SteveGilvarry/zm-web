@@ -108,7 +108,7 @@ function seed(): MockDb {
         sequence: 2,
         width: 2160,
         height: 3840,
-        orientation: 'Rotate90',
+        orientation: 'ROTATE_90',
         analysing: 'None',
         recording: 'None',
         controllable: 1,
@@ -477,6 +477,31 @@ const events: HttpHandler[] = [
       status: 200,
       headers: { 'Content-Type': 'image/jpeg' },
     })),
+  // Per-frame JPEGs: `/frames/{id}/image` and `/events/{id}/frames/{fid}/image`.
+  // `fid` is a frame number or one of ZoneMinder's names (`alarm`, `snapshot`);
+  // an unknown one 404s, which is what an event with no alarm frame answers.
+  http.get(`${API}/frames/:id/image`, ({ params }) =>
+    db.frames.some((f) => f.id === Number(params.id))
+      ? HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
+        status: 200,
+        headers: { 'Content-Type': 'image/jpeg' },
+      })
+      : notFound()),
+  http.get(`${API}/events/:id/frames/:fid/image`, ({ params }) => {
+    const fid = String(params.fid);
+    const frames = db.frames.filter((f) => f.event_id === Number(params.id));
+    const found = fid === 'snapshot'
+      ? frames.length > 0
+      : fid === 'alarm'
+        ? frames.some((f) => f.type === 'Alarm')
+        : frames.some((f) => f.frame_id === Number(fid));
+    return found
+      ? HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
+        status: 200,
+        headers: { 'Content-Type': 'image/jpeg' },
+      })
+      : notFound();
+  }),
   http.get(`${API}/events/:id/video`, () =>
     HttpResponse.arrayBuffer(new Uint8Array([0x00, 0x00, 0x00, 0x18]).buffer, {
       status: 200,

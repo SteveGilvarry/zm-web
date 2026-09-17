@@ -276,7 +276,7 @@ describe('Monitors list — mutations', () => {
     // Copied from the source rather than reset to the factory defaults.
     expect(body!.path).toBe('rtsp://camera.local:554/stream1');
     expect(body!.storage_id).toBe(1);
-    expect(body!.orientation).toBe('Rotate0');
+    expect(body!.orientation).toBe('ROTATE_0');
 
     expect(await screen.findByText('Cloned as "Front Door (clone)"')).toBeInTheDocument();
   });
@@ -343,7 +343,7 @@ describe('Monitors list — mutations', () => {
     // Driveway is the rotated 2160×3840 camera; the clone keeps its geometry.
     expect(body!.width).toBe(2160);
     expect(body!.height).toBe(3840);
-    expect(body!.orientation).toBe('Rotate90');
+    expect(body!.orientation).toBe('ROTATE_90');
     expect(await screen.findByText('Cloned as "Driveway (clone)"')).toBeInTheDocument();
   });
 

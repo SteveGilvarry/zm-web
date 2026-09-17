@@ -37,9 +37,9 @@ function useMonitorOptions(): { types: TypeOption[]; functions: FunctionOption[]
       { value: 'Remote',  label: t('Remote'),  desc: t('Direct HTTP MJPEG / JPEG-pull cameras.') },
       { value: 'Local',   label: t('Local'),   desc: t('V4L2 capture card or USB camera on this server.') },
       { value: 'File',    label: t('File'),    desc: t('Loop a local video file (testing).') },
-      { value: 'Curl',    label: t('cURL'),    desc: t('Poll a still-image URL.') },
+      { value: 'cURL',    label: t('cURL'),    desc: t('Poll a still-image URL.') },
       { value: 'WebSite', label: t('Website'), desc: t('Embed a web page in the montage.') },
-      { value: 'Vnc',     label: t('VNC'),     desc: t('Capture a VNC desktop.') },
+      { value: 'VNC',     label: t('VNC'),     desc: t('Capture a VNC desktop.') },
     ],
     functions: [
       { value: 'Monitor', label: t('Monitor (live view only)') },
@@ -53,9 +53,9 @@ function useMonitorOptions(): { types: TypeOption[]; functions: FunctionOption[]
 
 /** Which source rows each type needs — the legacy form's per-type Source tab, reduced to the essentials. */
 const SHOWS: Record<'host' | 'path' | 'auth' | 'device' | 'protocol' | 'refresh', MonitorType[]> = {
-  host:     ['Remote', 'Vnc'],
-  path:     ['Ffmpeg', 'Libvlc', 'Remote', 'File', 'Curl', 'WebSite'],
-  auth:     ['Ffmpeg', 'Libvlc', 'Remote', 'Curl', 'Vnc'],
+  host:     ['Remote', 'VNC'],
+  path:     ['Ffmpeg', 'Libvlc', 'Remote', 'File', 'cURL', 'WebSite'],
+  auth:     ['Ffmpeg', 'Libvlc', 'Remote', 'cURL', 'VNC'],
   device:   ['Local'],
   protocol: ['Remote'],
   refresh:  ['WebSite'],
@@ -286,7 +286,7 @@ function AddMonitorForm({ onClose, initial, clonedFrom, onCreated }: Omit<AddMon
               </Row>
             )}
             {shows('path') && (
-              <Row label={type === 'WebSite' || type === 'Curl' ? t('URL') : t('Path')}>
+              <Row label={type === 'WebSite' || type === 'cURL' ? t('URL') : t('Path')}>
                 <input
                   value={form.path ?? ''}
                   onChange={(e) => update('path', e.target.value)}
