@@ -46,6 +46,11 @@ export interface SystemStats {
   used_disk: number;
   free_disk: number;
   disk_usage_percent: number;
+  /** Connections the pool currently holds — legacy `DB: n/max`. Null when the
+   *  pool cannot be inspected; absent on zm-api builds before it was added. */
+  db_connections?: number | null;
+  /** Configured maximum size of the database connection pool. */
+  db_max_connections?: number | null;
 }
 
 export interface SystemStatusResponse {

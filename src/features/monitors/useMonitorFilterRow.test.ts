@@ -54,6 +54,10 @@ describe('applyLocalFilters', () => {
     expect(applyLocalFilters(list, { name: '', source: '', status: 'Connected' }, runtime).map((x) => x.id)).toEqual([1]);
     expect(applyLocalFilters(list, { name: '', source: '', status: 'Unknown' }, runtime).map((x) => x.id)).toEqual([3]);
   });
+  it('ORs the statuses within the multi-select', () => {
+    expect(applyLocalFilters(list, { name: '', source: '', status: 'Connected,Unknown' }, runtime).map((x) => x.id))
+      .toEqual([1, 3]);
+  });
   it('ANDs name and source', () => {
     expect(applyLocalFilters(list, { name: '^B', source: '0\\.2$', status: '' }, runtime).map((x) => x.id)).toEqual([2]);
     expect(applyLocalFilters(list, { name: '^B', source: '0\\.1$', status: '' }, runtime)).toEqual([]);
@@ -61,6 +65,8 @@ describe('applyLocalFilters', () => {
 });
 
 const server = setupServer(
+  http.get('/api/v3/servers', () => HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 })),
+  http.get('/api/v3/storage', () => HttpResponse.json({ items: [], total: 0, per_page: 200, current_page: 1, last_page: 1 })),
   http.get('/api/v3/groups', () => HttpResponse.json({ items: [{ id: 7, name: 'Yard' }], total: 1, per_page: 200, current_page: 1, last_page: 1 })),
   http.get('/api/v3/groups-monitors', () => HttpResponse.json({ items: [{ id: 1, group_id: 7, monitor_id: 2 }], total: 1, per_page: 1000, current_page: 1, last_page: 1 })),
 );
@@ -101,6 +107,56 @@ describe('useMonitorFilterRow', () => {
     act(() => result.current.reset());
     expect(result.current.activeCount).toBe(0);
     expect(result.current.filtered).toHaveLength(2);
+  });
+
+  it('carries a multi-select\'s whole selection, OR-combined', async () => {
+    const wide = [
+      m({ id: 1, name: 'Front', capturing: 'Always' }),
+      m({ id: 2, name: 'Back', capturing: 'None' }),
+      m({ id: 3, name: 'Side', capturing: 'Ondemand' }),
+    ];
+    const { result } = renderHook(() => useMonitorFilterRow(wide), { wrapper: wrapper() });
+
+    act(() => result.current.setMulti('capturing', ['None', 'Ondemand']));
+    expect(useMonitorFilterStore.getState().capturing).toEqual(['None', 'Ondemand']);
+    expect(result.current.valuesMulti.capturing).toEqual(['None', 'Ondemand']);
+    expect(result.current.filtered.map((x) => x.id)).toEqual([2, 3]);
+
+    act(() => result.current.setMulti('monitorId', ['1', '3']));
+    expect(result.current.values.monitorId).toBe('1,3');
+    expect(result.current.filtered.map((x) => x.id)).toEqual([3]);
+  });
+
+  it('filters on Server and Storage, several at a time', async () => {
+    const wide = [
+      m({ id: 1, server_id: 1, storage_id: 1 }),
+      m({ id: 2, server_id: 2, storage_id: 1 }),
+      m({ id: 3, server_id: null, storage_id: 2 }),
+    ];
+    const { result } = renderHook(() => useMonitorFilterRow(wide), { wrapper: wrapper() });
+
+    act(() => result.current.setMulti('serverId', ['1', '2']));
+    expect(result.current.filtered.map((x) => x.id)).toEqual([1, 2]);
+
+    act(() => result.current.clear('serverId'));
+    act(() => result.current.setMulti('storageId', ['2']));
+    expect(result.current.filtered.map((x) => x.id)).toEqual([3]);
+  });
+
+  it('offers the servers and storage areas the box has', async () => {
+    server.use(
+      http.get('/api/v3/servers', () => HttpResponse.json({
+        items: [{ id: 1, name: 'zm1' }, { id: 2, name: 'zm2' }],
+        total: 2, per_page: 200, current_page: 1, last_page: 1,
+      })),
+      http.get('/api/v3/storage', () => HttpResponse.json({
+        items: [{ id: 1, name: 'Default' }],
+        total: 1, per_page: 200, current_page: 1, last_page: 1,
+      })),
+    );
+    const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.servers).toHaveLength(2));
+    expect(result.current.storages.map((s) => s.name)).toEqual(['Default']);
   });
 
   it('clear() empties one field only', async () => {

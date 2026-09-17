@@ -1,8 +1,9 @@
 /**
- * Legacy `_monitor_filters.php` row: eight labelled controls, the wire
- * values behind their translated labels, and the per-field clear (×).
- * Driven with a stub `MonitorFilterRowState` so this stays a unit test of
- * the presentation — the hook has its own coverage.
+ * Legacy `_monitor_filters.php` row: labelled controls, every select
+ * `multiple` as legacy's Chosen widgets are, the wire values behind their
+ * translated labels, Server/Storage only when the box has more than one, and
+ * the per-field clear (×). Driven with a stub `MonitorFilterRowState` so this
+ * stays a unit test of the presentation — the hook has its own coverage.
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 import { screen, within } from '@testing-library/react';
@@ -10,8 +11,9 @@ import userEvent from '@testing-library/user-event';
 import { renderWithProviders } from '@/test/render';
 import type { Monitor } from '@/types';
 import type {
-  FilterRowValues, MonitorFilterRowState,
+  FilterRowField, FilterRowValues, MonitorFilterRowState,
 } from '@/features/monitors/useMonitorFilterRow';
+import { FILTER_ROW_FIELDS, splitValues } from '@/features/monitors/useMonitorFilterRow';
 import { ClassicFilterRow } from './FilterRow';
 
 const monitors = [
@@ -27,17 +29,29 @@ const groups = [
 const EMPTY: FilterRowValues = {
   groupId: '', name: '', capturing: '', analysing: '',
   recording: '', status: '', source: '', monitorId: '',
+  serverId: '', storageId: '',
 };
 
 const set = vi.fn();
+const setMulti = vi.fn();
 const clear = vi.fn();
 
-function makeState(values: Partial<FilterRowValues> = {}): MonitorFilterRowState {
+function makeState(
+  values: Partial<FilterRowValues> = {},
+  over: Partial<Pick<MonitorFilterRowState, 'servers' | 'storages'>> = {},
+): MonitorFilterRowState {
   const merged = { ...EMPTY, ...values };
   return {
     groups,
+    servers: [],
+    storages: [],
+    ...over,
     values: merged,
+    valuesMulti: Object.fromEntries(
+      FILTER_ROW_FIELDS.map((f) => [f, splitValues(merged[f])]),
+    ) as Record<FilterRowField, string[]>,
     set,
+    setMulti,
     clear,
     reset: vi.fn(),
     filtered: monitors,
@@ -45,75 +59,104 @@ function makeState(values: Partial<FilterRowValues> = {}): MonitorFilterRowState
   };
 }
 
-function mount(values?: Partial<FilterRowValues>, tone?: 'light' | 'dark') {
+function mount(
+  values?: Partial<FilterRowValues>,
+  tone?: 'light' | 'dark',
+  over?: Partial<Pick<MonitorFilterRowState, 'servers' | 'storages'>>,
+) {
   return renderWithProviders(
-    <ClassicFilterRow monitors={monitors} state={makeState(values)} tone={tone} className="mb-2" />,
+    <ClassicFilterRow monitors={monitors} state={makeState(values, over)} tone={tone} className="mb-2" />,
   );
 }
 
+/** A `<select multiple>` is a listbox, not a combobox. */
 const optionLabels = (name: string) =>
-  within(screen.getByRole('combobox', { name })).getAllByRole('option').map((o) => o.textContent);
+  within(screen.getByRole('listbox', { name })).getAllByRole('option').map((o) => o.textContent);
 
-beforeEach(() => { set.mockClear(); clear.mockClear(); });
+beforeEach(() => { set.mockClear(); setMulti.mockClear(); clear.mockClear(); });
 
 describe('ClassicFilterRow', () => {
-  it('renders the eight legacy fields in order under one named group', () => {
+  it('renders the legacy fields in order under one named group', () => {
     mount();
     const group = screen.getByRole('group', { name: 'Monitor filter bar' });
-    expect(within(group).getAllByRole('combobox')).toHaveLength(6);
+    expect(within(group).getAllByRole('listbox')).toHaveLength(6);
     expect(within(group).getAllByRole('textbox')).toHaveLength(2);
     for (const label of ['GroupId', 'Capturing', 'Analysing', 'Recording', 'Status', 'Monitor']) {
-      expect(screen.getByRole('combobox', { name: label })).toBeInTheDocument();
+      expect(screen.getByRole('listbox', { name: label })).toBeInTheDocument();
     }
     expect(screen.getByRole('textbox', { name: 'Name' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Source' })).toBeInTheDocument();
   });
 
-  it('lists the groups the hook supplied, behind an "All" default', () => {
+  it('makes every select multiple, as legacy does', () => {
     mount();
-    expect(optionLabels('GroupId')).toEqual(['All', 'Perimeter', 'Indoors']);
-    const group = screen.getByRole('combobox', { name: 'GroupId' });
+    for (const label of ['GroupId', 'Capturing', 'Status', 'Monitor']) {
+      expect(screen.getByRole('listbox', { name: label })).toHaveAttribute('multiple');
+    }
+  });
+
+  it('lists the groups the hook supplied, with no "All" option', () => {
+    mount();
+    expect(optionLabels('GroupId')).toEqual(['Perimeter', 'Indoors']);
+    const group = screen.getByRole('listbox', { name: 'GroupId' });
     expect(within(group).getByRole('option', { name: 'Perimeter' })).toHaveValue('7');
   });
 
   it('translates the capture-mode wire values', () => {
     mount();
-    expect(optionLabels('Capturing')).toEqual(['All', 'None', 'On Demand', 'Always']);
-    expect(optionLabels('Analysing')).toEqual(['All', 'None', 'Always']);
-    expect(optionLabels('Recording')).toEqual(['All', 'None', 'On Motion', 'Always']);
+    expect(optionLabels('Capturing')).toEqual(['None', 'On Demand', 'Always']);
+    expect(optionLabels('Analysing')).toEqual(['None', 'Always']);
+    expect(optionLabels('Recording')).toEqual(['None', 'On Motion', 'Always']);
   });
 
-  it('translates the runtime status values the way legacy did', () => {
+  it('translates the runtime status values the way legacy did, without Deleted', () => {
     mount();
-    // `Running` means the daemon is up but not yet capturing.
-    expect(optionLabels('Status')).toEqual(['All', 'Unknown', 'Not Running', 'Not Capturing', 'Capturing']);
-    const status = screen.getByRole('combobox', { name: 'Status' });
+    // `Running` means the daemon is up but not yet capturing. Legacy's
+    // `Deleted` pseudo-status is omitted: the API cannot list deleted monitors.
+    expect(optionLabels('Status')).toEqual(['Unknown', 'Not Running', 'Not Capturing', 'Capturing']);
+    const status = screen.getByRole('listbox', { name: 'Status' });
     expect(within(status).getByRole('option', { name: 'Capturing' })).toHaveValue('Connected');
     expect(within(status).getByRole('option', { name: 'Not Capturing' })).toHaveValue('Running');
   });
 
   it('labels each monitor option with its id', () => {
     mount();
-    expect(optionLabels('Monitor')).toEqual(['All', '1 Front Door', '2 Driveway East']);
+    expect(optionLabels('Monitor')).toEqual(['1 Front Door', '2 Driveway East']);
   });
 
-  it('reflects the current values', () => {
-    mount({ groupId: '8', capturing: 'Always', status: 'NotRunning', monitorId: '2', name: 'door', source: '10.0.0' });
-    expect(screen.getByRole('combobox', { name: 'GroupId' })).toHaveValue('8');
-    expect(screen.getByRole('combobox', { name: 'Capturing' })).toHaveValue('Always');
-    expect(screen.getByRole('combobox', { name: 'Status' })).toHaveValue('NotRunning');
-    expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveValue('2');
+  it('hides Server and Storage until the box has more than one', () => {
+    mount();
+    expect(screen.queryByRole('listbox', { name: 'Server' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('listbox', { name: 'Storage' })).not.toBeInTheDocument();
+  });
+
+  it('shows Server and Storage once there are two of either', () => {
+    mount({}, undefined, {
+      servers: [{ id: 1, name: 'zm1' }, { id: 2, name: 'zm2' }] as MonitorFilterRowState['servers'],
+      storages: [{ id: 1, name: 'Default' }, { id: 2, name: 'Archive' }] as MonitorFilterRowState['storages'],
+    });
+    expect(optionLabels('Server')).toEqual(['zm1', 'zm2']);
+    expect(optionLabels('Storage')).toEqual(['Default', 'Archive']);
+  });
+
+  it('reflects the current values, several at a time', () => {
+    mount({ groupId: '8', capturing: 'Always', status: 'NotRunning,Connected', monitorId: '1,2', name: 'door', source: '10.0.0' });
+    expect(screen.getByRole('listbox', { name: 'GroupId' })).toHaveValue(['8']);
+    expect(screen.getByRole('listbox', { name: 'Status' })).toHaveValue(['NotRunning', 'Connected']);
+    expect(screen.getByRole('listbox', { name: 'Monitor' })).toHaveValue(['1', '2']);
     expect(screen.getByRole('textbox', { name: 'Name' })).toHaveValue('door');
     expect(screen.getByRole('textbox', { name: 'Source' })).toHaveValue('10.0.0');
   });
 
-  it('reports a select change against its field name', async () => {
+  it('reports a select change as the whole selection', async () => {
     mount();
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Recording' }), 'OnMotion');
-    expect(set).toHaveBeenCalledWith('recording', 'OnMotion');
+    await userEvent.selectOptions(screen.getByRole('listbox', { name: 'Recording' }), 'OnMotion');
+    expect(setMulti).toHaveBeenCalledWith('recording', ['OnMotion']);
 
-    await userEvent.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '2');
-    expect(set).toHaveBeenLastCalledWith('monitorId', '2');
+    // The stub never echoes a selection back, so each click reports only
+    // what the DOM holds at that moment — the field name is the point here.
+    await userEvent.selectOptions(screen.getByRole('listbox', { name: 'Monitor' }), ['1']);
+    expect(setMulti).toHaveBeenLastCalledWith('monitorId', ['1']);
   });
 
   it('reports typed text per keystroke against its field name', async () => {
@@ -153,11 +196,11 @@ describe('ClassicFilterRow', () => {
     expect(screen.getByRole('group', { name: 'Monitor filter bar' })).toBeInTheDocument();
   });
 
-  it('offers only "All" when there are no groups or monitors', () => {
+  it('offers nothing to pick when there are no groups or monitors', () => {
     const state = makeState();
     state.groups = [];
     renderWithProviders(<ClassicFilterRow monitors={[]} state={state} />);
-    expect(optionLabels('GroupId')).toEqual(['All']);
-    expect(optionLabels('Monitor')).toEqual(['All']);
+    expect(within(screen.getByRole('listbox', { name: 'GroupId' })).queryAllByRole('option')).toHaveLength(0);
+    expect(within(screen.getByRole('listbox', { name: 'Monitor' })).queryAllByRole('option')).toHaveLength(0);
   });
 });

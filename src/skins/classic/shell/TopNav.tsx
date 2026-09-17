@@ -5,6 +5,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, RefreshCcw, LayoutGrid, Film, Video, Settings, ScrollText,
   UsersRound, Filter as FilterIcon, FileText, ShieldCheck, UserRound, KeyRound, LogOut,
+  ChevronUp, ChevronDown,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
@@ -15,6 +16,9 @@ import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
 import { useCurrentUsername } from '@/features/auth/useMe';
 import { canSeeNav } from '@/features/nav/navPerms';
 import { Button } from '@/components/common/Button';
+import { useLogState, type LogState } from '@/features/logs/useLogState';
+import { useUiStore } from '@/stores/ui';
+import { ClassicBrandMenu } from './BrandMenu';
 
 /**
  * Classic ZoneMinder top navigation. Same items, order and labels as the
@@ -39,6 +43,13 @@ function useNavItems(): Array<{ icon: ReactNode; label: string; to: string }> {
   ];
 }
 
+/** `logState()` → the legacy nav classes (`text-success/warning/danger`). */
+const LOG_STATE_CLASS: Record<LogState, string> = {
+  ok: 'text-[#05c46b]',
+  alert: 'text-[#ffa801]',
+  alarm: 'text-[#ff3f34]',
+};
+
 export function ClassicTopNav() {
   const { t } = useTranslation();
   const location = useLocation();
@@ -47,8 +58,12 @@ export function ClassicTopNav() {
   const username = useCurrentUsername();
   const { perms, can } = usePerms();
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const statBarOpen = useUiStore((s) => s.classicStatBarOpen);
+  const toggleStatBar = useUiStore((s) => s.toggleClassicStatBar);
   // Same canView() gating as the legacy navbar.
   const items = useNavItems().filter((i) => canSeeNav(perms, i.to));
+  // Legacy colours the Log item by `logState()`; only System viewers see it.
+  const logState = useLogState(can('system', 'View') && items.some((i) => i.to === '/logs'));
 
   const isActive = (to: string) =>
     to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
@@ -62,9 +77,7 @@ export function ClassicTopNav() {
   return (
     <header className="bg-classic-nav text-classic-nav-fg border-b border-black/40 sticky top-0 z-30">
       <div className="px-4 py-2 flex items-center gap-6 flex-wrap">
-        <div className="text-2xl font-semibold tracking-tight text-classic-nav-brand">
-          ZoneMinder
-        </div>
+        <ClassicBrandMenu />
         <nav aria-label={t('Main')} className="flex-1">
           <ul className="flex items-center gap-1 flex-wrap">
             {items.map((item) => (
@@ -77,7 +90,9 @@ export function ClassicTopNav() {
                     'hover:bg-white/10',
                     isActive(item.to) && 'bg-white/15 text-classic-nav-fg',
                     !isActive(item.to) && 'text-classic-nav-link',
+                    item.to === '/logs' && LOG_STATE_CLASS[logState],
                   )}
+                  data-log-state={item.to === '/logs' ? logState : undefined}
                 >
                   <span aria-hidden className="leading-none">{item.icon}</span>
                   <span>{item.label}</span>
@@ -116,6 +131,19 @@ export function ClassicTopNav() {
             <LogOut size={15} className="rtl:-scale-x-100" aria-hidden />
           </Button>
           {can('system', 'Edit') && <SystemRunningToggle tone="light" />}
+          {/* Legacy header-flip chevron (`#flip`, cookie `zmHeaderFlip`): hides
+              the stat strip and stays hidden until flipped back. */}
+          <button
+            type="button"
+            onClick={toggleStatBar}
+            aria-expanded={statBarOpen}
+            aria-controls="classic-stat-bar"
+            title={statBarOpen ? t('Hide server stats') : t('Show server stats')}
+            aria-label={statBarOpen ? t('Hide server stats') : t('Show server stats')}
+            className="p-1 text-classic-nav-link hover:text-classic-nav-fg"
+          >
+            {statBarOpen ? <ChevronUp size={15} aria-hidden /> : <ChevronDown size={15} aria-hidden />}
+          </button>
         </div>
       </div>
 

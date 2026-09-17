@@ -13,6 +13,7 @@ import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
+import { useUiStore } from '@/stores/ui';
 import type { UserClaims } from '@/types';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -149,9 +150,24 @@ const alarmCalls: unknown[] = [];
 const deletedEvents: string[] = [];
 
 /** `ptz: 'none'` makes the camera non-controllable (backend answers 400). */
-function stubOk(opts: { ptz?: 'ready' | 'none'; events?: unknown[]; monitor?: Record<string, unknown> } = {}) {
-  const { ptz = 'none', events = [EVENT], monitor = MONITOR } = opts;
+function stubOk(opts: {
+  ptz?: 'ready' | 'none';
+  events?: unknown[];
+  monitor?: Record<string, unknown>;
+  /** `ZM_*` rows the page reads through the shared config table. */
+  configs?: Record<string, string>;
+  /** Extra monitors for the cycle sidebar's rotation. */
+  monitors?: unknown[];
+} = {}) {
+  const { ptz = 'none', events = [EVENT], monitor = MONITOR, configs = {} } = opts;
+  const monitors = opts.monitors ?? [monitor];
   server.use(
+    http.get('/api/v3/configs', () => HttpResponse.json(paged(
+      Object.entries({ ZM_WEB_EVENTS_PER_PAGE: '25', ...configs }).map(([name, value], i) => ({
+        id: i + 1, name, value, type: 'string', category: 'web', readonly: 0, private: 0, system: 0,
+      })),
+      { per_page: 1000 },
+    ))),
     http.get('/api/v3/ptz/monitors/:id/capabilities', () =>
       ptz === 'ready'
         ? HttpResponse.json(CAPS)
@@ -170,7 +186,7 @@ function stubOk(opts: { ptz?: 'ready' | 'none'; events?: unknown[]; monitor?: Re
       return new HttpResponse(null, { status: 204 });
     }),
     // Lookups the monitor editor dialog pulls in when it opens.
-    http.get('/api/v3/monitors', () => HttpResponse.json(paged([monitor]))),
+    http.get('/api/v3/monitors', () => HttpResponse.json(paged(monitors))),
     http.get('/api/v3/manufacturers', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/models', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/servers', () => HttpResponse.json(paged([]))),
@@ -203,6 +219,7 @@ afterEach(() => {
   alarmCalls.length = 0;
   deletedEvents.length = 0;
   useToastStore.getState().clear();
+  useUiStore.setState({ classicCycleSidebarOpen: false });
   vi.restoreAllMocks();
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -492,5 +509,104 @@ describe('ClassicMonitorWatchPage', () => {
     await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Cannot reach the server.'));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+const SIBLINGS = [
+  MONITOR,
+  { ...MONITOR, id: 4, name: 'Back Gate' },
+  { ...MONITOR, id: 5, name: 'Side Path' },
+];
+
+describe('ClassicMonitorWatchPage — cycle sidebar', () => {
+  it('is hidden until the Cycle button asks for it, and the choice sticks', async () => {
+    const user = userEvent.setup();
+    stubOk({ monitors: SIBLINGS });
+    const view = await mount();
+    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    expect(screen.queryByTestId('watch-cycle-sidebar')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Cycle' }));
+    expect(await screen.findByTestId('watch-cycle-sidebar')).toBeInTheDocument();
+    expect(useUiStore.getState().classicCycleSidebarOpen).toBe(true);
+
+    view.unmount();
+    await mount();
+    expect(await screen.findByTestId('watch-cycle-sidebar')).toBeInTheDocument();
+  });
+
+  it('offers the legacy periods, a countdown and the four transport buttons', async () => {
+    useUiStore.setState({ classicCycleSidebarOpen: true });
+    stubOk({ monitors: SIBLINGS, configs: { ZM_WEB_REFRESH_CYCLE: '45' } });
+    await mount();
+
+    const sidebar = await screen.findByTestId('watch-cycle-sidebar');
+    const period = within(sidebar).getByRole('combobox', { name: 'Cycle period' });
+    await waitFor(() => expect(
+      [...(period as HTMLSelectElement).options].map((o) => o.textContent),
+    ).toEqual(['5 seconds', '10 seconds', '30 seconds', '1 minute', '2 minutes', '5 minutes', '45 seconds']));
+    // `ZM_WEB_REFRESH_CYCLE` is the starting period, as legacy selects it.
+    await waitFor(() => expect(period).toHaveValue('45'));
+
+    expect(within(sidebar).getByTestId('seconds-to-cycle')).toHaveTextContent(/\d+/);
+    for (const name of ['Previous Monitor', 'Pause Cycle', 'Next Monitor']) {
+      expect(within(sidebar).getByRole('button', { name })).toBeInTheDocument();
+    }
+    // Nav pills: every capturing monitor, the current one marked.
+    const pills = within(sidebar).getAllByRole('button', { name: /Driveway|Back Gate|Side Path/ });
+    expect(pills.map((b) => b.textContent)).toEqual(['Driveway', 'Back Gate', 'Side Path']);
+    expect(pills[0]).toHaveAttribute('aria-current', 'true');
+  });
+
+  it('swaps Pause for Play once the rotation is paused', async () => {
+    const user = userEvent.setup();
+    useUiStore.setState({ classicCycleSidebarOpen: true });
+    stubOk({ monitors: SIBLINGS });
+    await mount();
+
+    const sidebar = await screen.findByTestId('watch-cycle-sidebar');
+    await user.click(within(sidebar).getByRole('button', { name: 'Pause Cycle' }));
+    expect(within(sidebar).getByRole('button', { name: 'Play Cycle' })).toBeInTheDocument();
+    expect(within(sidebar).getByTestId('seconds-to-cycle')).toHaveTextContent('');
+  });
+});
+
+describe('ClassicMonitorWatchPage — filter bar and idle timeout', () => {
+  it('shows the shared monitor filter bar behind the header chevron', async () => {
+    const user = userEvent.setup();
+    stubOk({ monitors: SIBLINGS });
+    await mount();
+    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    expect(screen.queryByRole('group', { name: 'Monitor filter bar' })).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Show filters' }));
+    expect(screen.getByRole('group', { name: 'Monitor filter bar' })).toBeInTheDocument();
+  });
+
+  it('stops the stream and asks whether anyone is watching after ZM_WEB_VIEWING_TIMEOUT', async () => {
+    const user = userEvent.setup();
+    streamState.value = 'connected';
+    stubOk({ configs: { ZM_WEB_VIEWING_TIMEOUT: '1' } });
+    await mount();
+    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+
+    const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 4000 });
+    expect(within(dialog).getByText('Video paused. Continue watching?')).toBeInTheDocument();
+    expect(streamCalls).toContain('webrtc:stop');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Yes' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Are you still watching?' })).toBeNull());
+    expect(streamCalls.filter((c) => c === 'webrtc:start').length).toBeGreaterThan(0);
+  });
+
+  it('never asks with the setting off', async () => {
+    streamState.value = 'connected';
+    stubOk();
+    await mount();
+    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(screen.queryByRole('dialog', { name: 'Are you still watching?' })).toBeNull();
   });
 });

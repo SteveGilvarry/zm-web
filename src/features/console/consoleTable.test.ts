@@ -3,7 +3,7 @@ import type { Monitor } from '@/types';
 import type { EventSummary } from '@/api/eventSummaries';
 import {
   exportColumns, functionLines, isOffline, pageSlice, periodStart, rowsToCsv, rowsToJson, runtimeLine, searchRows,
-  sortRows, sourceClass, totalsFor, type ConsoleRow,
+  sortRows, sourceClass, streamAvailable, totalsFor, type ConsoleRow,
 } from './consoleTable';
 import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 
@@ -78,6 +78,30 @@ describe('sourceClass — lens dot and Source colour (console.js:210-232)', () =
     expect(sourceClass(monitor({}), runtime({ analysisFps: 0 }))).toEqual({ cls: 'warn', reason: 'No analysis FPS' });
     expect(sourceClass(monitor({ analysing: 'None' }), runtime({ analysisFps: 0 }))).toEqual({ cls: 'info', reason: '' });
     expect(sourceClass(monitor({ deleted: 1 } as Partial<Monitor>), runtime())).toEqual({ cls: 'error', reason: 'Deleted' });
+  });
+});
+
+describe('streamAvailable — whether Id and Name link to Watch (console.js:205)', () => {
+  it('links a capturing monitor with an fps reading', () => {
+    expect(streamAvailable(monitor({}), runtime(), true)).toBe(true);
+  });
+
+  it('links a WebSite monitor whatever its status says', () => {
+    expect(streamAvailable(monitor({ type: 'WebSite', capturing: 'None' }), undefined, true)).toBe(true);
+  });
+
+  it('counts a literal 0.00 fps as a reading, as the legacy JS truthiness does', () => {
+    expect(streamAvailable(monitor({}), runtime({ captureFpsRaw: '0.00' }), true)).toBe(true);
+  });
+
+  it('refuses a monitor with no status row, no capture mode, or no Stream permission', () => {
+    expect(streamAvailable(monitor({}), undefined, true)).toBe(false);
+    expect(streamAvailable(monitor({ capturing: 'None' }), runtime(), true)).toBe(false);
+    expect(streamAvailable(monitor({}), runtime(), false)).toBe(false);
+  });
+
+  it('refuses a soft-deleted monitor even when it still has a stale status row', () => {
+    expect(streamAvailable(monitor({ deleted: 1 } as Partial<Monitor>), runtime(), true)).toBe(false);
   });
 });
 

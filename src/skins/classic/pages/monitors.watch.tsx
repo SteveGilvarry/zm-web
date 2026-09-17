@@ -1,10 +1,11 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { clsx } from 'clsx';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertTriangle, Bell, BellOff, Camera, Image as ImageIcon, Maximize2, Pencil, Play,
-  RefreshCw, Square, Video, Volume2, VolumeX, ZoomOut,
+  AlertTriangle, Bell, BellOff, Camera, Filter, FilterX, Image as ImageIcon, Maximize2,
+  Pause, Pencil, Play, RefreshCw, Repeat, SkipBack, SkipForward, Square, Video, Volume2,
+  VolumeX, ZoomOut,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -21,14 +22,26 @@ import { useMonitorEvents } from '@/features/monitors/useMonitorEvents';
 import { formatFpsLegacy } from '@/features/monitors/useMonitorStatuses';
 import { useAvailableHeight } from '@/features/monitors/useStageFit';
 import { useWatchPage } from '@/features/monitors/useWatchPage';
+import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
+import { useWatchCycle } from '@/features/cycle/useWatchCycle';
+import { Modal } from '@/components/common/Modal';
+import { useUiStore } from '@/stores/ui';
 import { PtzControls } from '@/features/ptz/PtzControls';
 import { WatchLoading, WatchNotFound } from '@/skins/modern/layouts/WatchStates';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
-  ClassicButton, ClassicHeader, ClassicIconButton, ClassicPage, ClassicSelect,
-  ClassicToolbar, classicButtonClass,
+  ClassicButton, ClassicFilterRow, ClassicHeader, ClassicIconButton, ClassicPage,
+  ClassicSelect, ClassicToolbar, classicButtonClass,
 } from '@/skins/classic/components';
 import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
+
+/** watch.php's period labels: seconds under a minute, minutes above. */
+function cyclePeriodLabel(t: (k: string, o?: Record<string, unknown>) => string, seconds: number): string {
+  if (seconds < 60) return t('{{count}} seconds', { count: seconds });
+  const minutes = seconds / 60;
+  if (!Number.isInteger(minutes)) return t('{{count}} seconds', { count: seconds });
+  return minutes === 1 ? t('1 minute') : t('{{count}} minutes', { count: minutes });
+}
 
 /**
  * Watch — classic skin: legacy `?view=watch&mid=`. Header squares, the
@@ -40,6 +53,11 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   const navigate = useNavigate();
   const { can } = usePerms();
   const page = useWatchPage(monitorId);
+  // Legacy watch.php includes `_monitor_filters.php` behind the `#mfbflip`
+  // chevron, and the cycle sidebar's visibility lives in `zmCycleShow`.
+  const [showFilters, setShowFilters] = useState(false);
+  const showCycle = useUiStore((s) => s.classicCycleSidebarOpen);
+  const toggleCycle = useUiStore((s) => s.toggleClassicCycleSidebar);
   // Digital zoom on the received picture (legacy panzoom); the camera is not moved.
   const { ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom } = usePinchZoom<HTMLDivElement>();
   const [stageAreaRef, availableHeight] = useAvailableHeight<HTMLDivElement>();
@@ -49,6 +67,10 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   useEffect(() => { setAvailableHeight(availableHeight); }, [availableHeight, setAvailableHeight]);
   const { monitor, monitorLoading, runtime, alarm, ptzState, protocol, viewMode, stage, contentRef } = page;
   const events = useMonitorEvents(monitorId, page.isAuthenticated && !!monitor);
+  const filter = useMonitorFilterRow(page.siblings);
+  // Legacy rotates over the monitors the filter bar left, capturing ones only.
+  const cycleMonitors = filter.filtered.filter((m) => m.capturing !== 'None');
+  const cycle = useWatchCycle(monitorId, cycleMonitors, showCycle);
   useDocumentTitle(monitor ? t('Monitor - {{id}} - {{name}}', { id: monitor.id, name: monitor.name }) : t('Watch'));
 
   if (!page.isAuthenticated) return null;
@@ -79,6 +101,14 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           onRefresh={page.refresh}
           end={
             <>
+              <ClassicIconButton
+                aria-label={showFilters ? t('Hide filters') : t('Show filters')}
+                title={showFilters ? t('Hide filters') : t('Show filters')}
+                aria-pressed={showFilters}
+                onClick={() => setShowFilters((v) => !v)}
+              >
+                {showFilters ? <FilterX size={15} aria-hidden /> : <Filter size={15} aria-hidden />}
+              </ClassicIconButton>
               <ClassicIconButton aria-label={t('Fullscreen')} onClick={page.toggleFullscreen}>
                 <Maximize2 size={15} aria-hidden />
               </ClassicIconButton>
@@ -90,6 +120,12 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
             </>
           }
         />
+
+        {/* Legacy `#mfbpanel`: the shared monitor filter bar, hidden behind
+            the chevron until asked for. */}
+        {showFilters && (
+          <ClassicFilterRow monitors={page.siblings} state={filter} className="mb-2" />
+        )}
 
         {/* Action row */}
         <ClassicToolbar
@@ -106,6 +142,15 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
               onChange={(value) => { void navigate({ to: '/monitors/$monitorId', params: { monitorId: value } }); }}
             />
           )}
+          <ClassicButton
+            tone={showCycle ? 'primary' : 'default'}
+            icon={<Repeat size={14} />}
+            aria-pressed={showCycle}
+            onClick={toggleCycle}
+            title={t('Cycle through monitors')}
+          >
+            {t('Cycle')}
+          </ClassicButton>
           <RequirePerm feature="monitors" level="Edit">
             <ClassicButton icon={<Pencil size={14} />} onClick={page.openEditor}>{t('Edit')}</ClassicButton>
             <ClassicButton
@@ -170,7 +215,58 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
             PTZ column and the events table, not just the picture. */}
         <div ref={contentRef} className={clsx('bg-white', page.isFullscreen && 'overflow-auto p-3')}>
         {/* Stage + PTZ column */}
-        <div className={clsx('flex flex-col gap-3 items-start', showPtz && 'lg:flex-row')}>
+        <div className={clsx('flex flex-col gap-3 items-start', (showPtz || showCycle) && 'lg:flex-row')}>
+          {showCycle && (
+            <nav
+              className="w-full lg:w-52 shrink-0 bg-white border border-zinc-300 rounded-sm p-3"
+              aria-label={t('Cycle')}
+              data-testid="watch-cycle-sidebar"
+            >
+              <ClassicSelect
+                label={t('Cycle period')}
+                value={String(cycle.intervalS)}
+                options={cycle.periods.map((secs) => ({ value: String(secs), label: cyclePeriodLabel(t, secs) }))}
+                onChange={(v) => cycle.setInterval(Number(v))}
+              />
+              <p className="text-sm tabular-nums my-2" data-testid="seconds-to-cycle">
+                {cycle.isPaused ? '' : cycle.countdown}
+              </p>
+              <div className="flex items-center gap-1">
+                <ClassicIconButton aria-label={t('Previous Monitor')} title={t('Previous Monitor')} onClick={cycle.prev}>
+                  <SkipBack size={14} className="rtl:-scale-x-100" aria-hidden />
+                </ClassicIconButton>
+                {cycle.isPaused ? (
+                  <ClassicIconButton aria-label={t('Play Cycle')} title={t('Play Cycle')} onClick={cycle.togglePause}>
+                    <Play size={14} aria-hidden />
+                  </ClassicIconButton>
+                ) : (
+                  <ClassicIconButton aria-label={t('Pause Cycle')} title={t('Pause Cycle')} onClick={cycle.togglePause}>
+                    <Pause size={14} aria-hidden />
+                  </ClassicIconButton>
+                )}
+                <ClassicIconButton aria-label={t('Next Monitor')} title={t('Next Monitor')} onClick={cycle.next}>
+                  <SkipForward size={14} className="rtl:-scale-x-100" aria-hidden />
+                </ClassicIconButton>
+              </div>
+              <ul className="mt-3 flex flex-col gap-0.5">
+                {cycleMonitors.map((m, i) => (
+                  <li key={m.id}>
+                    <button
+                      type="button"
+                      onClick={() => cycle.jumpTo(i)}
+                      aria-current={m.id === monitor.id ? 'true' : undefined}
+                      className={clsx(
+                        'block w-full text-start px-2 py-1 rounded-sm text-sm truncate',
+                        m.id === monitor.id ? 'bg-[#337ab7] text-white' : 'text-[#337ab7] hover:bg-zinc-100',
+                      )}
+                    >
+                      {m.name}
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </nav>
+          )}
           <div ref={stageAreaRef} className="flex-1 min-w-0 w-full">
             <RequirePerm feature="stream" level="View" fallback="message">
               <div dir="ltr" data-testid="watch-stage" className="relative bg-black mx-auto overflow-hidden" style={stage.style}>
@@ -319,6 +415,12 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
         </section>
         </div>
       </ClassicPage>
+
+      {/* `ZM_WEB_VIEWING_TIMEOUT` — legacy's `areyoustillwatching` modal. */}
+      <Modal isOpen={page.idle.prompted} onClose={page.idle.resume} title={t('Are you still watching?')}>
+        <p className="text-sm mb-3">{t('Video paused. Continue watching?')}</p>
+        <ClassicButton tone="primary" onClick={page.idle.resume}>{t('Yes')}</ClassicButton>
+      </Modal>
 
       {page.editorOpen && <MonitorEditor monitor={monitor} onClose={page.closeEditor} />}
     </AppShell>

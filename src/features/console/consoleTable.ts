@@ -57,6 +57,23 @@ export function runtimeLine(m: Monitor, runtime: MonitorRuntime): string {
   return fps;
 }
 
+/**
+ * console.js:205-207 — whether the Id and Name cells link to the watch view.
+ * A deleted monitor has no capture daemon, a WebSite monitor has a page to
+ * open whatever its status says, and everything else needs Stream permission,
+ * a capture mode and an fps reading. Legacy tests `row.CaptureFPS` for
+ * truthiness on the raw string, so `'0.00'` counts as present.
+ */
+export function streamAvailable(
+  m: Monitor,
+  runtime: MonitorRuntime | undefined,
+  canViewStream: boolean,
+): boolean {
+  if (isDeleted(m) || !canViewStream) return false;
+  if (m.type === 'WebSite') return true;
+  return !!runtime?.captureFpsRaw && m.capturing !== 'None';
+}
+
 /** Legacy `infoText` / `warnText` / `errorText` on the lens dot and Source cell. */
 export type SourceClass = 'info' | 'warn' | 'error';
 

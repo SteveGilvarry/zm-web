@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useConsoleColumnsStore } from '@/features/console/consoleColumns';
 import { useToastStore } from '@/components/common/toastStore';
+import { useUiStore } from '@/stores/ui';
 
 /* ---------------------------------------------------------------- router */
 
@@ -142,6 +143,9 @@ function stub(options: StubOptions = {}) {
   server.use(
     http.get('/api/v3/monitors', () => HttpResponse.json(paged(monitors))),
     http.get('/api/v3/live/sessions', () => HttpResponse.json([])),
+    // No `/me` on this backend: `usePerms` then works off the token claim,
+    // which is what `signIn()` sets.
+    http.get('/api/v3/me', () => HttpResponse.json({ kind: 'NOT_FOUND' }, { status: 404 })),
     http.get('/api/v3/events', () => HttpResponse.json(paged([], { per_page: 10 }))),
     http.get('/api/v3/events/counts/:hours', () => HttpResponse.json({ counts: [], hours: 24 })),
     http.get('/api/v3/daemons', () => HttpResponse.json({ daemons: [] })),
@@ -201,6 +205,7 @@ afterEach(() => {
   useMonitorFilterStore.getState().reset();
   useConsoleColumnsStore.getState().reset();
   useToastStore.getState().clear();
+  useUiStore.setState({ classicFilterPanelOpen: true });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
@@ -227,12 +232,11 @@ describe('ClassicConsolePage — table', () => {
     const row1 = screen.getByTestId('console-row-1');
     // Id + Name link to Watch.
     expect(within(row1).getByRole('link', { name: '1' })).toHaveAttribute('href', '/monitors/1');
-    // The Name link carries the runtime lens as an <img>, so the link is
-    // reached through it rather than by a bare name match.
-    await waitFor(() =>
-      expect(within(row1).getByRole('img', { name: 'Connected' }).closest('a'))
-        .toHaveAttribute('href', '/monitors/1'));
-    expect(row1).toHaveTextContent('Front Door');
+    // The lens sits beside the name link (console.js builds the cell as
+    // `<i class="lens"> <a>Name</a>`), so both are present and only the name
+    // is the link.
+    await waitFor(() => expect(within(row1).getByRole('img', { name: 'Connected' })).toBeInTheDocument());
+    expect(within(row1).getByRole('link', { name: 'Front Door' })).toHaveAttribute('href', '/monitors/1');
     // Function cell: the legacy multi-line summary.
     expect(within(row1).getByText('Analysing: Always')).toBeInTheDocument();
     expect(within(row1).getByText('Recording: OnMotion')).toBeInTheDocument();
@@ -254,9 +258,12 @@ describe('ClassicConsolePage — table', () => {
     // Zones cell links to the zone editor.
     expect(within(row1).getByRole('link', { name: '2' })).toHaveAttribute('href', '/monitors/1/zones');
 
-    // A monitor with no status row reads "Offline" and gets no thumbnail link.
+    // A monitor with no status row reads "Offline", has no stream, and so
+    // neither its Id nor its Name is a link (console.js:206).
     const row3 = screen.getByTestId('console-row-3');
     expect(within(row3).getByText('Offline')).toBeInTheDocument();
+    expect(within(row3).queryByRole('link', { name: '3' })).toBeNull();
+    expect(within(row3).queryByRole('link', { name: 'Garage' })).toBeNull();
     expect(within(row3).queryByRole('link', { name: /Watch Garage/ })).toBeNull();
     // Local monitors show their device as the source.
     expect(within(row3).getByRole('link', { name: '/dev/video0' })).toBeInTheDocument();
@@ -431,6 +438,72 @@ describe('ClassicConsolePage — columns and export', () => {
   });
 });
 
+describe('ClassicConsolePage — Name cell', () => {
+  it('prints the group ancestry under the name, each segment a link', async () => {
+    stub({
+      // Front Yard nested under Outside, and monitor 1 in the child.
+      monitors: MONITORS,
+    });
+    server.use(
+      http.get('/api/v3/groups', () => HttpResponse.json(paged(
+        [{ id: 2, name: 'Outside', parent_id: null }, { id: 3, name: 'Front Yard', parent_id: 2 }],
+        { per_page: 200 },
+      ))),
+    );
+    await mountAndSettle();
+
+    const groups = await screen.findByTestId('console-groups-1');
+    expect(groups).toHaveTextContent('Outside > Front Yard');
+    expect(within(groups).getByRole('link', { name: 'Outside' })).toHaveAttribute('href', '/montage?group=2');
+    expect(within(groups).getByRole('link', { name: 'Front Yard' })).toHaveAttribute('href', '/montage?group=3');
+    // A monitor in no group gets no second line.
+    expect(screen.queryByTestId('console-groups-2')).toBeNull();
+  });
+
+  it('suffixes a soft-deleted monitor and drops its links', async () => {
+    stub({ monitors: [{ ...MONITORS[0], deleted: 1 }] });
+    const view = await mount();
+    const row1 = await screen.findByTestId('console-row-1');
+    await waitFor(() => expect(within(row1).getByText('(deleted)')).toBeInTheDocument());
+    expect(within(row1).queryByRole('link', { name: 'Front Door' })).toBeNull();
+    expect(within(row1).queryByRole('link', { name: '1' })).toBeNull();
+    view.unmount();
+  });
+
+  it('drops the watch links for a user without Stream permission', async () => {
+    signIn({ iat: 0, exp: 0, user: 'viewer', perms: { ...ALL_EDIT.perms, stream: 'None' } });
+    stub();
+    await mountAndSettle();
+    const row1 = screen.getByTestId('console-row-1');
+    expect(within(row1).queryByRole('link', { name: 'Front Door' })).toBeNull();
+    expect(row1).toHaveTextContent('Front Door');
+  });
+});
+
+describe('ClassicConsolePage — toolbar gating', () => {
+  it('disables Add without Create and says why, as legacy does', async () => {
+    stub();
+    await mountAndSettle();
+    const add = screen.getByRole('button', { name: 'Add' });
+    expect(add).toBeDisabled();
+    expect(add).toHaveAttribute('title', 'Your user is not allowed to add a new monitor');
+  });
+
+  it('remembers the filter panel across mounts', async () => {
+    const user = userEvent.setup();
+    stub();
+    const view = await mountAndSettle();
+    expect(screen.getByRole('group', { name: 'Monitor filter bar' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Hide filters' }));
+    expect(screen.queryByRole('group', { name: 'Monitor filter bar' })).toBeNull();
+    expect(useUiStore.getState().classicFilterPanelOpen).toBe(false);
+
+    view.unmount();
+    await mountAndSettle();
+    expect(screen.queryByRole('group', { name: 'Monitor filter bar' })).toBeNull();
+  });
+});
+
 describe('ClassicConsolePage — verbs', () => {
   it('shows the edit verbs only with monitors:Edit', async () => {
     stub();
@@ -535,8 +608,9 @@ describe('ClassicConsolePage — verbs', () => {
     await waitFor(() => expect(screen.queryByTestId('console-row-2')).toBeNull());
     expect(screen.getByTestId('console-row-1')).toBeInTheDocument();
     expect(screen.getByTestId('console-row-3')).toBeInTheDocument();
-    // The filter row shows the set as one option; nothing was written.
-    expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveDisplayValue('2 monitors');
+    // The Monitor filter is a multi-select (legacy's Chosen widget), so the
+    // checked set shows as two selected options; nothing was written.
+    expect(screen.getByRole('listbox', { name: 'Monitor' })).toHaveValue(['1', '3']);
     expect(calls).toEqual([]);
     expect(screen.getByRole('checkbox', { name: 'Select Front Door' })).not.toBeChecked();
 
@@ -580,6 +654,8 @@ describe('ClassicConsolePage — verbs', () => {
 
   it('opens the Add dialog from the toolbar and from ?new=true', async () => {
     const user = userEvent.setup();
+    // Legacy needs Create, not Edit, to actually add a monitor.
+    signIn({ iat: 0, exp: 0, user: 'admin', perms: { ...ALL_EDIT.perms, monitors: 'Create' } });
     stub();
     await mountAndSettle();
     expect(screen.queryByRole('dialog')).toBeNull();

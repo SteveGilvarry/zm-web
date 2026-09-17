@@ -1,6 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listGroups, listGroupMonitors, type Group } from '@/api/groups';
+import { listServers, type Server } from '@/api/servers';
+import { getStorageList } from '@/api/storage';
+import type { ZmStorage } from '@/types';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import type { Monitor } from '@/types';
@@ -16,7 +19,9 @@ import type { MonitorRuntime } from './useMonitorStatuses';
  * those three live in this hook.
  */
 export type FilterRowField =
-  | 'groupId' | 'name' | 'capturing' | 'analysing' | 'recording' | 'status' | 'source' | 'monitorId';
+  | 'groupId' | 'name' | 'capturing' | 'analysing' | 'recording' | 'status' | 'source' | 'monitorId'
+  // Legacy renders these two only when the box has more than one.
+  | 'serverId' | 'storageId';
 
 /**
  * One string per field. `monitorId` may hold several ids joined with commas
@@ -31,8 +36,19 @@ export function parseIdList(value: string): number[] {
 }
 
 export const FILTER_ROW_FIELDS: readonly FilterRowField[] = [
-  'groupId', 'name', 'capturing', 'analysing', 'recording', 'status', 'source', 'monitorId',
+  'groupId', 'name', 'capturing', 'analysing', 'recording', 'serverId', 'storageId',
+  'status', 'source', 'monitorId',
 ];
+
+/** The fields legacy renders as Chosen multi-selects (`multiple="multiple"`). */
+export const FILTER_ROW_MULTI_FIELDS: readonly FilterRowField[] = [
+  'groupId', 'capturing', 'analysing', 'recording', 'serverId', 'storageId', 'status', 'monitorId',
+];
+
+/** `"a,b"` → `['a','b']`; blanks dropped. */
+export function splitValues(value: string): string[] {
+  return value.split(',').map((v) => v.trim()).filter(Boolean);
+}
 
 /** Wire values of the legacy Status select; labels are translated in the component. */
 export const RUNTIME_STATUS_OPTIONS = ['Unknown', 'NotRunning', 'Running', 'Connected'] as const;
@@ -71,24 +87,39 @@ export function monitorSource(m: Pick<Monitor, 'host' | 'device' | 'path' | 'typ
 /** Apply the three hook-local fields (the store fields go through `filterMonitors`). */
 export function applyLocalFilters(
   monitors: Monitor[],
-  values: Pick<FilterRowValues, 'name' | 'source' | 'status'>,
+  values: Pick<FilterRowValues, 'name' | 'source' | 'status'> & Partial<Pick<FilterRowValues, 'serverId' | 'storageId'>>,
   runtimeById: Record<number, MonitorRuntime>,
 ): Monitor[] {
+  // Every select is multi (legacy's Chosen widgets), so these arrive
+  // comma-joined and OR-combine within a field.
+  const statuses = splitValues(values.status);
+  const serverIds = splitValues(values.serverId ?? '');
+  const storageIds = splitValues(values.storageId ?? '');
   return monitors.filter((m) => {
     if (!matchesText(values.name, m.name)) return false;
     if (!matchesText(values.source, monitorSource(m))) return false;
-    if (values.status) {
+    if (statuses.length) {
       const status = runtimeById[m.id]?.status ?? 'Unknown';
-      if (status !== values.status) return false;
+      if (!statuses.includes(status)) return false;
     }
+    if (serverIds.length && !serverIds.includes(String(m.server_id ?? 0))) return false;
+    if (storageIds.length && !storageIds.includes(String(m.storage_id ?? 0))) return false;
     return true;
   });
 }
 
 export interface MonitorFilterRowState {
   groups: Group[];
+  /** Legacy shows the Server select only when the box has more than one. */
+  servers: Server[];
+  /** Same rule for Storage. */
+  storages: ZmStorage[];
   values: FilterRowValues;
+  /** The same selections as `values`, split — every select is multi. */
+  valuesMulti: Record<FilterRowField, string[]>;
   set: (field: FilterRowField, value: string) => void;
+  /** Set a multi-select's whole selection. */
+  setMulti: (field: FilterRowField, values: string[]) => void;
   clear: (field: FilterRowField) => void;
   reset: () => void;
   /** Monitors passing every field. */
@@ -105,7 +136,7 @@ export function useMonitorFilterRow(
 ): MonitorFilterRowState {
   const { isAuthenticated } = useAuthStore();
   const store = useMonitorFilterStore();
-  const [local, setLocal] = useState({ name: '', source: '', status: '' });
+  const [local, setLocal] = useState({ name: '', source: '', status: '', serverId: '', storageId: '' });
 
   const groupsQ = useQuery({
     queryKey: ['groups'],
@@ -117,7 +148,21 @@ export function useMonitorFilterRow(
     queryFn: () => listGroupMonitors({ page: 1, page_size: 1000 }),
     enabled: isAuthenticated,
   });
+  const serversQ = useQuery({
+    queryKey: ['servers'],
+    queryFn: () => listServers({ page: 1, page_size: 200 }),
+    enabled: isAuthenticated,
+    staleTime: 5 * 60_000,
+  });
+  const storageQ = useQuery({
+    queryKey: ['storage'],
+    queryFn: () => getStorageList({ page: 1, page_size: 200 }),
+    enabled: isAuthenticated,
+    staleTime: 5 * 60_000,
+  });
   const groups = groupsQ.data?.items ?? [];
+  const servers = serversQ.data?.items ?? [];
+  const storages = storageQ.data?.items ?? [];
   const groupMonitors = groupMonitorsQ.data?.items;
 
   const membership = useMemo(() => {
@@ -130,15 +175,20 @@ export function useMonitorFilterRow(
   }, [groupMonitors]);
 
   const values: FilterRowValues = {
-    groupId: store.groupIds[0] != null ? String(store.groupIds[0]) : '',
-    capturing: store.capturing[0] ?? '',
-    analysing: store.analysing[0] ?? '',
-    recording: store.recording[0] ?? '',
+    groupId: store.groupIds.join(','),
+    capturing: store.capturing.join(','),
+    analysing: store.analysing.join(','),
+    recording: store.recording.join(','),
     monitorId: store.monitorIds.join(','),
+    serverId: local.serverId,
+    storageId: local.storageId,
     name: local.name,
     source: local.source,
     status: local.status,
   };
+  const valuesMulti = Object.fromEntries(
+    FILTER_ROW_FIELDS.map((f) => [f, splitValues(values[f])]),
+  ) as Record<FilterRowField, string[]>;
 
   const filtered = useMemo(() => {
     const viaStore = filterMonitors(monitors, {
@@ -154,9 +204,9 @@ export function useMonitorFilterRow(
   }, [monitors, store.groupIds, store.capturing, store.analysing, store.recording, store.monitorIds, membership, local, runtimeById]);
 
   const set = (field: FilterRowField, value: string) => {
-    const list = value ? [value] : [];
+    const list = splitValues(value);
     switch (field) {
-      case 'groupId': store.setGroupIds(list.map(Number)); break;
+      case 'groupId': store.setGroupIds(list.map(Number).filter(Number.isFinite)); break;
       case 'capturing': store.setCapturing(list); break;
       case 'analysing': store.setAnalysing(list); break;
       case 'recording': store.setRecording(list); break;
@@ -164,6 +214,7 @@ export function useMonitorFilterRow(
       default: setLocal((s) => ({ ...s, [field]: value }));
     }
   };
+  const setMulti = (field: FilterRowField, list: string[]) => set(field, list.join(','));
 
   const reset = () => {
     store.setGroupIds([]);
@@ -171,13 +222,17 @@ export function useMonitorFilterRow(
     store.setAnalysing([]);
     store.setRecording([]);
     store.setMonitorIds([]);
-    setLocal({ name: '', source: '', status: '' });
+    setLocal({ name: '', source: '', status: '', serverId: '', storageId: '' });
   };
 
   return {
     groups,
+    servers,
+    storages,
     values,
+    valuesMulti,
     set,
+    setMulti,
     clear: (field) => set(field, ''),
     reset,
     filtered,

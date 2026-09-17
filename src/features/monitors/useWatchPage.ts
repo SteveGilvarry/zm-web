@@ -13,6 +13,8 @@ import { useWebRtcStream, type StreamHookResult } from '@/hooks/useWebRtcStream'
 import { useHlsStream } from '@/hooks/useHlsStream';
 import { usePtzCapabilities, type PtzState } from '@/features/ptz/usePtz';
 import { useMonitorStatus, type MonitorRuntime } from './useMonitorStatuses';
+import { useViewingTimeout, type ViewingTimeoutState } from './useViewingTimeout';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import type { LiveStats, Monitor, StreamProtocol, ZmEvent } from '@/types';
 
 export interface WatchModeUpdate {
@@ -119,6 +121,11 @@ export interface WatchPageState {
   siblingIndex: number;
   prevMonitorId: number | null;
   nextMonitorId: number | null;
+  /**
+   * `ZM_WEB_VIEWING_TIMEOUT`: the stream stops itself after that long with no
+   * input and `idle.prompted` asks "Are you still watching?".
+   */
+  idle: ViewingTimeoutState;
 }
 
 /**
@@ -333,6 +340,19 @@ export function useWatchPage(monitorId: number): WatchPageState {
     }
   };
 
+  // Legacy stops playback and puts up the "are you still watching" modal
+  // after `ZM_WEB_VIEWING_TIMEOUT` seconds of no input.
+  const viewingTimeoutS = useZmConfig('ZM_WEB_VIEWING_TIMEOUT', 0);
+  const idle = useViewingTimeout({
+    enabled: isActive && viewMode === 'stream',
+    timeoutS: viewingTimeoutS,
+    onIdle: () => {
+      activeStream.stop();
+      queryClient.invalidateQueries({ queryKey: ['liveSessions'] });
+    },
+    onResume: () => activeStream.start(),
+  });
+
   const retry = () => {
     activeStream.stop();
     // Small delay before restarting
@@ -458,5 +478,6 @@ export function useWatchPage(monitorId: number): WatchPageState {
     siblingIndex,
     prevMonitorId: neighbour(-1),
     nextMonitorId: neighbour(1),
+    idle,
   };
 }

@@ -24,12 +24,14 @@ interface ClassicFilterRowProps {
 
 /**
  * Legacy `_monitor_filters.php`: GroupId · Name · Capturing · Analysing ·
- * Recording · Status · Source · Monitor, label above each control, a clear
- * (×) button inside every select.
+ * Recording · Server? · Storage? · Status · Source · Monitor, label above
+ * each control, a clear (×) button inside every select. Every select is
+ * multiple, as legacy's Chosen widgets are; Server and Storage appear only
+ * when the box has more than one.
  */
 export function ClassicFilterRow({ monitors, state, className, tone = 'light' }: ClassicFilterRowProps) {
   const { t } = useTranslation();
-  const { values, set, clear, groups } = state;
+  const { values, valuesMulti, set, setMulti, clear, groups, servers, storages } = state;
 
   const modeLabel = (v: string): string => {
     switch (v) {
@@ -61,37 +63,45 @@ export function ClassicFilterRow({ monitors, state, className, tone = 'light' }:
       )}
     >
       <SelectField
-        label={t('GroupId')} field="groupId" value={values.groupId} set={set} clear={clear}
+        label={t('GroupId')} field="groupId" value={valuesMulti.groupId} set={setMulti} clear={clear}
         options={groups.map((g) => ({ value: String(g.id), label: g.name }))}
       />
       <TextField label={t('Name')} field="name" value={values.name} set={set} />
       <SelectField
-        label={t('Capturing')} field="capturing" value={values.capturing} set={set} clear={clear}
+        label={t('Capturing')} field="capturing" value={valuesMulti.capturing} set={setMulti} clear={clear}
         options={CAPTURING_OPTIONS.map((v) => ({ value: v, label: modeLabel(v) }))}
       />
       <SelectField
-        label={t('Analysing')} field="analysing" value={values.analysing} set={set} clear={clear}
+        label={t('Analysing')} field="analysing" value={valuesMulti.analysing} set={setMulti} clear={clear}
         options={ANALYSING_OPTIONS.map((v) => ({ value: v, label: modeLabel(v) }))}
       />
       <SelectField
-        label={t('Recording')} field="recording" value={values.recording} set={set} clear={clear}
+        label={t('Recording')} field="recording" value={valuesMulti.recording} set={setMulti} clear={clear}
         options={RECORDING_OPTIONS.map((v) => ({ value: v, label: modeLabel(v) }))}
       />
+      {servers.length > 1 && (
+        <SelectField
+          label={t('Server')} field="serverId" value={valuesMulti.serverId} set={setMulti} clear={clear}
+          options={servers.map((s) => ({ value: String(s.id), label: s.name }))}
+        />
+      )}
+      {storages.length > 1 && (
+        <SelectField
+          label={t('Storage')} field="storageId" value={valuesMulti.storageId} set={setMulti} clear={clear}
+          options={storages.map((s) => ({ value: String(s.id), label: s.name }))}
+        />
+      )}
+      {/* Legacy also offers a `Deleted` pseudo-status; zm-api's
+          `GET /monitors` cannot return deleted monitors, so it is omitted
+          rather than rendered as a filter that always comes back empty. */}
       <SelectField
-        label={t('Status')} field="status" value={values.status} set={set} clear={clear}
+        label={t('Status')} field="status" value={valuesMulti.status} set={setMulti} clear={clear}
         options={RUNTIME_STATUS_OPTIONS.map((v) => ({ value: v, label: statusLabel(v) }))}
       />
       <TextField label={t('Source')} field="source" value={values.source} set={set} />
       <SelectField
-        label={t('Monitor')} field="monitorId" value={values.monitorId} set={set} clear={clear} wide
-        options={[
-          // A comma-joined set (from SELECT on the console) is one option of
-          // its own; picking a single monitor replaces it.
-          ...(values.monitorId.includes(',')
-            ? [{ value: values.monitorId, label: t('{{count}} monitors', { count: values.monitorId.split(',').length }) }]
-            : []),
-          ...monitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` })),
-        ]}
+        label={t('Monitor')} field="monitorId" value={valuesMulti.monitorId} set={setMulti} clear={clear} wide
+        options={monitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
       />
     </div>
   );
@@ -128,8 +138,9 @@ function SelectField({
 }: {
   label: string;
   field: FilterRowField;
-  value: string;
-  set: MonitorFilterRowState['set'];
+  /** Selected values — legacy's selects are all `multiple`. */
+  value: string[];
+  set: MonitorFilterRowState['setMulti'];
   clear: MonitorFilterRowState['clear'];
   options: Array<{ value: string; label: string }>;
   wide?: boolean;
@@ -139,11 +150,14 @@ function SelectField({
     <Field label={label}>
       <span className={clsx('inline-flex items-stretch rounded-sm border border-zinc-400 bg-white', wide ? 'w-64' : 'w-36')}>
         <select
+          multiple
+          size={3}
           value={value}
-          onChange={(e) => set(field, e.target.value)}
+          onChange={(e) => set(field, [...e.target.selectedOptions].map((o) => o.value))}
           className="flex-1 min-w-0 bg-transparent px-1.5 py-0.5 text-sm text-zinc-900 focus:outline-none"
         >
-          <option value="">{t('All')}</option>
+          {/* No "All" option: an empty selection is "all", as legacy's
+              Chosen placeholder says. */}
           {options.map((o) => (
             <option key={o.value} value={o.value}>{o.label}</option>
           ))}
@@ -151,7 +165,7 @@ function SelectField({
         <button
           type="button"
           onClick={() => clear(field)}
-          disabled={!value}
+          disabled={value.length === 0}
           aria-label={t('Clear {{label}}', { label: label.toLocaleLowerCase() })}
           className="px-1.5 border-s border-zinc-300 text-zinc-600 hover:bg-zinc-100 disabled:text-zinc-300"
         >

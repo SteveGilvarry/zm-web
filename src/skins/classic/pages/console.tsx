@@ -15,14 +15,18 @@ import { ScanNetworkButton } from '@/features/console/ScanNetworkButton';
 import { useClassicConsolePage, type ClassicConsolePageState, type EventsScope } from '@/features/console/useClassicConsolePage';
 import { CONSOLE_COLUMNS, consoleColumnLabel, type ConsoleColumnKey } from '@/features/console/consoleColumns';
 import {
-  functionLines, isOffline, periodStart, runtimeLine, sourceClass,
+  functionLines, isOffline, periodStart, runtimeLine, sourceClass, streamAvailable,
   type ConsoleRow, type ConsoleSortKey, type CountPeriod, type SourceClass,
 } from '@/features/console/consoleTable';
+import { useMonitorGroupPaths, type GroupPath } from '@/features/console/monitorGroupPaths';
 import { monitorSource } from '@/features/monitors/useMonitorFilterRow';
 import {
   formatBandwidthLegacy, formatFpsLegacy, type RuntimeTone,
 } from '@/features/monitors/useMonitorStatuses';
 import { humanFilesize } from '@/lib/format';
+import { usePerms } from '@/features/auth/usePerms';
+import { useUiStore } from '@/stores/ui';
+import { isDeleted } from '@/types';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicDropdown, ClassicFilterRow, ClassicIconButton, ClassicPage, ClassicPagination,
@@ -55,7 +59,11 @@ export default function ClassicConsolePage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Console'));
   const page = useClassicConsolePage();
-  const [showFilters, setShowFilters] = useState(true);
+  const { can } = usePerms();
+  // Legacy keeps the filter panel's state in the `zmFilterBarFlip#fbpanel` cookie.
+  const showFilters = useUiStore((s) => s.classicFilterPanelOpen);
+  const setShowFilters = useUiStore((s) => s.setClassicFilterPanelOpen);
+  const groupPathsFor = useMonitorGroupPaths(can('groups', 'View'));
   const [draggingId, setDraggingId] = useState<number | null>(null);
 
   if (!page.isAuthenticated) return null;
@@ -170,7 +178,17 @@ export default function ClassicConsolePage() {
           )}
           <RequirePerm feature="monitors" level="Edit">
             <ScanNetworkButton />
-            <ClassicButton tone="primary" icon={<Plus size={14} />} onClick={page.openAdd}>{t('Add')}</ClassicButton>
+            {/* Legacy shows the button to any Monitors editor but disables it
+                without Create (console.php:196). */}
+            <ClassicButton
+              tone="primary"
+              icon={<Plus size={14} />}
+              onClick={page.openAdd}
+              disabled={!can('monitors', 'Create')}
+              title={can('monitors', 'Create') ? t('Add Monitor') : t('Your user is not allowed to add a new monitor')}
+            >
+              {t('Add')}
+            </ClassicButton>
             <ClassicButton icon={<Copy size={14} />} disabled={!hasSelection || page.busy} onClick={page.cloneSelected}>{t('Clone')}</ClassicButton>
             <ClassicButton icon={<Pencil size={14} />} disabled={!hasSelection} onClick={page.editSelected}>{t('Edit')}</ClassicButton>
             <ClassicButton icon={<Trash2 size={14} />} disabled={!hasSelection || page.busy} onClick={page.deleteSelected}>{t('Delete')}</ClassicButton>
@@ -181,7 +199,7 @@ export default function ClassicConsolePage() {
           </RequirePerm>
           <button
             type="button"
-            onClick={() => setShowFilters((v) => !v)}
+            onClick={() => setShowFilters(!showFilters)}
             aria-pressed={showFilters}
             aria-label={showFilters ? t('Hide filters') : t('Show filters')}
             title={showFilters ? t('Hide filters') : t('Show filters')}
@@ -239,6 +257,8 @@ export default function ClassicConsolePage() {
                   page={page}
                   visible={visible}
                   names={names}
+                  groupPaths={groupPathsFor(row.monitor.id)}
+                  canViewStream={can('stream', 'View')}
                   dragEnabled={sortMode && canEdit}
                   isDragging={draggingId === row.monitor.id}
                   onDragStart={() => setDraggingId(row.monitor.id)}
@@ -274,7 +294,10 @@ export default function ClassicConsolePage() {
                 {visible('week') && <CountCell period="week" scope={page.eventsScope} count={totals.week.count} disk={totals.week.disk} foot />}
                 {visible('month') && <CountCell period="month" scope={page.eventsScope} count={totals.month.count} disk={totals.month.disk} foot />}
                 {visible('archived') && <CountCell period="archived" scope={page.eventsScope} count={totals.archived.count} disk={totals.archived.disk} foot />}
-                {visible('zones') && <ClassicTd numeric className={classicLinkClass}>{totals.zones}</ClassicTd>}
+                {/* Legacy links this total to `?view=zones` (every monitor's
+                    zones). zm-web has no all-zones page, so it is plain text
+                    rather than a link that goes nowhere. */}
+                {visible('zones') && <ClassicTd numeric>{totals.zones}</ClassicTd>}
                 {visible('sequence') && <ClassicTd />}
               </tr>
             </ClassicTfoot>
@@ -304,12 +327,16 @@ export default function ClassicConsolePage() {
 /* ------------------------------------------------------------------------ */
 
 function ConsoleTableRow({
-  row, page, visible, names, dragEnabled, isDragging, onDragStart, onDragEnd, onDrop,
+  row, page, visible, names, groupPaths, canViewStream, dragEnabled, isDragging,
+  onDragStart, onDragEnd, onDrop,
 }: {
   row: ConsoleRow;
   page: ClassicConsolePageState;
   visible: (k: ConsoleColumnKey) => boolean;
   names: ClassicConsolePageState['names'];
+  /** Group ancestry lines under the name (empty without Groups permission). */
+  groupPaths: GroupPath[];
+  canViewStream: boolean;
   dragEnabled: boolean;
   isDragging: boolean;
   onDragStart: () => void;
@@ -323,6 +350,9 @@ function ConsoleTableRow({
   const lines = functionLines(m, runtime);
   const offline = isOffline(runtime);
   const source = sourceClass(m, runtime);
+  // console.js:206 — no stream, no link on Id or Name.
+  const linked = streamAvailable(m, runtime, canViewStream);
+  const deleted = isDeleted(m);
 
   const dragProps = dragEnabled ? {
     draggable: true,
@@ -354,7 +384,9 @@ function ConsoleTableRow({
       )}
       {visible('id') && (
         <ClassicTd className="text-center">
-          <Link to="/monitors/$monitorId" params={watchParams} className={classicLinkClass}>{m.id}</Link>
+          {linked
+            ? <Link to="/monitors/$monitorId" params={watchParams} className={classicLinkClass}>{m.id}</Link>
+            : m.id}
         </ClassicTd>
       )}
       {visible('thumbnail') && (
@@ -370,15 +402,38 @@ function ConsoleTableRow({
       )}
       {visible('name') && (
         <ClassicTd>
-          <Link to="/monitors/$monitorId" params={watchParams} className={clsx(classicLinkClass, 'inline-flex items-center gap-2')}>
+          <span className="inline-flex items-center gap-2">
             <span
               className={clsx('w-4 h-4 rounded-full shrink-0', SOURCE_DOT[source.cls])}
               role="img"
               aria-label={source.reason || (runtime?.status ?? t('Unknown'))}
               title={source.reason}
             />
-            {m.name}
-          </Link>
+            {linked
+              ? <Link to="/monitors/$monitorId" params={watchParams} className={classicLinkClass}>{m.name}</Link>
+              : m.name}
+            {deleted && <span className={SOURCE_TEXT.error}>{t('(deleted)')}</span>}
+          </span>
+          {groupPaths.length > 0 && (
+            <div className="text-[11px] text-zinc-500 whitespace-nowrap" data-testid={`console-groups-${m.id}`}>
+              {groupPaths.map((path) => (
+                <div key={path.map((g) => g.id).join('-')}>
+                  {path.map((group, i) => (
+                    <span key={group.id}>
+                      {i > 0 && ' > '}
+                      {/* Legacy links each segment to
+                          `?view=montagereview&GroupId=`; zm-web's Montage
+                          Review route takes no group, so the group wall is
+                          the working equivalent. */}
+                      <Link to="/montage" search={{ group: group.id }} className={classicLinkClass}>
+                        {group.name}
+                      </Link>
+                    </span>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
         </ClassicTd>
       )}
       {visible('manufacturer') && <ClassicTd>{names.manufacturerName(m.manufacturer_id) || '—'}</ClassicTd>}
