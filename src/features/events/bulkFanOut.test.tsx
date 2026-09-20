@@ -1,9 +1,9 @@
 import { describe, expect, it, vi } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
-import { fanOut, useBulkFanOut } from './bulkFanOut';
+import { BULK_CHUNK_SIZE, fanOut, useBulkFanOut } from './bulkFanOut';
 
 describe('fanOut', () => {
-  it('runs every id in order and keeps going past a failure', async () => {
+  it('runs every id and keeps going past a failure', async () => {
     const seen: number[] = [];
     const run = vi.fn(async (id: number) => {
       seen.push(id);
@@ -14,7 +14,25 @@ describe('fanOut', () => {
 
     expect(seen).toEqual([1, 2, 3]);
     expect(failed).toEqual([{ id: 2, message: 'HTTP 404' }]);
-    expect(progress).toEqual([[1, 0], [2, 1], [3, 1]]);
+    expect(progress).toEqual([[3, 1]]);
+  });
+
+  it('sends ten at a time, like legacy eids[] chunks, and reports after each chunk', async () => {
+    let inFlight = 0;
+    let peak = 0;
+    const run = vi.fn(async () => {
+      inFlight += 1;
+      peak = Math.max(peak, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+    });
+    const progress: number[] = [];
+    const ids = Array.from({ length: 25 }, (_, i) => i + 1);
+    await fanOut(ids, run, (done) => progress.push(done));
+
+    expect(run).toHaveBeenCalledTimes(25);
+    expect(peak).toBe(BULK_CHUNK_SIZE);
+    expect(progress).toEqual([10, 20, 25]);
   });
 
   it('stringifies non-Error rejections', async () => {

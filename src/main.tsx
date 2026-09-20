@@ -5,7 +5,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { ReactQueryDevtools } from '@tanstack/react-query-devtools';
 
 import { routeTree } from './routeTree.gen';
-import { shouldRetryQuery } from '@/api/client';
+import { retryDelayForError, shouldRetryQuery } from '@/api/client';
 import { attachBackendStatus } from '@/components/common/backendStatus';
 import { migrateLegacyPreferences } from '@/lib/legacyPreferences';
 import { ErrorBoundary } from '@/components/common/ErrorBoundary';
@@ -25,8 +25,10 @@ const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       staleTime: 1000 * 60, // 1 minute
-      // Transient failures (network, 5xx) get two more tries; a 4xx is final.
+      // Transient failures (network, 5xx, 429) get two more tries; another
+      // 4xx is final. A 429 waits as long as the server's Retry-After says.
       retry: (failureCount, error) => shouldRetryQuery(failureCount, error),
+      retryDelay: (failureCount, error) => retryDelayForError(failureCount, error),
     },
     mutations: {
       retry: false,

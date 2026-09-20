@@ -1,17 +1,22 @@
+import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Pencil, Save, Trash2, X } from 'lucide-react';
+import { Maximize, Pencil, Save, Shapes, Trash2, X } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import { MontageClassicGrid } from '@/features/montage/MontageClassicGrid';
+import { MONTAGE_RATIOS } from '@/features/montage/ratio';
 import { useClassicMontage } from '@/features/montage/useClassicMontage';
 import { useMontageWallPage } from '@/features/montage/useMontagePage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
+import { toggleFullscreen } from '@/features/montage/fullscreen';
 import type { MontageStatusPosition } from '@/stores/montage';
 import type { StreamProtocol } from '@/types';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
-import { ClassicButton, ClassicFilterRow, ClassicPage, ClassicSelect } from '@/skins/classic/components';
+import { clsx } from 'clsx';
+import { ClassicButton, ClassicFilterRow, ClassicIconButton, ClassicPage, ClassicSelect, classicInputClass } from '@/skins/classic/components';
 import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
 
 /**
@@ -27,6 +32,12 @@ export default function ClassicMontagePage() {
   const filteredIds = new Set(filter.filtered.map((m) => m.id));
   const visible = page.capturingMonitors.filter((m) => filteredIds.has(m.id));
   const montage = useClassicMontage(visible);
+  const { can } = usePerms();
+  // The wall element the Fullscreen button expands. Owned here rather than by
+  // the hook: a ref reached through the hook's result would make every read of
+  // that object a ref read (react-hooks/refs).
+  const wallEl = useRef<HTMLDivElement>(null);
+
   useDocumentTitle(t('Montage'));
 
   const positionLabel = (p: MontageStatusPosition): string => {
@@ -34,6 +45,7 @@ export default function ClassicMontagePage() {
       case 'inside': return t('Inside bottom');
       case 'outside': return t('Outside bottom');
       case 'hidden': return t('Hidden');
+      case 'hover': return t('Show on hover');
     }
   };
 
@@ -48,7 +60,7 @@ export default function ClassicMontagePage() {
             label={t('Monitor status position')}
             value={montage.statusPosition}
             onChange={(v) => montage.setStatusPosition(v as MontageStatusPosition)}
-            options={(['inside', 'outside', 'hidden'] as const).map((p) => ({ value: p, label: positionLabel(p) }))}
+            options={(['inside', 'outside', 'hidden', 'hover'] as const).map((p) => ({ value: p, label: positionLabel(p) }))}
           />
           <ClassicSelect
             label={t('Player')}
@@ -58,20 +70,47 @@ export default function ClassicMontagePage() {
           />
           <StageSizeSelects stage={montage.stage} monitors={visible} tone="dark" />
           <ClassicSelect
+            label={t('Ratio')}
+            value={montage.ratio}
+            onChange={montage.setRatio}
+            options={MONTAGE_RATIOS.map((r) => ({
+              value: r,
+              label: r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : r,
+            }))}
+          />
+          <ClassicSelect
             label={t('Layout')}
             value={montage.layoutId}
             onChange={montage.setLayoutId}
             options={montage.layoutOptions}
           />
-          <RequirePerm feature="system" level="Edit">
-            {montage.editMode ? (
-              <>
-                <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save Layout')}</ClassicButton>
-                <ClassicButton size="sm" icon={<X size={13} />} onClick={montage.cancelEdit}>{t('Cancel')}</ClassicButton>
-              </>
-            ) : (
-              <ClassicButton tone="primary" size="sm" icon={<Pencil size={13} />} onClick={montage.beginEdit}>{t('Edit Layout')}</ClassicButton>
-            )}
+          {/* Legacy lets any user save their own layout; only Delete needs
+              System Edit (`delete_layout` → `enoperm()`). */}
+          {montage.editMode ? (
+            <>
+              <label className="flex flex-col items-center gap-0.5 text-sm">
+                <span className="font-semibold">{t('Name')}</span>
+                <input
+                  type="text"
+                  value={montage.saveName}
+                  onChange={(e) => montage.setSaveName(e.target.value)}
+                  placeholder={t('Layout name')}
+                  // The filter row has a `Name` field too; this one says
+                  // which name it means.
+                  aria-label={t('Layout name')}
+                  className={clsx(classicInputClass, 'w-44 text-zinc-900')}
+                />
+              </label>
+              <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save Layout')}</ClassicButton>
+              <ClassicButton size="sm" icon={<X size={13} />} onClick={montage.cancelEdit}>{t('Cancel')}</ClassicButton>
+              {montage.saveError && (
+                <span role="alert" className="text-xs text-red-200">{montage.saveError}</span>
+              )}
+            </>
+          ) : (
+            <ClassicButton tone="primary" size="sm" icon={<Pencil size={13} />} onClick={montage.beginEdit}>{t('Edit Layout')}</ClassicButton>
+          )}
+          {montage.canDelete && (
             <ClassicButton
               tone="danger"
               size="sm"
@@ -81,32 +120,53 @@ export default function ClassicMontagePage() {
               aria-label={t('Delete layout')}
               title={t('Delete layout')}
             />
-          </RequirePerm>
+          )}
+          <ClassicIconButton onClick={() => toggleFullscreen(wallEl.current)} aria-label={t('Fullscreen')}>
+            <Maximize size={14} aria-hidden />
+          </ClassicIconButton>
+          {can('system', 'View') && (
+            <ClassicIconButton
+              onClick={() => montage.setShowZones(!montage.showZones)}
+              aria-label={t('Show Zones')}
+              aria-pressed={montage.showZones}
+              className={montage.showZones ? 'bg-[#286090]' : undefined}
+            >
+              <Shapes size={14} aria-hidden />
+            </ClassicIconButton>
+          )}
         </div>
       </div>
 
-      <ClassicPage>
-        <RequirePerm feature="stream" level="View" fallback="message">
-          <QueryState
-            isLoading={page.isLoading}
-            isError={page.isError}
-            error={page.error}
-            onRetry={page.refetch}
-            empty={montage.monitors.length === 0}
-            emptyMessage={t('No monitors to display.')}
-          >
-            <MontageClassicGrid
-              monitors={montage.monitors}
-              columns={montage.columns}
-              protocol={montage.protocol}
-              statusPosition={montage.statusPosition}
-              editMode={montage.editMode}
-              onReorder={montage.reorder}
-              cellStyle={montage.stage.styleFor}
-            />
-          </QueryState>
-        </RequirePerm>
-      </ClassicPage>
+      <div ref={wallEl} className="flex-1 min-w-0 flex flex-col bg-white">
+        <ClassicPage>
+          <RequirePerm feature="stream" level="View" fallback="message">
+            <QueryState
+              isLoading={page.isLoading}
+              isError={page.isError}
+              error={page.error}
+              onRetry={page.refetch}
+              empty={montage.monitors.length === 0}
+              emptyMessage={t('No monitors to display.')}
+            >
+              <MontageClassicGrid
+                monitors={montage.monitors}
+                columns={montage.columns}
+                protocol={montage.protocol}
+                statusPosition={montage.statusPosition}
+                editMode={montage.editMode}
+                onReorder={montage.reorder}
+                items={montage.items}
+                onResize={montage.resizeTile}
+                gridRef={montage.gridRef}
+                cellStyle={montage.stage.styleFor}
+                showZones={montage.showZones}
+                ratioFor={montage.ratioFor}
+                onRatioChange={montage.setRatioFor}
+              />
+            </QueryState>
+          </RequirePerm>
+        </ClassicPage>
+      </div>
     </AppShell>
   );
 }

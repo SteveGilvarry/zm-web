@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useNavigate } from '@tanstack/react-router';
+import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
   getEvent,
@@ -10,6 +10,7 @@ import {
   getEventThumbnailUrl,
   deleteEvent,
   updateEvent,
+  type EventQueryParams,
   type EventUpdatePayload,
   type EventVideoInfo,
 } from '@/api/events';
@@ -19,12 +20,16 @@ import { getStorageList } from '@/api/storage';
 import { useEventVideo } from '@/hooks/useEventVideo';
 import { useToast } from '@/components/common/toastStore';
 import { useAuthStore } from '@/stores/auth';
-import { useEventPlaybackStore, scaleToMaxWidth, PLAYBACK_RATES } from '@/stores/eventPlayback';
+import {
+  useEventPlaybackStore, scaleToMaxWidth, isPlaybackScale, PLAYBACK_RATES,
+  type PlaybackCodec, type PlaybackScale,
+} from '@/stores/eventPlayback';
 import { isOrientationRotated, getOrientationStyle, getOrientationFillStyle } from '@/types';
 import type { Monitor, ZmEvent } from '@/types';
 import { toLocalDatetime } from '@/features/reports/datetime';
 import { useEventHotkeys } from './useEventHotkeys';
-import { toZmDateTime } from './eventsSearch';
+import type { TagChipsApi } from './TagChips';
+import { notesFromSearch, monitorIdsFromSearch, toApiTimestamp, toZmDateTime, type EventNavSearch } from './eventsSearch';
 
 export function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -45,6 +50,16 @@ export function getCauseColor(cause: string): string {
 /* ------------------------------------------------------------------------ */
 
 type EventRef = Pick<ZmEvent, 'id' | 'start_date_time'>;
+
+/**
+ * A wait as `HH:MM:SS`, the shape legacy's "… to next event." countdown
+ * prints between two events in `all` replay mode.
+ */
+export function formatGap(ms: number): string {
+  const total = Math.max(0, Math.round(ms / 1000));
+  const parts = [Math.floor(total / 3600), Math.floor((total % 3600) / 60), total % 60];
+  return parts.map((n) => String(n).padStart(2, '0')).join(':');
+}
 
 function startMs(e: EventRef): number {
   return e.start_date_time ? Date.parse(e.start_date_time) : NaN;
@@ -125,8 +140,9 @@ export interface EventDetailPageState {
 
   replayMode: PlaybackStore['replayMode'];
   setReplayMode: PlaybackStore['setReplayMode'];
-  scale: PlaybackStore['scale'];
-  setScale: PlaybackStore['setScale'];
+  /** Player scale for this event's monitor (legacy `zmEventScale<mid>`). */
+  scale: PlaybackScale;
+  setScale: (scale: PlaybackScale) => void;
   showZones: boolean;
   setShowZones: (v: boolean) => void;
   showStats: boolean;
@@ -135,10 +151,29 @@ export interface EventDetailPageState {
   playerMaxWidth: ReturnType<typeof scaleToMaxWidth>;
   /** The same cap in pixels, for the layout that measures rather than styles. */
   playerMaxWidthPx: number | undefined;
-  /** Playback speed (0.25× … 16×), applied to the <video>. */
+  /**
+   * Playback rate, one of `PLAYBACK_RATES`: negative steps `currentTime`
+   * back on a 500 ms timer (legacy `streamFastRev`), 0 is Stop, positive is
+   * the <video>'s `playbackRate`.
+   */
   rate: number;
   setRate: (rate: number) => void;
   rateOptions: readonly number[];
+  /** Forced container (legacy `&codec=`); `auto` follows the backend. */
+  codec: PlaybackCodec;
+  setCodec: (codec: PlaybackCodec) => void;
+  /** Rewind / Fast Forward: one step down / up the rate list (legacy `streamFastRev` / `streamFastFwd`). */
+  scanBack: () => void;
+  scanForward: () => void;
+  /** Rewind / Fast Forward apply while the transport is moving (playing or rewinding). */
+  canScan: boolean;
+  /** Step Back / Step Forward: ±(Length / Frames) seconds (legacy `spf`). */
+  stepBack: () => void;
+  stepForward: () => void;
+  /** Stepping is a paused-only control, as in legacy. */
+  canStep: boolean;
+  /** Seconds per frame, 0 when the event has no frame count to divide by. */
+  secondsPerFrame: number;
 
   prevEventId: number | null;
   nextEventId: number | null;
@@ -146,13 +181,25 @@ export interface EventDetailPageState {
   navMonitorId: number | null;
   navPrev: () => void;
   navNext: () => void;
+  /** Legacy's "No more events" overlay: Next had nowhere to go. */
+  noMoreEvents: boolean;
+  /** `HH:MM:SS` left of the real gap before the next event (`all` replay). */
+  gapCountdown: string | null;
+
+  /**
+   * Hand to `TagChips` so ↓ / Ctrl+↓ and the tag-and-move buttons can reach
+   * the editor. Null while the operator has no Edit rights on events.
+   */
+  tagApiRef: RefObject<TagChipsApi | null>;
+  /** Legacy `tagAndPrev` / `tagAndNext`: apply the first free tag, then move. */
+  tagAndPrev: () => void;
+  tagAndNext: () => void;
 
   handleVideoEnded: () => void;
   handlePlayPause: () => void;
   handleToggleMute: () => void;
   handleToggleFullscreen: () => void;
   handleSeek: (e: ChangeEvent<HTMLInputElement>) => void;
-  handleSkip: (seconds: number) => void;
   seekTo: (t: number) => void;
 
   /** Archive / unarchive (PATCH `archived`). */
@@ -168,9 +215,16 @@ export interface EventDetailPageState {
   savePending: boolean;
   saveError: string | null;
 
-  /** Delete flow: confirm dialog, then DELETE and router navigation to the list. */
+  /**
+   * Delete flow: confirm dialog (skipped on a shift-click), then DELETE and
+   * on to the next event — or "No more events" when this was the last one.
+   */
   deleteOpen: boolean;
-  requestDelete: () => void;
+  requestDelete: (shiftKey?: boolean) => void;
+  /** False for an archived event: ZoneMinder will not delete one. */
+  canDelete: boolean;
+  /** Why Delete is unavailable, for the button's tooltip. */
+  deleteBlockedReason: string | null;
   cancelDelete: () => void;
   confirmDelete: () => void;
   deletePending: boolean;
@@ -183,6 +237,11 @@ export interface EventDetailPageState {
   startTime: Date | null;
   endTime: Date | null;
   downloadUrl: string;
+  /**
+   * `default_video` — the stored file's name. Null when the event has no
+   * video file, which is when legacy hides the Download button entirely.
+   */
+  downloadFileName: string | null;
   thumbnailUrl: string;
   videoContainerW: number;
   videoContainerH: number;
@@ -210,10 +269,11 @@ export function useEventDetailPage(id: number): EventDetailPageState {
 
   const {
     replayMode, setReplayMode,
-    scale, setScale,
+    scaleByMonitor, setScale: setMonitorScale,
     showZones, setShowZones,
     showStats, setShowStats,
     rate, setRate,
+    codec, setCodec,
     navScope,
   } = useEventPlaybackStore();
 
@@ -289,6 +349,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     videoRef,
     id,
     videoInfo,
+    codec,
   );
 
   // Seed the scrubber length from /info up front; the precise duration from
@@ -296,96 +357,310 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   // metadata never arrives, so this keeps the timeline labelled correctly.
   const duration = metaDuration > 0 ? metaDuration : (videoInfo?.duration_seconds || 0);
 
-  // Playback speed: applied whenever it changes and again after each source
-  // attach (some browsers reset the rate when `src` is swapped).
+  // A rate left at Stop or a reverse speed makes no sense for a page that
+  // starts playing forward (legacy only applies positive rates on load).
   useEffect(() => {
-    if (videoRef.current) videoRef.current.playbackRate = rate;
-  }, [rate, playbackMode, metaDuration]);
+    const store = useEventPlaybackStore.getState();
+    if (store.rate <= 0) store.setRate(1);
+  }, [id]);
+
+  // Playback rate: applied whenever it changes and again after each source
+  // attach (some browsers reset the rate when `src` is swapped). Browsers
+  // cannot play an mp4 backwards, so a reverse rate freezes the element and
+  // steps `currentTime` back by half the speed every 500 ms, as legacy does.
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    if (rate > 0) {
+      el.playbackRate = rate;
+      return;
+    }
+    if (rate === 0) {
+      el.pause();
+      return;
+    }
+    const step = -rate / 2;
+    const timer = setInterval(() => {
+      if (el.currentTime <= 0) {
+        clearInterval(timer);
+        el.pause();
+        setRate(0);
+        return;
+      }
+      el.playbackRate = 0;
+      el.currentTime = Math.max(0, el.currentTime - step);
+    }, 500);
+    return () => {
+      clearInterval(timer);
+      el.playbackRate = 1;
+    };
+  }, [rate, playbackMode, metaDuration, setRate]);
+  const rewinding = rate < 0;
+  const canScan = isPlaying || rewinding;
+
+  const scanForward = () => {
+    // Coming out of a rewind lands on 1x first (legacy `stopFastRev`), so
+    // the step goes to 2x.
+    const i = PLAYBACK_RATES.indexOf(rewinding ? 1 : rate);
+    setRate(PLAYBACK_RATES[Math.min(i + 1, PLAYBACK_RATES.length - 1)]);
+  };
+  const scanBack = () => {
+    // The first press starts a 1x rewind; each one after goes a step faster.
+    if (!rewinding) {
+      setRate(-1);
+      return;
+    }
+    const i = PLAYBACK_RATES.indexOf(rate);
+    setRate(PLAYBACK_RATES[Math.max(i - 1, 0)]);
+  };
 
   // ----- Prev / next event navigation -----------------------------------
   //
-  // Neighbours are looked up by time, bounded at the current event's own
-  // start, so they work for any event on a monitor with thousands of them
-  // (the old page-1-of-100-by-id approach only covered the oldest hundred).
-  // Scope: the monitor the events list was filtered to, every monitor when
-  // it was unfiltered, or — before the list has been visited — the event's
-  // own monitor. The timestamp goes back to the backend verbatim, so the
-  // dev box's server-local-stamped-Z values and the fixed build's true UTC
-  // both stay self-consistent.
-  const navMonitorId: number | null =
-    navScope === null ? (event?.monitor_id ?? null) : navScope.monitorId;
+  // Three sources, most specific first (legacy carries the same thing as
+  // `filterQuery` + `sortQuery` on every event link, and `ajax/status.php`'s
+  // `getNearEvents` walks that set):
+  //
+  //  1. an explicit id list, from the list's "View" action;
+  //  2. the list's own page + sort + filters, carried in this URL;
+  //  3. otherwise, neighbours by time within the monitor scope.
+  const listSearch: EventNavSearch = useSearch({ from: '/events/$eventId' });
+  const urlMonitorIds = monitorIdsFromSearch(listSearch);
+  // Several monitors can only be listed through `/filters/preview`, which
+  // has no ordering guarantee to walk; those fall back to "all monitors".
+  const urlMonitorId = urlMonitorIds.length === 1 ? urlMonitorIds[0] : undefined;
+  // The list's Notes box is a multi-select; `/events` takes one substring,
+  // so a multi-type list narrows Prev/Next by its first type only.
+  const urlNote = notesFromSearch(listSearch)[0];
+  /** The list filters this URL carries, as `/events` query params. */
+  const urlFilters: EventQueryParams = useMemo(() => ({
+    monitor_id: urlMonitorId,
+    archived: listSearch.archived,
+    cause: listSearch.cause || undefined,
+    notes: urlNote,
+    name: listSearch.q || undefined,
+    tag_id: listSearch.tag != null ? String(listSearch.tag) : undefined,
+  }), [urlMonitorId, listSearch.archived, listSearch.cause, urlNote, listSearch.q, listSearch.tag]);
+
+  // Page + sort is what makes a URL a *list position*; without both there is
+  // nothing to take a row above/below from.
+  const listCtx = listSearch.page != null && listSearch.sort
+    ? {
+      page: listSearch.page,
+      pageSize: listSearch.page_size ?? 25,
+      sort: listSearch.sort,
+      dir: listSearch.dir ?? 'asc',
+    }
+    : null;
+
+  const explicitIds = navScope?.ids?.length ? navScope.ids : null;
+  const idsIndex = explicitIds ? explicitIds.indexOf(id) : -1;
+  const idsActive = idsIndex >= 0;
+
+  const listPageParams = (page: number): EventQueryParams => ({
+    ...urlFilters,
+    start_time: listSearch.start ? toApiTimestamp(listSearch.start) : undefined,
+    end_time: listSearch.end ? toApiTimestamp(listSearch.end) : undefined,
+    sort: listCtx!.sort,
+    direction: listCtx!.dir,
+    page,
+    page_size: listCtx!.pageSize,
+  });
+  const listKey = ['eventListNav', urlFilters, listSearch.start, listSearch.end, listCtx] as const;
+
+  const { data: listPage } = useQuery({
+    queryKey: [...listKey, listCtx?.page],
+    queryFn: () => getEvents(listPageParams(listCtx!.page)),
+    enabled: isAuthenticated && !!listCtx && !idsActive,
+  });
+  const listRows = listPage?.items ?? [];
+  const listIndex = listRows.findIndex((e) => e.id === id);
+  // Only reach for the neighbouring page when this row sits on an edge.
+  const wantPageBefore = !!listCtx && listIndex === 0 && listCtx.page > 1;
+  const wantPageAfter = !!listCtx && listIndex >= 0
+    && listIndex === listRows.length - 1 && (listPage?.last_page ?? 1) > listCtx.page;
+
+  const { data: pageBefore } = useQuery({
+    queryKey: [...listKey, 'before'],
+    queryFn: () => getEvents(listPageParams(listCtx!.page - 1)),
+    enabled: isAuthenticated && wantPageBefore,
+  });
+  const { data: pageAfter } = useQuery({
+    queryKey: [...listKey, 'after'],
+    queryFn: () => getEvents(listPageParams(listCtx!.page + 1)),
+    enabled: isAuthenticated && wantPageAfter,
+  });
+
+  // The list run this event sits in, one page either side when needed.
+  const listWindow = useMemo(
+    () => [...(pageBefore?.items ?? []), ...listRows, ...(pageAfter?.items ?? [])],
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [pageBefore, pageAfter, listPage],
+  );
+  const windowIndex = listWindow.findIndex((e) => e.id === id);
+  const listResolved = !!listCtx && windowIndex >= 0;
+  // `getNearEvents` forces Id / StartDateTime sorts to ASC, so Prev is always
+  // timewise earlier however the list itself was ordered; for every other
+  // column it keeps the list's own direction.
+  const listReversed = listCtx?.dir === 'desc'
+    && (listCtx.sort === 'start_time' || listCtx.sort === 'id');
+  const rowBefore = windowIndex > 0 ? listWindow[windowIndex - 1] : null;
+  const rowAfter = windowIndex >= 0 ? (listWindow[windowIndex + 1] ?? null) : null;
+  const listPrev = listReversed ? rowAfter : rowBefore;
+  const listNext = listReversed ? rowBefore : rowAfter;
+
+  // Scope for the time-based fallback: the monitor this URL is filtered to,
+  // the one the events list was filtered to, every monitor when it was
+  // unfiltered, or — before the list has been visited — the event's own
+  // monitor. The timestamp goes back to the backend verbatim, so the dev
+  // box's server-local-stamped-Z values and the fixed build's true UTC both
+  // stay self-consistent.
+  const navMonitorId: number | null = urlMonitorIds.length === 1
+    ? urlMonitorIds[0]
+    : listCtx || navScope !== null
+      ? (navScope?.monitorId ?? null)
+      : (event?.monitor_id ?? null);
   const scopeMonitor = navMonitorId ?? undefined;
   const startAt = event?.start_date_time ?? null;
+  // The fallback only runs when neither of the two better sources answered.
+  const fallbackActive = !idsActive && (!listCtx || (listPage !== undefined && windowIndex < 0));
 
   const { data: nextPage } = useQuery({
-    queryKey: ['eventNext', id, scopeMonitor, startAt],
+    queryKey: ['eventNext', id, scopeMonitor, startAt, urlFilters],
     queryFn: () => getEvents({
+      ...urlFilters,
       monitor_id: scopeMonitor,
       sort: 'start_time',
       direction: 'asc',
       start_time: startAt!,
       page_size: 10,
     }),
-    enabled: isAuthenticated && !!event && !!startAt,
+    enabled: isAuthenticated && !!event && !!startAt && fallbackActive,
   });
 
   // `end_time` bounds end_date_time, so this anchor is the newest event that
   // had finished by the time the current one began.
   const { data: prevAnchorPage } = useQuery({
-    queryKey: ['eventPrevAnchor', id, scopeMonitor, startAt],
+    queryKey: ['eventPrevAnchor', id, scopeMonitor, startAt, urlFilters],
     queryFn: () => getEvents({
+      ...urlFilters,
       monitor_id: scopeMonitor,
       sort: 'start_time',
       direction: 'desc',
       end_time: startAt!,
       page_size: 1,
     }),
-    enabled: isAuthenticated && !!event && !!startAt,
+    enabled: isAuthenticated && !!event && !!startAt && fallbackActive,
   });
   const anchor = prevAnchorPage?.items[0] ?? null;
   const anchorStart = anchor?.start_date_time ?? null;
 
   const { data: prevPage } = useQuery({
-    queryKey: ['eventPrev', id, scopeMonitor, anchorStart],
+    queryKey: ['eventPrev', id, scopeMonitor, anchorStart, urlFilters],
     queryFn: () => getEvents({
+      ...urlFilters,
       monitor_id: scopeMonitor,
       sort: 'start_time',
       direction: 'asc',
       start_time: anchorStart!,
       page_size: 50,
     }),
-    enabled: isAuthenticated && !!event && !!anchorStart,
+    enabled: isAuthenticated && !!event && !!anchorStart && fallbackActive,
   });
 
-  const nextEventId = useMemo(
-    () => (event && nextPage ? pickNextEvent(event, nextPage.items) : null),
-    [event, nextPage],
-  );
-  const prevEventId = useMemo(() => {
+  const nextNeighbour = useMemo<EventRef | null>(() => {
+    if (idsActive) {
+      const at = explicitIds![idsIndex + 1];
+      return at != null ? { id: at, start_date_time: null } : null;
+    }
+    if (listResolved) return listNext;
+    if (!event || !nextPage) return null;
+    const hit = pickNextEvent(event, nextPage.items);
+    return hit != null ? (nextPage.items.find((e) => e.id === hit) ?? { id: hit, start_date_time: null }) : null;
+     
+  }, [idsActive, explicitIds, idsIndex, listResolved, listNext, event, nextPage]);
+
+  const prevNeighbourId = useMemo(() => {
+    if (idsActive) return idsIndex > 0 ? explicitIds![idsIndex - 1] : null;
+    if (listResolved) return listPrev?.id ?? null;
     if (!event || !anchor) return null;
     // The anchor is itself a valid earlier event, so it stays a candidate in
     // case the 50-row window from it does not reach the current event.
     return pickPrevEvent(event, [anchor, ...(prevPage?.items ?? [])]);
-  }, [event, anchor, prevPage]);
+     
+  }, [idsActive, explicitIds, idsIndex, listResolved, listPrev, event, anchor, prevPage]);
+
+  const nextEventId = nextNeighbour?.id ?? null;
+  const prevEventId = prevNeighbourId;
+  /** The next event's own start, for the `all` replay gap. */
+  const nextEventStart = nextNeighbour?.start_date_time ?? null;
 
   const goTo = (eventId: number | null) => {
     if (eventId != null) {
-      navigate({ to: '/events/$eventId', params: { eventId: String(eventId) } });
+      navigate({
+        to: '/events/$eventId',
+        params: { eventId: String(eventId) },
+        search: listSearch,
+      });
     }
   };
   const navPrev = () => goTo(prevEventId);
   const navNext = () => goTo(nextEventId);
 
-  // When playback ends, apply the replay-mode policy. `single` does nothing
-  // (the video just stops); `all` and `gapless` navigate to the next event
-  // (only difference: gapless skips the intra-load delay — we honour it by
-  // navigating immediately on `ended`, vs `all` which we also do but
-  // future-proofed for a real delay if we want one).
+  // ----- End of playback ---------------------------------------------------
+  //
+  // "No more events" is legacy's overlay when Next has nowhere to go —
+  // after the last event of a replay run, and after deleting the last one.
+  // Keyed by event id so a new event clears it in the same render, with no
+  // reset effect: the overlay belongs to the event that ran out of neighbours.
+  const [noMoreFor, setNoMoreFor] = useState<number | null>(null);
+  const noMoreEvents = noMoreFor === id;
+  const setNoMoreEvents = (on: boolean) => setNoMoreFor(on ? id : null);
+  // `all` waits the real gap between this event's end and the next one's
+  // start, counting it down over the player (legacy `vjsReplay`).
+  const [gapCountdown, setGapCountdown] = useState<string | null>(null);
+  const gapTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+  const stopGap = () => {
+    if (gapTimer.current) clearInterval(gapTimer.current);
+    gapTimer.current = null;
+    setGapCountdown(null);
+  };
+  // A gap countdown belongs to the event it started on.
+  useEffect(() => stopGap, [id]);
+
   const handleVideoEnded = () => {
     setIsPlaying(false);
-    if ((replayMode === 'all' || replayMode === 'gapless') && nextEventId != null) {
-      goTo(nextEventId);
+    if (replayMode === 'none') return;
+    if (replayMode === 'single') {
+      videoRef.current?.play();
+      return;
     }
+    if (nextEventId == null) {
+      setNoMoreEvents(true);
+      return;
+    }
+    if (replayMode === 'gapless') {
+      goTo(nextEventId);
+      return;
+    }
+    // `all`: no end stamp, no known next start, or a next event that began
+    // before this one finished — all go straight on, as legacy does.
+    const endMs = event?.end_date_time ? Date.parse(event.end_date_time) : NaN;
+    const nextMs = nextEventStart ? Date.parse(nextEventStart) : NaN;
+    if (!Number.isFinite(endMs) || !Number.isFinite(nextMs) || nextMs <= endMs) {
+      goTo(nextEventId);
+      return;
+    }
+    const target = Date.now() + (nextMs - endMs);
+    setGapCountdown(formatGap(nextMs - endMs));
+    gapTimer.current = setInterval(() => {
+      const remaining = target - Date.now();
+      if (remaining <= 0) {
+        stopGap();
+        goTo(nextEventId);
+        return;
+      }
+      setGapCountdown(formatGap(remaining));
+    }, 1000);
   };
 
   // ----- Mutations ---------------------------------------------------------
@@ -406,17 +681,37 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     onSuccess: invalidateEvent,
     onError: toast.apiError,
   });
+  // Legacy deletes, then plays the next event (`streamNext(true)`); with no
+  // next event it stays put and shows "No more events" over the player.
   const deleteMutation = useMutation({
     mutationFn: () => deleteEvent(id),
     onError: toast.apiError,
     onSuccess: () => {
-      queryClient.removeQueries({ queryKey: ['event', id] });
       queryClient.invalidateQueries({ queryKey: ['events'] });
       queryClient.invalidateQueries({ queryKey: ['recentEvents'] });
       setDeleteOpen(false);
-      navigate({ to: '/events' });
+      if (nextEventId != null) {
+        queryClient.removeQueries({ queryKey: ['event', id] });
+        goTo(nextEventId);
+      } else {
+        videoRef.current?.pause();
+        setNoMoreEvents(true);
+      }
     },
   });
+
+  // ZoneMinder refuses to delete an archived event — unarchive it first.
+  const canDelete = !!event && event.archived !== 1;
+  const deleteBlockedReason = event && event.archived === 1
+    ? t('You cannot delete an archived event.')
+    : null;
+  /** Shift+click deletes without the confirmation, as legacy does. */
+  const requestDelete = (shiftKey = false) => {
+    if (!canDelete) return;
+    deleteMutation.reset();
+    if (shiftKey) deleteMutation.mutate();
+    else setDeleteOpen(true);
+  };
 
   const saveEdit = (draft: EventEditDraft) => {
     patchMutation.mutate(
@@ -434,8 +729,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const handlePlayPause = () => {
     if (videoRef.current) {
       if (isPlaying) {
+        // Pausing out of a rewind lands back on 1x (legacy `pauseClicked`).
+        if (rewinding) setRate(1);
         videoRef.current.pause();
       } else {
+        // Play from Stop or a rewind means forward at 1x (legacy `playClicked`).
+        if (rate <= 0) setRate(1);
         videoRef.current.play();
       }
       setIsPlaying(!isPlaying);
@@ -471,20 +770,55 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     }
   };
 
-  const handleSkip = (seconds: number) => {
-    if (videoRef.current) {
-      videoRef.current.currentTime = Math.max(
-        0,
-        Math.min(duration, videoRef.current.currentTime + seconds)
-      );
-    }
-  };
-
   const seekTo = (t: number) => {
     if (videoRef.current) {
       videoRef.current.currentTime = t;
       setCurrentTime(t);
     }
+  };
+
+  // Frame stepping: ±(Length / Frames) seconds, legacy's `spf`. The buttons
+  // only apply while the transport is stopped (legacy `streamPause` enables
+  // slowFwd/slowRev and `streamPlay` marks them unavailable).
+  const frameCount = Number(event?.frames) || 0;
+  const eventLength = Number(event?.length) || 0;
+  const secondsPerFrame = frameCount > 0 && eventLength > 0
+    ? Math.round((eventLength / frameCount) * 1e6) / 1e6
+    : 0;
+  const canStep = !isPlaying && !rewinding && secondsPerFrame > 0;
+  const stepForward = () => {
+    const el = videoRef.current;
+    if (el && secondsPerFrame > 0) seekTo(el.currentTime + secondsPerFrame);
+  };
+  const stepBack = () => {
+    const el = videoRef.current;
+    if (el && secondsPerFrame > 0) seekTo(Math.max(0, el.currentTime - secondsPerFrame));
+  };
+
+  // A run started from the list's View button plays on arrival (legacy `play=1`),
+  // once per event and only after a source is actually attached.
+  const autoplayedFor = useRef<number | null>(null);
+  useEffect(() => {
+    if (!navScope?.autoplay || autoplayedFor.current === id) return;
+    if (playbackMode !== 'direct' && playbackMode !== 'hls') return;
+    // The element only exists once the event has loaded; until then there is
+    // nothing to start, and this must not count as the one attempt.
+    const el = videoRef.current;
+    if (!el) return;
+    autoplayedFor.current = id;
+    el.play();
+  }, [navScope?.autoplay, playbackMode, id, event?.id]);
+
+  // ----- Tags --------------------------------------------------------------
+
+  const tagApiRef = useRef<TagChipsApi | null>(null);
+  const tagAndPrev = () => {
+    tagApiRef.current?.addFirst();
+    navPrev();
+  };
+  const tagAndNext = () => {
+    tagApiRef.current?.addFirst();
+    navNext();
   };
 
   // ----- Keyboard ----------------------------------------------------------
@@ -494,7 +828,9 @@ export function useEventDetailPage(id: number): EventDetailPageState {
       ArrowLeft: navPrev,
       ArrowRight: navNext,
       ' ': handlePlayPause,
-      Delete: () => setDeleteOpen(true),
+      Delete: (e) => requestDelete(e.shiftKey),
+      ArrowDown: () => tagApiRef.current?.focus(),
+      'Ctrl+ArrowDown': () => tagApiRef.current?.addFirst(),
     },
     !!event && !editOpen && !deleteOpen,
   );
@@ -590,9 +926,17 @@ export function useEventDetailPage(id: number): EventDetailPageState {
         ? event.default_video
         : t('Unknown');
 
-  // Scale → max-width style on the video frame container. `auto` leaves
-  // the container at column-width.
-  const playerMaxWidth = scaleToMaxWidth(scale);
+  // Scale is remembered per monitor (legacy `zmEventScale<mid>` cookie) and
+  // seeded from the monitor's own default; it becomes a max-width on the
+  // player frame, so Auto and Fit to width leave the frame at column width.
+  const monitorDefaultScale: PlaybackScale =
+    isPlaybackScale(monitor?.default_scale) ? monitor.default_scale : '0';
+  const scale: PlaybackScale =
+    (event ? scaleByMonitor[event.monitor_id] : undefined) ?? monitorDefaultScale;
+  const setScale = (next: PlaybackScale) => {
+    if (event) setMonitorScale(event.monitor_id, next);
+  };
+  const playerMaxWidth = event ? scaleToMaxWidth(scale, effW, effH) : undefined;
   const playerMaxWidthPx = playerMaxWidth ? parseInt(playerMaxWidth, 10) : undefined;
 
   return {
@@ -630,19 +974,33 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     rate,
     setRate,
     rateOptions: PLAYBACK_RATES,
+    codec,
+    setCodec,
+    scanBack,
+    scanForward,
+    canScan,
+    stepBack,
+    stepForward,
+    canStep,
+    secondsPerFrame,
 
     prevEventId,
     nextEventId,
     navMonitorId,
     navPrev,
     navNext,
+    noMoreEvents,
+    gapCountdown,
+
+    tagApiRef,
+    tagAndPrev,
+    tagAndNext,
 
     handleVideoEnded,
     handlePlayPause,
     handleToggleMute,
     handleToggleFullscreen,
     handleSeek,
-    handleSkip,
     seekTo,
 
     toggleArchived: () => { if (event) archiveMutation.mutate(event.archived !== 1); },
@@ -657,7 +1015,9 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     saveError: errorMessage(patchMutation.error),
 
     deleteOpen,
-    requestDelete: () => { deleteMutation.reset(); setDeleteOpen(true); },
+    requestDelete,
+    canDelete,
+    deleteBlockedReason,
     cancelDelete: () => setDeleteOpen(false),
     confirmDelete: () => deleteMutation.mutate(),
     deletePending: deleteMutation.isPending,
@@ -667,6 +1027,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     startTime,
     endTime,
     downloadUrl,
+    downloadFileName: event?.default_video?.trim() || null,
     thumbnailUrl,
     videoContainerW,
     videoContainerH,

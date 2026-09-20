@@ -327,21 +327,37 @@ export default function SettingsStoragePage() {
             </button>
           </div>
 
-          {/* DoDelete is in StorageResponse but in neither write schema — read-only. */}
-          {editingStorage && (
-            <div className="flex items-start justify-between gap-4">
-              <span className="text-sm text-fg-muted">{t('Auto-delete')}</span>
-              <span className="text-end">
-                <span className="text-sm text-fg">
-                  {editingStorage.do_delete === 1 ? t('Yes') : t('No')}
-                </span>
-                <span className="flex items-start gap-1.5 text-xs text-fg-dim leading-relaxed">
-                  <Info size={12} className="mt-0.5 shrink-0" aria-hidden />
-                  {t('Set by ZoneMinder; the API cannot change it yet.')}
-                </span>
-              </span>
+          {/* Legacy's StorageDoDelete radio. `CreateStorageRequest` carries it,
+              `UpdateStorageRequest` does not, so editing shows it locked. */}
+          <div className="space-y-1">
+            <div className="flex items-center justify-between">
+              <span className="text-sm text-fg-muted">{t('Delete events')}</span>
+              <button
+                onClick={st.toggleFormDoDelete}
+                role="switch"
+                aria-checked={formData.do_delete === 1}
+                aria-label={t('Delete events')}
+                disabled={st.doDeleteLocked}
+                className={clsx(
+                  'relative w-10 h-5 rounded-full transition-colors disabled:opacity-50',
+                  formData.do_delete === 1 ? 'bg-accent' : 'bg-border'
+                )}
+              >
+                <span
+                  className={clsx(
+                    'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+                    formData.do_delete === 1 ? 'start-5.5' : 'start-0.5'
+                  )}
+                />
+              </button>
             </div>
-          )}
+            <span className="flex items-start gap-1.5 text-xs text-fg-dim leading-relaxed">
+              <Info size={12} className="mt-0.5 shrink-0" aria-hidden />
+              {st.doDeleteLocked
+                ? t('Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.')
+                : t('Deleting an event may remove its media from here.')}
+            </span>
+          </div>
 
           {st.saveError && (
             <p role="alert" className="text-xs text-danger">

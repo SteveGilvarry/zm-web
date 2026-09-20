@@ -65,6 +65,19 @@ function stub(items: unknown[] = [PURGE_WHEN_FULL_ROW, UPDATE_DISK_SPACE_ROW, un
       })),
     http.get('/api/v3/users', () =>
       HttpResponse.json({ items: [{ id: 1, username: 'admin' }], total: 1, per_page: 100, current_page: 1, last_page: 1 })),
+    // `useFiltersPage` reads the ZM_OPT_* rows (option gating) and /me (who
+    // owns the filter). Everything on, so the whole form is exercised.
+    http.get('/api/v3/configs', () => HttpResponse.json({
+      items: [
+        { name: 'ZM_WEB_ID_ON_FILTER', value: '0' },
+        { name: 'ZM_OPT_FFMPEG', value: '1' },
+        { name: 'ZM_OPT_UPLOAD', value: '1' },
+        { name: 'ZM_OPT_EMAIL', value: '1' },
+        { name: 'ZM_OPT_MESSAGE', value: '1' },
+      ],
+      total: 5, per_page: 1000, current_page: 1, last_page: 1,
+    })),
+    http.get('/api/v3/me', () => HttpResponse.json({ user: { id: 1, username: 'admin', system: 'Edit', events: 'Edit' } })),
     http.get('/api/v3/storage', () =>
       HttpResponse.json({
         items: [{ id: 1, name: 'Default', path: '/var/cache/zoneminder/events', type: 'local', enabled: 1 }],
@@ -165,7 +178,6 @@ describe('FiltersPage — safety', () => {
     let posted = false;
     server.use(http.post('/api/v3/filters', () => { posted = true; return HttpResponse.json({ ...PURGE_WHEN_FULL_ROW, id: 5 }, { status: 201 }); }));
     const user = userEvent.setup();
-    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
     await mount();
     await screen.findByRole('button', { name: /^PurgeWhenFull/ });
 
@@ -174,9 +186,26 @@ describe('FiltersPage — safety', () => {
     expect(screen.getByRole('alert')).toHaveTextContent(/every event will be deleted/i);
 
     await user.click(screen.getByRole('button', { name: /^create$/i }));
-    expect(confirmSpy).toHaveBeenCalled();
+    // The dialog, not `window.confirm`: dismissing it must not POST.
+    expect(await screen.findByText(/can delete archived events/i)).toBeInTheDocument();
     expect(posted).toBe(false);
-    confirmSpy.mockRestore();
+    await user.click(screen.getByRole('button', { name: /^cancel$/i }));
+    expect(posted).toBe(false);
+  });
+
+  it('saves after the delete warning is accepted', async () => {
+    stub();
+    let posted = false;
+    server.use(http.post('/api/v3/filters', () => { posted = true; return HttpResponse.json({ ...PURGE_WHEN_FULL_ROW, id: 5 }, { status: 201 }); }));
+    const user = userEvent.setup();
+    await mount();
+    await screen.findByRole('button', { name: /^PurgeWhenFull/ });
+
+    await user.type(screen.getByPlaceholderText(/untitled filter/i), 'Nuke');
+    await user.click(screen.getByRole('switch', { name: /delete all matches/i }));
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+    await user.click(await screen.findByRole('button', { name: /save anyway/i }));
+    await waitFor(() => expect(posted).toBe(true));
   });
 });
 
@@ -215,5 +244,45 @@ describe('FiltersPage — create', () => {
       sort_field: 'StartDateTime', sort_asc: '0', limit: '0', skip_locked: '0',
     });
     expect(body).toMatchObject({ auto_archive: 1, background: 1, auto_delete: 0, execute_interval: 60 });
+  });
+});
+
+describe('FiltersPage — run-as user and option gating', () => {
+  it('offers the run-as user, defaulted to the signed-in operator, and sends it', async () => {
+    stub();
+    let body: Record<string, unknown> = {};
+    server.use(http.post('/api/v3/filters', async ({ request }) => {
+      body = await request.json() as Record<string, unknown>;
+      return HttpResponse.json({ ...PURGE_WHEN_FULL_ROW, id: 5 }, { status: 201 });
+    }));
+    const user = userEvent.setup();
+    await mount();
+    await screen.findByRole('button', { name: /^PurgeWhenFull/ });
+
+    const runAs = await screen.findByLabelText(/user to run filter as/i);
+    await waitFor(() => expect(runAs).toHaveValue('1'));
+
+    await user.type(screen.getByPlaceholderText(/untitled filter/i), 'Mine');
+    await user.click(screen.getByRole('button', { name: /^create$/i }));
+    await waitFor(() => expect(body.user_id).toBe(1));
+  });
+
+  it('hides the actions whose ZM_OPT_* row is off', async () => {
+    stub();
+    server.use(http.get('/api/v3/configs', () => HttpResponse.json({
+      items: [
+        { name: 'ZM_OPT_FFMPEG', value: '0' }, { name: 'ZM_OPT_UPLOAD', value: '0' },
+        { name: 'ZM_OPT_EMAIL', value: '0' }, { name: 'ZM_OPT_MESSAGE', value: '0' },
+      ],
+      total: 4, per_page: 1000, current_page: 1, last_page: 1,
+    })));
+    await mount();
+    await screen.findByRole('button', { name: /^PurgeWhenFull/ });
+
+    await waitFor(() => expect(screen.queryByRole('switch', { name: /create video/i })).toBeNull());
+    expect(screen.queryByRole('switch', { name: /upload all matches/i })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /email details/i })).toBeNull();
+    expect(screen.queryByRole('switch', { name: /message details/i })).toBeNull();
+    expect(screen.getByRole('switch', { name: /^archive all matches/i })).toBeInTheDocument();
   });
 });

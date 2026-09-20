@@ -5,12 +5,16 @@ import type { Control } from '@/api/controls';
  * The legacy `?view=controlcap` form, tab by tab (`controlcap.php`: main,
  * move, pan, tilt, zoom, focus, gain, white, iris, presets). `CanLight` /
  * `CanIndicatorLight` exist in newer ZoneMinder schemas but not in
- * `ControlResponse`, so they are not offered. Auto-scan lives in the
- * request/response but has no legacy tab; it gets a Misc tab.
+ * `ControlResponse`, so they are not offered.
+ *
+ * `can_auto_scan` / `num_scan_paths` are in the request and response but on
+ * no legacy tab, and nothing in the dashboard drives from them, so the form
+ * does not edit them — an extra tab of controls no operator asked for is
+ * worse than a column the backend keeps to itself.
  */
 export type ControlTabKey =
   | 'main' | 'move' | 'pan' | 'tilt' | 'zoom' | 'focus'
-  | 'gain' | 'white' | 'iris' | 'presets' | 'misc';
+  | 'gain' | 'white' | 'iris' | 'presets';
 
 export type ControlFieldKey = Exclude<keyof Control, 'id'>;
 
@@ -26,8 +30,13 @@ export interface ControlTab {
   fields: ControlField[];
 }
 
-/** `Controls.Type` enum (`MonitorType`), as legacy's Type select lists it. */
-export const CONTROL_TYPES = ['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'Curl', 'WebSite', 'Vnc', 'File'] as const;
+/**
+ * The Type select, exactly the five `controlcap.php:219-225` offers — a
+ * control profile is a PTZ driver, and the backend's `MonitorType` enum
+ * carries three more (`WebSite`, `VNC`, `File`) that no ZoneMinder PTZ
+ * driver can be.
+ */
+export const CONTROL_TYPES = ['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'cURL'] as const;
 
 const flag = (key: ControlFieldKey): ControlField => ({ key, kind: 'flag' });
 const num = (key: ControlFieldKey): ControlField => ({ key, kind: 'number' });
@@ -77,7 +86,6 @@ export const CONTROL_TABS: readonly ControlTab[] = [
     key: 'presets',
     fields: [flag('has_presets'), num('num_presets'), flag('has_home_preset'), flag('can_set_presets')],
   },
-  { key: 'misc', fields: [flag('can_auto_scan'), num('num_scan_paths')] },
 ];
 
 /** Every editable key, in tab order. */
@@ -97,7 +105,6 @@ export function controlTabLabel(t: TFunction, key: ControlTabKey): string {
     case 'white': return t('White');
     case 'iris': return t('Iris');
     case 'presets': return t('Presets');
-    case 'misc': return t('Misc');
   }
 }
 

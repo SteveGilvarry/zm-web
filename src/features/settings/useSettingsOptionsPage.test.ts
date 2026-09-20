@@ -65,9 +65,19 @@ function stub(opts: { x10?: '0' | '1'; configs?: ZmConfig[] } = {}) {
       HttpResponse.json({ version: '1.36.33', api_version: '3.0.0', db_version: '1.36.33' })),
     http.get('/api/v3/daemons', () =>
       HttpResponse.json({ daemons: [{ id: 'zmc', name: 'zmc', state: 'running', pid: 42, uptime_seconds: 90 }] })),
-    http.get('/api/v3/configs', () => paged(opts.configs ?? CONFIGS)),
-    http.get('/api/v3/configs/:name', ({ params }) =>
-      HttpResponse.json({ name: params.name, value: params.name === 'ZM_OPT_X10' ? (opts.x10 ?? '0') : '' })),
+    // Two callers, one endpoint: the page lists the rows it renders, and
+    // `useZmConfig` reads the whole table in one request (`page_size=1000`)
+    // rather than one per setting. Only the latter carries the gate row —
+    // putting it in the page's list would change the category counts.
+    http.get('/api/v3/configs', ({ request }) => {
+      const rows = opts.configs ?? CONFIGS;
+      const wholeTable = new URL(request.url).searchParams.get('page_size') === '1000';
+      return paged(
+        wholeTable
+          ? [...rows, cfg({ name: 'ZM_OPT_X10', value: opts.x10 ?? '0', category: 'x10' })]
+          : rows,
+      );
+    }),
     http.put('/api/v3/configs/:name', async ({ params, request }) => {
       await note('PUT', `/configs/${params.name}`, request);
       return HttpResponse.json({ ...cfg({ name: String(params.name), category: 'web' }) });

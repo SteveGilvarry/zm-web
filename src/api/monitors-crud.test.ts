@@ -124,8 +124,8 @@ describe('createMonitor — function → mode coercion', () => {
 const RAW_SOURCE = {
   id: 5, name: 'Garage', sequence: 5, zone_count: 2,
   width: 1280, height: 720, type: 'Ffmpeg', function: 'Monitor',
-  orientation: 'Rotate90', event_close_mode: 'System', default_codec: 'Auto',
-  rtsp2_web_type: 'WebRtc', output_container: null, deleted: false,
+  orientation: 'ROTATE_90', event_close_mode: 'system', default_codec: 'auto',
+  rtsp2_web_type: 'WebRTC', output_container: null, deleted: false,
   brightness: -1, contrast: -1, hue: -1, colour: -1,
   image_buffer_count: 0, max_image_buffer_count: 0, stream_replay_buffer: 0,
   storage_id: 0, restream: 0, rtsp_user: null, method: 'rtpRtsp',
@@ -140,8 +140,8 @@ describe('MONITOR_CREATE_DEFAULTS', () => {
   });
 
   it('uses request-enum casing and only request keys', () => {
-    expect(MONITOR_CREATE_DEFAULTS.orientation).toBe('Rotate0');
-    expect(MONITOR_CREATE_DEFAULTS.rtsp2_web_type).toBe('Mse');
+    expect(MONITOR_CREATE_DEFAULTS.orientation).toBe('ROTATE_0');
+    expect(MONITOR_CREATE_DEFAULTS.rtsp2_web_type).toBe('MSE');
     expect(MONITOR_CREATE_DEFAULTS.deleted).toBe(false);
     expect(MONITOR_CREATE_DEFAULTS).toHaveProperty('restream', 0);
     expect(MONITOR_CREATE_DEFAULTS).not.toHaveProperty('enabled');
@@ -174,11 +174,11 @@ describe('toCreatePayload', () => {
     expect(out.deleted).toBe(false);
 
     // enums pass through; the container is the one required non-null
-    expect(out.orientation).toBe('Rotate90');
-    expect(out.event_close_mode).toBe('System');
-    expect(out.default_codec).toBe('Auto');
-    expect(out.rtsp2_web_type).toBe('WebRtc');
-    expect(out.output_container).toBe('Auto');
+    expect(out.orientation).toBe('ROTATE_90');
+    expect(out.event_close_mode).toBe('system');
+    expect(out.default_codec).toBe('auto');
+    expect(out.rtsp2_web_type).toBe('WebRTC');
+    expect(out.output_container).toBe('auto');
 
     // ZoneMinder's own -1 / 0 survive the round trip now
     expect(out.brightness).toBe(-1);
@@ -219,7 +219,7 @@ describe('cloneMonitor', () => {
     // clone goes to the end of the sequence.
     expect(posted).not.toHaveProperty('id');
     expect(posted.sequence).toBeNull();
-    expect(posted.orientation).toBe('Rotate90');
+    expect(posted.orientation).toBe('ROTATE_90');
     expect(posted.deleted).toBe(false);
     // storage_id copies straight over — 0 is a legal "Default", not a sentinel
     expect(posted.storage_id).toBe(0);

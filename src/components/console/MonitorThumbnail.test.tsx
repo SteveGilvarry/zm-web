@@ -23,7 +23,7 @@ const m: Monitor = {
   name: 'Front Door',
   width: 1920,
   height: 1080,
-  orientation: 'Rotate0',
+  orientation: 'ROTATE_0',
   capturing: 'Always',
   analysing: 'Always',
   recording: 'OnMotion',
@@ -69,7 +69,7 @@ describe('MonitorThumbnail — activity ribbon', () => {
 });
 
 describe('MonitorThumbnail — runtime status', () => {
-  const runtime = { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, bandwidth: 0, updatedOn: '' };
+  const runtime = { monitorId: 1, status: 'NotRunning', captureFps: 0, analysisFps: 0, captureFpsRaw: '0', analysisFpsRaw: '0', bandwidth: 0, updatedOn: '' };
 
   it('colours the lens from the capture-process state, not the config', () => {
     renderWithProviders(<MonitorThumbnail monitor={m} runtime={runtime} />);

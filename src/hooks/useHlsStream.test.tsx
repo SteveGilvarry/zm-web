@@ -172,6 +172,33 @@ describe('useHlsStream — start() lifecycle', () => {
   });
 });
 
+describe('useHlsStream — /start answers 409', () => {
+  it('connects anyway: a stream already running is the one we want', async () => {
+    // Routine on a montage wall — no client ever sends DELETE /stop, so the
+    // backend session outlives any one tile and re-requests get a Conflict.
+    server.use(
+      http.post('/api/v3/live/:id/start', () =>
+        HttpResponse.json(
+          { error_message: 'Live stream already exists for monitor 1' },
+          { status: 409 },
+        ),
+      ),
+    );
+    const before = instances.length;
+    const { result } = renderHook(() => useHlsStream(1));
+    attachVideo(result.current.videoRef);
+
+    act(() => { result.current.start(); });
+
+    await waitFor(() => expect(instances.length).toBeGreaterThan(before));
+    const inst = instances[instances.length - 1];
+    act(() => { inst.fire('hlsManifestParsed', { levels: [{ audioCodec: undefined }] }); });
+
+    expect(result.current.state).toBe('connected');
+    expect(result.current.error).toBeNull();
+  });
+});
+
 describe('useHlsStream — stop() resets state to idle', () => {
   it('clears state to "idle" and destroys the hls instance', async () => {
     const before = instances.length;

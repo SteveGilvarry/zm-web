@@ -1,11 +1,12 @@
 import { useMirroredState } from '@/hooks/useMirroredState';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/auth';
 import { clearLogs, listLogs, type LogEntry, type LogMinLevel, type LogSort } from '@/api/logs';
 import { listServers } from '@/api/servers';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import { downloadCsv, logsToCsv, type LogColumnKey } from './csv';
 import { dateInputToUnix, parseLogTime, summarizeLogs } from './filter';
 import { ALL_LOG_COLUMNS, DEFAULT_VISIBLE_LOG_COLUMNS } from './columns';
@@ -47,15 +48,26 @@ export const LEVEL_CHIPS: ReadonlyArray<{ value: LogMinLevel | undefined; code: 
   { value: 'debug',    code: 'DBG' },
 ];
 
-export const LOGS_PAGE_SIZE_OPTIONS: readonly number[] = [25, 50, 100, 200, 500];
+/** Legacy `data-page-list` on the log table (`log.php:140`). */
+export const LOGS_PAGE_SIZE_OPTIONS: readonly number[] = [10, 25, 50, 100, 200, 300, 400, 500];
+
+/** Legacy's `$defaultPageSize` fallback (`log.php:27`). */
+export const LOGS_DEFAULT_PAGE_SIZE = 25;
+
+/**
+ * Pause after the last keystroke before the message search reaches the API.
+ * Legacy's bootstrap-table search filters as you type; this is the same
+ * behaviour without a request per character.
+ */
+export const LOGS_SEARCH_DEBOUNCE_MS = 350;
 
 const COLUMN_PREF_KEY = 'zm-web.logs.columns';
 const PAGE_SIZE_PREF_KEY = 'zm-web.logs.pageSize';
 
 function loadPageSizePref(): number {
-  if (typeof window === 'undefined') return 50;
+  if (typeof window === 'undefined') return LOGS_DEFAULT_PAGE_SIZE;
   const n = Number(window.localStorage.getItem(PAGE_SIZE_PREF_KEY));
-  return LOGS_PAGE_SIZE_OPTIONS.includes(n) ? n : 50;
+  return LOGS_PAGE_SIZE_OPTIONS.includes(n) ? n : LOGS_DEFAULT_PAGE_SIZE;
 }
 
 function loadColumnPrefs(): LogColumnKey[] {
@@ -116,7 +128,7 @@ export interface LogsPageState {
   /** Time-column order: `desc` (newest first) unless the header flips it. */
   sort: LogSort;
   toggleSort: () => void;
-  /** Local mirror of the search box; committed to the URL on Enter/blur. */
+  /** Local mirror of the search box; committed to the URL after a pause, or at once on Enter/blur. */
   searchDraft: string;
   setSearchDraft: (v: string) => void;
   commitSearchDraft: () => void;
@@ -135,6 +147,12 @@ export interface LogsPageState {
   setVisibleColumns: (cols: LogColumnKey[]) => void;
 
   exportCsv: () => void;
+
+  /** Silent background refresh, legacy's `autoRefresh` toolbar toggle. */
+  autoRefresh: boolean;
+  toggleAutoRefresh: () => void;
+  /** Seconds between refreshes — `ZM_WEB_REFRESH_LOGS`. */
+  refreshSeconds: number;
 
   /** True while the Clear Logs confirmation is open. */
   confirmingClear: boolean;
@@ -187,7 +205,7 @@ export function useLogsPage(): LogsPageState {
     } catch { /* quota / private mode — ignore */ }
   }, [visibleColumns]);
 
-  const setSearch = (patch: Partial<LogsSearchParams>) => {
+  const setSearch = useCallback((patch: Partial<LogsSearchParams>) => {
     navigate({
       search: (prev) => {
         const next: Partial<LogsSearchParams> = { ...prev, ...patch };
@@ -201,7 +219,19 @@ export function useLogsPage(): LogsPageState {
       },
       replace: true,
     });
-  };
+  }, [navigate]);
+
+  // Typing is the whole gesture: commit the draft once the operator stops.
+  // Without this the search box only reached the API on Enter or blur, so a
+  // typed query looked ignored (`/logs?page=1&page_size=25&sort=desc`).
+  useEffect(() => {
+    if (searchDraft === messageQuery) return;
+    const id = window.setTimeout(
+      () => setSearch({ q: searchDraft || undefined, page: undefined }),
+      LOGS_SEARCH_DEBOUNCE_MS,
+    );
+    return () => window.clearTimeout(id);
+  }, [searchDraft, messageQuery, setSearch]);
 
   const setPageSize = (n: number) => {
     if (!LOGS_PAGE_SIZE_OPTIONS.includes(n)) return;
@@ -225,6 +255,14 @@ export function useLogsPage(): LogsPageState {
   };
   const clearIsFiltered = Object.values(filters).some((v) => v !== undefined);
 
+  // Legacy reads `ZM_WEB_REFRESH_LOGS`: 0 means the table ships with auto
+  // refresh off, anything else is the interval in seconds and the toggle
+  // starts on (`log.php:155-158`). The button flips it for the session, as
+  // `manageAutoRefreshBtn` does — legacy persists nothing either.
+  const refreshSeconds = useZmConfig('ZM_WEB_REFRESH_LOGS', 30);
+  const [autoRefreshOverride, setAutoRefreshOverride] = useState<boolean | null>(null);
+  const autoRefresh = autoRefreshOverride ?? refreshSeconds > 0;
+
   const { data, isLoading, refetch, isFetching, isError, error } = useQuery({
     queryKey: [
       'logs', page, pageSize, sort, componentFilter, minLevel, serverFilter,
@@ -232,7 +270,7 @@ export function useLogsPage(): LogsPageState {
     ],
     queryFn: () => listLogs({ ...filters, page, page_size: pageSize, sort }),
     enabled: isAuthenticated,
-    refetchInterval: 30_000,
+    refetchInterval: autoRefresh ? Math.max(5, refreshSeconds || 30) * 1000 : false,
   });
 
   // Hide the Server dropdown on single-server installs — parity with legacy.
@@ -311,7 +349,7 @@ export function useLogsPage(): LogsPageState {
     toggleSort: () => setSearch({ sort: sort === 'desc' ? 'asc' : undefined, page: undefined }),
     searchDraft,
     setSearchDraft,
-    commitSearchDraft: () => setSearch({ q: searchDraft || undefined }),
+    commitSearchDraft: () => setSearch({ q: searchDraft || undefined, page: undefined }),
     setSearch,
 
     allComponents,
@@ -326,6 +364,10 @@ export function useLogsPage(): LogsPageState {
     setVisibleColumns,
 
     exportCsv,
+
+    autoRefresh,
+    toggleAutoRefresh: () => setAutoRefreshOverride(!autoRefresh),
+    refreshSeconds: refreshSeconds > 0 ? refreshSeconds : 30,
 
     confirmingClear,
     askClear: () => { setClearedMessage(null); setConfirmingClear(true); },

@@ -35,6 +35,9 @@ describe('optionsTabLabel — every legacy caption', () => {
       version: 'Versions',
       users: 'Users',
       groups: 'Groups',
+      ai_datasets: 'AI Datasets',
+      ai_models: 'AI Models',
+      ai_classes: 'AI Classes',
       state: 'Run State',
     };
     for (const [key, caption] of Object.entries(expected)) {
@@ -74,7 +77,8 @@ describe('buildOptionsTabs — edges', () => {
     const tabs = buildOptionsTabs([], false);
     expect(tabs.every((tab) => tab.kind === 'page')).toBe(true);
     expect(tabs.map((tab) => tab.key)).toEqual([
-      'display', 'servers', 'storage', 'control', 'users', 'groups', 'state',
+      'display', 'api', 'servers', 'storage', 'control', 'users', 'groups',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 
@@ -83,7 +87,8 @@ describe('buildOptionsTabs — edges', () => {
     // extras land at index 0 — ahead of every page tab.
     const tabs = buildOptionsTabs([{ name: 'onvif', count: 1 }, { name: 'ai', count: 2 }], false);
     expect(tabs.map((tab) => tab.key)).toEqual([
-      'onvif', 'ai', 'display', 'servers', 'storage', 'control', 'users', 'groups', 'state',
+      'onvif', 'ai', 'display', 'api', 'servers', 'storage', 'control', 'users', 'groups',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
     expect(tabs[0]).toEqual({ kind: 'category', key: 'onvif', category: 'onvif' });
   });
@@ -95,12 +100,24 @@ describe('buildOptionsTabs — edges', () => {
     );
   });
 
-  it('renders an API tab when the backend keeps `api` separate from `system`', () => {
+  it('always renders the API token page tab, and never a second one', () => {
+    // Legacy's API tab is `_options_api.php`, not a config category — and
+    // `options.php` matches `tab == 'API'` before it looks at the categories,
+    // so a backend that also has an `api` category still gets one pill.
     const tabs = buildOptionsTabs([{ name: 'system', count: 1 }, { name: 'api', count: 2 }], false);
     const keys = tabs.map((tab) => tab.key);
-    expect(keys.indexOf('api')).toBe(keys.indexOf('system') + 1);
+    expect(keys.filter((k) => k === 'api')).toHaveLength(1);
     expect(tabs.find((tab) => tab.key === 'api')).toEqual(
-      { kind: 'category', key: 'api', category: 'api' },
+      { kind: 'page', key: 'api', to: '/settings/api-tokens' },
     );
+  });
+
+  it('gives the three AI admin tabs their own pages at the end of the rail', () => {
+    const tabs = buildOptionsTabs([], false);
+    expect(tabs.filter((tab) => tab.key.startsWith('ai_'))).toEqual([
+      { kind: 'page', key: 'ai_datasets', to: '/settings/ai/datasets' },
+      { kind: 'page', key: 'ai_models', to: '/settings/ai/models' },
+      { kind: 'page', key: 'ai_classes', to: '/settings/ai/classes' },
+    ]);
   });
 });

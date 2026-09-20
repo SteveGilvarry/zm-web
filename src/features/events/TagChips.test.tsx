@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { createRef } from 'react';
+import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
-import { TagChips } from './TagChips';
+import { TagChips, type TagChipsApi } from './TagChips';
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
@@ -144,3 +145,35 @@ describe('TagChips — removing an attached tag', () => {
 
 // Hint to keep vi imported for future test additions
 void vi;
+
+describe('TagChips — the page keyboard shortcuts', () => {
+  function Harness({ api }: { api: React.RefObject<TagChipsApi | null> }) {
+    return <TagChips eventId={42} currentTags={[{ id: 1, name: 'review' }]} apiRef={api} />;
+  }
+
+  it('focuses the input and attaches the first free tag through its api', async () => {
+    let attached: unknown = null;
+    server.use(
+      http.get('/api/v3/tags', () => HttpResponse.json({
+        items: TAGS, total: TAGS.length, per_page: 200, current_page: 1, last_page: 1,
+      })),
+      http.post('/api/v3/events-tags', async ({ request }) => {
+        attached = await request.json();
+        return HttpResponse.json({ ok: true });
+      }),
+      http.get('/api/v3/events/42', () => HttpResponse.json({ id: 42 })),
+    );
+
+    const api = createRef<TagChipsApi>();
+    renderWithProviders(<Harness api={api} />);
+    await waitFor(() => expect(api.current).not.toBeNull());
+
+    act(() => api.current!.focus());
+    expect(screen.getByTestId('tag-input')).toHaveFocus();
+
+    // `review` is already on the event, so the first *available* tag is
+    // `important` — which is what legacy's Ctrl+↓ attaches.
+    act(() => api.current!.addFirst());
+    await waitFor(() => expect(attached).toEqual({ event_id: 42, tag_id: 2 }));
+  });
+});

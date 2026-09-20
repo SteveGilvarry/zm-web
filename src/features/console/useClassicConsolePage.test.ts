@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -49,7 +50,7 @@ vi.mock('./useConsoleData', async (importOriginal) => ({
   useConsoleData: () => fakeData,
 }));
 
-const { useClassicConsolePage } = await import('./useClassicConsolePage');
+const { useClassicConsolePage, eventsScopeFor, cloneName } = await import('./useClassicConsolePage');
 
 const paged = (items: unknown[]) => HttpResponse.json({ items, total: items.length, per_page: 100, current_page: 1, last_page: 1 });
 const patched: Array<{ id: string; body: unknown }> = [];
@@ -59,8 +60,7 @@ const server = setupServer(
   http.get('/api/v3/groups-monitors', () => paged([])),
   http.get('/api/v3/servers', () => paged([{ id: 1, name: 'zm-a' }])),
   http.get('/api/v3/storage', () => paged([{ id: 1, name: 'Default' }])),
-  http.get('/api/v3/configs/:name', ({ params }) =>
-    HttpResponse.json({ name: params.name, value: params.name === 'ZM_WEB_EVENTS_PER_PAGE' ? '2' : '1' })),
+  configListHandler({ ZM_WEB_EVENTS_PER_PAGE: '2' }),
   http.patch('/api/v3/monitors/:id', async ({ params, request }) => {
     patched.push({ id: String(params.id), body: await request.json() });
     return HttpResponse.json({ id: Number(params.id) });
@@ -129,16 +129,39 @@ describe('useClassicConsolePage', () => {
     expect(useToastStore.getState().toasts.at(-1)?.tone).toBe('success');
   });
 
-  it('bulk Select patches only the chosen modes on every selected monitor', async () => {
+  it('Select narrows the console to the checked rows through the monitor filter', async () => {
     const { result } = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.pageSize).toBe(2));
     act(() => result.current.toggleAllOnPage());
     expect(result.current.selectedIds.size).toBe(2);
-    act(() => result.current.openBulk());
-    act(() => result.current.applyBulk({ recording: 'Always' }));
-    await waitFor(() => expect(patched).toHaveLength(2));
-    expect(patched.every((p) => JSON.stringify(p.body) === JSON.stringify({ recording: 'Always' }))).toBe(true);
-    await waitFor(() => expect(result.current.bulkOpen).toBe(false));
+    act(() => result.current.narrowToSelected());
+    expect(useMonitorFilterStore.getState().monitorIds).toEqual([2, 3]);
+    expect(result.current.filter.values.monitorId).toBe('2,3');
+    expect(result.current.allRows.map((r) => r.monitor.id)).toEqual([2, 3]);
+    // The legacy reload dropped the checkboxes.
+    expect(result.current.selectedIds.size).toBe(0);
+    expect(patched).toEqual([]);
+  });
+
+  it('Clone opens the Add form seeded from the source, saving nothing', async () => {
+    server.use(http.get('/api/v3/monitors/:id', ({ params }) =>
+      HttpResponse.json({ ...fakeData.monitors[0], id: Number(params.id), path: 'rtsp://10.0.0.1/h264' })));
+    const { result } = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
+    act(() => result.current.toggleSelected(1));
+    act(() => result.current.cloneSelected());
+    await waitFor(() => expect(result.current.addOpen).toBe(true));
+    expect(result.current.cloneSeed?.from).toBe('Cam 1');
+    expect(result.current.cloneSeed?.values.name).toBe('Clone of Cam 1');
+    expect(result.current.cloneSeed?.values.path).toBe('rtsp://10.0.0.1/h264');
+    act(() => result.current.closeAdd());
+    expect(result.current.cloneSeed).toBeNull();
+  });
+
+  it('footer scope: one visible row → monitor_id, a lone group filter → group, otherwise everything', () => {
+    expect(eventsScopeFor([4], { values: { groupId: '' } as never, activeCount: 0 })).toEqual({ monitor_id: 4 });
+    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 1 })).toEqual({ group: 9 });
+    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 2 })).toEqual({});
+    expect(cloneName('Cam', ['Cam', 'Clone of Cam'])).toBe('Clone of Clone of Cam');
   });
 
   it('reorder renumbers only the monitors whose sequence changed', async () => {

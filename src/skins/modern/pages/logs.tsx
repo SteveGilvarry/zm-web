@@ -2,7 +2,7 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft, ChevronRight, AlertOctagon, AlertTriangle,
-  ArrowDown, ArrowUp, Info, Bug, RefreshCw, Download, Columns3, Search, Skull, Trash2,
+  ArrowDown, ArrowUp, Info, Bug, RefreshCw, RefreshCwOff, Download, Columns3, Search, Skull, Trash2,
   SlidersHorizontal,
 } from 'lucide-react';
 
@@ -15,6 +15,7 @@ import { type LogColumnKey } from '@/features/logs/csv';
 import { ColumnPicker } from '@/features/logs/ColumnPicker';
 import { SummaryStrip } from '@/features/logs/SummaryStrip';
 import { LEVEL_CHIPS, useLogTimeFormat, useLogsPage } from '@/features/logs/useLogsPage';
+import { LogMessage } from '@/features/logs/LogMessage';
 import { ToolbarDisclosure } from '../components/ToolbarDisclosure';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 
@@ -291,6 +292,18 @@ export default function LogsPage() {
             <RefreshCw size={16} className={isFetching ? 'animate-spin' : ''} />
           </button>
 
+          <button
+            onClick={s.toggleAutoRefresh}
+            aria-pressed={s.autoRefresh}
+            className={clsx(toolBtn, s.autoRefresh && 'text-fg')}
+            aria-label={t('Auto refresh')}
+            title={s.autoRefresh
+              ? t('Auto refresh every {{count}} second', { count: s.refreshSeconds })
+              : t('Auto refresh off')}
+          >
+            {s.autoRefresh ? <RefreshCw size={16} /> : <RefreshCwOff size={16} />}
+          </button>
+
           <RequirePerm feature="system" level="Edit">
             <button
               onClick={s.askClear}
@@ -553,7 +566,7 @@ function LogCell({
       return (
         <td className="px-3 py-1 text-fg">
           <span className="whitespace-pre-wrap break-words">
-            {log.message}
+            <LogMessage message={log.message} className="text-accent hover:underline" />
           </span>
           {log.file && (
             <span className="ms-2 font-mono text-xs text-fg-faint">

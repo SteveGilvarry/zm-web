@@ -192,7 +192,7 @@ describe('AddMonitorDialog — source types', () => {
   it('offers all eight source types and swaps the source rows', async () => {
     renderWithProviders(<AddMonitorDialog open={true} onClose={() => {}} />);
     const typeSelect = screen.getByDisplayValue(/FFmpeg/) as HTMLSelectElement;
-    expect(Array.from(typeSelect.options).map((o) => o.value)).toEqual(['Ffmpeg', 'Libvlc', 'Remote', 'Local', 'File', 'Curl', 'WebSite', 'Vnc']);
+    expect(Array.from(typeSelect.options).map((o) => o.value)).toEqual(['Ffmpeg', 'Libvlc', 'Remote', 'Local', 'File', 'cURL', 'WebSite', 'VNC']);
 
     // FFmpeg: path + auth, no host.
     expect(screen.getByText('Path')).toBeInTheDocument();

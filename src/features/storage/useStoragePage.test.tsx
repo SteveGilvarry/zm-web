@@ -126,7 +126,7 @@ describe('useStoragePage form', () => {
     act(() => result.current.openEdit(COLD_ROW));
     expect(result.current.formData).toEqual({
       name: 'Cold', path: '/mnt/cold', type: 's3fs', enabled: 0,
-      scheme: 'Deep', server_id: 7, url: 's3://bucket/zm',
+      scheme: 'Deep', server_id: 7, url: 's3://bucket/zm', do_delete: 0,
     });
   });
 
@@ -163,12 +163,41 @@ describe('useStoragePage form', () => {
     expect(sent[0].body).toMatchObject({ url: null, server_id: null });
   });
 
+  it('sends do_delete on create and never on an update', async () => {
+    const { result, sent } = await mounted();
+    act(() => result.current.openCreate());
+    act(() => result.current.setField('name', 'Warm'));
+    act(() => result.current.setField('path', '/mnt/warm'));
+    act(() => result.current.toggleFormDoDelete());
+    act(() => result.current.submitForm());
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].method).toBe('POST');
+    expect(sent[0].body).toMatchObject({ do_delete: 0 });
+
+    // `UpdateStorageRequest` has no `do_delete` — the backend answers 200 and
+    // silently leaves the column alone, so the PATCH must not carry it.
+    act(() => result.current.openEdit(COLD_ROW));
+    act(() => result.current.submitForm());
+    await waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1].method).toBe('PATCH');
+    expect(sent[1].body).not.toHaveProperty('do_delete');
+  });
+
+  it('locks do_delete while editing, since only create accepts it', async () => {
+    const { result } = await mounted();
+    act(() => result.current.openCreate());
+    expect(result.current.doDeleteLocked).toBe(false);
+    act(() => result.current.openEdit(COLD_ROW));
+    expect(result.current.doDeleteLocked).toBe(true);
+  });
+
   it('opens the create form on defaults after an edit', async () => {
     const { result } = await mounted();
     act(() => result.current.openEdit(COLD_ROW));
     act(() => result.current.openCreate());
     expect(result.current.formData).toEqual({
       name: '', path: '', type: 'local', enabled: 1, scheme: 'Medium', server_id: null, url: '',
+      do_delete: 1,
     });
   });
 });

@@ -23,7 +23,7 @@ const e = (overrides: Partial<ZmEvent>): ZmEvent =>
     length: '60',
     width: 1920,
     height: 1080,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     state_id: 1,
     ...overrides,
   } as unknown as ZmEvent);
@@ -127,9 +127,10 @@ describe('evaluateFilter — monitors, tags, unevaluable attributes', () => {
     e({ id: 2, monitor_id: 2, tags: [] }),
   ];
 
-  it('Monitor / MonitorName compare the monitor name via the monitors list', () => {
+  it('MonitorName compares the name; Monitor compares the id', () => {
     expect(ids(evaluateFilter(q([{ attr: 'MonitorName', op: '=', val: 'Driveway' }]), events, { monitors }))).toEqual([2]);
-    expect(ids(evaluateFilter(q([{ attr: 'Monitor', op: 'LIKE', val: 'front' }]), events, { monitors }))).toEqual([1]);
+    // `Monitor` is the legacy monitor *picker*: its value is the id.
+    expect(ids(evaluateFilter(q([{ attr: 'Monitor', op: '=', val: '1' }]), events, { monitors }))).toEqual([1]);
   });
 
   it('Tags match by id or name', () => {

@@ -37,6 +37,23 @@ interface UiState {
    */
   maxLiveTiles: number;
   setMaxLiveTiles: (n: number) => void;
+
+  /**
+   * Classic skin chrome, persisted the way the legacy UI persists it in
+   * cookies: `zmHeaderFlip` (the stat strip's chevron), `zmFilterBarFlip`
+   * (the console's filter panel) and `zmCycleShow` (the watch page's cycle
+   * sidebar). Kept here rather than in component state so the choice
+   * survives navigation and reload, as it does in 1.39.
+   */
+  classicStatBarOpen: boolean;
+  toggleClassicStatBar: () => void;
+  classicFilterPanelOpen: boolean;
+  setClassicFilterPanelOpen: (open: boolean) => void;
+  /** `fbflip` on the events list: the filter-term strip above the table. */
+  classicEventsFilterBarOpen: boolean;
+  toggleClassicEventsFilterBar: () => void;
+  classicCycleSidebarOpen: boolean;
+  toggleClassicCycleSidebar: () => void;
 }
 
 export const DEFAULT_MAX_LIVE_TILES = 12;
@@ -58,6 +75,17 @@ export const useUiStore = create<UiState>()(
       maxLiveTiles: DEFAULT_MAX_LIVE_TILES,
       setMaxLiveTiles: (n) =>
         set({ maxLiveTiles: Number.isFinite(n) && n >= 1 ? Math.floor(n) : DEFAULT_MAX_LIVE_TILES }),
+
+      classicStatBarOpen: true,
+      toggleClassicStatBar: () => set((s) => ({ classicStatBarOpen: !s.classicStatBarOpen })),
+      classicFilterPanelOpen: true,
+      setClassicFilterPanelOpen: (open) => set({ classicFilterPanelOpen: open }),
+      classicEventsFilterBarOpen: true,
+      toggleClassicEventsFilterBar: () =>
+        set((s) => ({ classicEventsFilterBarOpen: !s.classicEventsFilterBarOpen })),
+      classicCycleSidebarOpen: false,
+      toggleClassicCycleSidebar: () =>
+        set((s) => ({ classicCycleSidebarOpen: !s.classicCycleSidebarOpen })),
     }),
     {
       name: 'zm-ui',
@@ -66,6 +94,10 @@ export const useUiStore = create<UiState>()(
         skin: state.skin,
         theme: state.theme,
         maxLiveTiles: state.maxLiveTiles,
+        classicStatBarOpen: state.classicStatBarOpen,
+        classicFilterPanelOpen: state.classicFilterPanelOpen,
+        classicEventsFilterBarOpen: state.classicEventsFilterBarOpen,
+        classicCycleSidebarOpen: state.classicCycleSidebarOpen,
       }),
     },
   ),

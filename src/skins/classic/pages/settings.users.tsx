@@ -28,10 +28,11 @@ export default function ClassicSettingsUsersPage() {
 
   if (!u.isAuthenticated) return null;
 
-  const permCols = ['stream', 'events', 'control', 'monitors', 'groups', 'devices', 'snapshots', 'system'] as const;
+  // Legacy `_options_users.php` column order.
+  const permCols = ['stream', 'events', 'control', 'monitors', 'groups', 'snapshots', 'system', 'devices'] as const;
   const permLabel: Record<(typeof permCols)[number], string> = {
     stream: t('Stream'), events: t('Events'), control: t('Control'), monitors: t('Monitors'),
-    groups: t('Groups'), devices: t('Devices'), snapshots: t('Snapshots'), system: t('System'),
+    groups: t('Groups'), snapshots: t('Snapshots'), system: t('System'), devices: t('Devices'),
   };
 
   return (
@@ -88,8 +89,10 @@ export default function ClassicSettingsUsersPage() {
                         <th className={classicTh}>{t('Username')}</th>
                         <th className={classicTh}>{t('Name')}</th>
                         <th className={classicTh}>{t('Email')}</th>
+                        <th className={classicTh}>{t('Language')}</th>
                         <th className={classicTh}>{t('Enabled')}</th>
                         {permCols.map((k) => <th key={k} className={classicTh}>{permLabel[k]}</th>)}
+                        <th className={classicTh}>{t('API Enabled')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -119,6 +122,7 @@ export default function ClassicSettingsUsersPage() {
                             </td>
                             <td className={classicTd}>{user.name}</td>
                             <td className={clsx(classicTd, 'font-mono text-xs')}>{user.email}</td>
+                            <td className={clsx(classicTd, 'text-xs')}>{user.language || t('default')}</td>
                             <td className={classicTd}>
                               {u.canEdit && !self ? (
                                 <input
@@ -130,6 +134,7 @@ export default function ClassicSettingsUsersPage() {
                               ) : (user.enabled === 1 ? t('Yes') : t('No'))}
                             </td>
                             {permCols.map((k) => <td key={k} className={clsx(classicTd, 'text-xs')}>{user[k]}</td>)}
+                            <td className={classicTd}>{(user.api_enabled ?? 1) === 1 ? t('Yes') : t('No')}</td>
                           </tr>
                         );
                       })}

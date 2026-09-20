@@ -18,6 +18,14 @@ import {
 import type { Monitor } from '@/types';
 import { buildGroupTree, getDescendantGroups } from './tree';
 
+/** What the edit dialog hands back on Save. */
+interface SaveInput {
+  name: string;
+  parentId: number | null;
+  /** Absent when the skin edits membership elsewhere (the modern panel). */
+  monitorIds?: number[];
+}
+
 export interface GroupsPageState {
   isAuthenticated: boolean;
   isLoading: boolean;
@@ -43,11 +51,20 @@ export interface GroupsPageState {
   openCreate: () => void;
   openEdit: (g: Group) => void;
   closeDialog: () => void;
-  handleSubmit: (v: { name: string; parentId: number | null }) => void;
+  handleSubmit: (v: { name: string; parentId: number | null; monitorIds?: number[] }) => void;
   dialogPending: boolean;
 
   /** Confirms (listing descendants) and deletes. */
   handleDelete: (g: Group) => void;
+  /** Ids ticked in legacy's Mark column. */
+  marked: Set<number>;
+  toggleMark: (id: number) => void;
+  /** Legacy's "Delete" toolbar button: confirms, then deletes every mark. */
+  deleteMarked: () => void;
+  /** Monitor ids in a group, for the edit dialog's multi-select. */
+  monitorIdsOf: (groupId: number) => number[];
+  /** Monitor names in a group, joined the way legacy's Monitors column is. */
+  monitorNamesOf: (groupId: number) => string;
   attach: (monitorId: number) => void;
   detach: (gm: GroupMonitor) => void;
   membershipPending: boolean;
@@ -128,9 +145,29 @@ export function useGroupsPage(): GroupsPageState {
     setDialogError(null);
   };
 
+  /**
+   * Make the group's memberships match `monitorIds` — legacy's modal saves
+   * the whole `MonitorIds[]` set at once, so a save is a diff against what
+   * `/groups-monitors` currently holds, not a per-checkbox round trip.
+   */
+  const syncMonitors = async (groupId: number, monitorIds: number[]) => {
+    const current = groupMonitors.filter((gm) => gm.group_id === groupId);
+    for (const gm of current) {
+      if (!monitorIds.includes(gm.monitor_id)) await detachMonitorFromGroup(gm.id);
+    }
+    for (const monitorId of monitorIds) {
+      if (!current.some((gm) => gm.monitor_id === monitorId)) {
+        await attachMonitorToGroup(groupId, monitorId);
+      }
+    }
+  };
+
   const createMutation = useMutation({
-    mutationFn: ({ name, parentId }: { name: string; parentId: number | null }) =>
-      createGroup(name, parentId),
+    mutationFn: async ({ name, parentId, monitorIds }: SaveInput) => {
+      const group = await createGroup(name, parentId);
+      if (monitorIds) await syncMonitors(group.id, monitorIds);
+      return group;
+    },
     onSuccess: (g) => {
       invalidate();
       setSelectedId(g.id);
@@ -143,8 +180,11 @@ export function useGroupsPage(): GroupsPageState {
   });
 
   const updateMutation = useMutation({
-    mutationFn: ({ id, name, parentId }: { id: number; name: string; parentId: number | null }) =>
-      updateGroup(id, name, parentId),
+    mutationFn: async ({ id, name, parentId, monitorIds }: SaveInput & { id: number }) => {
+      const group = await updateGroup(id, name, parentId);
+      if (monitorIds) await syncMonitors(id, monitorIds);
+      return group;
+    },
     onSuccess: () => {
       invalidate();
       closeDialog();
@@ -176,12 +216,12 @@ export function useGroupsPage(): GroupsPageState {
     onError: (err) => toast.apiError(err),
   });
 
-  const handleSubmit = ({ name, parentId }: { name: string; parentId: number | null }) => {
+  const handleSubmit = ({ name, parentId, monitorIds }: SaveInput) => {
     setDialogError(null);
     if (editing) {
-      updateMutation.mutate({ id: editing.id, name, parentId });
+      updateMutation.mutate({ id: editing.id, name, parentId, monitorIds });
     } else {
-      createMutation.mutate({ name, parentId });
+      createMutation.mutate({ name, parentId, monitorIds });
     }
   };
 
@@ -204,6 +244,33 @@ export function useGroupsPage(): GroupsPageState {
     }
     if (window.confirm(message)) deleteMutation.mutate(g.id);
   };
+
+  // Legacy's Mark column + Delete button.
+  const [marked, setMarked] = useState<Set<number>>(new Set());
+  const toggleMark = (id: number) =>
+    setMarked((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  const deleteMarked = () => {
+    const targets = groups.filter((g) => marked.has(g.id));
+    if (!targets.length) return;
+    const message = t('Delete {{count}} group and everything under it? This cannot be undone.', {
+      count: targets.length,
+    }) + '\n\n' + targets.map((g) => `  - ${g.name}`).join('\n');
+    if (!window.confirm(message)) return;
+    targets.forEach((g) => deleteMutation.mutate(g.id));
+    setMarked(new Set());
+  };
+
+  const monitorIdsOf = (groupId: number) =>
+    groupMonitors.filter((gm) => gm.group_id === groupId).map((gm) => gm.monitor_id);
+  const monitorNamesOf = (groupId: number) =>
+    monitorIdsOf(groupId)
+      .map((id) => monitors.find((m) => m.id === id)?.name ?? String(id))
+      .join(', ');
 
   return {
     isAuthenticated,
@@ -231,6 +298,11 @@ export function useGroupsPage(): GroupsPageState {
     dialogPending: createMutation.isPending || updateMutation.isPending,
 
     handleDelete,
+    marked,
+    toggleMark,
+    deleteMarked,
+    monitorIdsOf,
+    monitorNamesOf,
     attach: (monitorId) => {
       if (effectiveSelected) {
         attachMutation.mutate({ groupId: effectiveSelected.id, monitorId });

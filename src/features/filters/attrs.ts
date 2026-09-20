@@ -19,10 +19,17 @@ import {
  *  monitor      monitor picker, value = monitor id
  *  monitorName  monitor picker, value = monitor name
  *  storage      storage-area picker, value = storage id
+ *  group        monitor-group picker, value = group id
+ *  tags         multi-select of tags, value = comma-joined tag ids
+ *  zone         zone picker across every monitor, value = zone id
+ *  state        run-state picker, value = state id
+ *  server       server picker, value = server id / `ZM_SERVER_ID` / `NULL`
+ *  exists       on-disk check: `false` / `true`, only with IS / IS NOT
  */
 export type FilterAttrKind =
   | 'string' | 'number' | 'bool' | 'datetime' | 'date' | 'time' | 'weekday'
-  | 'monitor' | 'monitorName' | 'storage';
+  | 'monitor' | 'monitorName' | 'storage'
+  | 'group' | 'tags' | 'zone' | 'state' | 'server' | 'exists';
 
 export interface FilterAttrMeta {
   attr: FilterAttr;
@@ -37,7 +44,7 @@ export interface FilterAttrMeta {
 
 const META: Record<FilterAttr, Omit<FilterAttrMeta, 'attr'>> = {
   AlarmFrames:        { kind: 'number',      astField: 'alarm_frames' },
-  AlarmedZoneId:      { kind: 'number' },
+  AlarmedZoneId:      { kind: 'zone' },
   Archived:           { kind: 'bool',        astField: 'archived' },
   AvgScore:           { kind: 'number',      astField: 'avg_score' },
   Cause:              { kind: 'string',      astField: 'cause' },
@@ -54,33 +61,36 @@ const META: Record<FilterAttr, Omit<FilterAttrMeta, 'attr'>> = {
   EndDate:            { kind: 'date' },
   EndTime:            { kind: 'time' },
   EndWeekday:         { kind: 'weekday' },
-  ExistsInFileSystem: { kind: 'bool' },
-  FilterServerId:     { kind: 'number' },
+  ExistsInFileSystem: { kind: 'exists' },
+  FilterServerId:     { kind: 'server' },
   Frames:             { kind: 'number',      astField: 'frames' },
-  Group:              { kind: 'number' },
+  Group:              { kind: 'group' },
   Id:                 { kind: 'number',      astField: 'id' },
   Length:             { kind: 'number',      astField: 'length' },
   MaxScore:           { kind: 'number',      astField: 'max_score' },
-  // Legacy `Monitor` compares the monitor *name* (older ZM had no MonitorId).
-  Monitor:            { kind: 'monitorName' },
+  // Legacy `Monitor` is a monitor *picker* whose value is the id: ZM's
+  // `FilterTerm::sql_attr()` maps both `Monitor` and `Group` to `E.MonitorId`,
+  // and `filter.js` writes the id into the row. Only `MonitorName` compares
+  // the name.
+  Monitor:            { kind: 'monitor',     astField: 'monitor_id' },
   MonitorId:          { kind: 'monitor',     astField: 'monitor_id' },
   // The AST has `monitor_name`, but the live backend rejects it in preview
   // ("not supported in preview yet"), so it stays client-evaluated.
   MonitorName:        { kind: 'monitorName' },
-  MonitorServerId:    { kind: 'number' },
+  MonitorServerId:    { kind: 'server' },
   Name:               { kind: 'string',      astField: 'name' },
   Notes:              { kind: 'string',      astField: 'notes' },
   SecondaryStorageId: { kind: 'storage' },
-  ServerId:           { kind: 'number' },
+  ServerId:           { kind: 'server' },
   StartDateTime:      { kind: 'datetime',    astField: 'start_time' },
   StartDate:          { kind: 'date' },
   StartTime:          { kind: 'time' },
   StartWeekday:       { kind: 'weekday' },
-  StateId:            { kind: 'number',      astField: 'state_id' },
+  StateId:            { kind: 'state',       astField: 'state_id' },
   StorageId:          { kind: 'storage',     astField: 'storage_id' },
-  StorageServerId:    { kind: 'number' },
+  StorageServerId:    { kind: 'server' },
   SystemLoad:         { kind: 'number' },
-  Tags:               { kind: 'string' },
+  Tags:               { kind: 'tags' },
   TotScore:           { kind: 'number',      astField: 'tot_score' },
 };
 
@@ -105,6 +115,12 @@ export const SERVER_ONLY_ATTRS: FilterAttr[] = FILTER_ATTR_META
 /**
  * Operator menu per value kind — the full legacy set for strings, pruned
  * where an operator has no meaning for the column type.
+ *
+ * Some kinds are narrower than the legacy menu on purpose, because
+ * `FilterTerm` only ever emits one shape for them: `Group` compiles to
+ * ` IN (…)` (equality only), `AlarmedZoneId` to an `EXISTS` sub-select, and
+ * `ExistsInFileSystem` is a post-query file check ZM only tests with
+ * `IS` / `IS NOT`.
  */
 export const OPS_BY_KIND: Record<FilterAttrKind, FilterOp[]> = {
   string:      ['=', '!=', '=~', '!~', '=[]', '![]', 'LIKE', 'NOT LIKE', 'IS', 'IS NOT'],
@@ -117,7 +133,43 @@ export const OPS_BY_KIND: Record<FilterAttrKind, FilterOp[]> = {
   monitor:     ['=', '!=', '=[]', '![]'],
   monitorName: ['=', '!=', '=~', '!~', '=[]', '![]', 'LIKE', 'NOT LIKE'],
   storage:     ['=', '!=', '=[]', '![]', 'IS', 'IS NOT'],
+  group:       ['='],
+  tags:        ['=', '!='],
+  zone:        ['='],
+  state:       ['=', '!=', '>=', '>', '<', '<=', '=[]', '![]', 'IS', 'IS NOT'],
+  server:      ['=', '!='],
+  exists:      ['IS', 'IS NOT'],
 };
+
+/* ------------------------------------------------------------------------ */
+/*  Sentinel values the legacy pickers write                                */
+/* ------------------------------------------------------------------------ */
+
+/** `Tags` pseudo-options: no tag at all, or any tag at all. */
+export const TAG_NONE = '0';
+export const TAG_ANY = '-1';
+/** `*ServerId` pseudo-options: whichever server runs the filter, or none. */
+export const SERVER_CURRENT = 'ZM_SERVER_ID';
+export const SERVER_NONE = 'NULL';
+
+/**
+ * Read a `Tags` term value. ZoneMinder stores multi-selects inconsistently
+ * (`Filter::decode_multi()` accepts an array, a JSON-array string, a bare
+ * number and a comma list), so tolerate all of them; we always write the
+ * comma list back.
+ */
+export function splitTagIds(raw: unknown): string[] {
+  if (Array.isArray(raw)) return raw.map((v) => String(v).trim()).filter((v) => v !== '');
+  const s = raw == null ? '' : String(raw).trim();
+  if (s === '') return [];
+  if (s.startsWith('[')) {
+    try {
+      const parsed: unknown = JSON.parse(s);
+      if (Array.isArray(parsed)) return parsed.map((v) => String(v).trim()).filter((v) => v !== '');
+    } catch { /* fall through to the comma list */ }
+  }
+  return s.split(',').map((v) => v.trim()).filter((v) => v !== '');
+}
 
 /** Legacy sort field → AST field (absent = preview runs unsorted). */
 export const SORT_FIELD_TO_AST: Partial<Record<FilterSortField, FilterAstField>> = {

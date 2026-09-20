@@ -4,6 +4,7 @@ import {
   GRIDSTACK_COLUMNS,
   gridStackToTree,
   parsePositions,
+  serialiseGridStackPositions,
   serialisePositions,
   statusPositionFromLegacy,
   treeToGridStack,
@@ -61,6 +62,63 @@ describe('parsePositions — legacy gridstack rows', () => {
   });
 });
 
+describe('parsePositions — tile geometry', () => {
+  it('keeps the dev-box tile sizes instead of flattening them to an even grid', () => {
+    expect(parsePositions(TEST1)?.items).toEqual([
+      { id: '1', x: 0, y: 0, w: 24, h: 461 },
+      { id: '2', x: 24, y: 0, w: 24, h: 461 },
+      { id: '3', x: 0, y: 461, w: 24, h: 461 },
+      { id: '4', x: 24, y: 461, w: 24, h: 150 },
+    ]);
+  });
+
+  it('round-trips a legacy row byte-for-identical through the classic save path', () => {
+    const items = parsePositions(TEST1)!.items;
+    const again = parsePositions(serialiseGridStackPositions(items, 'outside'))!;
+    expect(again.items).toEqual(items);
+    expect(JSON.parse(serialiseGridStackPositions(items, 'outside')).gridStack).toEqual(items);
+  });
+
+  it('prefers the saved gridStack over the tree even when our own key wins', () => {
+    // A row this dashboard wrote: `dashboard` decides the tree, `gridStack`
+    // still decides the tile sizes, so a hand-resized wall survives a reload.
+    const mixed = JSON.stringify({
+      gridStack: [{ id: '1', x: 0, y: 0, w: 36, h: 400 }, { id: '2', x: 36, y: 0, w: 12, h: 400 }],
+      dashboard: { version: 1, tree: split('row', [leaf(1), leaf(2)], [0.75, 0.25]) },
+    });
+    const parsed = parsePositions(mixed)!;
+    expect(parsed.source).toBe('dashboard');
+    expect(parsed.items.map((i) => i.w)).toEqual([36, 12]);
+  });
+
+  it('projects the tree when a row has no gridStack of its own', () => {
+    const parsed = parsePositions(JSON.stringify({ version: 1, tree: split('row', [leaf(1), leaf(2)]) }))!;
+    expect(parsed.items.map((i) => [i.x, i.w])).toEqual([[0, 24], [24, 24]]);
+  });
+});
+
+describe('serialiseGridStackPositions', () => {
+  it('writes exactly what legacy\'s objGridStack.save(false, false) writes', () => {
+    const items = [
+      { id: '4', x: 0, y: 0, w: 48, h: 550 },
+      { id: '2', x: 0, y: 550, w: 24, h: 450 },
+      { id: '3', x: 24, y: 550, w: 24, h: 450 },
+    ];
+    const obj = JSON.parse(serialiseGridStackPositions(items, 'inside', { 2: '16:9' }));
+    expect(obj.gridStack).toEqual(items);
+    expect(obj.monitorStatusPosition).toBe('insideImgBottom');
+    expect(obj.monitorRatio).toEqual({ '4': 'auto', '2': '16:9', '3': 'auto' });
+    // The modern mosaic reads the same arrangement from `dashboard`.
+    expect(leafMonitors(obj.dashboard.tree)).toEqual([4, 2, 3]);
+  });
+
+  it('writes a gridStack with no tree when there is nothing to lay out', () => {
+    const obj = JSON.parse(serialiseGridStackPositions([], 'hidden'));
+    expect(obj.gridStack).toEqual([]);
+    expect(obj.dashboard).toBeUndefined();
+  });
+});
+
 describe('parsePositions — dashboard rows', () => {
   const tree = split('row', [leaf(1), split('column', [leaf(2), leaf(null)])], [0.7, 0.3]);
 
@@ -75,6 +133,25 @@ describe('parsePositions — dashboard rows', () => {
     const parsed = parsePositions(JSON.stringify({ version: 1, tree }));
     expect(parsed?.source).toBe('dashboard');
     expect(parsed?.tree).toEqual(tree);
+  });
+});
+
+describe('monitorRatio — the per-tile Ratio select', () => {
+  it('reads the ratios legacy wrote', () => {
+    const parsed = parsePositions(TEST1);
+    expect(parsed?.monitorRatio).toEqual({ 1: 'auto', 2: 'auto', 3: 'auto', 4: 'auto' });
+  });
+
+  it('writes the ratios it was given and defaults the rest to auto', () => {
+    const tree = split('row', [leaf(1), leaf(2)], [0.5, 0.5]);
+    const obj = JSON.parse(serialisePositions(tree, 'inside', { 1: '16:9' }));
+    expect(obj.monitorRatio).toEqual({ '1': '16:9', '2': 'auto' });
+    expect(parsePositions(JSON.stringify(obj))?.monitorRatio).toEqual({ 1: '16:9', 2: 'auto' });
+  });
+
+  it('drops junk entries rather than trusting the column', () => {
+    const obj = { gridStack: [{ id: '1', x: 0, y: 0, w: 48, h: 1000 }], monitorRatio: { x: '16:9', 2: 7 } };
+    expect(parsePositions(JSON.stringify(obj))?.monitorRatio).toBeUndefined();
   });
 });
 
@@ -108,11 +185,15 @@ describe('serialisePositions — what legacy sees', () => {
 });
 
 describe('statusPositionFromLegacy', () => {
-  it('maps the four legacy values (hover collapses to inside) and rejects others', () => {
+  it('maps the four legacy values and rejects others', () => {
     expect(statusPositionFromLegacy('insideImgBottom')).toBe('inside');
-    expect(statusPositionFromLegacy('showOnHover')).toBe('inside');
+    expect(statusPositionFromLegacy('showOnHover')).toBe('hover');
     expect(statusPositionFromLegacy('outsideImgBottom')).toBe('outside');
     expect(statusPositionFromLegacy('hidden')).toBe('hidden');
     expect(statusPositionFromLegacy('nope')).toBeUndefined();
+  });
+
+  it('writes showOnHover back for the hover position', () => {
+    expect(JSON.parse(serialisePositions(leaf(1), 'hover')).monitorStatusPosition).toBe('showOnHover');
   });
 });

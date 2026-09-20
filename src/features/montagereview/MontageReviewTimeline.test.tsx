@@ -268,7 +268,7 @@ describe('MontageReviewTimeline — playhead and scrubbing', () => {
   });
 });
 
-describe('MontageReviewTimeline — tick labels', () => {
+describe('MontageReviewTimeline — edge labels', () => {
   it('labels a short window with clock times', async () => {
     stubEvents([]);
     renderTimeline({
@@ -277,11 +277,11 @@ describe('MontageReviewTimeline — tick labels', () => {
       currentTime: new Date('2026-08-21T00:30:00Z'),
     });
     await screen.findByText('Front Door');
-    // Five evenly spaced ticks, each an HH:MM label.
-    const ticks = [...document.querySelectorAll('span')]
+    // Legacy writes the window's two edges plus the playhead, not a tick row.
+    const labels = [...document.querySelectorAll('span')]
       .map((s) => s.textContent ?? '')
       .filter((s) => /^\d{2}:\d{2}$/.test(s));
-    expect(ticks.length).toBeGreaterThanOrEqual(5);
+    expect(labels.length).toBeGreaterThanOrEqual(3);
   });
 
   it('labels a multi-day window with dates instead of clock times', async () => {
@@ -292,7 +292,7 @@ describe('MontageReviewTimeline — tick labels', () => {
       currentTime: new Date('2026-08-15T00:00:00Z'),
     });
     await screen.findByText('Front Door');
-    // Ticks switch to a date label past 48 h; the first one is the range start.
+    // Labels switch to dates past 48 h; the edges carry the window bounds.
     const asDate = (iso: string) =>
       new Date(iso).toLocaleDateString([], { month: 'short', day: 'numeric' });
     expect(screen.getByText(asDate('2026-08-01T00:00:00Z'))).toBeInTheDocument();
@@ -330,5 +330,119 @@ describe('MontageReviewTimeline — backend trouble', () => {
     renderTimeline();
     expect(await screen.findByText('Front Door')).toBeInTheDocument();
     expect(document.querySelectorAll('[title*="—"]')).toHaveLength(0);
+  });
+});
+
+/**
+ * Legacy `drawEventOnGraph` / `drawFrameOnGraph`: bars in the monitor's own
+ * `web_colour` at α .2, scored alarm frames drawn over them, and `#collapse`
+ * folding the whole timeline away.
+ */
+describe('MontageReviewTimeline — legacy fidelity', () => {
+  function stubFrames(frames: unknown[]) {
+    server.use(http.get('/api/v3/frames', () => paged(frames)));
+  }
+
+  it('paints each bar in its monitor\'s web_colour, faintly', async () => {
+    stubEvents([ev(9, 1, '2026-08-21T01:00:00Z', '2026-08-21T01:10:00Z')]);
+    stubFrames([]);
+    renderWithProviders(
+      <MontageReviewTimeline
+        monitors={[monitor(1, 'Front Door')]}
+        rangeStart={RANGE_START}
+        rangeEnd={RANGE_END}
+        currentTime={RANGE_START}
+        onSeek={vi.fn()}
+      />,
+    );
+    const bar = await screen.findByTestId('review-event-bar-9');
+    expect(bar.style.backgroundColor).toBe('rgb(67, 188, 242)'); // legacy fallback
+    expect(bar.style.opacity).toBe('0.2');
+  });
+
+  it('falls back to legacy\'s blue only when the monitor has no colour', async () => {
+    stubEvents([ev(9, 1, '2026-08-21T01:00:00Z', '2026-08-21T01:10:00Z')]);
+    stubFrames([]);
+    renderWithProviders(
+      <MontageReviewTimeline
+        monitors={[{ ...monitor(1, 'Front Door'), web_colour: '#ff0000' } as Monitor]}
+        rangeStart={RANGE_START}
+        rangeEnd={RANGE_END}
+        currentTime={RANGE_START}
+        onSeek={vi.fn()}
+      />,
+    );
+    const bar = await screen.findByTestId('review-event-bar-9');
+    expect(bar.style.backgroundColor).toBe('rgb(255, 0, 0)');
+  });
+
+  it('shades the scored alarm frames over the bar', async () => {
+    stubEvents([ev(9, 1, '2026-08-21T01:00:00Z', '2026-08-21T01:10:00Z', {
+      alarm_frames: 2, max_score: 100,
+    } as Partial<ZmEvent>)]);
+    stubFrames([
+      { id: 1, event_id: 9, frame_id: 1, type: 'Alarm', score: 100, time_stamp: '2026-08-21T01:01:00Z', delta: '1.00' },
+      { id: 2, event_id: 9, frame_id: 2, type: 'Normal', score: 0, time_stamp: '2026-08-21T01:02:00Z', delta: '2.00' },
+    ]);
+    renderWithProviders(
+      <MontageReviewTimeline
+        monitors={[monitor(1, 'Front Door')]}
+        rangeStart={RANGE_START}
+        rangeEnd={RANGE_END}
+        currentTime={RANGE_START}
+        onSeek={vi.fn()}
+      />,
+    );
+    const frame = await screen.findByTestId('review-frame-1');
+    expect(Number(frame.style.opacity)).toBeCloseTo(0.4, 5);
+    // A zero-score frame is not drawn (legacy returns early).
+    expect(screen.queryByTestId('review-frame-2')).toBeNull();
+  });
+
+  it('asks for no frames when no event scored', async () => {
+    const framesFor: string[] = [];
+    stubEvents([ev(9, 1, '2026-08-21T01:00:00Z', '2026-08-21T01:10:00Z')]);
+    server.use(http.get('/api/v3/frames', ({ request }) => {
+      framesFor.push(new URL(request.url).searchParams.get('event_id') ?? '');
+      return paged([]);
+    }));
+    renderWithProviders(
+      <MontageReviewTimeline
+        monitors={[monitor(1, 'Front Door')]}
+        rangeStart={RANGE_START}
+        rangeEnd={RANGE_END}
+        currentTime={RANGE_START}
+        onSeek={vi.fn()}
+      />,
+    );
+    await screen.findByTestId('review-event-bar-9');
+    expect(framesFor).toEqual([]);
+  });
+
+  it('writes the window edges and the playhead time', async () => {
+    stubEvents([]);
+    renderTimeline({ currentTime: new Date('2026-08-21T06:00:00Z') });
+    await screen.findByText('Front Door');
+    // Labels are local wall clock, so compare against the same formatting.
+    const hhmm = (d: Date) => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
+    expect(screen.getByTestId('review-timeline-min')).toHaveTextContent(hhmm(RANGE_START));
+    expect(screen.getByTestId('review-timeline-max')).toHaveTextContent(hhmm(RANGE_END));
+    expect(screen.getByTestId('review-timeline-current'))
+      .toHaveTextContent(new Date('2026-08-21T06:00:00Z').toLocaleTimeString([], { hour12: false }));
+  });
+
+  it('collapses and restores the tracks', async () => {
+    stubEvents([]);
+    renderTimeline();
+    await screen.findByText('Front Door');
+    const toggle = screen.getByRole('button', { name: 'Toggle timeline visibility' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'true');
+
+    fireEvent.click(toggle);
+    await waitFor(() => expect(screen.queryByText('Front Door')).toBeNull());
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+
+    fireEvent.click(toggle);
+    expect(await screen.findByText('Front Door')).toBeInTheDocument();
   });
 });

@@ -92,6 +92,23 @@ const CALLS: Record<string, Record<string, Call>> = {
     logout: { args: ['tok'] },
     refreshToken: { args: ['tok'] },
   },
+  ai: {
+    listAiDatasets: { args: [] },
+    getAiDataset: { args: [1] },
+    createAiDataset: { args: [{ name: 'COCO', num_classes: 80 }] },
+    updateAiDataset: { args: [1, { name: 'COCO' }] },
+    deleteAiDataset: { args: [1] },
+    listAiModels: { args: [] },
+    getAiModel: { args: [1] },
+    createAiModel: { args: [{ name: 'yolov8n', framework: 'ONNX' }] },
+    updateAiModel: { args: [1, { enabled: 0 }] },
+    deleteAiModel: { args: [1] },
+    listAiObjectClasses: { args: [{ dataset_id: 1 }] },
+    getAiObjectClass: { args: [1] },
+    createAiObjectClass: { args: [{ dataset_id: 1, class_name: 'person', class_index: 0 }] },
+    updateAiObjectClass: { args: [1, { class_name: 'person' }] },
+    deleteAiObjectClass: { args: [1] },
+  },
   configs: {
     getConfigs: { args: [] },
     getConfig: { args: ['ZM_WEB_TITLE'] },
@@ -142,6 +159,8 @@ const CALLS: Record<string, Record<string, Call>> = {
   frames: {
     listFrames: { args: [{ event_id: 1 }] },
     getAllFramesForEvent: { args: [1] },
+    getFrameImageUrl: { url: [1] },
+    getEventFrameImageUrl: { url: [1, 'alarm'] },
   },
   groups: {
     listGroups: { args: [] },
@@ -225,6 +244,9 @@ const CALLS: Record<string, Record<string, Call>> = {
     stopZoom: { args: [1] },
     focus: { args: [1, 'near'] },
     stopFocus: { args: [1] },
+    iris: { args: [1, 'open'] },
+    stopIris: { args: [1] },
+    power: { args: [1, 'wake'] },
     home: { args: [1] },
     gotoPreset: { args: [1, 2] },
     setPreset: { args: [1, 2, 'p'] },
@@ -241,8 +263,24 @@ const CALLS: Record<string, Record<string, Call>> = {
   },
   servers: {
     listServers: { args: [] },
-    createServer: { args: [{ name: 's' }] },
-    updateServer: { args: [1, { name: 's' }] },
+    createServer: {
+      args: [{
+        name: 's', protocol: 'https', hostname: 'h', port: 443,
+        path_to_index: '/zm/index.php', path_to_zms: '/zm/cgi-bin/nph-zms', path_to_api: '/zm/api',
+        latitude: 1, longitude: 2,
+        zmstats: true, zmaudit: false, zmtrigger: true, zmeventnotification: false,
+        status: 'Unknown',
+      }],
+    },
+    updateServer: {
+      args: [1, {
+        name: 's', protocol: 'http', hostname: 'h', port: 80,
+        path_to_index: '/i', path_to_zms: '/z', path_to_api: '/a',
+        latitude: null, longitude: null,
+        zmstats: false, zmaudit: true, zmtrigger: false, zmeventnotification: true,
+        status: 'Running',
+      }],
+    },
     deleteServer: { args: [1] },
   },
   states: {
@@ -258,7 +296,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   },
   storage: {
     getStorageList: { args: [] },
-    createStorage: { args: [{ name: 's', path: '/x', type: 'local', enabled: 1 }] },
+    createStorage: { args: [{ name: 's', path: '/x', type: 'local', enabled: 1, do_delete: 0 }] },
     updateStorage: { args: [1, { enabled: 0 }] },
     deleteStorage: { args: [1] },
   },
@@ -286,6 +324,9 @@ const CALLS: Record<string, Record<string, Call>> = {
     attachTag: { args: [1, 2] },
     detachTag: { args: [1, 2] },
   },
+  userPreferences: {
+    listUserPreferences: { args: [] },
+  },
   users: {
     getUsers: { args: [] },
     getUser: { args: [1] },
@@ -295,8 +336,32 @@ const CALLS: Record<string, Record<string, Call>> = {
   },
   zones: {
     listZonesForMonitor: { args: [1] },
-    createZone: { args: [1, { name: 'z' }] },
-    updateZone: { args: [1, { name: 'z' }] },
+    createZone: {
+      args: [1, {
+        name: 'z', type: 'Active', units: 'Pixels', coords: '0,0 1,0 1,1', num_coords: 3,
+        check_method: 'Blobs',
+        min_pixel_threshold: 25, max_pixel_threshold: null,
+        min_alarm_pixels: 1, max_alarm_pixels: 2,
+        filter_x: 3, filter_y: 3,
+        min_filter_pixels: 1, max_filter_pixels: 2,
+        min_blob_pixels: 1, max_blob_pixels: 2,
+        min_blobs: 1, max_blobs: 2,
+        alarm_rgb: 16711680, overload_frames: 0, extend_alarm_frames: 0,
+      }],
+    },
+    updateZone: {
+      args: [1, {
+        name: 'z', type: 'Inclusive', units: 'Percent', coords: '0,0 1,0 1,1',
+        check_method: 'FilteredPixels',
+        min_pixel_threshold: 25, max_pixel_threshold: null,
+        min_alarm_pixels: 1, max_alarm_pixels: 2,
+        filter_x: 3, filter_y: 3,
+        min_filter_pixels: 1, max_filter_pixels: 2,
+        min_blob_pixels: 1, max_blob_pixels: 2,
+        min_blobs: null, max_blobs: 2,
+        alarm_rgb: 255, overload_frames: 7, extend_alarm_frames: 8,
+      }],
+    },
     deleteZone: { args: [1] },
     listZonePresets: { args: [] },
     parseCoords: 'pure',

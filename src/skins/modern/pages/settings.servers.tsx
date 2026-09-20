@@ -11,8 +11,8 @@ import { fieldClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import type { Server } from '@/api/servers';
 import { useServersPage, type ServerRow } from '@/features/servers/useServersPage';
-import { SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
-import type { ServerDaemon } from '@/features/servers/serverFields';
+import { SERVER_PROTOCOLS, SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
+import { SERVER_DAEMONS, serverDaemonLabels } from '@/features/servers/serverFields';
 import { cpuLoadTone, freeTone, serverStatusTone, type LoadTone, type ServerLoadSummary } from '@/features/servers/serverStats';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
@@ -94,10 +94,6 @@ export default function SettingsServersPage() {
                   </table>
                 </div>
               </QueryState>
-              {/* Said once for the whole page — see `UpdateServerRequest` in the OpenAPI spec. */}
-              <p className="px-3 py-2 text-xs text-fg-dim border-t border-border-subtle">
-                {t('Only name, hostname, port and status are writable; the API does not accept the rest yet.')}
-              </p>
             </div>
           </section>
 
@@ -211,16 +207,11 @@ function ServerRows({ row, expanded, onToggle, onEdit, onDelete }: {
   );
 }
 
-/** Daemon flags, run state and coordinates — stored on the row, not editable. */
+/** Daemon flags, run state and coordinates — edited in the form below. */
 function ServerDetail({ row }: { row: ServerRow }) {
   const { t } = useTranslation();
   const { server, daemons, coords } = row;
-  const daemonLabels: Record<ServerDaemon, string> = {
-    zmstats: t('Run stats'),
-    zmaudit: t('Run audit'),
-    zmtrigger: t('Run trigger'),
-    zmeventnotification: t('Run event notification'),
-  };
+  const daemonLabels = serverDaemonLabels(t);
 
   return (
     <dl className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-3 text-xs">
@@ -315,6 +306,7 @@ function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () 
   const { t } = useTranslation();
   const f = useServerForm(editing, onSaved);
   const input = clsx(fieldClasses('sm'), 'flex-1');
+  const daemonLabels = serverDaemonLabels(t);
 
   return (
     <form onSubmit={f.submit} className="space-y-3">
@@ -328,9 +320,18 @@ function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () 
         />
       </Field>
       <Field label={t('Host')}>
+        <select
+          value={f.protocol}
+          onChange={(e) => f.setProtocol(e.target.value)}
+          aria-label={t('Protocol')}
+          className={clsx(fieldClasses('sm'), 'w-24')}
+        >
+          <option value="">{t('Not set')}</option>
+          {SERVER_PROTOCOLS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
         <input
-          value={f.hostname}
-          onChange={(e) => f.setHostname(e.target.value)}
+          value={f.text.hostname}
+          onChange={(e) => f.setTextField('hostname', e.target.value)}
           placeholder={t('hostname or IP')}
           aria-label={t('Host')}
           className={clsx(input, 'font-mono')}
@@ -341,6 +342,33 @@ function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () 
           placeholder={t('port')}
           aria-label={t('Port')}
           className={clsx(fieldClasses('sm'), 'w-20 font-mono')}
+        />
+      </Field>
+      <Field label={t('Index')}>
+        <input
+          value={f.text.path_to_index}
+          onChange={(e) => f.setTextField('path_to_index', e.target.value)}
+          placeholder="/zm/index.php"
+          aria-label={t('Path to index')}
+          className={clsx(input, 'font-mono')}
+        />
+      </Field>
+      <Field label={t('ZMS')}>
+        <input
+          value={f.text.path_to_zms}
+          onChange={(e) => f.setTextField('path_to_zms', e.target.value)}
+          placeholder="/zm/cgi-bin/nph-zms"
+          aria-label={t('Path to ZMS')}
+          className={clsx(input, 'font-mono')}
+        />
+      </Field>
+      <Field label={t('API')}>
+        <input
+          value={f.text.path_to_api}
+          onChange={(e) => f.setTextField('path_to_api', e.target.value)}
+          placeholder="/zm/api"
+          aria-label={t('Path to API')}
+          className={clsx(input, 'font-mono')}
         />
       </Field>
       <Field label={t('Status')}>
@@ -354,6 +382,36 @@ function ServerForm({ editing, onSaved }: { editing: Server | null; onSaved: () 
             <option key={st} value={st}>{st}</option>
           ))}
         </select>
+      </Field>
+      <Field label={t('Location')}>
+        <input
+          value={f.latitude}
+          onChange={(e) => f.setLatitude(e.target.value)}
+          placeholder={t('latitude')}
+          aria-label={t('Latitude')}
+          className={clsx(input, 'font-mono')}
+        />
+        <input
+          value={f.longitude}
+          onChange={(e) => f.setLongitude(e.target.value)}
+          placeholder={t('longitude')}
+          aria-label={t('Longitude')}
+          className={clsx(input, 'font-mono')}
+        />
+      </Field>
+      <Field label={t('Daemons')}>
+        <div className="flex flex-wrap gap-x-4 gap-y-1">
+          {SERVER_DAEMONS.map((daemon) => (
+            <label key={daemon} className="flex items-center gap-1.5 text-xs text-fg-muted">
+              <input
+                type="checkbox"
+                checked={f.daemons[daemon]}
+                onChange={(e) => f.setDaemon(daemon, e.target.checked)}
+              />
+              {daemonLabels[daemon]}
+            </label>
+          ))}
+        </div>
       </Field>
       {f.error && (
         <p role="alert" className="text-xs text-danger">{t('Save failed: {{message}}', { message: f.error })}</p>

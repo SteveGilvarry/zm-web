@@ -13,7 +13,7 @@ import { gridLayout } from './mosaic';
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useNavigate: () => vi.fn() }));
 
 const m = (id: number): Monitor =>
-  ({ id, name: `Cam ${id}`, capturing: 'Always', width: 1920, height: 1080, orientation: 'Rotate0' }) as unknown as Monitor;
+  ({ id, name: `Cam ${id}`, capturing: 'Always', width: 1920, height: 1080, orientation: 'ROTATE_0' }) as unknown as Monitor;
 
 describe('presetColumnsFromName', () => {
   it('reads "N Wide" and nothing else', () => {

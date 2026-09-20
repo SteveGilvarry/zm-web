@@ -7,6 +7,7 @@ import {
   getEventPlaylistUrl,
   type EventVideoInfo,
 } from '@/api/events';
+import type { PlaybackCodec } from '@/stores/eventPlayback';
 
 /**
  * How an event is being played back:
@@ -33,14 +34,24 @@ function nativeHlsSupported(): boolean {
 }
 
 /**
- * Pick the playback mode from the backend's recommendation and the browser's
- * capabilities. Pure, so the hook can derive it during render instead of
- * setting state from its effect.
+ * Pick the playback mode from the operator's choice, the backend's
+ * recommendation and the browser's capabilities. Pure, so the hook can
+ * derive it during render instead of setting state from its effect.
+ *
+ * `codec` is legacy's `&codec=`: MP4 means "play the mp4 file directly"
+ * whatever the backend recommends, MP4 HLS means the playlist — and a
+ * browser that cannot decode the playlist is told so rather than silently
+ * falling back, which is the whole point of forcing it.
  */
-function resolvePlaybackMode(info: EventVideoInfo | undefined): EventPlaybackMode {
+export function resolvePlaybackMode(
+  info: EventVideoInfo | undefined,
+  codec: PlaybackCodec = 'auto',
+): EventPlaybackMode {
+  if (codec === 'mp4') return 'direct';
+  const hlsPlayable = Hls.isSupported() || nativeHlsSupported();
+  if (codec === 'mp4hls') return hlsPlayable ? 'hls' : 'unsupported';
   if (!info || info.recommended_mode !== 'hls') return 'direct';
-  if (Hls.isSupported() || nativeHlsSupported()) return 'hls';
-  return 'unsupported';
+  return hlsPlayable ? 'hls' : 'unsupported';
 }
 
 /**
@@ -58,23 +69,27 @@ export function useEventVideo(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   eventId: number,
   info: EventVideoInfo | undefined,
+  codec: PlaybackCodec = 'auto',
 ): EventVideoResult {
   const { t } = useTranslation();
   const hlsRef = useRef<Hls | null>(null);
-  // Event id whose HLS session hit a fatal (almost always undecodable-codec)
-  // error. Keyed by event so a new event starts clean without an effect
-  // having to reset it.
-  const [fatalEventId, setFatalEventId] = useState<number | null>(null);
+  // The event + container choice whose HLS session hit a fatal (almost
+  // always undecodable-codec) error. Keyed so a new event — or the operator
+  // forcing another container — starts clean without an effect resetting it.
+  const [fatalKey, setFatalKey] = useState<string | null>(null);
+  const key = `${eventId}:${codec}`;
 
-  const baseMode = useMemo(() => resolvePlaybackMode(info), [info]);
-  const mode: EventPlaybackMode = fatalEventId === eventId ? 'unsupported' : baseMode;
+  const baseMode = useMemo(() => resolvePlaybackMode(info, codec), [info, codec]);
+  const mode: EventPlaybackMode = fatalKey === key ? 'unsupported' : baseMode;
   const error = mode === 'unsupported'
     ? t('This video codec is not supported in this browser.')
     : null;
 
   useEffect(() => {
     const video = videoRef.current;
-    if (!video || !info) return;
+    // Forcing a container does not need /info; auto does, since that is what
+    // the recommendation comes from.
+    if (!video || (!info && codec === 'auto')) return;
 
     const destroy = () => {
       if (hlsRef.current) {
@@ -114,7 +129,7 @@ export function useEventVideo(
         // (HEVC in a software-only Chrome) — present it as unsupported rather
         // than a transient stream error.
         if (data.fatal) {
-          setFatalEventId(eventId);
+          setFatalKey(key);
           destroy();
         }
       });
@@ -127,7 +142,7 @@ export function useEventVideo(
     // playlist URL and left as the backend wrote them.
     video.src = playlistUrl;
     return destroy;
-  }, [videoRef, eventId, info, baseMode]);
+  }, [videoRef, eventId, info, baseMode, codec, key]);
 
   return { mode, error };
 }

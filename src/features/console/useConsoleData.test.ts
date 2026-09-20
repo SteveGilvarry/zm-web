@@ -22,8 +22,8 @@ let seen: string[] = [];
 const record = (path: string) => { seen.push(path); };
 
 const MONITORS = [
-  { id: 1, name: 'Front Door', capturing: 'Always', analysing: 'Always', recording: 'OnMotion', orientation: 'Rotate90', width: 1920, height: 1080 },
-  { id: 2, name: 'Driveway', capturing: 'None', analysing: 'None', recording: 'None', orientation: 'Rotate0', width: 640, height: 480 },
+  { id: 1, name: 'Front Door', capturing: 'Always', analysing: 'Always', recording: 'OnMotion', orientation: 'ROTATE_90', width: 1920, height: 1080 },
+  { id: 2, name: 'Driveway', capturing: 'None', analysing: 'None', recording: 'None', orientation: 'ROTATE_0', width: 640, height: 480 },
 ];
 const SUMMARIES = [
   {
@@ -72,6 +72,14 @@ function happyPath() {
     }),
     http.get('/api/v3/event-summaries', () => { record('/event-summaries'); return paged(SUMMARIES); }),
     http.get('/api/v3/monitor-status', () => { record('/monitor-status'); return paged(STATUSES); }),
+    // The table feeds take their auto-refresh cadence from ZoneMinder's
+    // config table, so the hook reads it like any other page setting.
+    http.get('/api/v3/configs', () => {
+      record('/configs');
+      return paged([
+        { id: 1, name: 'ZM_WEB_H_REFRESH_MAIN', value: '240', type: 'integer', category: 'web', readonly: 0, private: 0, system: 0 },
+      ]);
+    }),
   );
 }
 
@@ -96,9 +104,10 @@ describe('useConsoleData', () => {
     happyPath();
     const { result } = renderHook(() => useConsoleData(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.monitors).toHaveLength(2));
-    await waitFor(() => expect(seen).toHaveLength(9));
+    await waitFor(() => expect(seen).toHaveLength(10));
 
     expect([...seen].sort()).toEqual([
+      '/configs',
       '/daemons',
       '/event-summaries',
       '/events/counts/24',
@@ -117,7 +126,7 @@ describe('useConsoleData', () => {
     await waitFor(() => expect(result.current.summariesByMonitor).toHaveLength(1));
 
     expect(result.current.monitors.map((m) => m.name)).toEqual(['Front Door', 'Driveway']);
-    expect(result.current.monitors[0].orientation).toBe('Rotate90');
+    expect(result.current.monitors[0].orientation).toBe('ROTATE_90');
 
     expect(result.current.liveSessions).toEqual([1]);
     expect(result.current.events.map((e) => e.id)).toEqual([9]);
@@ -219,6 +228,42 @@ describe('useConsoleData', () => {
     result.current.refetch();
     await waitFor(() =>
       expect(seen.filter((p) => p === '/monitors').length).toBe(before + 1));
+  });
+
+  /** Override the one config row the table cadence reads. */
+  const refreshEvery = (seconds: string) =>
+    server.use(
+      http.get('/api/v3/configs', () => {
+        record('/configs');
+        return paged([
+          { id: 1, name: 'ZM_WEB_H_REFRESH_MAIN', value: seconds, type: 'integer', category: 'web', readonly: 0, private: 0, system: 0 },
+        ]);
+      }),
+    );
+
+  it('auto-refreshes the table feeds on the configured cadence', async () => {
+    happyPath();
+    // 50 ms stands in for ZoneMinder's 240 s so the test is not a nap.
+    refreshEvery('0.05');
+    const { result } = renderHook(() => useConsoleData(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.monitors).toHaveLength(2));
+
+    await waitFor(() =>
+      expect(seen.filter((p) => p === '/monitors').length).toBeGreaterThan(1));
+    expect(seen.filter((p) => p === '/event-summaries').length).toBeGreaterThan(1);
+  });
+
+  it('stops auto-refreshing entirely when the cadence is 0', async () => {
+    happyPath();
+    refreshEvery('0');
+    const { result } = renderHook(() => useConsoleData(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.monitors).toHaveLength(2));
+
+    await new Promise((r) => setTimeout(r, 120));
+    expect(seen.filter((p) => p === '/monitors')).toHaveLength(1);
+    expect(seen.filter((p) => p === '/daemons')).toHaveLength(1);
+    // The 10 s live-session poll is not the console table and keeps its own
+    // timing, so this only pins the three table feeds.
   });
 
   it('issues nothing while signed out', async () => {

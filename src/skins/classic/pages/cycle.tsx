@@ -1,3 +1,4 @@
+import { useRef } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { AppShell } from '@/skins/AppShell';
@@ -8,6 +9,10 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { useCycleMonitors, useCyclePage } from '@/features/cycle/useCyclePage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
+import { TileControls } from '@/features/montage/TileControls';
+import { WebsiteTile } from '@/features/montage/WebsiteTile';
+import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
+import { useTileZoom } from '@/features/montage/tileZoom';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { ClassicButton, ClassicFilterRow, ClassicPage } from '@/skins/classic/components';
 import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
@@ -19,6 +24,8 @@ import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
  */
 export default function ClassicCyclePage() {
   const { t } = useTranslation();
+  const stageRef = useRef<HTMLDivElement>(null);
+  const zoom = useTileZoom();
   const { allMonitors } = useCycleMonitors();
   const { byId: runtimeById } = useMonitorStatuses();
   const filter = useMonitorFilterRow(allMonitors, runtimeById);
@@ -81,26 +88,37 @@ export default function ClassicCyclePage() {
             <div className="flex-1 min-w-0 flex flex-col items-center gap-3">
               {current && (
                 <RequirePerm feature="stream" level="View" fallback="message">
-                  <div dir="ltr" className="relative bg-black mx-auto" style={cycle.stage.style} data-testid="cycle-stage">
-                    {cycle.viewMode === 'stream' ? (
-                      <StreamCell
-                        key={current.id}
-                        protocol="webrtc"
-                        monitorId={current.id}
-                        monitorName={current.name}
-                        orientation={current.orientation}
-                        autoStart
-                      />
-                    ) : (
-                      <MonitorPreview
-                        key={current.id}
-                        monitorId={current.id}
-                        monitorName={current.name}
-                        orientation={current.orientation}
-                        isActive
-                        rotationFit="fill"
-                      />
-                    )}
+                  <div
+                    ref={stageRef}
+                    dir="ltr"
+                    className="group relative bg-black mx-auto overflow-hidden"
+                    style={cycle.stage.style}
+                    data-testid="cycle-stage"
+                  >
+                    <div className="absolute inset-0" style={zoom.style}>
+                      {isWebsiteMonitor(current) ? (
+                        <WebsiteTile monitor={current} />
+                      ) : cycle.viewMode === 'stream' ? (
+                        <StreamCell
+                          key={current.id}
+                          protocol="webrtc"
+                          monitorId={current.id}
+                          monitorName={current.name}
+                          orientation={current.orientation}
+                          autoStart
+                        />
+                      ) : (
+                        <MonitorPreview
+                          key={current.id}
+                          monitorId={current.id}
+                          monitorName={current.name}
+                          orientation={current.orientation}
+                          isActive
+                          rotationFit="fill"
+                        />
+                      )}
+                    </div>
+                    <TileControls monitorId={current.id} targetRef={stageRef} zoom={zoom} />
                   </div>
                 </RequirePerm>
               )}

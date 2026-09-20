@@ -60,9 +60,8 @@ export interface ZoneSettingRow {
 
 /**
  * The legacy zone editor's right-hand settings panel, in legacy's own order
- * and wording (`web/skins/classic/views/zone.php`). Read-only: zm-api's
- * `UpdateZoneRequest` still takes nothing but `name` and `polygon`, so there
- * is deliberately no writable counterpart to this list.
+ * and wording (`web/skins/classic/views/zone.php`) — the zone as the backend
+ * currently has it, beside the editor form that is changing it.
  *
  * Needs zm-api ≥ the zone-detail work (zm-api#22) — an older build omits
  * every field below and each row would read as an em dash.
@@ -113,4 +112,75 @@ export function zoneSettingRows(zone: Zone, t: TFunction): ZoneSettingRow[] {
     { key: 'overload_frames', label: t('Overload Frame Ignore Count'), value: num(zone.overload_frames) },
     { key: 'extend_alarm_frames', label: t('Extend Alarm Frame Count'), value: num(zone.extend_alarm_frames) },
   ];
+}
+
+/* ------------------------------------------------------------------------ */
+/*  Which settings the zone's Type and Check Method leave editable           */
+/* ------------------------------------------------------------------------ */
+
+/** The writable motion settings, keyed the way `ZoneSettingsPayload` is. */
+export const ZONE_SETTING_FIELDS = [
+  'check_method',
+  'min_pixel_threshold', 'max_pixel_threshold',
+  'min_alarm_pixels', 'max_alarm_pixels',
+  'filter_x', 'filter_y',
+  'min_filter_pixels', 'max_filter_pixels',
+  'min_blob_pixels', 'max_blob_pixels',
+  'min_blobs', 'max_blobs',
+  'alarm_rgb',
+  'overload_frames', 'extend_alarm_frames',
+] as const;
+
+export type ZoneSettingField = (typeof ZONE_SETTING_FIELDS)[number];
+
+export type ZoneFieldEnabled = Record<ZoneSettingField, boolean>;
+
+function allFields(enabled: boolean): ZoneFieldEnabled {
+  return Object.fromEntries(ZONE_SETTING_FIELDS.map((f) => [f, enabled])) as ZoneFieldEnabled;
+}
+
+/**
+ * Legacy's `applyZoneType` + `applyCheckMethod` (`views/js/zone.js:111-195`),
+ * as data instead of a pile of `.disabled =` assignments.
+ *
+ * - `Inactive` / `Privacy` detect nothing, so every setting is off.
+ * - `Preclusive` rejects the whole frame, so it has no alarm colour, and it
+ *   is the one type where Extend Alarm Frames applies.
+ * - Otherwise everything is on except Extend Alarm Frames.
+ *
+ * On top of that the check method reveals rows in turn: `AlarmedPixels` uses
+ * the pixel and alarm-area numbers only, `FilteredPixels` adds the filter
+ * size and filtered area, `Blobs` adds the blob area and blob counts.
+ */
+export function zoneFieldEnabled(type: string, checkMethod: string): ZoneFieldEnabled {
+  if (type === 'Inactive' || type === 'Privacy') return allFields(false);
+
+  const preclusive = type === 'Preclusive';
+  const filtered = checkMethod === 'FilteredPixels' || checkMethod === 'Blobs';
+  const blobs = checkMethod === 'Blobs';
+
+  return {
+    check_method: true,
+    min_pixel_threshold: true,
+    max_pixel_threshold: true,
+    min_alarm_pixels: true,
+    max_alarm_pixels: true,
+    filter_x: filtered,
+    filter_y: filtered,
+    min_filter_pixels: filtered,
+    max_filter_pixels: filtered,
+    min_blob_pixels: blobs,
+    max_blob_pixels: blobs,
+    min_blobs: blobs,
+    max_blobs: blobs,
+    alarm_rgb: !preclusive,
+    overload_frames: true,
+    extend_alarm_frames: preclusive,
+  };
+}
+
+/** `#rrggbb` back to the packed integer `Zones.AlarmRGB` holds. */
+export function hexToAlarmRgb(hex: string): number | null {
+  const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
+  return m ? parseInt(m[1], 16) : null;
 }

@@ -4,6 +4,7 @@
  * `ZM_OPT_X10` like legacy `options.php`.
  */
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
+import { configListHandler } from '@/test/msw/handlers';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { http, HttpResponse } from 'msw';
@@ -34,8 +35,7 @@ function stub(x10: '0' | '1', categories: unknown[] = CATEGORIES) {
       categoryRequests += 1;
       return HttpResponse.json(categories);
     }),
-    http.get('/api/v3/configs/:name', ({ params }) =>
-      HttpResponse.json({ name: params.name, value: params.name === 'ZM_OPT_X10' ? x10 : '' })),
+    configListHandler({ ZM_OPT_X10: x10 }),
   );
 }
 
@@ -51,10 +51,13 @@ describe('useOptionsTabs', () => {
   it('builds the legacy rail from the category counts, dropping hidden ones', async () => {
     stub('0');
     const { result } = renderHook(() => useOptionsTabs(), { wrapper: wrapper() });
-    await waitFor(() => expect(result.current.length).toBeGreaterThan(7));
+    // There are enough page tabs to clear any length threshold before the
+    // categories land, so wait for a category tab specifically.
+    await waitFor(() => expect(result.current.some((tab) => tab.kind === 'category')).toBe(true));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'system', 'servers', 'storage', 'web', 'control', 'users', 'groups', 'state',
+      'display', 'system', 'api', 'servers', 'storage', 'web', 'control', 'users', 'groups',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
     expect(result.current.find((tab) => tab.key === 'system'))
       .toEqual({ kind: 'category', key: 'system', category: 'system' });
@@ -84,20 +87,21 @@ describe('useOptionsTabs', () => {
     server.use(
       http.get('/api/v3/configs/categories', () =>
         HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'config table locked' }, { status: 500 })),
-      http.get('/api/v3/configs/:name', ({ params }) => HttpResponse.json({ name: params.name, value: '0' })),
+      configListHandler({ ZM_OPT_X10: '0' }),
     );
     const { result } = renderHook(() => useOptionsTabs(), { wrapper: wrapper() });
     await new Promise((r) => setTimeout(r, 30));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'servers', 'storage', 'control', 'users', 'groups', 'state',
+      'display', 'api', 'servers', 'storage', 'control', 'users', 'groups',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 
   it('falls back to the page tabs when the backend is unreachable', async () => {
     server.use(
       http.get('/api/v3/configs/categories', () => HttpResponse.error()),
-      http.get('/api/v3/configs/:name', ({ params }) => HttpResponse.json({ name: params.name, value: '0' })),
+      configListHandler({ ZM_OPT_X10: '0' }),
     );
     const { result } = renderHook(() => useOptionsTabs(), { wrapper: wrapper() });
     await new Promise((r) => setTimeout(r, 30));

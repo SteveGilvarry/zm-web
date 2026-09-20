@@ -1,6 +1,8 @@
 import type { FilterQuery, FilterSortField, FilterTerm } from '@/api/filters';
 import type { Monitor, ZmEvent } from '@/types';
-import { attrMeta, resolveDateValue, type FilterAttrKind } from './attrs';
+import {
+  attrMeta, resolveDateValue, splitTagIds, TAG_ANY, TAG_NONE, type FilterAttrKind,
+} from './attrs';
 import { buildTermTree, type TermTree } from './tree';
 
 /**
@@ -81,8 +83,10 @@ function fieldValue(attr: string, kind: FilterAttrKind, e: ZmEvent, env: Env): u
   const nowMs = env.now.getTime();
   switch (attr) {
     case 'Id': return e.id;
-    case 'MonitorId': return e.monitor_id;
-    case 'Monitor':
+    // Legacy `Monitor` is a monitor id too (`FilterTerm::sql_attr()` maps it
+    // to `E.MonitorId`); only `MonitorName` compares the name.
+    case 'MonitorId':
+    case 'Monitor': return e.monitor_id;
     case 'MonitorName': return env.monitorNames.get(e.monitor_id) ?? null;
     case 'Name': return e.name;
     case 'Cause': return e.cause ?? null;
@@ -127,20 +131,28 @@ function matchTerm(term: FilterTerm, e: ZmEvent, env: Env): boolean | null {
   if (lhs === undefined) return null;
   const val = term.val == null ? '' : String(term.val);
 
-  // Tags: membership on id or name; `=[]` / `![]` take a list.
+  // Tags: the value is a multi-select, so one term can carry several ids
+  // (`splitTagIds` tolerates every shape ZM writes) plus two sentinels —
+  // `0` = No Tag, `-1` = Any Tag. A tag matches on id or on name.
   if (term.attr === 'Tags') {
     const tags = lhs as string[];
-    const has = (v: string) => tags.some((t) => {
-      const [id, name] = t.split('|');
-      return id === v.trim() || name.toLowerCase() === v.trim().toLowerCase();
-    });
+    const hasOne = (v: string) => {
+      if (v === TAG_NONE) return tags.length === 0;
+      if (v === TAG_ANY) return tags.length > 0;
+      return tags.some((tag) => {
+        const [id, name] = tag.split('|');
+        return id === v || name.toLowerCase() === v.toLowerCase();
+      });
+    };
+    const wanted = splitTagIds(term.val);
+    const has = wanted.length > 0 && wanted.some(hasOne);
     switch (term.op) {
       case '=':
-      case 'LIKE': return has(val);
+      case 'LIKE':
+      case '=[]': return has;
       case '!=':
-      case 'NOT LIKE': return !has(val);
-      case '=[]': return splitSet(val).some(has);
-      case '![]': return !splitSet(val).some(has);
+      case 'NOT LIKE':
+      case '![]': return !has;
       case 'IS': return tags.length === 0;
       case 'IS NOT': return tags.length > 0;
       default: return null;
@@ -182,6 +194,7 @@ function compare(kind: FilterAttrKind, lhs: unknown, raw: string, env: Env): num
     case 'number':
     case 'monitor':
     case 'storage':
+    case 'state':
     case 'bool':
     case 'weekday': {
       const l = Number(lhs);
@@ -207,6 +220,13 @@ function compare(kind: FilterAttrKind, lhs: unknown, raw: string, env: Env): num
     case 'string':
     case 'monitorName':
       return cmpStr(String(lhs).toLowerCase(), raw.toLowerCase());
+    // Server-side only (`CLIENT_UNEVALUABLE`) or handled before `compare()`.
+    case 'group':
+    case 'tags':
+    case 'zone':
+    case 'server':
+    case 'exists':
+      return null;
   }
 }
 

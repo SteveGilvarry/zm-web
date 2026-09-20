@@ -19,8 +19,17 @@ import { makeDateTimeFormatters, type DateTimeFormatters } from '@/lib/datetime'
  * Pages should use this instead of calling `toLocaleString()` directly so an
  * operator who sets a format in Options sees it everywhere, and so a remote
  * operator can be shown the server's clock.
+ *
+ * `defaults` supplies patterns to use when the server names none. The modern
+ * skin wants the viewer's locale in that case; the classic skin wants what
+ * ZoneMinder renders, which is a fixed `2026-08-23 10:59:17` — see
+ * `useLegacyDateTimeFormat`. A pattern from the server always wins over both.
  */
-export function useDateTimeFormat(): DateTimeFormatters {
+export function useDateTimeFormat(defaults?: {
+  date?: string;
+  time?: string;
+  dateTime?: string;
+}): DateTimeFormatters {
   const { i18n } = useTranslation();
   const locale = i18n.resolvedLanguage ?? i18n.language ?? undefined;
   const { isAuthenticated } = useAuthStore();
@@ -36,12 +45,12 @@ export function useDateTimeFormat(): DateTimeFormatters {
   return useMemo(
     () =>
       makeDateTimeFormatters({
-        datePattern: data?.date_format,
-        timePattern: data?.time_format,
-        dateTimePattern: data?.datetime_format,
+        datePattern: data?.date_format || defaults?.date,
+        timePattern: data?.time_format || defaults?.time,
+        dateTimePattern: data?.datetime_format || defaults?.dateTime,
         timeZone: data?.timezone,
         locale,
       }),
-    [data, locale],
+    [data, locale, defaults?.date, defaults?.time, defaults?.dateTime],
   );
 }

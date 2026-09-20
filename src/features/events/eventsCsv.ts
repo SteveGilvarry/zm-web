@@ -28,6 +28,7 @@ export function eventCsvField(e: ZmEvent, key: EventsColumnKey, lookups: EventsC
     case 'max_score': return e.max_score ?? 0;
     case 'storage': return lookups.storageName(e.storage_id);
     case 'disk_space': return e.disk_space ?? 0;
+    case 'notes': return e.notes ?? '';
   }
 }
 

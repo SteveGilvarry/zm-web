@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fireEvent, render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { vi } from 'vitest';
 import type { Monitor } from '@/types';
 import { autoColumns, MONTAGE_PRESETS } from './classicPresets';
@@ -23,6 +23,11 @@ vi.mock('@/components/common/StreamCell', () => ({
   },
 }));
 
+// TileControls asks for monitor-edit rights; grant them without a query client.
+vi.mock('@/features/auth/usePerms', () => ({
+  usePerms: () => ({ can: () => true, level: () => 'Edit', known: true, perms: {} }),
+}));
+
 // Runtime status comes from a polled query; stub the hook with fixed rows.
 vi.mock('@/features/monitors/useMonitorStatuses', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/features/monitors/useMonitorStatuses')>()),
@@ -44,7 +49,7 @@ function makeMonitor(over: Partial<Monitor> = {}): Monitor {
     name: 'Front Door',
     width: 1920,
     height: 1080,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     capturing: 'Always',
     analysing: 'Always',
     recording: 'OnMotion',
@@ -122,6 +127,19 @@ describe('MontageClassicGrid — live cells', () => {
     expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
     expect(streamCellProps.at(-1)).toMatchObject({ showName: false });
   });
+
+  it('draws the legacy showOnHover caption inside the picture, revealed on hover', () => {
+    render(
+      <MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="hls" statusPosition="hover" />,
+    );
+    const caption = screen.getByTestId('montage-classic-hover-1');
+    expect(caption).toHaveTextContent('Front Door');
+    expect(caption).toHaveTextContent('Connected · 10.9 fps');
+    expect(caption.className).toContain('group-hover:opacity-100');
+    // Nothing outside the picture, and the stream's own caption stays off.
+    expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
+    expect(streamCellProps.at(-1)).toMatchObject({ showName: false });
+  });
 });
 
 describe('MontageClassicGrid — rendering', () => {
@@ -167,6 +185,24 @@ describe('MontageClassicGrid — rendering', () => {
     );
     expect(screen.getByTestId('montage-classic-cell-1')).toHaveStyle({ width: '320px' });
   });
+
+  it('in Fit mode the frame fills the packed box instead of forcing 16:9', () => {
+    // Legacy `maxfit2` hands each tile an absolute box; a fixed aspect on the
+    // picture would leave the caption floating mid-tile above empty space.
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 })]}
+        columns={1}
+        protocol="webrtc"
+        fitHeight={600}
+        cellStyle={() => ({ position: 'absolute', top: 0, width: 300, height: 520 })}
+      />,
+    );
+    expect(screen.getByTestId('montage-classic-grid')).toHaveStyle({ height: '600px' });
+    const frame = screen.getByTestId('montage-classic-cell-1').firstElementChild as HTMLElement;
+    expect(frame.className).toContain('flex-1');
+    expect(frame.style.aspectRatio).toBe('');
+  });
 });
 
 describe('MontageClassicGrid — edit layout', () => {
@@ -193,5 +229,207 @@ describe('MontageClassicGrid — edit layout', () => {
   it('is inert outside edit mode', () => {
     render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" />);
     expect(screen.getByTestId('montage-classic-cell-1')).not.toHaveAttribute('draggable');
+  });
+});
+
+describe('MontageClassicGrid — tile controls', () => {
+  it('offers zoom / fullscreen / watch per tile and scales the stream on zoom in', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" />);
+    const controls = screen.getByTestId('tile-controls-1');
+    const stream = screen.getByTestId('stream-1').parentElement!;
+    expect(stream).not.toHaveStyle({ transform: 'scale(1.3)' });
+
+    const zoomOut = within(controls).getByRole('button', { name: 'Zoom OUT' });
+    expect(zoomOut).toBeDisabled(); // already at the natural fit
+    fireEvent.click(within(controls).getByRole('button', { name: 'Zoom IN' }));
+    expect(screen.getByTestId('stream-1').parentElement).toHaveStyle({ transform: 'scale(1.3)' });
+    fireEvent.click(within(controls).getByRole('button', { name: 'Zoom OUT' }));
+    expect(screen.getByTestId('stream-1').parentElement).not.toHaveStyle({ transform: 'scale(1.3)' });
+
+    expect(within(controls).getByRole('button', { name: 'Open full screen' })).toBeInTheDocument();
+    expect(within(controls).getByRole('link', { name: 'Open watch page' })).toBeInTheDocument();
+    expect(within(controls).getByRole('link', { name: 'Edit monitor' })).toBeInTheDocument();
+  });
+
+  it('asks the browser to full-screen the tile frame', () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" />);
+    const frame = screen.getByTestId('stream-1').parentElement!.parentElement!;
+    frame.requestFullscreen = request;
+    fireEvent.click(within(screen.getByTestId('tile-controls-1')).getByRole('button', { name: 'Open full screen' }));
+    expect(request).toHaveBeenCalled();
+  });
+
+  it('hides the controls while the layout is being edited', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="webrtc" editMode />);
+    expect(screen.queryByTestId('tile-controls-1')).not.toBeInTheDocument();
+  });
+});
+
+/**
+ * Legacy's per-tile `ratio<id>` select (only while editing the layout) and
+ * WebSite monitors, which `Monitor::getStreamHTML` embeds rather than streams.
+ */
+describe('MontageClassicGrid — ratio and WebSite tiles', () => {
+  it('offers a per-tile Ratio select while editing, and reports the choice', () => {
+    const onRatioChange = vi.fn();
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor()]}
+        columns={1}
+        protocol="webrtc"
+        editMode
+        ratioFor={() => '16:9'}
+        onRatioChange={onRatioChange}
+      />,
+    );
+    const select = screen.getByRole('combobox', { name: 'Ratio for Front Door' });
+    expect(select).toHaveValue('16:9');
+    fireEvent.change(select, { target: { value: '4:3' } });
+    expect(onRatioChange).toHaveBeenCalledWith(1, '4:3');
+  });
+
+  it('hides the per-tile Ratio select outside edit mode', () => {
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor()]}
+        columns={1}
+        protocol="webrtc"
+        ratioFor={() => 'auto'}
+        onRatioChange={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('combobox', { name: 'Ratio for Front Door' })).toBeNull();
+  });
+
+  it('embeds a WebSite monitor instead of streaming it', () => {
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 5, name: 'Weather', type: 'WebSite', path: 'https://example.test/wx' })]}
+        columns={1}
+        protocol="webrtc"
+      />,
+    );
+    expect(screen.getByTestId('website-tile-5')).toHaveAttribute('src', 'https://example.test/wx');
+    expect(screen.queryByTestId('stream-5')).toBeNull();
+  });
+});
+
+/**
+ * Legacy lays the wall out on a 48-column gridstack; `items` is the same
+ * geometry (`Positions.gridStack`), so tiles keep the widths they were
+ * saved with and Edit Layout can resize them column by column.
+ */
+describe('MontageClassicGrid — 48-column placement and resize', () => {
+  const twoUneven = [
+    { id: '1', x: 0, y: 0, w: 36, h: 400 },
+    { id: '2', x: 36, y: 0, w: 12, h: 400 },
+  ];
+
+  it('spans each tile over its own columns rather than an even grid', () => {
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2, name: 'Drive' })]}
+        columns={2}
+        protocol="webrtc"
+        items={twoUneven}
+      />,
+    );
+    expect(screen.getByTestId('montage-classic-grid')).toHaveAttribute('data-columns', '48');
+    expect(screen.getByTestId('montage-classic-cell-1')).toHaveStyle({ gridColumn: '1 / span 36' });
+    expect(screen.getByTestId('montage-classic-cell-2')).toHaveStyle({ gridColumn: '37 / span 12' });
+  });
+
+  it('falls back to the plain column grid when no layout places the tiles', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={3} protocol="webrtc" />);
+    const grid = screen.getByTestId('montage-classic-grid');
+    expect(grid).toHaveAttribute('data-columns', '3');
+    expect(screen.getByTestId('montage-classic-cell-1')).not.toHaveAttribute('data-gs-id');
+  });
+
+  it('resizes a tile by dragging its handle, one grid column at a time', () => {
+    const onResize = vi.fn();
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2, name: 'Drive' })]}
+        columns={2}
+        protocol="webrtc"
+        editMode
+        items={twoUneven}
+        onResize={onResize}
+      />,
+    );
+    const grid = screen.getByTestId('montage-classic-grid');
+    // jsdom has no layout: give the wall a width so a column is 10 px.
+    Object.defineProperty(grid, 'clientWidth', { value: 480, configurable: true });
+    const handle = screen.getByTestId('montage-classic-resize-1');
+    fireEvent.pointerDown(handle, { clientX: 360, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 420, pointerId: 1 });
+    expect(onResize).toHaveBeenCalledWith(1, 42);
+    fireEvent.pointerUp(handle, { pointerId: 1 });
+    onResize.mockClear();
+    fireEvent.pointerMove(handle, { clientX: 300, pointerId: 1 });
+    expect(onResize).not.toHaveBeenCalled();
+  });
+
+  it('clamps the drag to the canvas and ignores a wall it cannot measure', () => {
+    const onResize = vi.fn();
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 })]}
+        columns={1}
+        protocol="webrtc"
+        editMode
+        items={[{ id: '1', x: 0, y: 0, w: 24, h: 400 }]}
+        onResize={onResize}
+      />,
+    );
+    const handle = screen.getByTestId('montage-classic-resize-1');
+    // No width on the wall (jsdom default) — nothing to drag against.
+    fireEvent.pointerDown(handle, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 400, pointerId: 1 });
+    expect(onResize).not.toHaveBeenCalled();
+
+    const grid = screen.getByTestId('montage-classic-grid');
+    Object.defineProperty(grid, 'clientWidth', { value: 480, configurable: true });
+    fireEvent.pointerDown(handle, { clientX: 0, pointerId: 1 });
+    fireEvent.pointerMove(handle, { clientX: 4000, pointerId: 1 });
+    expect(onResize).toHaveBeenLastCalledWith(1, 48);
+  });
+
+  it('resizes from the keyboard, and says how wide the tile is', () => {
+    const onResize = vi.fn();
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 })]}
+        columns={1}
+        protocol="webrtc"
+        editMode
+        items={[{ id: '1', x: 0, y: 0, w: 24, h: 400 }]}
+        onResize={onResize}
+      />,
+    );
+    const handle = screen.getByRole('slider', { name: 'Width of Front Door in grid columns' });
+    expect(handle).toHaveAttribute('aria-valuenow', '24');
+    fireEvent.keyDown(handle, { key: 'ArrowRight' });
+    expect(onResize).toHaveBeenCalledWith(1, 25);
+    fireEvent.keyDown(handle, { key: 'ArrowLeft' });
+    expect(onResize).toHaveBeenCalledWith(1, 23);
+    onResize.mockClear();
+    fireEvent.keyDown(handle, { key: 'Enter' });
+    expect(onResize).not.toHaveBeenCalled();
+  });
+
+  it('shows no resize handle outside edit mode', () => {
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor({ id: 1 })]}
+        columns={1}
+        protocol="webrtc"
+        items={[{ id: '1', x: 0, y: 0, w: 48, h: 400 }]}
+        onResize={vi.fn()}
+      />,
+    );
+    expect(screen.queryByRole('slider')).not.toBeInTheDocument();
   });
 });

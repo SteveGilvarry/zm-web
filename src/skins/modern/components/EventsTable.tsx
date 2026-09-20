@@ -1,12 +1,14 @@
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Archive, Download } from 'lucide-react';
+import { Archive, Download, Mail } from 'lucide-react';
 import type { CSSProperties } from 'react';
 import { getEventThumbnailUrl, getEventVideoUrl, type EventSortField } from '@/api/events';
 import type { ZmEvent } from '@/types';
 import { formatDuration } from '@/features/events/duration';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
+import { EventCauseCell } from '@/features/events/EventCauseCell';
+import type { EventNavSearch } from '@/features/events/eventsSearch';
 
 /**
  * The modern events list, as a table.
@@ -30,6 +32,11 @@ interface EventsTableProps {
   sortField: EventSortField;
   sortDir: 'asc' | 'desc';
   onSort: (field: EventSortField) => void;
+  /**
+   * List context carried on every event link, so Prev / Next on the detail
+   * page walk this list in this order (legacy `filterQuery` + `sortQuery`).
+   */
+  detailSearch?: EventNavSearch;
 }
 
 function thumbnailRotationStyle(orientation?: string | null): CSSProperties | undefined {
@@ -110,6 +117,7 @@ export function EventsTable({
   sortField,
   sortDir,
   onSort,
+  detailSearch,
 }: EventsTableProps) {
   const { t } = useTranslation();
   const { formatDateTime } = useDateTimeFormat();
@@ -163,6 +171,12 @@ export function EventsTable({
             return (
               <tr
                 key={event.id}
+                // Legacy's `data-click-to-select`: a click on the row itself
+                // (not on a control in it) toggles the checkbox.
+                onClick={(ev) => {
+                  if ((ev.target as HTMLElement).closest('a, button, input, select, textarea, label')) return;
+                  onToggleSelected(event.id);
+                }}
                 className={clsx(
                   'border-b border-border-subtle last:border-0 transition-colors',
                   selected ? 'bg-accent/10' : 'hover:bg-surface-2',
@@ -181,6 +195,7 @@ export function EventsTable({
                     <Link
                       to="/events/$eventId"
                       params={{ eventId: String(event.id) }}
+                      search={detailSearch}
                       // The image is decorative (the row names the event
                       // twice already), so the link needs its own name.
                       aria-label={t('Event {{id}}', { id: event.id })}
@@ -200,6 +215,7 @@ export function EventsTable({
                   <Link
                     to="/events/$eventId"
                     params={{ eventId: String(event.id) }}
+                    search={detailSearch}
                     className="hover:text-accent transition-colors"
                   >
                     {event.id}
@@ -212,15 +228,21 @@ export function EventsTable({
                   <Link
                     to="/events/$eventId"
                     params={{ eventId: String(event.id) }}
+                    search={detailSearch}
                     className="text-fg hover:text-accent transition-colors inline-flex items-center gap-1.5 max-w-full"
                   >
                     {event.archived === 1 && (
                       <Archive size={12} className="text-fg-dim" aria-label={t('Archived')} />
                     )}
+                    {event.emailed === 1 && (
+                      <Mail size={12} className="text-fg-dim" aria-label={t('Emailed')} />
+                    )}
                     <span className="truncate">{event.name}</span>
                   </Link>
                 </td>
-                <td className="px-3 py-1 text-fg-muted whitespace-nowrap">{event.cause}</td>
+                <td className="px-3 py-1 text-fg-muted max-w-[18rem]">
+                  <EventCauseCell event={event} tone="modern" />
+                </td>
                 <td className="px-3 py-1 font-mono tabular-nums text-fg-muted whitespace-nowrap">
                   {formatDateTime(event.start_date_time)}
                 </td>

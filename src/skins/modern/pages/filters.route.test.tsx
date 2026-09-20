@@ -7,7 +7,7 @@
  * error and permission states, and the confirm/prompt-guarded actions.
  */
 import { describe, expect, it, vi, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 
@@ -114,15 +114,17 @@ describe('Filters — guarded actions', () => {
         return HttpResponse.json({ message: 'deleted' });
       }),
     );
-    vi.stubGlobal('confirm', vi.fn(() => true));
-
     const user = userEvent.setup();
     renderRoute('/filters');
     await filtersPage();
     await user.click(await screen.findByRole('button', { name: /^Delete Overnight$/ }));
 
+    // The dialog, not `window.confirm`.
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent(/Delete the filter "Overnight"\?/);
+    await user.click(within(dialog).getByRole('button', { name: /^Delete$/ }));
+
     await waitFor(() => expect(deleted).toBe('4'));
-    expect(confirm).toHaveBeenCalledWith('Delete filter "Overnight"?');
   });
 
   it('keeps the filter when the confirm is dismissed', async () => {
@@ -134,12 +136,14 @@ describe('Filters — guarded actions', () => {
         return HttpResponse.json({ message: 'deleted' });
       }),
     );
-    vi.stubGlobal('confirm', vi.fn(() => false));
-
     const user = userEvent.setup();
     renderRoute('/filters');
     await filtersPage();
     await user.click(await screen.findByRole('button', { name: /^Delete Overnight$/ }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /^Cancel$/ }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).not.toBeInTheDocument());
 
     expect(deletes).toEqual([]);
   });
@@ -195,8 +199,6 @@ describe('Filters — guarded actions', () => {
         return HttpResponse.json(makeFilter({ id: 1 }));
       }),
     );
-    vi.stubGlobal('confirm', vi.fn(() => false));
-
     const user = userEvent.setup();
     renderRoute('/filters?id=1');
     await filtersPage();
@@ -206,7 +208,11 @@ describe('Filters — guarded actions', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent(/every event will be deleted/i);
 
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
-    expect(confirm).toHaveBeenCalled();
+    // Legacy `filter.js` confirms an AutoDelete with no Archived term; the
+    // dialog stands in for `window.confirm`, and dismissing it must not PUT.
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog).toHaveTextContent(/archived/i);
+    await user.click(within(dialog).getByRole('button', { name: /^Cancel$/ }));
     expect(puts).toEqual([]);
   });
 });
@@ -354,6 +360,9 @@ describe('Filters — editor detail', () => {
     await user.type(limit, '50');
 
     await user.click(screen.getByRole('button', { name: /^Save$/ }));
+    // Delete without an Archived term draws legacy's confirm; accept it.
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: /save anyway/i }));
 
     await waitFor(() => expect(put).not.toBeNull());
     expect(put).toMatchObject({

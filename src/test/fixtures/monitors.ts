@@ -6,9 +6,9 @@ import type { Zone } from '@/api/zones';
 /**
  * A monitor exactly as `GET /api/v3/monitors` serves one: every required
  * field of `MonitorResponse`, with the enum spellings the live backend now
- * echoes (`Rotate0`, `System`, `Auto`, `WebRtc` — zm-api#18) and `deleted`
- * as a JSON boolean. Older builds sent the raw DB strings; the client no
- * longer translates, so these are the values the app actually sees.
+ * echoes — the raw ZoneMinder DB strings `ROTATE_0`, `system`, `auto`,
+ * `WebRTC` (zm-api#59) — and `deleted` as a JSON boolean. The client does
+ * not translate them, so these are the values the app actually sees.
  *
  * `pass` and `onvif_password` are absent on purpose: they are write-only,
  * and a fixture that echoed them would not match the schema.
@@ -29,7 +29,7 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     decoding_enabled: 1,
     decoding: 'Always',
     rtsp2_web_enabled: 0,
-    rtsp2_web_type: 'WebRtc',
+    rtsp2_web_type: 'WebRTC',
     janus_enabled: 0,
     janus_audio_enabled: 0,
     janus_profile_override: null,
@@ -65,7 +65,7 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     height: 1080,
     colours: 4,
     palette: 0,
-    orientation: 'Rotate0',
+    orientation: 'ROTATE_0',
     deinterlacing: 0,
     decoder: null,
     decoder_hw_accel_name: null,
@@ -77,6 +77,10 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     output_container: null,
     encoder_parameters: null,
     record_audio: 0,
+    device_class: 'Camera',
+    audio_detection: 0,
+    audio_threshold: 0,
+    audio_alarm_score: 9,
     recording_source: 'Primary',
     rtsp_describe: 0,
     brightness: -1,
@@ -97,9 +101,8 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     alarm_frame_count: 1,
     section_length: 600,
     section_length_warn: 1,
-    event_close_mode: 'System',
+    event_close_mode: 'system',
     min_section_length: 10,
-    frame_skip: 0,
     motion_frame_skip: 0,
     analysis_fps_limit: null,
     analysis_update_delay: 0,
@@ -120,7 +123,7 @@ export function makeMonitor(overrides: Partial<Monitor> = {}): Monitor {
     modect_during_ptz: 0,
     default_rate: 100,
     default_scale: '100',
-    default_codec: 'Auto',
+    default_codec: 'auto',
     signal_check_points: 0,
     signal_check_colour: '#0000BE',
     web_colour: 'red',

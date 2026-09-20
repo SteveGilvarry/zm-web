@@ -42,11 +42,15 @@ export type OptionsTab =
   | { kind: 'page'; key: string; to: string };
 
 /**
- * Legacy tab order (`web/skins/classic/views/options.php`), bandwidth tabs
- * removed. Category tabs only render when the backend actually has rows in
- * that category — `api`, for instance, is folded into `system` on some
- * builds — and unknown categories are appended before the page tabs so
- * nothing the backend serves becomes unreachable.
+ * Legacy tab order (`getOptionsHTML` in
+ * `skins/classic/includes/functions.php`), bandwidth tabs removed. Category
+ * tabs only render when the backend actually has rows in that category, and
+ * unknown categories are appended before the page tabs so nothing the
+ * backend serves becomes unreachable.
+ *
+ * `api` is a page, not a config category: legacy's API tab is
+ * `_options_api.php`, the per-user token table. The AI tabs are pages for
+ * the same reason (`_options_ai_*.php`).
  */
 const LEGACY_ORDER: ReadonlyArray<
   | { key: string; category: string }
@@ -56,7 +60,7 @@ const LEGACY_ORDER: ReadonlyArray<
   { key: 'system', category: 'system' },
   { key: 'auth', category: 'auth' },
   { key: 'config', category: 'config' },
-  { key: 'api', category: 'api' },
+  { key: 'api', to: '/settings/api-tokens' },
   { key: 'servers', to: '/settings/servers' },
   { key: 'storage', to: '/settings/storage' },
   { key: 'web', category: 'web' },
@@ -72,6 +76,9 @@ const LEGACY_ORDER: ReadonlyArray<
   { key: 'version', category: 'version' },
   { key: 'users', to: '/settings/users' },
   { key: 'groups', to: '/groups' },
+  { key: 'ai_datasets', to: '/settings/ai/datasets' },
+  { key: 'ai_models', to: '/settings/ai/models' },
+  { key: 'ai_classes', to: '/settings/ai/classes' },
   { key: 'state', to: '/settings/state' },
 ];
 
@@ -96,8 +103,12 @@ export function buildOptionsTabs(
     used.add(entry.category);
     tabs.push({ kind: 'category', key: entry.key, category: actual });
   }
+  // A page tab wins its key outright — legacy checks `tab == 'API'` before it
+  // ever looks at the config categories, so a category of the same name never
+  // gets a second pill.
+  const pageKeys = new Set(tabs.filter((t) => t.kind === 'page').map((t) => t.key));
   for (const c of visible) {
-    if (!used.has(c.name.toLowerCase())) {
+    if (!used.has(c.name.toLowerCase()) && !pageKeys.has(c.name.toLowerCase())) {
       extras.push({ kind: 'category', key: c.name.toLowerCase(), category: c.name });
     }
   }
@@ -130,6 +141,9 @@ export function optionsTabLabel(t: TFunction, key: string): string {
     case 'version': return t('Versions');
     case 'users': return t('Users');
     case 'groups': return t('Groups');
+    case 'ai_datasets': return t('AI Datasets');
+    case 'ai_models': return t('AI Models');
+    case 'ai_classes': return t('AI Classes');
     case 'state': return t('Run State');
     default: return key;
   }

@@ -8,6 +8,8 @@ export interface PinchZoomState {
 
 export const PINCH_MIN = 1;
 export const PINCH_MAX = 8;
+/** Multiplier per Zoom IN / Zoom OUT click (the legacy panzoom step). */
+export const PINCH_STEP = 1.3;
 
 const IDENTITY: PinchZoomState = { scale: 1, x: 0, y: 0 };
 
@@ -72,7 +74,7 @@ function clamp(v: number, lo: number, hi: number): number {
  * page behind it. It stays attached in fullscreen, since fullscreen only
  * moves the element, it does not remount it.
  */
-export function usePinchZoom<T extends HTMLElement>(enabled = true) {
+export function usePinchZoom<T extends HTMLElement>(enabled = true, clickToZoom = false) {
   // A callback ref, not a RefObject: the element it attaches to is rendered
   // conditionally (the player only exists once the event has loaded), and an
   // effect keyed on a RefObject would have run once against a null and never
@@ -160,6 +162,16 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
 
     const onDoubleClick = () => setState(IDENTITY);
 
+    // The event player zooms in on a plain click on the stream, towards the
+    // point clicked (legacy `handleClick`). A double click fires this twice,
+    // then resets — the reset wins. Off by default: on a live view a click
+    // belongs to the controls over the picture.
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented) return;
+      const { cx, cy } = localCentre([{ x: e.clientX, y: e.clientY }]);
+      apply(zoomAt(stateRef.current, stateRef.current.scale * PINCH_STEP, cx, cy));
+    };
+
     // Captured for the cleanup: `pointers` is stable, but the linter wants
     // the read hoisted out of the teardown closure.
     const tracked = pointers.current;
@@ -171,6 +183,7 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
     el.addEventListener('pointerleave', onPointerUp);
     el.addEventListener('wheel', onWheel, { passive: false });
     el.addEventListener('dblclick', onDoubleClick);
+    if (clickToZoom) el.addEventListener('click', onClick);
     return () => {
       el.removeEventListener('pointerdown', onPointerDown);
       el.removeEventListener('pointermove', onPointerMove);
@@ -179,10 +192,16 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
       el.removeEventListener('pointerleave', onPointerUp);
       el.removeEventListener('wheel', onWheel);
       el.removeEventListener('dblclick', onDoubleClick);
+      el.removeEventListener('click', onClick);
       tracked.clear();
       gesture.current = null;
     };
-  }, [node, enabled]);
+  }, [node, enabled, clickToZoom]);
+
+  // Button zoom (legacy `panZoomIn` / `panZoomOut`): about the centre, so
+  // the operator keeps the frame they were looking at.
+  const zoomIn = useCallback(() => setState((s) => zoomAt(s, s.scale * PINCH_STEP, 0, 0)), []);
+  const zoomOut = useCallback(() => setState((s) => zoomAt(s, s.scale / PINCH_STEP, 0, 0)), []);
 
   const zoomed = state.scale > PINCH_MIN;
   const style: CSSProperties = {
@@ -193,5 +212,5 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true) {
     cursor: zoomed ? 'grab' : undefined,
   };
 
-  return { ref, scale: state.scale, zoomed, style, reset };
+  return { ref, scale: state.scale, zoomed, style, reset, zoomIn, zoomOut };
 }

@@ -1,5 +1,5 @@
 import type { Page } from '@playwright/test';
-import { test, expect, gotoSkin, SKINS, seededOnly, type Skin } from './fixtures';
+import { test, expect, gotoSkin, reviewTransport, SKINS, seededOnly, type Skin } from './fixtures';
 import { SEED } from './seed/seed-data';
 
 /**
@@ -14,6 +14,7 @@ const RANGE_24H: Record<Skin, RegExp> = {
   classic: /^24 hour$/i,
 };
 
+
 test.describe('Montage Review', () => {
   test.skip(seededOnly.condition, seededOnly.reason);
 
@@ -23,7 +24,7 @@ test.describe('Montage Review', () => {
     }) => {
       await gotoSkin(page, '/montagereview', skin);
 
-      await expect(page.getByRole('button', { name: 'PLAY' })).toBeVisible();
+      await expect(reviewTransport(page, skin)).toBeVisible();
       await expect(page.getByText(/timeline/i).first()).toBeVisible();
       for (const name of ['e2e-Front Door', 'e2e-Driveway', 'e2e-Garage', 'e2e-PTZ Dome']) {
         await expect(visibleText(page, name)).toBeVisible();

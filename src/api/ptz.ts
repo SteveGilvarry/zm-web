@@ -121,6 +121,11 @@ export interface PtzPresetRequest {
   name?: string | null;
 }
 
+/** `/ptz/monitors/{id}/iris/{dir}` — the endpoints take no body. */
+export type PtzIrisDirection = 'open' | 'close' | 'auto';
+/** `/ptz/monitors/{id}/power/{action}` — legacy Wake / Sleep / Reset / Reboot. */
+export type PtzPowerAction = 'wake' | 'sleep' | 'reset' | 'reboot';
+
 // 8 compass directions accepted by /ptz/monitors/{id}/move/{dir}
 export type PtzDirection =
   | 'up' | 'down' | 'left' | 'right'
@@ -161,6 +166,15 @@ export const ptz = {
 
   stopFocus: (monitorId: number) =>
     apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/focus/stop`, {}),
+
+  iris: (monitorId: number, direction: PtzIrisDirection) =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/iris/${direction}`, {}),
+
+  stopIris: (monitorId: number) =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/iris/stop`, {}),
+
+  power: (monitorId: number, action: PtzPowerAction) =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/power/${action}`, {}),
 
   home: (monitorId: number) =>
     apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/home`, {}),

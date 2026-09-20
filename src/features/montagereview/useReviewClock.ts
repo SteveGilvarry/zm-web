@@ -1,4 +1,24 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { useMontageStore } from '@/stores/montage';
+
+/**
+ * Browsers refuse to decode much past 16× real time (`HTMLMediaElement`
+ * clamps or drops the audio/video pipeline), so a cell plays at most this
+ * rate. Legacy has the same ceiling in zms: above it the clock keeps running
+ * at the chosen speed and the cell steps by seeking instead of playing.
+ */
+export const REVIEW_MAX_PLAYBACK_RATE = 16;
+
+/** The rate to hand `video.playbackRate` for a clock speed. */
+export function playbackRateFor(speed: number): number {
+  if (!Number.isFinite(speed) || speed <= 0) return 0;
+  return Math.min(speed, REVIEW_MAX_PLAYBACK_RATE);
+}
+
+/** Above the media ceiling the cell can only step: seek, paint, seek again. */
+export function isFrameStepping(speed: number): boolean {
+  return speed > REVIEW_MAX_PLAYBACK_RATE;
+}
 
 export interface ReviewClock {
   /** Current playhead time. */
@@ -6,8 +26,12 @@ export interface ReviewClock {
   /** Range bounds — the playhead is clamped here, scrubber spans here. */
   rangeStart: Date;
   rangeEnd: Date;
+  /** Running: a speed above 0 with playback started. */
   isPlaying: boolean;
-  /** Playback speed multiplier (1 = real time). */
+  /**
+   * Playback speed multiplier (1 = real time), legacy's 13-step slider.
+   * `0` is legacy's pause — the playhead only moves by scrubbing.
+   */
   speed: number;
 
   setCurrentTime: (t: Date) => void;
@@ -34,8 +58,26 @@ export function useReviewClock(initialStart: Date, initialEnd: Date): ReviewCloc
   const [rangeStart, setRangeStart] = useState(initialStart);
   const [rangeEnd, setRangeEnd] = useState(initialEnd);
   const [currentTime, setCurrentTimeState] = useState(initialStart);
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [speed, setSpeed] = useState(1);
+  const [started, setStarted] = useState(false);
+  // Legacy keeps `speed` in a cookie, so it survives a reload.
+  const speed = useMontageStore((st) => st.reviewSpeed);
+  const setStoredSpeed = useMontageStore((st) => st.setReviewSpeed);
+  // Legacy has no transport: speed 0 IS pause, and moving the slider off 0
+  // starts playing. The extra `started` flag only keeps a freshly opened page
+  // still (legacy reloads into motion; here that would start every cell
+  // fetching video before the operator asked for anything).
+  const isPlaying = started && speed > 0;
+  // What `play()` resumes at after a pause, or after the window end zeroed
+  // the speed.
+  const lastMovingSpeed = useRef(speed > 0 ? speed : 1);
+  useEffect(() => {
+    if (speed > 0) lastMovingSpeed.current = speed;
+  }, [speed]);
+
+  const setSpeed = useCallback((s: number) => {
+    setStoredSpeed(s);
+    setStarted(s > 0);
+  }, [setStoredSpeed]);
 
   // Clamp helper
   const clamp = useCallback((t: Date) => {
@@ -66,9 +108,17 @@ export function useReviewClock(initialStart: Date, initialEnd: Date): ReviewCloc
     });
   }, []);
 
-  const play = useCallback(() => setIsPlaying(true), []);
-  const pause = useCallback(() => setIsPlaying(false), []);
-  const togglePlay = useCallback(() => setIsPlaying((p) => !p), []);
+  const play = useCallback(() => {
+    if (useMontageStore.getState().reviewSpeed <= 0) setStoredSpeed(lastMovingSpeed.current);
+    setStarted(true);
+  }, [setStoredSpeed]);
+  // Pause keeps the chosen speed so the slider still reads it on resume;
+  // the window end is the one case that zeroes it, as legacy does.
+  const pause = useCallback(() => setStarted(false), []);
+  const togglePlay = useCallback(() => {
+    if (started && useMontageStore.getState().reviewSpeed > 0) setStarted(false);
+    else play();
+  }, [play, started]);
 
   // Advance the clock while playing.
   const lastTickRef = useRef<number>(0);
@@ -82,15 +132,17 @@ export function useReviewClock(initialStart: Date, initialEnd: Date): ReviewCloc
       setCurrentTimeState((prev) => {
         const next = new Date(prev.getTime() + elapsed);
         if (next.getTime() >= rangeEnd.getTime()) {
-          // Stop at the end of the range.
-          setIsPlaying(false);
+          // Legacy `timerFire`: past the end, `setSpeed(0)` — the slider
+          // drops to 0 rather than the page keeping a speed it is not using.
+          setStoredSpeed(0);
+          setStarted(false);
           return rangeEnd;
         }
         return next;
       });
     }, 100);
     return () => clearInterval(id);
-  }, [isPlaying, speed, rangeEnd]);
+  }, [isPlaying, speed, rangeEnd, setStoredSpeed]);
 
   return {
     currentTime,

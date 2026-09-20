@@ -175,12 +175,14 @@ export function ClassicTd({ numeric, center, className, children, ...rest }:
 
 /** Bootstrap-table footer: count, rows-per-page, numbered pages, jump-to. */
 export function ClassicPager({
-  page, pageSize, total, totalPages, pageSizeOptions, onPage, onPageSize, shown,
+  page, pageSize, total, totalPages, pageSizeOptions, onPage, onPageSize, shown, pageSizeLabel,
 }: {
   page: number; pageSize: number; total: number; totalPages: number;
   pageSizeOptions: readonly number[]; onPage: (n: number) => void; onPageSize: (n: number) => void;
   /** Rows on this page. */
   shown?: number;
+  /** Label for a page-size option, for lists with an "All" entry. */
+  pageSizeLabel?: (n: number) => string;
 }) {
   const { t } = useTranslation();
   const from = total === 0 ? 0 : (page - 1) * pageSize + 1;
@@ -197,7 +199,7 @@ export function ClassicPager({
           onChange={(e) => onPageSize(Number(e.target.value))}
           className={clsx(classicSelect, 'py-0.5 font-semibold text-[#337ab7]')}
         >
-          {pageSizeOptions.map((n) => <option key={n} value={n}>{n}</option>)}
+          {pageSizeOptions.map((n) => <option key={n} value={n}>{pageSizeLabel ? pageSizeLabel(n) : n}</option>)}
         </select>
         <span>{t('rows per page')}</span>
       </div>

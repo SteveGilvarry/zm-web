@@ -1,5 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import type { EventsColumnKey } from '@/stores/eventsColumns';
+import type { FramesColumnKey } from './framesTable';
 
 /**
  * Display labels for the events-list columns. Built inside a hook so `t()`
@@ -26,5 +27,20 @@ export function useEventsColumnLabels(): Record<EventsColumnKey, string> {
     disk_space: t('DiskSpace'),
     archived: t('Archived'),
     emailed: t('Emailed'),
+    notes: t('Notes'),
+  };
+}
+
+/** The same, for the frames table (legacy `views/frames.php`). */
+export function useFramesColumnLabels(): Record<FramesColumnKey, string> {
+  const { t } = useTranslation();
+  return {
+    event_id: t('Event Id'),
+    frame_id: t('Frame Id'),
+    type: t('Type'),
+    time_stamp: t('Time Stamp'),
+    delta: t('Time Delta'),
+    score: t('Score'),
+    thumbnail: t('Thumbnail'),
   };
 }

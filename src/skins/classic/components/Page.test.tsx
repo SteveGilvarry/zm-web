@@ -50,6 +50,20 @@ describe('ClassicHeader', () => {
     expect(back).toHaveBeenCalledTimes(1);
   });
 
+  it('greys out the back square when there is nowhere to go back to', async () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    renderWithProviders(<ClassicHeader title="Zones" backDisabled />);
+    const button = screen.getByRole('button', { name: 'Back' });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(back).not.toHaveBeenCalled();
+  });
+
+  it('leaves the back square live by default', () => {
+    renderWithProviders(<ClassicHeader title="Zones" />);
+    expect(screen.getByRole('button', { name: 'Back' })).toBeEnabled();
+  });
+
   it('omits the refresh square unless onRefresh is wired', () => {
     const { unmount } = renderWithProviders(<ClassicHeader title="Zones" />);
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull();

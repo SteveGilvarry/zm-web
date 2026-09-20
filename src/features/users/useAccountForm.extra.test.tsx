@@ -53,6 +53,8 @@ describe('useAccountForm — rejected writes', () => {
     );
     const { result } = renderHook(() => useAccountForm(existing, noop), { wrapper });
 
+    // Edit saves only what changed, so an untouched form never hits the backend.
+    act(() => result.current.setField('email', 'changed@example.com'));
     act(() => result.current.submit());
 
     await waitFor(() => expect(result.current.error).toMatch(/Users table locked/));
@@ -83,6 +85,8 @@ describe('useAccountForm — rejected writes', () => {
     server.use(http.put('/api/v3/users/7', () => HttpResponse.error()));
     const { result } = renderHook(() => useAccountForm(existing, noop), { wrapper });
 
+    // Edit saves only what changed, so an untouched form never hits the backend.
+    act(() => result.current.setField('email', 'changed@example.com'));
     act(() => result.current.submit());
 
     await waitFor(() => expect(result.current.error).toBeTruthy());

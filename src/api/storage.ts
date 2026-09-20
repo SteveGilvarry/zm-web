@@ -8,8 +8,8 @@ export type StorageScheme = (typeof STORAGE_SCHEMES)[number];
 /**
  * Body for `POST /storage` and (partially) `PATCH /storage/{id}`.
  *
- * Mirrors Create/UpdateStorageRequest. `do_delete` and `disk_space` are read
- * back from `StorageResponse` but are not writable — zmaudit owns them.
+ * Mirrors Create/UpdateStorageRequest. `disk_space` is read back from
+ * `StorageResponse` but is never writable — zmaudit owns it.
  *
  * Needs a zm-api with the full `StorageResponse` row (zm-api#24): older builds
  * drop `scheme` / `server_id` / `url` from the response, so the list columns
@@ -28,6 +28,18 @@ export interface StorageWritePayload {
   url?: string | null;
 }
 
+/**
+ * `CreateStorageRequest` carries `do_delete`; `UpdateStorageRequest` does not,
+ * and the backend silently drops it from a PATCH (verified on the dev box:
+ * `PATCH /storage/{id} {do_delete: 1}` answers 200 with `do_delete` unchanged).
+ * So it is a create-time choice only, and the type says so rather than letting
+ * a caller send an update that looks like it worked.
+ */
+export interface StorageCreatePayload extends StorageWritePayload {
+  /** 1 = deleting an event may reclaim its media here; 0 = never. */
+  do_delete?: number | null;
+}
+
 export async function getStorageList(params?: {
   page?: number;
   page_size?: number;
@@ -35,8 +47,8 @@ export async function getStorageList(params?: {
   return apiGet<PaginatedResponse<ZmStorage>>('/storage', params);
 }
 
-export async function createStorage(data: StorageWritePayload): Promise<ZmStorage> {
-  return apiPost<StorageWritePayload, ZmStorage>('/storage', data);
+export async function createStorage(data: StorageCreatePayload): Promise<ZmStorage> {
+  return apiPost<StorageCreatePayload, ZmStorage>('/storage', data);
 }
 
 export async function updateStorage(

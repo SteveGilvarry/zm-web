@@ -108,6 +108,12 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
                             fillOpacity={0.25}
                             stroke={colour}
                             strokeWidth={Math.max(2, frame.width / 400)}
+                            // Legacy `zones.js:17` opens the zone you click on
+                            // the picture. Not focusable: the table's name
+                            // button is the keyboard route to the same editor.
+                            onClick={() => page.openEditor(z.id)}
+                            style={{ cursor: 'pointer' }}
+                            data-testid={`zone-polygon-${z.id}`}
                           >
                             <title>{z.name}</title>
                           </polygon>
@@ -207,16 +213,17 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
                 </div>
               </RequirePerm>
 
-              {/* Legacy's editor settings panel — read-only for now. */}
+              {/* Legacy's editor settings panel: the zone as stored, beside
+                  the form that edits it. */}
               {openZone && (
                 <div className="mt-4">
                   <h2 className="text-base font-bold text-zinc-900 text-center mb-1">
-                    {t('Motion settings')}
+                    {t('Stored settings')}
                   </h2>
                   <p className="text-xs text-zinc-600 mb-2">
-                    {t('Motion settings are read-only: the API accepts only the zone name and polygon.')}
+                    {t('The zone as the backend has it — the form beside the canvas is what changes it.')}
                   </p>
-                  <ClassicTable aria-label={t('Motion settings')}>
+                  <ClassicTable aria-label={t('Stored settings')}>
                     <tbody>
                       {zoneSettingRows(openZone, t).map((row) => (
                         <tr key={row.key}>

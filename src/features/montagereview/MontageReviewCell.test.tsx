@@ -5,7 +5,7 @@
  * `currentTime` are stubbed on HTMLMediaElement.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
@@ -24,9 +24,19 @@ vi.mock('@tanstack/react-router', () => ({
       : (to ?? '#');
     return <a href={href} {...rest}>{children}</a>;
   },
+  useNavigate: () => navigate,
+  useRouter: () => ({ buildLocation: ({ to, params }: { to: string; params?: Record<string, string> }) => ({
+    href: params
+      ? Object.entries(params).reduce((acc, [k, v]) => acc.replace(`$${k}`, String(v)), to)
+      : to,
+  }) }),
 }));
 
-const { MontageReviewCell } = await import('./MontageReviewCell');
+/** The cell navigates on click (legacy `showOneMonitor`). */
+const navigate = vi.fn();
+
+const { MontageReviewCell, REVIEW_ZOOM_STEP } = await import('./MontageReviewCell');
+const { REVIEW_MAX_PLAYBACK_RATE } = await import('./useReviewClock');
 
 const server = setupServer();
 beforeAll(() => {
@@ -46,6 +56,7 @@ const play = vi.fn().mockResolvedValue(undefined);
 const pause = vi.fn();
 let currentTimeStore = 0;
 beforeEach(() => {
+  navigate.mockClear();
   play.mockClear();
   pause.mockClear();
   currentTimeStore = 0;
@@ -237,5 +248,88 @@ describe('MontageReviewCell — master clock sync', () => {
     await screen.findByRole('link', { name: '#9' });
     const video = container.querySelector('video')!;
     expect(video.getAttribute('style')).toContain('rotate');
+  });
+});
+
+/**
+ * Legacy `clickMonitor` / `showOneMonitor`: corners zoom the one monitor,
+ * the middle opens the event under the playhead (or Watch when the monitor
+ * recorded nothing), and Ctrl/⌘ opens a new tab.
+ */
+describe('MontageReviewCell — click', () => {
+  /** jsdom gives every element a zero-size rect; give the cell a real one. */
+  function sizedCell(over: Partial<Parameters<typeof MontageReviewCell>[0]> = {}) {
+    const view = renderCell(over);
+    const cell = screen.getByTestId('review-cell-1');
+    vi.spyOn(cell, 'getBoundingClientRect').mockReturnValue({
+      left: 0, top: 0, width: 400, height: 200, right: 400, bottom: 200, x: 0, y: 0,
+      toJSON: () => ({}),
+    } as DOMRect);
+    return { ...view, cell };
+  }
+
+  it('opens the event spanning the playhead', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { cell } = sizedCell();
+    await screen.findByRole('link', { name: '#9' });
+
+    fireEvent.click(cell, { clientX: 200, clientY: 150 });
+    expect(navigate).toHaveBeenCalledWith({ to: '/events/$eventId', params: { eventId: '9' } });
+  });
+
+  it('opens the Watch page when the monitor recorded nothing', async () => {
+    stubEvents([]);
+    const { cell } = sizedCell();
+    await screen.findByText('No Event');
+
+    fireEvent.click(cell, { clientX: 200, clientY: 150 });
+    expect(navigate).toHaveBeenCalledWith({ to: '/monitors/$monitorId', params: { monitorId: '1' } });
+  });
+
+  it('zooms ±15 % from the two top corners', async () => {
+    stubEvents([]);
+    const onZoom = vi.fn();
+    const { cell } = sizedCell({ onZoom });
+    await screen.findByText('No Event');
+
+    fireEvent.click(cell, { clientX: 10, clientY: 10 });
+    expect(onZoom).toHaveBeenLastCalledWith(REVIEW_ZOOM_STEP);
+
+    fireEvent.click(cell, { clientX: 390, clientY: 10 });
+    expect(onZoom).toHaveBeenLastCalledWith(1 / REVIEW_ZOOM_STEP);
+
+    // The middle is not a zoom.
+    fireEvent.click(cell, { clientX: 200, clientY: 150 });
+    expect(onZoom).toHaveBeenCalledTimes(2);
+    expect(navigate).toHaveBeenCalled();
+  });
+
+  it('opens a new tab on Ctrl+click instead of navigating', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const open = vi.spyOn(window, 'open').mockReturnValue(null);
+    const { cell } = sizedCell();
+    await screen.findByRole('link', { name: '#9' });
+
+    fireEvent.click(cell, { clientX: 200, clientY: 150, ctrlKey: true });
+    expect(open).toHaveBeenCalledWith('/events/9', '_blank', 'noopener');
+    expect(navigate).not.toHaveBeenCalled();
+    open.mockRestore();
+  });
+
+  it('leaves the #id link and the download icon to themselves', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    sizedCell();
+    fireEvent.click(await screen.findByRole('link', { name: '#9' }));
+    expect(navigate).not.toHaveBeenCalled();
+  });
+});
+
+describe('MontageReviewCell — playback rate', () => {
+  it('caps the video rate where browsers stop decoding, and steps above it', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { container } = renderCell({ isPlaying: true, speed: 50 });
+    await screen.findByRole('link', { name: '#9' });
+    const video = container.querySelector('video')!;
+    await waitFor(() => expect(video.playbackRate).toBe(REVIEW_MAX_PLAYBACK_RATE));
   });
 });

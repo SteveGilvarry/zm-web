@@ -9,7 +9,9 @@ import { listEventSummaries, type EventSummary } from '@/api/eventSummaries';
 import { getDaemons, getSystemStatus } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorStatuses, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
+import { useZmConfigTable } from '@/features/config/useZmConfig';
 import { bucketEventsByHour } from './bucketEvents';
+import { CONSOLE_REFRESH_CONFIG, consoleRefreshInterval } from './refreshInterval';
 import type { Monitor, ZmEvent, DaemonStatus } from '@/types';
 import type { SystemStats } from '@/api/system';
 
@@ -64,11 +66,19 @@ export interface ConsoleData {
 export function useConsoleData(): ConsoleData {
   const { isAuthenticated } = useAuthStore();
 
+  // The console table's cadence is an operator setting, not a constant:
+  // ZoneMinder's `ZM_WEB_H_REFRESH_MAIN` (seconds, 0 = off). It only governs
+  // the table feeds below — the live-session, status and sparkline polls
+  // keep their own timing.
+  const { data: zmConfig } = useZmConfigTable();
+  const tableRefresh = (fallbackMs: number) =>
+    consoleRefreshInterval(zmConfig?.[CONSOLE_REFRESH_CONFIG], fallbackMs);
+
   const monitorsQ = useQuery({
     queryKey: ['monitors'],
     queryFn: () => getMonitors({ page: 1, page_size: 100 }),
     enabled: isAuthenticated,
-    refetchInterval: 30_000,
+    refetchInterval: tableRefresh(30_000),
   });
   const liveSessionsQ = useQuery({
     queryKey: ['liveSessions'],
@@ -92,7 +102,7 @@ export function useConsoleData(): ConsoleData {
     queryKey: ['daemons'],
     queryFn: getDaemons,
     enabled: isAuthenticated,
-    refetchInterval: 30_000,
+    refetchInterval: tableRefresh(30_000),
   });
   const systemQ = useQuery({
     queryKey: ['systemStatus'],
@@ -122,7 +132,7 @@ export function useConsoleData(): ConsoleData {
     queryKey: ['eventSummaries'],
     queryFn: () => listEventSummaries({ page: 1, page_size: 200 }),
     enabled: isAuthenticated,
-    refetchInterval: 60_000,
+    refetchInterval: tableRefresh(60_000),
   });
 
   const { byId: runtimeById } = useMonitorStatuses();

@@ -172,12 +172,19 @@ VALUES
    100, '0', 'auto', 0, '#0000BE', '#dc2626',
    4, 'Normal', NULL, NULL);
 
-INSERT INTO Monitor_Status (MonitorId, Status, CaptureFPS, AnalysisFPS, CaptureBandwidth)
+-- UpdatedOn is what the console reads to decide a camera is Offline: the
+-- Function cell prints "Offline" (and drops the fps line) once the row is
+-- more than 90 s old, because on a real box zmc rewrites it every second.
+-- There is no zmc here, so the column would otherwise go stale ninety
+-- seconds into a twenty-minute suite and every monitor would read Offline
+-- half way through. Dating it ahead of the run keeps the fixture saying
+-- what it means — "these three cameras are capturing" — for its duration.
+INSERT INTO Monitor_Status (MonitorId, Status, CaptureFPS, AnalysisFPS, CaptureBandwidth, UpdatedOn)
 VALUES
-  (9001, 'Connected',  15.02, 5.00, 2457600),
-  (9002, 'Connected',   9.98, 5.00, 1228800),
-  (9003, 'Running',    24.96, 0.00, 4096000),
-  (9004, 'NotRunning',  0.00, 0.00, 0);
+  (9001, 'Connected',  15.02, 5.00, 2457600, NOW() + INTERVAL 1 DAY),
+  (9002, 'Connected',   9.98, 5.00, 1228800, NOW() + INTERVAL 1 DAY),
+  (9003, 'Running',    24.96, 0.00, 4096000, NOW() + INTERVAL 1 DAY),
+  (9004, 'NotRunning',  0.00, 0.00, 0,       NOW() + INTERVAL 1 DAY);
 
 INSERT INTO ControlPresets (MonitorId, Preset, Label) VALUES
   (9004, 1, 'e2e-Home'),

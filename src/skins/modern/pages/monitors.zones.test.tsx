@@ -167,12 +167,18 @@ describe('modern Zones page', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(url).toBe('/api/v3/monitors/1/zones'));
-    expect(body).toEqual({
+    // A new zone starts on ZoneMinder's own defaults: Blobs, red, and every
+    // threshold blank, which goes out as null.
+    expect(body).toMatchObject({
       name: 'New zone',
       type: 'Active',
       units: 'Pixels',
       coords: '384,216 1536,216 1536,864 384,864',
       num_coords: 4,
+      check_method: 'Blobs',
+      alarm_rgb: 16711680,
+      min_pixel_threshold: null,
+      min_blobs: null,
     });
     // A successful save closes the draft form.
     await waitFor(() => expect(screen.queryByDisplayValue('New zone')).toBeNull());
@@ -202,7 +208,7 @@ describe('modern Zones page', () => {
     expect(body?.units).toBe('Percent');
   });
 
-  it('updates an existing zone through PUT /zones/1 with name + polygon', async () => {
+  it('updates an existing zone through PUT /zones/1 with its geometry and settings', async () => {
     let body: unknown;
     let url: string | undefined;
     server.use(
@@ -225,9 +231,13 @@ describe('modern Zones page', () => {
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(url).toBe('/api/v3/zones/1'));
-    expect(body).toEqual({
+    expect(body).toMatchObject({
       name: 'Whole frame',
-      polygon: '0,0 1919,0 1919,1079 0,1079',
+      coords: '0,0 1919,0 1919,1079 0,1079',
+      // The stored settings round-trip untouched.
+      check_method: 'Blobs',
+      filter_x: 3,
+      min_alarm_pixels: 3456,
     });
   });
 
@@ -271,7 +281,7 @@ describe('modern Zones page', () => {
     expect(screen.getByText('Editing #1')).toBeInTheDocument();
   });
 
-  it('reveals the read-only motion settings for the selected zone', async () => {
+  it('reveals the stored settings panel for the selected zone', async () => {
     db.zones = [makeZone({
       id: 1, monitor_id: 1, name: 'All', units: 'Percent', area: 9926,
       min_alarm_pixels: 0.05, max_alarm_pixels: 75.06, max_pixel_threshold: null,
@@ -280,15 +290,17 @@ describe('modern Zones page', () => {
     renderRoute('/monitors/1/zones');
 
     await findZonesPanel();
-    expect(screen.queryByRole('heading', { name: 'Motion settings' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Stored settings' })).toBeNull();
 
     await user.click(screen.getByRole('button', { name: /All/ }));
-    expect(await screen.findByRole('heading', { name: 'Motion settings' })).toBeInTheDocument();
+    expect(await screen.findByRole('heading', { name: 'Stored settings' })).toBeInTheDocument();
     expect(screen.getByText(
-      'Motion settings are read-only: the API accepts only the zone name and polygon.',
+      'The zone as the backend has it — the form beside the canvas is what changes it.',
     )).toBeInTheDocument();
 
-    const row = (label: string) => screen.getByText(label).parentElement as HTMLElement;
+    // Scoped to the panel: the editor form beside it uses the same labels.
+    const panel = screen.getByTestId('zone-stored-settings');
+    const row = (label: string) => within(panel).getByText(label).parentElement as HTMLElement;
     expect(within(row('Check Method')).getByText('Blobs')).toBeInTheDocument();
     expect(within(row('Zone Area')).getByText('9,926')).toBeInTheDocument();
     expect(within(row('Min/Max Alarmed Area')).getByText('0.05% / 75.06%')).toBeInTheDocument();
@@ -304,10 +316,10 @@ describe('modern Zones page', () => {
 
     await findZonesPanel();
     await user.click(screen.getByRole('button', { name: /All/ }));
-    await screen.findByRole('heading', { name: 'Motion settings' });
+    await screen.findByRole('heading', { name: 'Stored settings' });
 
     await user.click(screen.getByRole('button', { name: 'Cancel edit' }));
-    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Motion settings' })).toBeNull());
+    await waitFor(() => expect(screen.queryByRole('heading', { name: 'Stored settings' })).toBeNull());
   });
 
   it('shows no settings for a zone that does not exist yet', async () => {
@@ -318,7 +330,7 @@ describe('modern Zones page', () => {
     await user.click(screen.getByRole('button', { name: 'New' }));
 
     expect(screen.getByDisplayValue('New zone')).toBeInTheDocument();
-    expect(screen.queryByRole('heading', { name: 'Motion settings' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Stored settings' })).toBeNull();
   });
 
   it('closes the draft form without saving from the cancel affordance', async () => {

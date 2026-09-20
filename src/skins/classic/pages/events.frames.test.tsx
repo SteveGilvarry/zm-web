@@ -2,14 +2,18 @@
  * Integration-style tests for the legacy `?view=frames` page (classic skin).
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 
 const mockNavigate = vi.fn();
+/** Whether the router has an entry behind this page — legacy's `document.referrer`. */
+let canGoBack = true;
 vi.mock('@tanstack/react-router', () => ({
+  useCanGoBack: () => canGoBack,
   useSearch: () => ({}),
   useNavigate: () => mockNavigate,
   Link: ({
@@ -79,7 +83,7 @@ function stubEndpoints(frames = [frame(1), frame(2, { type: 'Alarm', score: 37 }
 }
 
 describe('EventFramesPage — classic skin', () => {
-  it('renders the legacy column set, the alarm row and the back link', async () => {
+  it('renders the legacy column set, the alarm row and a history Back', async () => {
     stubEndpoints();
     await mount();
     await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
@@ -87,11 +91,16 @@ describe('EventFramesPage — classic skin', () => {
     expect(
       screen.getByRole('heading', { level: 1, name: /frames — event 42/i }),
     ).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: /back to event/i }).getAttribute('href')).toBe('/events/42');
+    // Legacy's Back is `history.back()`.
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {});
+    screen.getByRole('button', { name: 'Back' }).click();
+    expect(back).toHaveBeenCalled();
+    back.mockRestore();
 
+    // Event Id is hidden by default, as it is in legacy's frames table.
     const headers = screen.getAllByRole('columnheader').map((th) => th.textContent);
     expect(headers).toEqual([
-      'Event Id', 'Frame Id', 'Type', 'Time Stamp', 'Time Delta', 'Score', 'Thumbnail',
+      'Frame Id', 'Type', 'Time Stamp', 'Time Delta', 'Score', 'Thumbnail',
     ]);
 
     const alarmRow = screen.getByTestId('frame-row-2');
@@ -105,16 +114,43 @@ describe('EventFramesPage — classic skin', () => {
     expect(normalRow.className).not.toMatch(/f8d7da/);
   });
 
-  it('marks every thumbnail cell as blocked on zm-api#26', async () => {
+  it('greys Back when there is nowhere to go back to, as legacy does', async () => {
+    canGoBack = false;
+    try {
+      stubEndpoints();
+      await mount();
+      await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+      expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+    } finally {
+      canGoBack = true;
+    }
+  });
+
+  it('draws a thumbnail per row from /frames/{id}/image', async () => {
     stubEndpoints();
     await mount();
     await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
 
-    const notes = screen.getAllByText('needs zm-api#26');
-    expect(notes).toHaveLength(3);
-    expect(notes[0].closest('td')?.getAttribute('title')).toBe(
-      'Per-frame images are not served by the API yet.',
+    // Legacy keys the image off the `Frames` row id, not the frame number.
+    const thumbs = screen.getAllByTestId(/^frame-thumb-/);
+    expect(thumbs).toHaveLength(3);
+    expect(thumbs[0]).toHaveAttribute(
+      'src', '/api/v3/frames/1001/image?token=test',
     );
+    expect(thumbs[0]).toHaveAttribute('alt', 'Frame 1');
+  });
+
+  it('falls back to a dash when the frame has no stored image', async () => {
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    // jsdom never loads images, so drive the same error the 404 would.
+    const thumb = screen.getAllByTestId(/^frame-thumb-/)[0];
+    const cell = thumb.closest('td')!;
+    fireEvent.error(thumb);
+    await waitFor(() => expect(within(cell).queryByTestId(/^frame-thumb-/)).toBeNull());
+    expect(cell).toHaveTextContent('—');
   });
 
   it('pages through the URL', async () => {
@@ -143,5 +179,92 @@ describe('EventFramesPage — classic skin', () => {
     const alert = await screen.findByRole('alert');
     expect(alert.textContent).toMatch(/cannot reach the server/i);
     expect(screen.queryByTestId('frames-table')).toBeNull();
+  });
+});
+
+describe('EventFramesPage — classic toolbar', () => {
+  it('searches the rows on screen', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.type(screen.getByLabelText('Search frames'), 'Alarm');
+
+    await waitFor(() => expect(screen.queryByTestId('frame-row-1')).toBeNull());
+    expect(screen.getByTestId('frame-row-2')).toBeInTheDocument();
+  });
+
+  it('sorts on a column header and flips it on a second click', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    const rowIds = () => screen.getAllByTestId(/^frame-row-/).map((r) => r.getAttribute('data-testid'));
+    await user.click(screen.getByRole('button', { name: /^Score/ }));
+    expect(rowIds()).toEqual(['frame-row-1', 'frame-row-3', 'frame-row-2']);
+
+    await user.click(screen.getByRole('button', { name: /^Score/ }));
+    expect(rowIds()).toEqual(['frame-row-2', 'frame-row-3', 'frame-row-1']);
+    expect(screen.getByRole('columnheader', { name: /^Score/ })).toHaveAttribute('aria-sort', 'descending');
+  });
+
+  it('shows and hides columns from the chooser', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Columns' }));
+    await user.click(within(screen.getByTestId('frames-column-chooser')).getByRole('button', { name: 'Event Id' }));
+
+    expect(screen.getAllByRole('columnheader').map((th) => th.textContent)).toEqual([
+      'Event Id', 'Frame Id', 'Type', 'Time Stamp', 'Time Delta', 'Score', 'Thumbnail',
+    ]);
+  });
+
+  it('exports the visible rows and refreshes on demand', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    let fetches = 0;
+    server.use(http.get('/api/v3/frames', () => {
+      fetches += 1;
+      return HttpResponse.json({
+        items: [frame(1)], total: 60, per_page: 25, current_page: 1, last_page: 3,
+      });
+    }));
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    const created = vi.spyOn(URL, 'createObjectURL').mockReturnValue('blob:csv');
+    vi.spyOn(URL, 'revokeObjectURL').mockImplementation(() => {});
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    expect(click).toHaveBeenCalled();
+    expect(await (created.mock.calls[0][0] as Blob).text()).toContain('Frame Id,Type');
+
+    const before = fetches;
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    await waitFor(() => expect(fetches).toBeGreaterThan(before));
+
+    vi.restoreAllMocks();
+  });
+
+  it('offers All as a page size', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    const select = screen.getByLabelText('Rows per page') as HTMLSelectElement;
+    expect([...select.options].map((o) => o.textContent)).toEqual(['10', '25', '50', '100', '200', 'All']);
+
+    await user.selectOptions(select, '0');
+    const call = mockNavigate.mock.calls.at(-1)![0] as {
+      search: (p: Record<string, unknown>) => Record<string, unknown>;
+    };
+    expect(call.search({ page: 3 })).toEqual({ page_size: 0 });
   });
 });

@@ -103,6 +103,22 @@ function stub({
     http.get('/api/v3/monitors', () => HttpResponse.json(paged(MONITORS))),
     http.get('/api/v3/storage', () => HttpResponse.json(paged(STORAGE))),
     http.get('/api/v3/users', () => HttpResponse.json(paged(users))),
+    // `useFiltersPage` reads the ZM_OPT_* rows (option gating) and /me (who
+    // owns the filter). Everything on, so the whole form is exercised.
+    http.get('/api/v3/configs', () => HttpResponse.json({
+      items: [
+        { name: 'ZM_WEB_ID_ON_FILTER', value: '0' },
+        { name: 'ZM_OPT_FFMPEG', value: '1' },
+        { name: 'ZM_OPT_UPLOAD', value: '1' },
+        { name: 'ZM_OPT_EMAIL', value: '1' },
+        { name: 'ZM_OPT_MESSAGE', value: '1' },
+      ],
+      total: 5, per_page: 1000, current_page: 1, last_page: 1,
+    })),
+    // `/me` outranks the token claim, so mirror whoever `signIn()` set.
+    http.get('/api/v3/me', () => HttpResponse.json({
+      user: { id: 1, username: 'admin', ...(useAuthStore.getState().user?.perms ?? {}) },
+    })),
   );
 }
 
@@ -280,7 +296,6 @@ describe('ClassicFiltersPage', () => {
   it('Delete confirms by name, then DELETEs and clears the form', async () => {
     const user = userEvent.setup();
     stub();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const deleted: string[] = [];
     server.use(http.delete('/api/v3/filters/:id', ({ params }) => {
       deleted.push(String(params.id));
@@ -291,15 +306,16 @@ describe('ClassicFiltersPage', () => {
     await user.selectOptions(await chooser(), '1');
     await user.click(screen.getByRole('button', { name: 'Delete' }));
 
-    expect(confirm).toHaveBeenCalledWith('Delete filter "PurgeWhenFull"?');
+    expect(await screen.findByText(/Delete the filter "PurgeWhenFull"\?/)).toBeInTheDocument();
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+
     await waitFor(() => expect(deleted).toEqual(['1']));
     await waitFor(() => expect(screen.getByLabelText('Name')).toHaveValue(''));
   });
 
-  it('Delete does nothing when the confirm is dismissed', async () => {
+  it('Delete does nothing when the dialog is dismissed', async () => {
     const user = userEvent.setup();
     stub();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     const deleted: string[] = [];
     server.use(http.delete('/api/v3/filters/:id', ({ params }) => {
       deleted.push(String(params.id));
@@ -309,6 +325,7 @@ describe('ClassicFiltersPage', () => {
 
     await user.selectOptions(await chooser(), '1');
     await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(await screen.findByRole('button', { name: 'Cancel' }));
 
     await new Promise((r) => setTimeout(r, 20));
     expect(deleted).toEqual([]);
@@ -317,7 +334,6 @@ describe('ClassicFiltersPage', () => {
   it('warns, and asks again, when a condition-less filter would delete everything', async () => {
     const user = userEvent.setup();
     stub();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
     const posts: unknown[] = [];
     server.use(http.post('/api/v3/filters', async ({ request }) => {
       posts.push(await request.json());
@@ -334,7 +350,8 @@ describe('ClassicFiltersPage', () => {
     );
 
     await user.click(screen.getByRole('button', { name: 'Save' }));
-    expect(confirm.mock.calls[0][0]).toContain('every event will be deleted');
+    expect(await screen.findByText(/can delete archived events/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
     await new Promise((r) => setTimeout(r, 20));
     expect(posts).toEqual([]);
   });
@@ -655,5 +672,117 @@ describe('ClassicFiltersPage', () => {
 
     await user.click(screen.getAllByRole('button', { name: 'Remove condition' })[0]);
     expect(screen.getAllByTestId('filter-term')).toHaveLength(2);
+  });
+});
+
+describe('ClassicFiltersPage — legacy header details', () => {
+  /** A config table with the named rows overridden. */
+  const configs = (over: Record<string, string>) => http.get('/api/v3/configs', () => HttpResponse.json(paged(
+    Object.entries({
+      ZM_WEB_ID_ON_FILTER: '0', ZM_OPT_FFMPEG: '1', ZM_OPT_UPLOAD: '1',
+      ZM_OPT_EMAIL: '1', ZM_OPT_MESSAGE: '1', ...over,
+    }).map(([name, value]) => ({ name, value })),
+  )));
+
+  it('sorts the chooser by name, case-insensitively', async () => {
+    stub();
+    await mount();
+    const select = await chooser();
+    const names = within(select).getAllByRole('option').map((o) => o.textContent);
+    expect(names).toEqual(['Choose Filter', 'Nightly*&', 'Old dashboard filter*', 'PurgeWhenFull*', 'Update DiskSpace*']);
+  });
+
+  it('prefixes the options with the id when ZM_WEB_ID_ON_FILTER is set', async () => {
+    stub();
+    server.use(configs({ ZM_WEB_ID_ON_FILTER: '1' }));
+    await mount();
+    const select = await screen.findByLabelText('Use Filter');
+    await waitFor(() =>
+      expect(within(select).getByRole('option', { name: '1 PurgeWhenFull*' })).toBeInTheDocument());
+  });
+
+  it('shows the loaded filter\u2019s id and its [background] / [concurrent] tags', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+
+    await user.selectOptions(await chooser(), '4');
+    expect(await screen.findByText('[background] [concurrent]')).toBeInTheDocument();
+    // The read-only Id row legacy shows for a stored filter.
+    expect(screen.getByText('4')).toBeInTheDocument();
+  });
+
+  it('defaults the run-as select to the signed-in operator, with no blank option', async () => {
+    stub();
+    await mount();
+    const runAs = await screen.findByLabelText('User to run filter as');
+    await waitFor(() => expect(runAs).toHaveValue('1'));
+    expect(within(runAs).queryByRole('option', { name: /none/i })).toBeNull();
+  });
+
+  it('hides the actions their ZM_OPT_* row switches off', async () => {
+    stub();
+    server.use(configs({ ZM_OPT_FFMPEG: '0', ZM_OPT_UPLOAD: '0', ZM_OPT_EMAIL: '0', ZM_OPT_MESSAGE: '0' }));
+    await mount();
+
+    await chooser();
+    await waitFor(() => expect(screen.queryByLabelText('Create video for all matches')).toBeNull());
+    expect(screen.queryByLabelText('Upload all matches')).toBeNull();
+    expect(screen.queryByLabelText('Email details of all matches')).toBeNull();
+    expect(screen.queryByLabelText('Message details of all matches')).toBeNull();
+    // Not optional: these are always on the form.
+    expect(screen.getByLabelText('Archive all matches')).toBeInTheDocument();
+    expect(screen.getByLabelText('Delete all matches')).toBeInTheDocument();
+  });
+
+  it('hides the Execute command action from an operator without System edit', async () => {
+    signIn(perms({ system: 'View' }));
+    stub();
+    await mount();
+    await chooser();
+    await waitFor(() => expect(screen.queryByLabelText('Execute command on all matches')).toBeNull());
+  });
+
+  it('sends the email server and a NULL move target', async () => {
+    const user = userEvent.setup();
+    stub();
+    let body: Record<string, unknown> = {};
+    server.use(http.put('/api/v3/filters/2', async ({ request }) => {
+      body = await request.json() as Record<string, unknown>;
+      return HttpResponse.json(UPDATE_DISK_SPACE_ROW);
+    }));
+    await mount();
+
+    await user.selectOptions(await chooser(), '2');
+    await user.click(screen.getByLabelText('Email details of all matches'));
+    await user.type(await screen.findByLabelText('Email server'), 'smtp.example.com');
+    await user.click(screen.getByLabelText('Move all matches'));
+    await user.selectOptions(screen.getByDisplayValue('Zero (unspecified)'), '');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(body.email_server).toBe('smtp.example.com'));
+    expect(body.auto_move_to).toBeNull();
+  });
+
+  it('will not let a filter be saved with an empty condition value', async () => {
+    const user = userEvent.setup();
+    stub();
+    const posts: unknown[] = [];
+    server.use(http.post('/api/v3/filters', async ({ request }) => {
+      posts.push(await request.json());
+      return HttpResponse.json(PURGE_WHEN_FULL_ROW);
+    }));
+    await mount();
+
+    await chooser();
+    await user.type(screen.getByLabelText('Name'), 'Broken');
+    await user.click(screen.getByRole('button', { name: 'Add condition' }));
+    // Switching the attribute clears the value, as legacy does.
+    await user.selectOptions(screen.getByLabelText('Attribute'), 'Cause');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() =>
+      expect(useToastStore.getState().toasts.some((x) => /needs a value/.test(x.message))).toBe(true));
+    expect(posts).toEqual([]);
   });
 });

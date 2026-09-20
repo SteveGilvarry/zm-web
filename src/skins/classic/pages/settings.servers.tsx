@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
@@ -8,8 +9,8 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import type { Server } from '@/api/servers';
 import { useServersPage, type ServerRow } from '@/features/servers/useServersPage';
-import { SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
-import type { ServerDaemon } from '@/features/servers/serverFields';
+import { SERVER_PROTOCOLS, SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
+import { SERVER_DAEMONS, serverDaemonLabels } from '@/features/servers/serverFields';
 import { cpuLoadTone, freeTone, serverStatusTone, type LoadTone, type ServerLoadSummary } from '@/features/servers/serverStats';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
@@ -18,8 +19,8 @@ import { ClassicButton, ClassicTable, classicInput, classicLink, classicTd, clas
 
 const input = classicInput;
 
-/** Id, Name, Url, three paths, Status, Monitors, four load cells, actions. */
-const COLUMN_COUNT = 13;
+/** Id, Name, Url, three paths, Status, Monitors, four load cells, four daemon flags, actions. */
+const COLUMN_COUNT = 17;
 
 /** Options → Servers — classic skin: legacy server table with load columns. */
 export default function ClassicSettingsServersPage() {
@@ -29,6 +30,7 @@ export default function ClassicSettingsServersPage() {
   const { can } = usePerms();
   useSiteTitle(t('Servers'));
   const canEdit = can('system', 'Edit');
+  const daemonLabels = serverDaemonLabels(t);
 
   if (!s.isAuthenticated) return null;
 
@@ -71,6 +73,9 @@ export default function ClassicSettingsServersPage() {
                       <th className={clsx(classicTh, 'text-end')}>{t('CPU')}</th>
                       <th className={clsx(classicTh, 'text-end')}>{t('Free mem')}</th>
                       <th className={clsx(classicTh, 'text-end')}>{t('Free swap')}</th>
+                      {SERVER_DAEMONS.map((d) => (
+                        <th key={d} className={classicTh}>{daemonLabels[d]}</th>
+                      ))}
                       <th className={clsx(classicTh, 'text-end')}>{t('Actions')}</th>
                     </tr>
                   </thead>
@@ -104,17 +109,13 @@ export default function ClassicSettingsServersPage() {
                         </td>
                         <td className={clsx(classicTd, 'text-end')}>—</td>
                         <LoadTds load={s.localLoad} pct={pct} />
+                        {SERVER_DAEMONS.map((d) => <td key={d} className={classicTd}>—</td>)}
                         <td className={classicTd} />
                       </tr>
                     )}
                   </tbody>
                 </ClassicTable>
               </QueryState>
-
-              {/* Said once for the whole page — see `UpdateServerRequest` in the OpenAPI spec. */}
-              <p className="text-xs text-zinc-500">
-                {t('Only name, hostname, port and status are writable; the API does not accept the rest yet.')}
-              </p>
 
               <RequirePerm feature="system" level="Edit">
                 <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} onCancel={s.cancelEdit} />
@@ -170,6 +171,9 @@ function ServerRows({ row, pct, canEdit, expanded, onToggle, onEdit, onDelete }:
         <td className={clsx(classicTd, 'text-xs')}><StatusText status={server.status} /></td>
         <td className={clsx(classicTd, 'text-end font-mono tabular-nums')}>{monitorCount}</td>
         <LoadTds load={load} pct={pct} />
+        {row.daemons.map(({ daemon, enabled }) => (
+          <td key={daemon} className={clsx(classicTd, 'text-xs')}>{enabled ? t('yes') : t('no')}</td>
+        ))}
         <td className={clsx(classicTd, 'text-end whitespace-nowrap')}>
           <ClassicButton
             onClick={onToggle}
@@ -195,20 +199,11 @@ function ServerRows({ row, pct, canEdit, expanded, onToggle, onEdit, onDelete }:
   );
 }
 
-/** Legacy's RunStats / RunAudit / RunTrigger / RunEventNotification, plus state and coordinates. */
+/** What the legacy table has no column for: protocol, hostname, state, coordinates. */
 function ServerDetail({ row }: { row: ServerRow }) {
   const { t } = useTranslation();
-  const { server, daemons, coords } = row;
-  const daemonLabels: Record<ServerDaemon, string> = {
-    zmstats: t('Run stats'),
-    zmaudit: t('Run audit'),
-    zmtrigger: t('Run trigger'),
-    zmeventnotification: t('Run event notification'),
-  };
+  const { server, coords } = row;
   const items: Array<[string, string]> = [
-    ...daemons.map(({ daemon, enabled }): [string, string] => [
-      daemonLabels[daemon], enabled ? t('Yes') : t('No'),
-    ]),
     [t('Protocol'), server.protocol || '—'],
     [t('Hostname'), server.hostname || '—'],
     [t('Run state'), server.state_id != null ? String(server.state_id) : '—'],
@@ -263,6 +258,12 @@ function StatusText({ status }: { status: string }) {
 function ServerForm({ editing, onSaved, onCancel }: { editing: Server | null; onSaved: () => void; onCancel: () => void }) {
   const { t } = useTranslation();
   const f = useServerForm(editing, onSaved);
+  const daemonLabels = serverDaemonLabels(t);
+
+  /* Legacy's Servers modal, row for row (`web/ajax/modals/server.php`):
+     Name, Protocol, Hostname, Port, PathToIndex, PathToZMS, PathToApi and the
+     four Yes/No daemon flags. Status and the coordinates are extra — the row
+     carries them and the API accepts them, legacy's modal just omits them. */
   return (
     <form onSubmit={f.submit} className="bg-white rounded border border-zinc-300 p-3 space-y-2">
       <h2 className="text-sm font-semibold text-zinc-800">
@@ -271,15 +272,51 @@ function ServerForm({ editing, onSaved, onCancel }: { editing: Server | null; on
       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center text-sm max-w-xl">
         <label htmlFor="srv-name" className="text-zinc-700">{t('Name')}</label>
         <input id="srv-name" value={f.name} onChange={(e) => f.setName(e.target.value)} className={input} placeholder={t('e.g. zm-edge-01')} />
-        <label htmlFor="srv-host" className="text-zinc-700">{t('Host')}</label>
+
+        <label htmlFor="srv-protocol" className="text-zinc-700">{t('Protocol')}</label>
+        <select id="srv-protocol" value={f.protocol} onChange={(e) => f.setProtocol(e.target.value)} className={input}>
+          <option value="">{t('Not set')}</option>
+          {SERVER_PROTOCOLS.map((p) => <option key={p} value={p}>{p}</option>)}
+        </select>
+
+        <label htmlFor="srv-host" className="text-zinc-700">{t('Hostname')}</label>
         <div className="flex gap-2">
-          <input id="srv-host" value={f.hostname} onChange={(e) => f.setHostname(e.target.value)} className={clsx(input, 'flex-1 font-mono')} placeholder={t('hostname or IP')} />
+          <input id="srv-host" value={f.text.hostname} onChange={(e) => f.setTextField('hostname', e.target.value)} className={clsx(input, 'flex-1 font-mono')} placeholder={t('hostname or IP')} />
           <input aria-label={t('Port')} value={f.port} onChange={(e) => f.setPort(e.target.value)} className={clsx(input, 'w-20 font-mono')} placeholder={t('port')} />
         </div>
+
+        <label htmlFor="srv-index" className="text-zinc-700">{t('Path to index')}</label>
+        <input id="srv-index" value={f.text.path_to_index} onChange={(e) => f.setTextField('path_to_index', e.target.value)} className={clsx(input, 'font-mono')} placeholder="/zm/index.php" />
+
+        <label htmlFor="srv-zms" className="text-zinc-700">{t('Path to ZMS')}</label>
+        <input id="srv-zms" value={f.text.path_to_zms} onChange={(e) => f.setTextField('path_to_zms', e.target.value)} className={clsx(input, 'font-mono')} placeholder="/zm/cgi-bin/nph-zms" />
+
+        <label htmlFor="srv-api" className="text-zinc-700">{t('Path to API')}</label>
+        <input id="srv-api" value={f.text.path_to_api} onChange={(e) => f.setTextField('path_to_api', e.target.value)} className={clsx(input, 'font-mono')} placeholder="/zm/api" />
+
         <label htmlFor="srv-status" className="text-zinc-700">{t('Status')}</label>
         <select id="srv-status" value={f.status} onChange={(e) => f.setStatus(e.target.value)} className={input}>
           {SERVER_STATUSES.map((st) => <option key={st} value={st}>{st}</option>)}
         </select>
+
+        <span className="text-zinc-700">{t('Coordinates')}</span>
+        <div className="flex gap-2">
+          <input aria-label={t('Latitude')} value={f.latitude} onChange={(e) => f.setLatitude(e.target.value)} className={clsx(input, 'w-28 font-mono')} placeholder={t('latitude')} />
+          <input aria-label={t('Longitude')} value={f.longitude} onChange={(e) => f.setLongitude(e.target.value)} className={clsx(input, 'w-28 font-mono')} placeholder={t('longitude')} />
+        </div>
+
+        {SERVER_DAEMONS.map((daemon) => (
+          <Fragment key={daemon}>
+            <label htmlFor={`srv-${daemon}`} className="text-zinc-700">{daemonLabels[daemon]}</label>
+            <input
+              id={`srv-${daemon}`}
+              type="checkbox"
+              checked={f.daemons[daemon]}
+              onChange={(e) => f.setDaemon(daemon, e.target.checked)}
+              className="justify-self-start"
+            />
+          </Fragment>
+        ))}
       </div>
       {f.error && <p role="alert" className="text-xs text-red-700">{t('Save failed: {{message}}', { message: f.error })}</p>}
       <div className="flex gap-2">

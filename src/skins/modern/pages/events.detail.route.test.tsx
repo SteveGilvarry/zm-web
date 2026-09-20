@@ -15,6 +15,7 @@ import { http, HttpResponse } from 'msw';
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
 import { makeEvent, makeTag, paginated } from '@/test/fixtures';
+import { useEventPlaybackStore } from '@/stores/eventPlayback';
 
 setupMockServer();
 
@@ -74,21 +75,31 @@ describe('Event detail — player transport', () => {
     expect(await screen.findByRole('button', { name: 'Play' })).toBeInTheDocument();
   });
 
-  it('skips backwards and forwards by ten seconds', async () => {
+  it('Fast Forward and Rewind step through the legacy rate list while playing', async () => {
     const user = userEvent.setup();
     renderRoute('/events/101');
     const video = await player();
 
-    Object.defineProperty(video, 'duration', { value: 600, configurable: true });
-    fireEvent.loadedMetadata(video);
-    Object.defineProperty(video, 'currentTime', { value: 100, writable: true, configurable: true });
-    fireEvent.timeUpdate(video);
+    // Both wait for the transport to move, as legacy greys them out on pause.
+    expect(await screen.findByRole('button', { name: 'Fast Forward' })).toBeDisabled();
+    fireEvent.play(video);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Fast Forward' })).toBeEnabled());
 
-    await user.click(await screen.findByRole('button', { name: 'Forward 10 seconds' }));
-    expect(video.currentTime).toBe(110);
+    await user.click(screen.getByRole('button', { name: 'Fast Forward' }));
+    expect(useEventPlaybackStore.getState().rate).toBe(2);
+    await user.click(screen.getByRole('button', { name: 'Fast Forward' }));
+    expect(useEventPlaybackStore.getState().rate).toBe(5);
 
-    await user.click(screen.getByRole('button', { name: 'Back 10 seconds' }));
-    expect(video.currentTime).toBe(100);
+    // Rewind starts at -1x and speeds up from there.
+    await user.click(screen.getByRole('button', { name: 'Rewind' }));
+    expect(useEventPlaybackStore.getState().rate).toBe(-1);
+    await user.click(screen.getByRole('button', { name: 'Rewind' }));
+    expect(useEventPlaybackStore.getState().rate).toBe(-2);
+
+    // Fast Forward out of a rewind lands on 2x (1x, then one step).
+    await user.click(screen.getByRole('button', { name: 'Fast Forward' }));
+    expect(useEventPlaybackStore.getState().rate).toBe(2);
+    useEventPlaybackStore.getState().setRate(1);
   });
 
   it('keeps the chosen playback scale', async () => {
@@ -97,8 +108,8 @@ describe('Event detail — player transport', () => {
     await player();
 
     const scale = screen.getByRole('combobox', { name: 'Scale' });
-    await user.selectOptions(scale, '50');
-    expect(scale).toHaveValue('50');
+    await user.selectOptions(scale, '800px');
+    expect(scale).toHaveValue('800px');
   });
 });
 

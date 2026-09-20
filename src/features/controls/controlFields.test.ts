@@ -4,6 +4,7 @@ import type { Control } from '@/api/controls';
 import {
   CONTROL_FIELD_KEYS,
   CONTROL_TABS,
+  CONTROL_TYPES,
   controlFieldLabel,
   controlTabLabel,
   controlToForm,
@@ -32,24 +33,33 @@ const sample: Control = {
 describe('CONTROL_TABS', () => {
   it('follows the legacy controlcap tab order and field count', () => {
     expect(CONTROL_TABS.map((tab) => tab.key)).toEqual([
-      'main', 'move', 'pan', 'tilt', 'zoom', 'focus', 'gain', 'white', 'iris', 'presets', 'misc',
+      'main', 'move', 'pan', 'tilt', 'zoom', 'focus', 'gain', 'white', 'iris', 'presets',
     ]);
     // 3 main text/select + 4 power flags, 6 move, 10 pan, 10 tilt, 12 zoom
-    // (legacy's 11 plus the API's can_auto_zoom), 12 × focus/gain/white/iris,
-    // 4 presets, 2 misc — the 99 keys of CreateControlRequest.
+    // (legacy's 11 plus the API's can_auto_zoom), 12 × focus/gain/white/iris
+    // and 4 presets: 97 of the 99 keys of CreateControlRequest. The two left
+    // out are `can_auto_scan` / `num_scan_paths`, which legacy's form has no
+    // tab for either.
     expect(CONTROL_TABS.find((tab) => tab.key === 'pan')!.fields).toHaveLength(10);
     expect(CONTROL_TABS.find((tab) => tab.key === 'zoom')!.fields).toHaveLength(12);
     expect(CONTROL_TABS.find((tab) => tab.key === 'focus')!.fields).toHaveLength(12);
-    expect(CONTROL_FIELD_KEYS).toHaveLength(99);
+    expect(CONTROL_FIELD_KEYS).toHaveLength(97);
+  });
+
+  it('offers exactly the five types legacy lists, and no Misc tab', () => {
+    // `controlcap.php:219-225`: Local, Remote, Ffmpeg, Libvlc, cURL.
+    expect([...CONTROL_TYPES]).toEqual(['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'cURL']);
+    expect(CONTROL_TABS.some((tab) => (tab.key as string) === 'misc')).toBe(false);
   });
 
   it('covers every key of ControlResponse exactly once', () => {
     const keys = new Set(CONTROL_FIELD_KEYS);
     expect(keys.size).toBe(CONTROL_FIELD_KEYS.length);
     for (const key of Object.keys(sample)) {
-      if (key === 'id') continue;
+      if (key === 'id' || key === 'can_auto_scan' || key === 'num_scan_paths') continue;
       expect(keys.has(key as never), key).toBe(true);
     }
+    expect(keys.has('can_auto_scan' as never)).toBe(false);
   });
 
   it('labels every field and tab with legacy captions', () => {

@@ -49,10 +49,10 @@ describe('Source tab visibility follows the legacy per-type form', () => {
     expect(fields.find((f) => f.key === 'width')!.kind).toBe('number');
   });
 
-  it('Vnc: host, port, user, pass; Curl: URL + auth; File: path only', () => {
-    expect(labels({ type: 'Vnc' })).toEqual(expect.arrayContaining(['host', 'port', 'user', 'pass']));
-    expect(labels({ type: 'Vnc' })).not.toContain('path');
-    expect(labels({ type: 'Curl' })).toEqual(expect.arrayContaining(['path', 'user', 'pass']));
+  it('VNC: host, port, user, pass; cURL: URL + auth; File: path only', () => {
+    expect(labels({ type: 'VNC' })).toEqual(expect.arrayContaining(['host', 'port', 'user', 'pass']));
+    expect(labels({ type: 'VNC' })).not.toContain('path');
+    expect(labels({ type: 'cURL' })).toEqual(expect.arrayContaining(['path', 'user', 'pass']));
     expect(labels({ type: 'File' })).toContain('path');
     expect(labels({ type: 'File' })).not.toContain('user');
   });

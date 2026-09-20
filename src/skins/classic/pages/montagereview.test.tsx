@@ -1,8 +1,8 @@
 /**
  * Montage Review page (classic skin) — legacy `?view=montagereview`: the
  * filter row, the Date Time >= / <= window, Scale + Speed, the range toolbar
- * (`< Pan`, `In +`, `Out -`, 24/8/1 Hour, All Events, Live, `Pan >`), the
- * timeline and the per-monitor canvases.
+ * (`< Pan`, `In +`, `Out -`, 24/8/1 Hour, All Events, Live, Fit, `Pan >`),
+ * the timeline and the per-monitor canvases.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
@@ -13,12 +13,14 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMontageStore } from '@/stores/montage';
 import type { UserClaims } from '@/types';
 
 let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({
   useSearch: () => mockSearch,
   useNavigate: () => vi.fn(),
+  useRouter: () => ({ buildLocation: ({ to }: { to: string }) => ({ href: to }) }),
   Link: ({ children, to, params, ...rest }: {
     children: React.ReactNode; to?: string; params?: Record<string, string>; [k: string]: unknown;
   }) => {
@@ -61,13 +63,16 @@ function signIn(user: UserClaims = perms()) {
 
 const server = setupServer();
 beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
-beforeEach(() => { signIn(); });
+// Legacy opens fitted; the scaled sizing is what most of these assert, so
+// each test opts into fit explicitly.
+beforeEach(() => { signIn(); useMontageStore.setState({ reviewFit: false }); });
 afterEach(() => {
   server.resetHandlers();
   mockSearch = {};
   streamProps.length = 0;
   useToastStore.getState().clear();
   useMonitorFilterStore.getState().reset();
+  useMontageStore.setState({ reviewFit: false });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
@@ -105,6 +110,10 @@ function stub({ monitors = MONITORS, events = EVENTS }: { monitors?: unknown[]; 
     http.get('/api/v3/monitor-status', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/groups', () => HttpResponse.json(paged([{ id: 5, name: 'Outside', parent_id: null }]))),
     http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([{ id: 1, group_id: 5, monitor_id: 1 }]))),
+    http.get('/api/v3/servers', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/storage', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/user_preferences', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/tags', () => HttpResponse.json(paged([{ id: 4, name: 'Suspicious' }]))),
     http.get('/api/v3/events', ({ request }) => {
       const q = new URL(request.url).searchParams;
       eventRequests.push(q);
@@ -119,6 +128,26 @@ async function mount() {
   const { default: Page } = await import('./montagereview');
   return renderWithProviders(<Page />);
 }
+
+describe('ClassicMontageReviewPage — event filters', () => {
+  it('sends Archive Status, Tags and Notes with the event queries', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+    await waitFor(() => expect(eventRequests.length).toBeGreaterThan(0));
+    expect(eventRequests[0].has('archived')).toBe(false);
+
+    await user.selectOptions(screen.getByLabelText('Archive Status'), 'archived');
+    await waitFor(() => expect(eventRequests.some((q) => q.get('archived') === 'true')).toBe(true));
+
+    await user.selectOptions(await screen.findByLabelText('Tags'), '4');
+    await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === '4')).toBe(true));
+
+    await user.selectOptions(screen.getByLabelText('Notes'), 'person');
+    await waitFor(() => expect(eventRequests.some((q) => q.get('notes') === 'person')).toBe(true));
+  });
+});
 
 describe('ClassicMontageReviewPage', () => {
   it('reviews every capturing monitor with the timeline above the canvases', async () => {
@@ -248,16 +277,20 @@ describe('ClassicMontageReviewPage', () => {
     expect(within(bar).queryByRole('button', { name: 'Play' })).toBeNull();
   });
 
-  it('Play toggles the master clock', async () => {
-    const user = userEvent.setup();
+  it('the speed slider is legacy\'s 13 steps, 0 = paused', async () => {
     stub();
     await mount();
 
-    const bar = await screen.findByRole('toolbar', { name: 'Review range' });
-    const play = within(bar).getByRole('button', { name: 'Play' });
-    expect(play).toHaveAttribute('aria-pressed', 'false');
-    await user.click(play);
-    expect(await within(bar).findByRole('button', { name: 'Pause' })).toHaveAttribute('aria-pressed', 'true');
+    const speed = await screen.findByRole('slider', { name: 'Speed' });
+    // 13 steps (0 … 50), opening at 1× — index 5.
+    expect(speed).toHaveAttribute('max', '12');
+    expect(screen.getByTestId('review-speed')).toHaveTextContent('1.00 x');
+
+    fireEvent.change(speed, { target: { value: '0' } });
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('0.00 x'));
+
+    fireEvent.change(speed, { target: { value: '12' } });
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('50.00 x'));
   });
 
   it('In + narrows the window and < Pan slides it back', async () => {
@@ -280,16 +313,15 @@ describe('ClassicMontageReviewPage', () => {
   });
 
   it('carries Scale and Speed', async () => {
-    const user = userEvent.setup();
     stub();
     await mount();
 
     await screen.findByTestId('review-classic-grid');
-    const speed = screen.getByRole('combobox', { name: 'Speed' });
-    await user.selectOptions(speed, '4');
-    expect((speed as HTMLSelectElement).value).toBe('4');
+    const speed = screen.getByRole('slider', { name: 'Speed' });
+    fireEvent.change(speed, { target: { value: '7' } }); // 2×
+    await waitFor(() => expect(screen.getByTestId('review-speed')).toHaveTextContent('2.00 x'));
 
-    const scale = screen.getByRole('slider');
+    const scale = screen.getByRole('slider', { name: 'Scale' });
     expect(scale).toHaveAttribute('aria-valuetext', '1.00 x');
     // Halving the scale halves each cell's rendered width.
     const widthBefore = (screen.getByTitle('1 Cam 1') as HTMLElement).style.width;
@@ -304,7 +336,7 @@ describe('ClassicMontageReviewPage', () => {
     await mount();
 
     await screen.findByTitle('2 Cam 2');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '1');
+    await user.selectOptions(screen.getByRole('listbox', { name: 'Monitor' }), '1');
 
     await waitFor(() => expect(screen.queryByTitle('2 Cam 2')).toBeNull());
     expect(screen.getByTitle('1 Cam 1')).toBeInTheDocument();
@@ -316,7 +348,7 @@ describe('ClassicMontageReviewPage', () => {
     await mount();
 
     await screen.findByTitle('1 Cam 1');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'GroupId' }), '5');
+    await user.selectOptions(screen.getByRole('listbox', { name: 'GroupId' }), '5');
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'nothing-matches-this');
 
     expect(await screen.findByText('Select one or more monitors to review.')).toBeInTheDocument();
@@ -385,5 +417,75 @@ describe('ClassicMontageReviewPage', () => {
 
     await screen.findByTestId('review-classic-grid');
     await waitFor(() => expect(screen.getAllByText('No Event')).toHaveLength(2));
+  });
+});
+
+describe('ClassicMontageReviewPage — Fit', () => {
+  it('opens fitted: no Scale slider, and the button leaves fit mode', async () => {
+    const user = userEvent.setup();
+    useMontageStore.setState({ reviewFit: true });
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+
+    // Legacy hides #ScaleDiv in fit mode and labels the button 'Scale'.
+    expect(screen.queryByRole('slider', { name: 'Scale' })).toBeNull();
+    const bar = screen.getByRole('toolbar', { name: 'Review range' });
+    await user.click(within(bar).getByRole('button', { name: 'Scale' }));
+
+    expect(screen.getByRole('slider', { name: 'Scale' })).toBeInTheDocument();
+    expect(within(bar).getByRole('button', { name: 'Fit' })).toBeInTheDocument();
+    expect(useMontageStore.getState().reviewFit).toBe(false);
+  });
+
+  it('honours legacy `?fit=1` over the stored preference', async () => {
+    mockSearch = { fit: '1' };
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+
+    expect(useMontageStore.getState().reviewFit).toBe(true);
+    expect(screen.queryByRole('slider', { name: 'Scale' })).toBeNull();
+  });
+
+  it('packs the cells into the measured wall when fitted', async () => {
+    useMontageStore.setState({ reviewFit: true });
+    const innerHeight = window.innerHeight;
+    Object.defineProperty(window, 'innerHeight', { value: 900, configurable: true });
+    const rect = vi.spyOn(Element.prototype, 'getBoundingClientRect').mockReturnValue({
+      width: 1200, height: 0, top: 200, left: 0, right: 1200, bottom: 200, x: 0, y: 200,
+      toJSON: () => ({}),
+    } as DOMRect);
+    try {
+      stub();
+      await mount();
+      const grid = await screen.findByTestId('review-classic-grid');
+      await waitFor(() => expect(grid.getAttribute('data-fit')).toBe('true'));
+
+      // 900 − 200 (wall top) − 16 (legacy's bottom gap) = 684.
+      expect(grid.style.height).toBe('684px');
+      const cell = within(grid).getByTitle('1 Cam 1');
+      expect(cell.style.position).toBe('absolute');
+      expect(parseFloat(cell.style.width)).toBeGreaterThan(0);
+      expect(parseFloat(cell.style.height)).toBeGreaterThan(0);
+      // Fitted cells are sized outright, not by aspect ratio.
+      expect(cell.style.aspectRatio).toBe('');
+    } finally {
+      rect.mockRestore();
+      Object.defineProperty(window, 'innerHeight', { value: innerHeight, configurable: true });
+    }
+  });
+
+  it('All Events asks the API for each monitor\'s first and last event', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+
+    const bar = screen.getByRole('toolbar', { name: 'Review range' });
+    await user.click(within(bar).getByRole('button', { name: 'All Events' }));
+
+    await waitFor(() => expect(eventRequests.some((q) => q.get('page_size') === '1' && q.get('direction') === 'desc')).toBe(true));
+    expect(eventRequests.some((q) => q.get('page_size') === '1' && q.get('direction') === 'asc')).toBe(true);
   });
 });

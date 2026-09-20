@@ -354,6 +354,33 @@ describe('LogsPage (modern) — filters', () => {
     expect(screen.queryByText('Starting capture')).not.toBeInTheDocument();
   });
 
+  it('sends ?search= to the API after a pause, without Enter or blur', async () => {
+    const user = userEvent.setup();
+    const { router } = renderRoute('/logs');
+    await findTable();
+
+    // Record only what the search box provokes.
+    const urls: string[] = [];
+    server.use(
+      http.get('/api/v3/logs', ({ request }) => {
+        urls.push(request.url);
+        return HttpResponse.json(paginated([]));
+      }),
+    );
+
+    // Typing is the whole gesture — no Enter, no tabbing away.
+    await user.type(screen.getByLabelText('Search messages'), 'shared');
+
+    await waitFor(() => {
+      expect(router.state.location.search).toMatchObject({ q: 'shared' });
+    });
+    await waitFor(() => {
+      expect(urls.at(-1)).toContain('search=shared');
+    });
+    // Debounced: the six keystrokes must not have been six requests.
+    expect(urls.filter((u) => u.includes('search=')).length).toBeLessThan(3);
+  });
+
   it('commits the message search on blur too', async () => {
     const user = userEvent.setup();
     const { router } = renderRoute('/logs');
@@ -534,7 +561,8 @@ describe('LogsPage (modern) — pagination', () => {
     const { router } = renderRoute('/logs');
     await findTable();
 
-    expect(screen.getByText('Page 1 / 2 · 60 entries')).toBeInTheDocument();
+    // Legacy's default page size is 25 (`log.php:27`), so 60 rows is 3 pages.
+    expect(screen.getByText('Page 1 / 3 · 60 entries')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Previous page' })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Next page' }));
@@ -542,24 +570,24 @@ describe('LogsPage (modern) — pagination', () => {
     await waitFor(() => {
       expect(router.state.location.search).toMatchObject({ page: 2 });
     });
-    expect(await screen.findByText('Row 51')).toBeInTheDocument();
+    expect(await screen.findByText('Row 26')).toBeInTheDocument();
     expect(screen.queryByText('Row 1')).not.toBeInTheDocument();
   });
 
   it('reflects ?page= and steps back', async () => {
     db.logs = manyLogs();
     const user = userEvent.setup();
-    const { router } = renderRoute('/logs?page=2');
+    const { router } = renderRoute('/logs?page=3');
     await findTable();
 
-    expect(screen.getByText('Page 2 / 2 · 60 entries')).toBeInTheDocument();
+    expect(screen.getByText('Page 3 / 3 · 60 entries')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Next page' })).toBeDisabled();
 
     await user.click(screen.getByRole('button', { name: 'Previous page' }));
     await waitFor(() => {
-      expect(router.state.location.search).toMatchObject({ page: 1 });
+      expect(router.state.location.search).toMatchObject({ page: 2 });
     });
-    expect(await screen.findByText('Row 1')).toBeInTheDocument();
+    expect(await screen.findByText('Row 26')).toBeInTheDocument();
   });
 
   it('changes the page size, resets to page 1 and remembers the pick', async () => {
@@ -568,13 +596,13 @@ describe('LogsPage (modern) — pagination', () => {
     const { router } = renderRoute('/logs?page=2');
     await findTable();
 
-    await user.selectOptions(screen.getByLabelText('Rows per page'), '25');
+    await user.selectOptions(screen.getByLabelText('Rows per page'), '50');
 
     await waitFor(() => {
       expect(router.state.location.search).not.toHaveProperty('page');
     });
-    expect(await screen.findByText('Page 1 / 3 · 60 entries')).toBeInTheDocument();
-    expect(window.localStorage.getItem('zm-web.logs.pageSize')).toBe('25');
+    expect(await screen.findByText('Page 1 / 2 · 60 entries')).toBeInTheDocument();
+    expect(window.localStorage.getItem('zm-web.logs.pageSize')).toBe('50');
   });
 });
 

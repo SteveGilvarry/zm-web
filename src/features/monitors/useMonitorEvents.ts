@@ -26,6 +26,11 @@ export interface MonitorEventsState {
   clearSelection: () => void;
   /** Confirms, then deletes every selected event. */
   deleteSelected: () => void;
+  /**
+   * The per-row trash icon. Confirms first; `skipConfirm` is legacy's
+   * shift+click, which deletes straight away.
+   */
+  deleteOne: (id: number, skipConfirm?: boolean) => void;
   busy: boolean;
   showThumbs: boolean;
   thumbWidth: number;
@@ -33,23 +38,27 @@ export interface MonitorEventsState {
 }
 
 /**
- * The legacy watch page's bottom table: every event for one monitor,
- * server-paged and sorted, with a Delete checkbox column. Page size and
- * thumbnails follow the same `ZM_WEB_*` rows as the Events page.
+ * Legacy `watch.js` asks for `2 * MAX_EVENTS` rows (`config.php` sets
+ * `MAX_EVENTS` to 10) — the table has no pager.
+ */
+export const WATCH_EVENTS_LIMIT = 20;
+
+/**
+ * The legacy watch page's bottom table: the newest events for one monitor
+ * (`Id desc`, 20 rows, `watch.js` `ajaxRequest`), with a per-row Delete.
+ * Thumbnails follow the same `ZM_WEB_*` rows as the Events page.
  */
 export function useMonitorEvents(monitorId: number, enabled = true): MonitorEventsState {
   const { t } = useTranslation();
   const { isAuthenticated, accessToken } = useAuthStore();
   const toast = useToast();
   const qc = useQueryClient();
-  const configPageSize = useZmConfig('ZM_WEB_EVENTS_PER_PAGE', 25);
   const showThumbs = useZmConfig('ZM_WEB_LIST_THUMBS', true);
   const thumbWidth = useZmConfig('ZM_WEB_LIST_THUMB_WIDTH', 48);
 
   const [page, setPageState] = useState(1);
-  const [pageSizeOverride, setPageSizeOverride] = useState<number | null>(null);
-  const pageSize = pageSizeOverride ?? configPageSize;
-  const [sortField, setSortField] = useState<EventSortField>('start_time');
+  const [pageSize, setPageSizeState] = useState(WATCH_EVENTS_LIMIT);
+  const [sortField, setSortField] = useState<EventSortField>('id');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
 
@@ -99,6 +108,12 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
     }
   };
 
+  const deleteOne = (id: number, skipConfirm = false) => {
+    if (skipConfirm || window.confirm(t('Delete {{count}} event? This cannot be undone.', { count: 1 }))) {
+      deleteMutation.mutate([id]);
+    }
+  };
+
   return {
     events: q.data?.items ?? [],
     total: q.data?.total ?? 0,
@@ -109,7 +124,7 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
     page,
     setPage: (p) => setPageState(Math.max(1, p)),
     pageSize,
-    setPageSize: (n) => { setPageSizeOverride(n); setPageState(1); },
+    setPageSize: (n) => { setPageSizeState(n); setPageState(1); },
     sortField,
     sortDir,
     toggleSort,
@@ -122,6 +137,7 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
       }),
     clearSelection: () => setSelectedIds(new Set()),
     deleteSelected,
+    deleteOne,
     busy: deleteMutation.isPending,
     showThumbs,
     thumbWidth,

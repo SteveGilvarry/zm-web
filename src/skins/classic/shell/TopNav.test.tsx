@@ -10,6 +10,7 @@ import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 import type { UserClaims, UserPerms } from '@/types';
 
 let pathname = '/';
@@ -39,9 +40,28 @@ function signIn(perms?: Partial<UserPerms>, name = 'admin') {
 }
 
 let logoutCalls = 0;
+/** `logState()` counts one `GET /logs` per severity; `page_size:1` reads `total`. */
+let logTotals: Record<string, number> = {};
+function configRows(overrides: Record<string, string> = {}) {
+  return Object.entries({ ZM_HOME_ABOUT: '0', ...overrides }).map(([name, value], i) => ({
+    id: i + 1, name, value, type: 'string', category: 'web', readonly: 0, private: 0, system: 0,
+  }));
+}
+let configOverrides: Record<string, string> = {};
+
 const server = setupServer(
   http.get('/api/v3/system/status', () => HttpResponse.json({ running: true, daemons: [] })),
   http.get('/api/v3/auth/logout', () => { logoutCalls += 1; return new HttpResponse(null, { status: 204 }); }),
+  http.get('/api/v3/me', () => HttpResponse.json({ kind: 'NOT_FOUND' }, { status: 404 })),
+  http.get('/api/v3/configs', () => HttpResponse.json({
+    items: configRows(configOverrides), total: 1, per_page: 1000, current_page: 1, last_page: 1,
+  })),
+  http.get('/api/v3/logs', ({ request }) => {
+    const level = new URL(request.url).searchParams.get('level') ?? '';
+    return HttpResponse.json({
+      items: [], total: logTotals[level] ?? 0, per_page: 1, current_page: 1, last_page: 1,
+    });
+  }),
 );
 beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
 afterEach(() => {
@@ -49,6 +69,9 @@ afterEach(() => {
   pathname = '/';
   logoutCalls = 0;
   mockNavigate.mockReset();
+  logTotals = {};
+  configOverrides = {};
+  useUiStore.setState({ classicStatBarOpen: true });
   useAuthStore.getState().clearAuth();
 });
 afterAll(() => { server.close(); });
@@ -178,5 +201,53 @@ describe('ClassicTopNav', () => {
 
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(false));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' });
+  });
+});
+
+describe('ClassicTopNav — brand, flip and log state', () => {
+  it('links the brand to ZM_HOME_URL when ZM_HOME_ABOUT is off', async () => {
+    configOverrides = { ZM_HOME_URL: 'https://example.test/', ZM_HOME_CONTENT: 'My ZM' };
+    signIn();
+    renderWithProviders(<ClassicTopNav />);
+    const brand = await screen.findByRole('link', { name: 'My ZM' });
+    expect(brand).toHaveAttribute('href', 'https://example.test/');
+  });
+
+  it('opens the about dropdown with ZM_HOME_ABOUT on', async () => {
+    const user = userEvent.setup();
+    configOverrides = { ZM_HOME_ABOUT: '1' };
+    signIn();
+    renderWithProviders(<ClassicTopNav />);
+    const brand = await screen.findByRole('button', { name: 'ZoneMinder' });
+    await user.click(brand);
+    const menu = screen.getByRole('menu', { name: 'About ZoneMinder' });
+    expect(within(menu).getAllByRole('menuitem').map((a) => a.textContent))
+      .toEqual(['ZoneMinder', 'Documentation', 'Support']);
+    expect(within(menu).getByRole('menuitem', { name: 'Documentation' }))
+      .toHaveAttribute('href', 'https://zoneminder.readthedocs.io/en/stable/');
+  });
+
+  it('flips the stat strip and remembers the choice', async () => {
+    const user = userEvent.setup();
+    signIn();
+    renderWithProviders(<ClassicTopNav />);
+    await user.click(screen.getByRole('button', { name: 'Hide server stats' }));
+    expect(useUiStore.getState().classicStatBarOpen).toBe(false);
+    await user.click(screen.getByRole('button', { name: 'Show server stats' }));
+    expect(useUiStore.getState().classicStatBarOpen).toBe(true);
+  });
+
+  it('greens the Log item while the log is quiet and reddens it at the alarm count', async () => {
+    signIn();
+    const view = renderWithProviders(<ClassicTopNav />);
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Log' })).toHaveAttribute('data-log-state', 'ok'));
+    view.unmount();
+
+    // One FATAL row is ZoneMinder's default alarm threshold.
+    logTotals = { '-3': 1 };
+    renderWithProviders(<ClassicTopNav />);
+    await waitFor(() =>
+      expect(screen.getByRole('link', { name: 'Log' })).toHaveAttribute('data-log-state', 'alarm'));
   });
 });

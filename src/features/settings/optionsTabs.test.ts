@@ -27,9 +27,9 @@ describe('buildOptionsTabs', () => {
   it('follows the legacy order, skipping categories the backend lacks', () => {
     const keys = buildOptionsTabs(DEV_BOX, true).map((t) => t.key);
     expect(keys).toEqual([
-      'display', 'system', 'auth', 'config', 'servers', 'storage', 'web', 'images',
+      'display', 'system', 'auth', 'config', 'api', 'servers', 'storage', 'web', 'images',
       'logging', 'network', 'mail', 'upload', 'x10', 'control', 'mqtt', 'telemetry',
-      'version', 'users', 'groups', 'state',
+      'version', 'users', 'groups', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 
@@ -52,6 +52,7 @@ describe('optionsTabLabel', () => {
   it('maps keys to legacy captions and falls back to the key', () => {
     expect(optionsTabLabel(t, 'mail')).toBe('Email');
     expect(optionsTabLabel(t, 'version')).toBe('Versions');
+    expect(optionsTabLabel(t, 'ai_datasets')).toBe('AI Datasets');
     expect(optionsTabLabel(t, 'onvif')).toBe('onvif');
   });
 });

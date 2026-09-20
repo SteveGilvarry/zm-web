@@ -65,7 +65,10 @@ afterEach(() => {
   streamProps.length = 0;
   useToastStore.getState().clear();
   useMonitorFilterStore.getState().reset();
-  useMontageStore.setState({ protocol: 'webrtc', statusPosition: 'inside' });
+  useMontageStore.setState({
+    protocol: 'webrtc', statusPosition: 'inside', showZones: false,
+    montageRatio: 'auto', montageRatioById: {},
+  });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
@@ -94,10 +97,16 @@ function stub({
 }: { monitors?: unknown[]; layouts?: unknown[]; groups?: unknown[] } = {}) {
   server.use(
     http.get('/api/v3/monitors', () => HttpResponse.json(paged(monitors))),
+    http.get('/api/v3/me', () => new HttpResponse(null, { status: 404 })),
+    http.get('/api/v3/servers', () => HttpResponse.json(paged([]))),
+    http.get('/api/v3/storage', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/monitor-status', () => HttpResponse.json(paged(STATUSES))),
     http.get('/api/v3/montage_layouts', () => HttpResponse.json(paged(layouts))),
     http.get('/api/v3/groups', () => HttpResponse.json(paged(groups))),
     http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([{ id: 1, group_id: 5, monitor_id: 1 }]))),
+    http.get('/api/v3/monitors/:id/zones', ({ params }) => HttpResponse.json(paged([
+      { id: Number(params.id) * 10, monitor_id: Number(params.id), name: 'Whole', type: 'Active', coords: '0,0 1919,0 1919,1079 0,1079' },
+    ]))),
   );
 }
 
@@ -120,6 +129,31 @@ describe('ClassicMontagePage', () => {
     expect(screen.queryByTestId('montage-classic-cell-4')).toBeNull();
   });
 
+  it('draws the zone polygons over the wall once Show Zones is on', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByTestId('montage-classic-grid');
+    expect(screen.queryAllByTestId('zones-overlay')).toHaveLength(0);
+
+    await user.click(screen.getByRole('button', { name: 'Show Zones' }));
+    await waitFor(() => expect(screen.getAllByTestId('zones-overlay').length).toBe(3));
+    expect(useMontageStore.getState().showZones).toBe(true);
+  });
+
+  it('full-screens the wall, not the whole page', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    const grid = await screen.findByTestId('montage-classic-grid');
+    const wall = grid.closest('div[class*="flex-1"]')!;
+    const request = vi.fn().mockResolvedValue(undefined);
+    (wall as HTMLElement).requestFullscreen = request;
+
+    await user.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    expect(request).toHaveBeenCalled();
+  });
+
   it('renders the legacy settings band', async () => {
     stub();
     await mount();
@@ -132,6 +166,8 @@ describe('ClassicMontagePage', () => {
     expect(screen.getByLabelText('Layout')).toBeInTheDocument();
     expect(screen.getByLabelText('Width')).toBeInTheDocument();
     expect(screen.getByLabelText('Height')).toBeInTheDocument();
+    // Legacy montage.php has no Fit button — that lives on Montage Review.
+    expect(screen.queryByRole('button', { name: 'Fit' })).toBeNull();
   });
 
   it('narrows the wall through the filter row', async () => {
@@ -140,7 +176,7 @@ describe('ClassicMontagePage', () => {
     await mount();
 
     await screen.findByTestId('montage-classic-cell-2');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Monitor' }), '2');
+    await user.selectOptions(screen.getByRole('listbox', { name: 'Monitor' }), '2');
 
     await waitFor(() => expect(screen.queryByTestId('montage-classic-cell-1')).toBeNull());
     expect(screen.getByTestId('montage-classic-cell-2')).toBeInTheDocument();
@@ -181,15 +217,16 @@ describe('ClassicMontagePage', () => {
     expect(screen.queryByTestId('montage-classic-grid')).toBeNull();
   });
 
-  it('hides the layout verbs for a system-View user', async () => {
+  it('lets a system-View user save their own layout but not delete one', async () => {
     signIn(perms({ system: 'View' }));
     stub();
     await mount();
 
     await screen.findByTestId('montage-classic-grid');
-    expect(screen.queryByRole('button', { name: 'Edit Layout' })).toBeNull();
+    // Legacy `save_layout` is open to any user; only `delete_layout` calls
+    // `enoperm()`.
+    expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Delete layout' })).toBeNull();
-    // The read-only controls are still there.
     expect(screen.getByLabelText('Layout')).toBeInTheDocument();
   });
 
@@ -207,6 +244,20 @@ describe('ClassicMontagePage', () => {
 
     await user.selectOptions(select, 'preset:4w');
     await waitFor(() => expect(screen.getByTestId('montage-classic-grid').getAttribute('data-columns')).toBe('4'));
+  });
+
+  it('the Ratio select shapes every tile', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+
+    const cell = await screen.findByTestId('montage-classic-cell-1');
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Ratio' }), '4:3');
+    await waitFor(() => expect(cell.style.aspectRatio).toBe(`${4 / 3} / 1`));
+
+    // `real` hands the camera its own shape back.
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Ratio' }), 'real');
+    await waitFor(() => expect(cell.style.aspectRatio).toBe('1920 / 1080'));
   });
 
   it('a saved layout fixes the cell order', async () => {
@@ -231,7 +282,6 @@ describe('ClassicMontagePage', () => {
   it('POSTs the arrangement when Save Layout is confirmed', async () => {
     const user = userEvent.setup();
     stub();
-    vi.spyOn(window, 'prompt').mockReturnValue('  Morning wall  ');
     let body: Record<string, unknown> | undefined;
     server.use(
       http.post('/api/v3/montage_layouts', async ({ request }) => {
@@ -243,6 +293,11 @@ describe('ClassicMontagePage', () => {
 
     await screen.findByTestId('montage-classic-grid');
     await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
+    // Legacy shows an inline Name field, not a prompt(); it opens seeded
+    // with the current layout's name.
+    const nameField = await screen.findByRole('textbox', { name: 'Layout name' });
+    await user.clear(nameField);
+    await user.type(nameField, 'Morning wall');
     await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
 
     await waitFor(() => expect(body).toBeDefined());
@@ -254,10 +309,45 @@ describe('ClassicMontagePage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument());
   });
 
-  it('does not POST when the layout-name prompt is cancelled', async () => {
+  it('Edit Layout resizes a tile on the 48-column canvas and saves its gridStack', async () => {
     const user = userEvent.setup();
     stub();
-    vi.spyOn(window, 'prompt').mockReturnValue(null);
+    let body: Record<string, unknown> | undefined;
+    server.use(
+      http.post('/api/v3/montage_layouts', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ id: 45, name: 'Wide left', user_id: 7, positions: SAVED_POSITIONS });
+      }),
+    );
+    await mount();
+
+    const grid = await screen.findByTestId('montage-classic-grid');
+    await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
+    // Three tiles, 16 columns each, until a handle is dragged.
+    expect(grid).toHaveAttribute('data-columns', '48');
+    const handle = await screen.findByRole('slider', { name: 'Width of Cam 1 in grid columns' });
+    expect(handle).toHaveAttribute('aria-valuenow', '16');
+    // Keyboard resize — jsdom lays nothing out, so a pointer drag has no
+    // column width to measure against; the handle takes arrow keys too.
+    await user.click(handle);
+    await user.keyboard('{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}{ArrowRight}');
+    await waitFor(() => expect(screen.getByTestId('montage-classic-cell-1')).toHaveStyle({ gridColumn: '1 / span 24' }));
+
+    await user.type(await screen.findByRole('textbox', { name: 'Layout name' }), 'Wide left');
+    await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
+
+    await waitFor(() => expect(body).toBeDefined());
+    const positions = JSON.parse(String(body!.positions));
+    expect(positions.gridStack).toEqual([
+      { id: '1', x: 0, y: 0, w: 24, h: 100 },
+      { id: '2', x: 24, y: 0, w: 16, h: 100 },
+      { id: '3', x: 0, y: 100, w: 16, h: 100 },
+    ]);
+  });
+
+  it('refuses a name that collides with a built-in layout', async () => {
+    const user = userEvent.setup();
+    stub();
     const posts: unknown[] = [];
     server.use(http.post('/api/v3/montage_layouts', async ({ request }) => {
       posts.push(await request.json());
@@ -267,9 +357,11 @@ describe('ClassicMontagePage', () => {
 
     await screen.findByTestId('montage-classic-grid');
     await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
+    // Legacy `save_layout` refuses ZM_PRESET_LAYOUT_NAMES outright.
+    await user.type(await screen.findByRole('textbox', { name: 'Layout name' }), '4 Wide');
     await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
 
-    await new Promise((r) => setTimeout(r, 20));
+    expect(await screen.findByRole('alert')).toHaveTextContent(/built in layouts/i);
     expect(posts).toEqual([]);
   });
 

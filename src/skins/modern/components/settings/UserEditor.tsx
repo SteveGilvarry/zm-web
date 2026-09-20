@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { clsx } from 'clsx';
 import { Trans, useTranslation } from 'react-i18next';
@@ -6,11 +6,12 @@ import { Info, Loader2, Shield } from 'lucide-react';
 
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
+import { Select } from '@/components/common/Select';
 import { TextField } from '@/components/common/TextField';
 import { fieldClasses, LABEL } from '@/components/common/styles';
 import { PermissionMatrix } from '@/features/users/PermissionMatrix';
-import { buildTopLevelRows } from '@/features/users/permissions';
-import { USER_FIELDS_ISSUE_URL, USERNAME_PATTERN_SOURCE, useAccountForm } from '@/features/users/useAccountForm';
+import { USERNAME_PATTERN_SOURCE, useAccountForm, type HomeView } from '@/features/users/useAccountForm';
+import { useGlobalPermissions } from '@/features/users/useGlobalPermissions';
 import { useGroupPermissions } from '@/features/users/useGroupPermissions';
 import { useMonitorPermissions } from '@/features/users/useMonitorPermissions';
 import type { User } from '@/types';
@@ -18,7 +19,7 @@ import { PermPill } from './PermPill';
 
 type EditorTab = 'account' | 'global' | 'groups' | 'monitors';
 
-/** A caveat about what this backend stores — informational, so it stays neutral. */
+/** An informational note, so it stays neutral. */
 const NOTE = 'flex items-start gap-2 rounded border border-border-subtle bg-surface-2 p-3 text-xs text-fg-muted';
 
 interface UserEditorProps {
@@ -26,8 +27,8 @@ interface UserEditorProps {
   onClose: () => void;
   /**
    * `self`: the signed-in user editing their own row under
-   * `ZM_USER_SELF_EDIT` without System Edit — account fields only, and of
-   * those only email saves on this backend.
+   * `ZM_USER_SELF_EDIT` without System Edit — password, language and home
+   * view only, as legacy `actions/user.php` saves.
    */
   mode?: 'admin' | 'self';
   /** Present when the row being edited is the signed-in operator's own:
@@ -108,10 +109,25 @@ interface AccountFormProps {
 
 function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePassword }: AccountFormProps) {
   const { t } = useTranslation();
-  const { formData, setField, toggleEnabled, error, usernameError, isSaving, submitDisabled, submit, isLocked } =
-    useAccountForm(editing, onSaved, { selfEdit });
+  const {
+    formData, setField, toggleEnabled, toggleApiEnabled, error, usernameError, isSaving, submitDisabled, submit,
+    canChange, languages, homeViews,
+  } = useAccountForm(editing, onSaved, { selfEdit });
   const lockedCls = 'opacity-60 cursor-not-allowed';
-  const lockedTitle = t('Not editable on this zm-api build — see zm-api#23');
+  const adminOnly = t('Only an administrator can change this');
+  const homeViewLabel: Record<HomeView, string> = {
+    console: t('Console'),
+    events: t('Events'),
+    map: t('Map'),
+    montage: t('Montage'),
+    montagereview: t('Montage Review'),
+    watch: t('Watch'),
+  };
+  /** Props for a text field an admin may edit but a self-editor may only see (legacy shows them). */
+  const lockable = (field: 'name' | 'email' | 'phone') =>
+    canChange(field)
+      ? {}
+      : { disabled: true, title: adminOnly, className: lockedCls };
 
   return (
     <div className="space-y-4">
@@ -119,22 +135,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
         <div role="note" className={NOTE}>
           <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
           <p className="leading-relaxed">
-            {t('You are editing your own account. Email saves here and your password changes below; language and home view are not stored by this zm-api build.')}
-          </p>
-        </div>
-      )}
-      {editing && !selfEdit && (
-        <div role="note" className={NOTE}>
-          <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
-          <p className="leading-relaxed">
-            <Trans>
-              This zm-api build only saves <strong>Email</strong> and <strong>Enabled</strong> on an
-              existing user. Password, name, phone and permission levels are disabled until{' '}
-              <a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-accent underline">
-                zm-api#23
-              </a>{' '}
-              lands; per-group and per-monitor grids still save.
-            </Trans>
+            {t('You are editing your own account: your password, language and home view. Everything else is set by an administrator.')}
           </p>
         </div>
       )}
@@ -148,7 +149,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           type="text"
           value={formData.username}
           onChange={(e) => setField('username', e.target.value)}
-          disabled={!!editing}
+          disabled={!canChange('username')}
           pattern={editing ? undefined : USERNAME_PATTERN_SOURCE}
           aria-invalid={!!usernameError}
           className={clsx(fieldClasses('md', !!usernameError), editing && lockedCls)}
@@ -167,16 +168,12 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
       ) : (
         <div className="grid grid-cols-2 gap-4">
           <TextField
-            label={t('Password')}
+            label={editing ? t('New Password') : t('Password')}
             type="password"
             value={formData.password}
             onChange={(e) => setField('password', e.target.value)}
             autoComplete="new-password"
-            disabled={isLocked('password')}
-            title={isLocked('password') ? lockedTitle : undefined}
-            aria-describedby={isLocked('password') ? 'user-fields-locked' : undefined}
-            className={clsx(isLocked('password') && lockedCls)}
-            placeholder={editing ? t('Not editable yet') : t('Password')}
+            placeholder={editing ? t('Leave blank to keep') : t('Password')}
           />
           <TextField
             label={t('Confirm Password')}
@@ -184,9 +181,6 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
             value={formData.confirmPassword}
             onChange={(e) => setField('confirmPassword', e.target.value)}
             autoComplete="new-password"
-            disabled={isLocked('password')}
-            title={isLocked('password') ? lockedTitle : undefined}
-            className={clsx(isLocked('password') && lockedCls)}
             placeholder={t('Confirm password')}
           />
         </div>
@@ -198,10 +192,8 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           type="text"
           value={formData.name}
           onChange={(e) => setField('name', e.target.value)}
-          disabled={isLocked('name')}
-          title={isLocked('name') ? lockedTitle : undefined}
-          className={clsx(isLocked('name') && lockedCls)}
           placeholder={t('Full name')}
+          {...lockable('name')}
         />
         <TextField
           label={t('Email')}
@@ -209,6 +201,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           value={formData.email}
           onChange={(e) => setField('email', e.target.value)}
           placeholder="user@example.com"
+          {...lockable('email')}
         />
       </div>
 
@@ -218,36 +211,32 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           type="tel"
           value={formData.phone || ''}
           onChange={(e) => setField('phone', e.target.value)}
-          disabled={isLocked('phone')}
-          title={isLocked('phone') ? lockedTitle : undefined}
-          className={clsx(isLocked('phone') && lockedCls)}
           placeholder={t('Phone')}
+          {...lockable('phone')}
         />
-        <div className="flex items-end">
-          <div className="flex items-center justify-between w-full pb-2">
-            <span className="text-sm text-fg-muted">{t('Enabled')}</span>
-            <button
-              onClick={toggleEnabled}
-              role="switch"
-              aria-checked={formData.enabled === 1}
-              aria-label={t('Enabled')}
-              disabled={selfEdit}
-              title={selfEdit ? t('Only an administrator can enable or disable accounts') : undefined}
-              className={clsx(
-                selfEdit && 'opacity-60 cursor-not-allowed',
-                'relative w-10 h-5 rounded-full transition-colors',
-                formData.enabled === 1 ? 'bg-accent' : 'bg-border',
-              )}
-            >
-              <span
-                className={clsx(
-                  'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
-                  formData.enabled === 1 ? 'start-5.5' : 'start-0.5',
-                )}
-              />
-            </button>
+        <Select
+          label={t('Language')}
+          value={formData.language}
+          onChange={(e) => setField('language', e.target.value)}
+        >
+          {languages.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </Select>
+      </div>
+
+      <div className="grid grid-cols-2 gap-4">
+        <Select
+          label={t('Home View')}
+          value={formData.homeView}
+          onChange={(e) => setField('homeView', e.target.value)}
+        >
+          {homeViews.map((v) => <option key={v} value={v}>{homeViewLabel[v]}</option>)}
+        </Select>
+        {!selfEdit && (
+          <div className="flex flex-col justify-end gap-3 pb-2">
+            <Toggle label={t('Enabled')} checked={formData.enabled === 1} onToggle={toggleEnabled} />
+            <Toggle label={t('API Enabled')} checked={formData.apiEnabled === 1} onToggle={toggleApiEnabled} />
           </div>
-        </div>
+        )}
       </div>
 
       {error && (
@@ -273,25 +262,40 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
   );
 }
 
-/* ----- Global permissions (read-only) ----------------------------------- */
+function Toggle({ label, checked, onToggle }: { label: string; checked: boolean; onToggle: () => void }) {
+  return (
+    <div className="flex items-center justify-between w-full">
+      <span className="text-sm text-fg-muted">{label}</span>
+      <button
+        onClick={onToggle}
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        className={clsx('relative w-10 h-5 rounded-full transition-colors', checked ? 'bg-accent' : 'bg-border')}
+      >
+        <span
+          className={clsx(
+            'absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform',
+            checked ? 'start-5.5' : 'start-0.5',
+          )}
+        />
+      </button>
+    </div>
+  );
+}
+
+/* ----- Global permissions ----------------------------------------------- */
 
 function GlobalPermissionsView({ user }: { user: User }) {
-  const rows = useMemo(() => buildTopLevelRows(user), [user]);
+  const { t } = useTranslation();
+  const { rows, setLevel } = useGlobalPermissions(user);
   return (
     <div className="space-y-3">
-      <div role="note" className={NOTE}>
-        <Info size={14} className="mt-0.5 shrink-0 text-fg-dim" aria-hidden />
-        <p className="leading-relaxed">
-          <Trans>
-            Top-level permissions are <strong>read-only</strong> here — the backend
-            (<code>CreateUserRequest</code> / <code>UpdateUserRequest</code>) does not yet accept
-            these fields (<a href={USER_FIELDS_ISSUE_URL} target="_blank" rel="noreferrer" className="text-accent underline">zm-api#23</a>).
-            Use the <em>Groups</em> and <em>Monitors</em> tabs for per-resource
-            overrides, which persist via the dedicated permission endpoints.
-          </Trans>
-        </p>
-      </div>
-      <PermissionMatrix rows={rows} readOnly />
+      <p className="text-xs text-fg-muted">
+        <Shield size={12} className="inline -mt-0.5 me-1" aria-hidden />
+        {t('Each change saves as soon as it is made. Group and Monitor overrides on the other tabs refine the Monitors level.')}
+      </p>
+      <PermissionMatrix rows={rows} onChange={setLevel} />
     </div>
   );
 }

@@ -100,7 +100,7 @@ export type Translate = (key: string) => string;
 /*  Option lists shared with the Add dialog                                 */
 /* ------------------------------------------------------------------------ */
 
-export const MONITOR_TYPE_VALUES = ['Ffmpeg', 'Libvlc', 'Remote', 'Local', 'File', 'Curl', 'WebSite', 'Vnc'] as const;
+export const MONITOR_TYPE_VALUES = ['Ffmpeg', 'Libvlc', 'Remote', 'Local', 'File', 'cURL', 'WebSite', 'VNC'] as const;
 export type MonitorTypeValue = (typeof MONITOR_TYPE_VALUES)[number];
 
 /**
@@ -194,33 +194,33 @@ export function buildTabs(t: Translate): TabDef[] {
     { value: 'Remote',  label: t('Remote (HTTP MJPEG)') },
     { value: 'Local',   label: t('Local device (V4L)') },
     { value: 'File',    label: t('File (loop)') },
-    { value: 'Curl',    label: t('cURL') },
+    { value: 'cURL',    label: t('cURL') },
     { value: 'WebSite', label: t('Website') },
-    { value: 'Vnc',     label: t('VNC') },
+    { value: 'VNC',     label: t('VNC') },
   ];
 
   const DECODING_OPTIONS = [
     { value: 'None',                label: t('None') },
     { value: 'Ondemand',            label: t('On demand') },
     { value: 'KeyFrames',           label: t('Key frames only') },
-    { value: 'KeyFramesOndemand',   label: t('Key frames + on demand') },
+    { value: 'KeyFrames+Ondemand',  label: t('Key frames + on demand') },
     { value: 'Always',              label: t('Always') },
   ];
 
   const ORIENTATION_OPTIONS = [
-    { value: 'Rotate0',   label: t('Default (0°)') },
-    { value: 'Rotate90',  label: t('Rotate right (90°)') },
-    { value: 'Rotate180', label: t('Rotate 180°') },
-    { value: 'Rotate270', label: t('Rotate left (270°)') },
-    { value: 'FlipHori',  label: t('Flip horizontally') },
-    { value: 'FlipVert',  label: t('Flip vertically') },
+    { value: 'ROTATE_0',   label: t('Default (0°)') },
+    { value: 'ROTATE_90',  label: t('Rotate right (90°)') },
+    { value: 'ROTATE_180', label: t('Rotate 180°') },
+    { value: 'ROTATE_270', label: t('Rotate left (270°)') },
+    { value: 'FLIP_HORI',  label: t('Flip horizontally') },
+    { value: 'FLIP_VERT',  label: t('Flip vertically') },
   ];
 
   const OUTPUT_CONTAINER_OPTIONS = [
-    { value: 'Auto', label: t('Auto') },
-    { value: 'Mp4',  label: t('MP4') },
-    { value: 'Mkv',  label: t('MKV') },
-    { value: 'Webm', label: t('WebM') },
+    { value: 'auto', label: t('Auto') },
+    { value: 'mp4',  label: t('MP4') },
+    { value: 'mkv',  label: t('MKV') },
+    { value: 'webm', label: t('WebM') },
   ];
 
   const ANALYSIS_SOURCE_OPTIONS = [
@@ -240,11 +240,16 @@ export function buildTabs(t: Translate): TabDef[] {
   ];
 
   const EVENT_CLOSE_MODE_OPTIONS = [
-    { value: 'Idle',     label: t('Idle (default)') },
-    { value: 'Time',     label: t('Time-based') },
-    { value: 'Duration', label: t('Fixed duration') },
-    { value: 'Alarm',    label: t('On alarm end') },
-    { value: 'System',   label: t('System') },
+    { value: 'idle',     label: t('Idle (default)') },
+    { value: 'time',     label: t('Time-based') },
+    { value: 'duration', label: t('Fixed duration') },
+    { value: 'alarm',    label: t('On alarm end') },
+    { value: 'system',   label: t('System') },
+  ];
+
+  const DEVICE_CLASS_OPTIONS = [
+    { value: 'Camera',  label: t('Camera') },
+    { value: 'Speaker', label: t('Speaker') },
   ];
 
   const IMPORTANCE_OPTIONS = [
@@ -361,15 +366,15 @@ export function buildTabs(t: Translate): TabDef[] {
   ];
 
   const RTSP2WEB_TYPE_OPTIONS = [
-    { value: 'Hls',    label: t('HLS') },
-    { value: 'Mse',    label: t('MSE') },
-    { value: 'WebRtc', label: t('WebRTC') },
+    { value: 'HLS',    label: t('HLS') },
+    { value: 'MSE',    label: t('MSE') },
+    { value: 'WebRTC', label: t('WebRTC') },
   ];
 
   const DEFAULT_CODEC_OPTIONS = [
-    { value: 'Auto',  label: t('Auto') },
-    { value: 'Mp4',   label: t('MP4') },
-    { value: 'Mjpeg', label: t('MJPEG') },
+    { value: 'auto',  label: t('Auto') },
+    { value: 'MP4',   label: t('MP4') },
+    { value: 'MJPEG', label: t('MJPEG') },
   ];
 
   /**
@@ -418,6 +423,8 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'text',      key: 'name',         label: t('Name'), span: 2, required: true },
         { kind: 'textarea',  key: 'notes',        label: t('Notes'), span: 2,
           help: t('Free-form metadata. ZoneMinder convention: key=value pairs.') },
+        { kind: 'select',    key: 'device_class', label: t('Device class'), options: DEVICE_CLASS_OPTIONS,
+          help: t('What the device is, as opposed to Source type, which is how it is captured. An IP speaker is still captured over FFmpeg.') },
         { kind: 'select',    key: 'type',         label: t('Source type'), options: MONITOR_TYPE_OPTIONS,
           help: t('Backend used to ingest the camera feed. The Source tab changes with it.') },
         { kind: 'select',    key: 'function',     label: t('Function'),
@@ -465,8 +472,8 @@ export function buildTabs(t: Translate): TabDef[] {
           options: HTTP_METHOD_OPTIONS },
         { kind: 'select',    key: 'method',       label: t('Method'), show: { types: ['Remote'], protocols: ['rtsp'] },
           options: RTSP_METHOD_OPTIONS },
-        { kind: 'text',      key: 'host',         label: t('Host'), show: { types: ['Remote', 'Vnc'] } },
-        { kind: 'text',      key: 'port',         label: t('Port'), show: { types: ['Remote', 'Vnc'] },
+        { kind: 'text',      key: 'host',         label: t('Host'), show: { types: ['Remote', 'VNC'] } },
+        { kind: 'text',      key: 'port',         label: t('Port'), show: { types: ['Remote', 'VNC'] },
           pattern: PORT_PATTERN, patternHelp: PORT_HELP },
         { kind: 'text',      key: 'path',         label: t('Remote host path'), show: REMOTE, span: 2 },
         { kind: 'text',      key: 'sub_path',     label: t('Remote host sub-path'), show: REMOTE, span: 2,
@@ -493,14 +500,14 @@ export function buildTabs(t: Translate): TabDef[] {
         // File / cURL / Website paths
         { kind: 'text',      key: 'path',         label: t('Source path'), show: { types: ['File'] }, span: 2,
           placeholder: '/var/lib/zoneminder/sample.mp4' },
-        { kind: 'text',      key: 'path',         label: t('URL'), show: { types: ['Curl'] }, span: 2,
+        { kind: 'text',      key: 'path',         label: t('URL'), show: { types: ['cURL'] }, span: 2,
           placeholder: 'http://192.168.1.10/snapshot.jpg' },
         { kind: 'text',      key: 'path',         label: t('Website URL'), show: { types: ['WebSite'] }, span: 2,
           placeholder: 'https://example.net/dashboard' },
 
         // Credentials (every type that authenticates)
-        { kind: 'text',      key: 'user',         label: t('Username'), show: { types: ['Ffmpeg', 'Libvlc', 'Remote', 'Curl', 'Vnc'] } },
-        { kind: 'password',  key: 'pass',         label: t('Password'), show: { types: ['Ffmpeg', 'Libvlc', 'Remote', 'Curl', 'Vnc'] } },
+        { kind: 'text',      key: 'user',         label: t('Username'), show: { types: ['Ffmpeg', 'Libvlc', 'Remote', 'cURL', 'VNC'] } },
+        { kind: 'password',  key: 'pass',         label: t('Password'), show: { types: ['Ffmpeg', 'Libvlc', 'Remote', 'cURL', 'VNC'] } },
 
         { kind: 'group',     key: '_image',       label: t('Image') },
         { kind: 'select',    key: 'colours',      label: t('Target colourspace'), show: NOT_WEBSITE, options: COLOURS_OPTIONS },
@@ -538,6 +545,15 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'number', key: 'analysis_update_delay', label: t('Analysis update delay (s)'), min: 0, integer: true },
         { kind: 'toggle', key: 'use_amcrest_api',     label: t('Use Amcrest API'),
           help: t('Poll the Amcrest/Dahua HTTP event API for motion instead of analysing frames.') },
+        { kind: 'group',  key: '_audio',              label: t('Audio detection') },
+        { kind: 'toggle', key: 'audio_detection',     label: t('Audio detection'), show: { types: ['Ffmpeg'] },
+          help: t('Score the monitor on how loud its audio is, alongside motion. FFmpeg sources only.') },
+        { kind: 'number', key: 'audio_threshold',     label: t('Audio threshold'), min: 0, max: 100, integer: true,
+          show: { types: ['Ffmpeg'] },
+          help: t('Level, 0-100, at or above which the monitor alarms. 0 turns audio detection off. Measure the device’s quiet level first and set this above it.') },
+        { kind: 'number', key: 'audio_alarm_score',   label: t('Audio alarm score'), min: 0, max: 255, integer: true,
+          show: { types: ['Ffmpeg'] },
+          help: t('Score contributed to a frame while the audio level is over the threshold.') },
       ],
     },
     {
@@ -694,7 +710,7 @@ export function buildTabs(t: Translate): TabDef[] {
     {
       id: 'misc',
       label: t('Misc'),
-      description: t('Branding, signal checks, frame skipping, geolocation, and other low-traffic settings.'),
+      description: t('Branding, signal checks, motion frame skipping, geolocation, and other low-traffic settings.'),
       fields: [
         { kind: 'color',  key: 'web_colour',          label: t('Web colour'),
           help: t('Colour used in lists / montage to identify this camera.') },
@@ -704,8 +720,6 @@ export function buildTabs(t: Translate): TabDef[] {
           help: t('Pixels sampled per frame to detect signal loss. 0 disables the check.') },
         { kind: 'color',  key: 'signal_check_colour', label: t('Signal check colour'),
           help: t('The "no signal" colour the capture card shows when the camera drops.') },
-        { kind: 'number', key: 'frame_skip',          label: t('Frame skip'), min: 0, integer: true,
-          help: t('Frames to skip between those saved to an event.') },
         { kind: 'number', key: 'motion_frame_skip',   label: t('Motion frame skip'), min: 0, integer: true,
           help: t('Frames to skip between those analysed for motion.') },
         { kind: 'number', key: 'fps_report_interval', label: t('FPS report interval (frames)'), min: 0, integer: true },

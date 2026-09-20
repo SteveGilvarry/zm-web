@@ -1,4 +1,5 @@
-import { test, expect, gotoSkin, SKINS, seededOnly, apiFetch } from './fixtures';
+import type { Page } from '@playwright/test';
+import { test, expect, gotoSkin, SKINS, seededOnly, apiFetch, type Skin } from './fixtures';
 import { SEED } from './seed/seed-data';
 
 /**
@@ -116,7 +117,8 @@ test.describe('Settings — servers', () => {
       const nameField = page.getByLabel('Name', { exact: true });
       await nameField.fill(name);
       await expect(nameField).toHaveValue(name);
-      await page.getByLabel('Host', { exact: true }).fill('probe.example.test');
+      // Modern labels the field Host, classic (legacy wording) Hostname.
+      await page.getByLabel(/^host(name)?$/i).first().fill('probe.example.test');
 
       const created = page.waitForResponse(
         (r) => r.url().endsWith('/api/v3/servers') && r.request().method() === 'POST',
@@ -155,6 +157,16 @@ test.describe('Settings — servers', () => {
 test.describe('Settings — storage', () => {
   test.skip(seededOnly.condition, seededOnly.reason);
 
+  /**
+   * Modern gives each row an Edit button; classic is legacy `?view=options`
+   * → Storage, where the name itself opens the form and the toolbar's single
+   * Delete acts on whatever is marked.
+   */
+  const editStorage = (p: Page, skin: Skin, name: string) =>
+    skin === 'classic'
+      ? p.getByRole('button', { name, exact: true })
+      : p.getByRole('button', { name: `Edit ${name}`, exact: true });
+
   for (const skin of SKINS) {
     test(`${skin}: lists both storage areas with their paths @route:settings.storage`, async ({
       loggedInPage: page,
@@ -165,14 +177,14 @@ test.describe('Settings — storage', () => {
         '/var/cache/zoneminder/events-e2e',
       );
       await expect(page.getByRole('row', { name: /\bDefault\b/ }).first()).toBeVisible();
-      await expect(page.getByRole('button', { name: /^edit e2e-events$/i })).toBeVisible();
+      await expect(editStorage(page, skin, 'e2e-events')).toBeVisible();
     });
 
     test(`${skin}: editing a storage area opens its form @route:settings.storage`, async ({
       loggedInPage: page,
     }) => {
       await gotoSkin(page, '/settings/storage', skin);
-      await page.getByRole('button', { name: /^edit e2e-events$/i }).click();
+      await editStorage(page, skin, 'e2e-events').click();
       // The path is editable, not just displayed, and opens on its real value.
       await expect(
         page.locator('input[value="/var/cache/zoneminder/events-e2e"]'),
@@ -225,6 +237,74 @@ test.describe('Settings — PTZ control profiles', () => {
       await expect(row).toContainText('Ffmpeg');
       // Everything else is filtered out.
       await expect(page.getByRole('row', { name: /^HikVision/ })).toHaveCount(0);
+    });
+  }
+});
+
+test.describe('Settings — API access', () => {
+  test.skip(seededOnly.condition, seededOnly.reason);
+
+  for (const skin of SKINS) {
+    test(`${skin}: lists every user with its API toggles @route:settings.apiTokens`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/settings/api-tokens', skin);
+
+      // One row per user, with the two things `PUT /users/{id}` can change.
+      // Nothing is clicked: revoking would sign the seeded accounts out from
+      // under the other workers.
+      await expect(
+        page.getByRole('checkbox', { name: `API enabled for ${SEED.viewer.username}` }),
+      ).toBeVisible();
+      await expect(
+        page.getByRole('checkbox', { name: `Revoke tokens for ${SEED.admin.username}` }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: /revoke all tokens/i })).toBeVisible();
+    });
+  }
+});
+
+test.describe('Settings — AI', () => {
+  test.skip(seededOnly.condition, seededOnly.reason);
+
+  /**
+   * The AI tabs read `/ai/datasets`, `/ai/models` and `/ai/object-classes`.
+   * Nothing here is seeded in the 9000 range: the rows are the ones
+   * ZoneMinder's own schema ships (the COCO dataset and its classes), which
+   * is what a fresh install shows too.
+   */
+  for (const skin of SKINS) {
+    test(`${skin}: the datasets tab lists the stock dataset @route:settings.ai`, async ({
+      loggedInPage: page,
+    }) => {
+      const listed = page.waitForResponse(
+        (r) => /\/api\/v3\/ai\/datasets(\?|$)/.test(r.url()) && r.request().method() === 'GET',
+        { timeout: 15_000 },
+      );
+      await gotoSkin(page, '/settings/ai/datasets', skin);
+      expect((await listed).status()).toBe(200);
+
+      await expect(page.getByRole('row', { name: /COCO/ }).first()).toBeVisible();
+    });
+
+    test(`${skin}: the tabs switch section and endpoint @route:settings.ai`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/settings/ai/datasets', skin);
+
+      const classes = page.waitForResponse(
+        (r) => /\/api\/v3\/ai\/object-classes(\?|$)/.test(r.url()) && r.request().method() === 'GET',
+        { timeout: 15_000 },
+      );
+      // Modern has its own tab strip ("Object Classes"); classic reaches the
+      // same page through the legacy Options rail ("AI Classes").
+      await page
+        .getByRole('link', { name: skin === 'classic' ? /^ai classes$/i : /^object classes$/i })
+        .click();
+      expect((await classes).status()).toBe(200);
+      await expect(page).toHaveURL(/\/settings\/ai\/classes/);
+      // The classes tab scopes itself to one dataset.
+      await expect(page.getByLabel(/filter by dataset/i)).toBeVisible();
     });
   }
 });

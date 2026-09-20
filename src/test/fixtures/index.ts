@@ -35,4 +35,5 @@ export {
   makeServerStat,
 } from './system';
 export { makePtzCapabilities, makePtzStatus } from './ptz';
+export { makeAiDataset, makeAiModel, makeAiObjectClass } from './ai';
 export type { SystemStatusFixture } from './system';

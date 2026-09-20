@@ -98,12 +98,15 @@ test.describe('Filters — CRUD round-trip', () => {
     await expect(page.getByTestId('filter-term')).toHaveCount(2);
     await expect(page.getByTestId('filter-term').nth(1).getByLabel('Attribute')).toHaveValue('Archived');
 
-    // Delete.
-    page.once('dialog', (d) => d.accept());
+    // Delete. The page asks in its own dialog now, not window.confirm, so the
+    // second click is on the modal's Delete.
     const deleteResp = page.waitForResponse(
       (r) => /\/api\/v3\/filters\/\d+$/.test(r.url()) && r.request().method() === 'DELETE',
     );
     await page.getByRole('button', { name: `Delete ${renamed}` }).click();
+    const confirm = page.getByRole('dialog', { name: /delete filter/i });
+    await expect(confirm).toBeVisible();
+    await confirm.getByRole('button', { name: /^delete$/i }).click();
     await deleteResp;
     await expect(page.getByRole('button', { name: new RegExp(`^${renamed}`) })).toHaveCount(0, { timeout: 10_000 });
   });
