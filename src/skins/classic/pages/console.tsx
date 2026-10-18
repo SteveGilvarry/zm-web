@@ -1,10 +1,10 @@
-import { useState, type DragEvent } from 'react';
+import { useState, type DragEvent, type MouseEvent, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowDownUp, Columns3, Copy, Download, Filter, FilterX, ListChecks, Pencil, Plus,
-  RefreshCw, Trash2,
+  RefreshCw, Settings, Trash2, Video,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -15,14 +15,12 @@ import { ScanNetworkButton } from '@/features/console/ScanNetworkButton';
 import { useClassicConsolePage, type ClassicConsolePageState, type EventsScope } from '@/features/console/useClassicConsolePage';
 import { CONSOLE_COLUMNS, consoleColumnLabel, type ConsoleColumnKey } from '@/features/console/consoleColumns';
 import {
-  functionLines, isOffline, periodStart, runtimeLine, sourceClass, streamAvailable,
+  functionLines, isOffline, periodStart, runtimeLine, sourceClass, statusBreakdown, streamAvailable,
   type ConsoleRow, type ConsoleSortKey, type CountPeriod, type SourceClass,
 } from '@/features/console/consoleTable';
 import { useMonitorGroupPaths, type GroupPath } from '@/features/console/monitorGroupPaths';
 import { monitorSource } from '@/features/monitors/useMonitorFilterRow';
-import {
-  formatBandwidthLegacy, formatFpsLegacy, type RuntimeTone,
-} from '@/features/monitors/useMonitorStatuses';
+import { formatBandwidthLegacy, formatFpsLegacy } from '@/features/monitors/useMonitorStatuses';
 import { humanFilesize } from '@/lib/format';
 import { usePerms } from '@/features/auth/usePerms';
 import { useUiStore } from '@/stores/ui';
@@ -33,14 +31,6 @@ import {
   ClassicTable, ClassicTd, ClassicTfoot, ClassicTh, ClassicThead, ClassicToolbar, classicInputClass,
   classicLinkClass, classicMenuItemClass,
 } from '@/skins/classic/components';
-
-/** Legacy console lens colours: green capturing, orange running, red down. */
-const LENS: Record<RuntimeTone, string> = {
-  ok: 'bg-[#00c9a7]',
-  warn: 'bg-amber-500',
-  down: 'bg-[#ef4444]',
-  unknown: 'bg-zinc-400',
-};
 
 /** skin.css `.infoText` / `.warnText` / `.errorText`, as the dot fill and the Source text. */
 const SOURCE_DOT: Record<SourceClass, string> = {
@@ -81,18 +71,19 @@ export default function ClassicConsolePage() {
   };
   const hasSelection = selectedIds.size > 0;
   const allOnPageSelected = rows.length > 0 && rows.every((r) => selectedIds.has(r.monitor.id));
-  const pct = (n: number) => (allRows.length ? ((n / allRows.length) * 100).toFixed(1) : '0');
-
-  const toneLabel = (tone: RuntimeTone): string => {
-    switch (tone) {
-      case 'ok': return t('Capturing');
-      case 'warn': return t('Not Capturing');
-      case 'down': return t('Not Running');
-      case 'unknown': return t('Unknown');
+  // translate('Status'.$status) in console.php; any other status prints raw.
+  const statusLabel = (status: string): string => {
+    switch (status) {
+      case 'Connected': return t('Capturing');
+      case 'Running': return t('Not Capturing');
+      case 'NotRunning': return t('Not Running');
+      case 'Unknown': return t('Unknown');
+      case 'Deleted': return t('Deleted');
+      default: return status;
     }
   };
 
-  const sortTh = (key: ConsoleSortKey, label: string, numeric = false, extra?: string) =>
+  const sortTh = (key: ConsoleSortKey, label: ReactNode, numeric = false, extra?: string) =>
     visible(key) ? (
       <ClassicTh
         key={key}
@@ -164,16 +155,15 @@ export default function ClassicConsolePage() {
             </>
           }
         >
-          {hasRuntime && (
+          {/* console.php `.statusBreakdown`: `<label>Capturing</label>100%`
+              per status, in order of first appearance. */}
+          {allRows.length > 0 && (
             <span className="text-sm text-zinc-800 me-1" data-testid="console-status-pills">
-              {(['down', 'warn', 'ok', 'unknown'] as RuntimeTone[])
-                .filter((tone) => runtimeTotals.byTone[tone] > 0)
-                .map((tone) => (
-                  <span key={tone} className="me-2 inline-flex items-center gap-1">
-                    <span className={clsx('w-2 h-2 rounded-full', LENS[tone])} aria-hidden />
-                    {toneLabel(tone)} {pct(runtimeTotals.byTone[tone])}%
-                  </span>
-                ))}
+              {statusBreakdown(allRows).map(({ status, pct }) => (
+                <span key={status} className="me-2">
+                  <span className="font-semibold me-1">{statusLabel(status)}</span>{pct}%
+                </span>
+              ))}
             </span>
           )}
           <RequirePerm feature="monitors" level="Edit">
@@ -232,12 +222,12 @@ export default function ClassicConsolePage() {
                 )}
                 {sortTh('id', t('Id'))}
                 {visible('thumbnail') && <ClassicTh>{t('Thumbnail')}</ClassicTh>}
-                {sortTh('name', t('Name'))}
+                {sortTh('name', <><Video size={13} className="inline me-1 align-[-2px]" aria-hidden />{t('Name')}</>)}
                 {sortTh('manufacturer', t('Manufacturer'))}
                 {sortTh('model', t('Model'))}
                 {sortTh('function', t('Function'))}
                 {sortTh('server', t('Server'))}
-                {sortTh('source', t('Source'))}
+                {sortTh('source', <><Settings size={13} className="inline me-1 align-[-2px]" aria-hidden />{t('Source')}</>)}
                 {sortTh('storage', t('Storage'))}
                 {sortTh('events', t('Events'), true)}
                 {sortTh('hour', t('Hour'), true)}
@@ -369,10 +359,18 @@ function ConsoleTableRow({
     onDragEnd,
   } : {};
 
+  // bootstrap-table `data-click-to-select`: a click anywhere on the row
+  // toggles its checkbox, except on the row's own links and controls.
+  const onRowClick = page.canEdit ? (e: MouseEvent<HTMLTableRowElement>) => {
+    if ((e.target as HTMLElement).closest('a, button, input, select, label')) return;
+    page.toggleSelected(m.id);
+  } : undefined;
+
   return (
     <tr
       className={clsx(isDragging && 'opacity-40', dragEnabled && 'cursor-grab')}
       data-testid={`console-row-${m.id}`}
+      onClick={onRowClick}
       {...dragProps}
     >
       {page.canEdit && (
@@ -394,7 +392,8 @@ function ConsoleTableRow({
       )}
       {visible('thumbnail') && (
         <ClassicTd className="text-center">
-          {isActive ? (
+          {/* ajax/console.php: Capturing is not None and canView('Stream'). */}
+          {isActive && canViewStream ? (
             <Link to="/monitors/$monitorId" params={watchParams} className="inline-block" aria-label={t('Watch {{name}}', { name: m.name })}>
               <span className="relative block w-12 h-12 bg-zinc-200 overflow-hidden">
                 <MonitorPreview monitorId={m.id} monitorName={m.name} orientation={m.orientation} isActive compact rotationFit="fit" />
@@ -453,16 +452,26 @@ function ConsoleTableRow({
       )}
       {visible('server') && <ClassicTd>{names.serverName(m.server_id) || '—'}</ClassicTd>}
       {visible('source') && (
-        <ClassicTd>
-          <Link to="/monitors/$monitorId" params={watchParams} search={{ edit: true }} className={classicLinkClass}>
-            {monitorSource(m) || t('({{count}})', { count: m.id })}
-          </Link>
-          <div className={clsx('text-[13px]', SOURCE_TEXT[source.cls])}>
+        // console.js: the status class goes on the whole cell, and the
+        // editor link only for Monitors editors.
+        <ClassicTd className={SOURCE_TEXT[source.cls]}>
+          {page.canEdit ? (
+            <Link to="/monitors/$monitorId" params={watchParams} search={{ edit: true }} className={classicLinkClass}>
+              {monitorSource(m) || t('({{count}})', { count: m.id })}
+            </Link>
+          ) : (monitorSource(m) || t('({{count}})', { count: m.id }))}
+          <div className="text-[13px]">
             {m.width}x{m.height}
           </div>
         </ClassicTd>
       )}
-      {visible('storage') && <ClassicTd>{names.storageName(m.storage_id) || m.storage_id}</ClassicTd>}
+      {visible('storage') && (
+        <ClassicTd>
+          {/* ajax/console.php: a storage id with no area prints `Deleted N` in red. */}
+          {names.storageName(m.storage_id)
+            || (m.storage_id ? <span className={SOURCE_TEXT.error}>{t('Deleted {{id}}', { id: m.storage_id })}</span> : '')}
+        </ClassicTd>
+      )}
       {visible('events') && <CountCell period="events" scope={{ monitor_id: m.id }} count={s.total_events} disk={s.total_event_disk_space} />}
       {visible('hour') && <CountCell period="hour" scope={{ monitor_id: m.id }} count={s.hour_events} disk={s.hour_event_disk_space} />}
       {visible('day') && <CountCell period="day" scope={{ monitor_id: m.id }} count={s.day_events} disk={s.day_event_disk_space} />}

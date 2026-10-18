@@ -9,8 +9,8 @@ import type { Monitor } from '@/types';
 import type { EventSummary } from '@/api/eventSummaries';
 import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import {
-  compareRows, downloadText, exportColumns, pageSlice, rowsToCsv, rowsToJson,
-  searchRows, sortRows, totalsFor, type ConsoleRow, type ConsoleSortKey,
+  compareRows, consoleStatus, downloadText, exportColumns, pageSlice, rowsToCsv, rowsToJson,
+  searchRows, sortRows, statusBreakdown, totalsFor, type ConsoleRow, type ConsoleSortKey,
 } from './consoleTable';
 
 const summary = (monitor_id: number, over: Partial<EventSummary> = {}): EventSummary => ({
@@ -228,5 +228,43 @@ describe('downloadText', () => {
       click.mockRestore();
       vi.useRealTimers();
     }
+  });
+});
+
+describe('console status breakdown (console.php $status_counts)', () => {
+  const rt = (status: string): MonitorRuntime => ({
+    monitorId: 0, status, captureFps: 0, analysisFps: 0, captureFpsRaw: '0', analysisFpsRaw: '0', bandwidth: 0, updatedOn: '',
+  });
+
+  it('counts deleted, missing-row and WebSite monitors as legacy does', () => {
+    expect(consoleStatus(monitor({ deleted: true } as Partial<Monitor>), rt('Connected'))).toBe('Deleted');
+    expect(consoleStatus(monitor({}), undefined)).toBe('NotRunning');
+    expect(consoleStatus(monitor({ type: 'WebSite' } as Partial<Monitor>), undefined)).toBe('Running');
+    expect(consoleStatus(monitor({}), rt('Connected'))).toBe('Connected');
+  });
+
+  it('lists statuses by first appearance in sequence order, rounded like PHP round(x, 1)', () => {
+    const rows = [
+      row({ id: 1, sequence: 3 }, {}, rt('Connected')),
+      row({ id: 2, sequence: 1 }, {}, rt('Running')),
+      row({ id: 3, sequence: 2 }, {}, rt('Running')),
+    ];
+    expect(statusBreakdown(rows)).toEqual([
+      { status: 'Running', pct: '66.7' },
+      { status: 'Connected', pct: '33.3' },
+    ]);
+    expect(statusBreakdown([rows[0]])).toEqual([{ status: 'Connected', pct: '100' }]);
+    expect(statusBreakdown([])).toEqual([]);
+  });
+
+  it('searches Path, Device, Host and the runtime Status too', () => {
+    const rows = [
+      row({ id: 1, path: 'rtsp://cam/Streaming/Channels/101', host: 'gate.local' } as Partial<Monitor>, {}, rt('Connected')),
+      row({ id: 2, device: '/dev/video3', host: null } as Partial<Monitor>, {}, rt('NotRunning')),
+    ];
+    expect(searchRows(rows, 'channels/101').map((r) => r.monitor.id)).toEqual([1]);
+    expect(searchRows(rows, 'gate.local').map((r) => r.monitor.id)).toEqual([1]);
+    expect(searchRows(rows, 'video3').map((r) => r.monitor.id)).toEqual([2]);
+    expect(searchRows(rows, 'notrunning').map((r) => r.monitor.id)).toEqual([2]);
   });
 });

@@ -291,9 +291,8 @@ describe('ClassicConsolePage — table', () => {
     expect(within(row3).getByRole('img', { name: 'Not Running' })).toBeInTheDocument();
 
     const pills = screen.getByTestId('console-status-pills');
-    expect(pills).toHaveTextContent('Capturing 33.3%');   // monitor 1 — Connected
-    expect(pills).toHaveTextContent('Not Capturing 33.3%'); // monitor 2 — Running
-    expect(pills).toHaveTextContent('Unknown 33.3%');     // monitor 3 — no row
+    // Order of first appearance down the sequence; no runtime row is Not Running.
+    expect(pills).toHaveTextContent('Capturing33.3%Not Capturing33.3%Not Running33.3%');
   });
 
   it('totals the visible rows in the footer', async () => {
@@ -497,6 +496,8 @@ describe('ClassicConsolePage — Name cell', () => {
     const row1 = screen.getByTestId('console-row-1');
     expect(within(row1).queryByRole('link', { name: 'Front Door' })).toBeNull();
     expect(row1).toHaveTextContent('Front Door');
+    // No thumbnail either: ajax/console.php wants canView('Stream').
+    expect(within(row1).queryByRole('link', { name: 'Watch Front Door' })).toBeNull();
   });
 });
 
@@ -542,8 +543,35 @@ describe('ClassicConsolePage — verbs', () => {
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: 'Select all monitors on this page' })).toBeNull();
-    // The read-only table is still there.
+    // The read-only table is still there, its Source as text, not an editor link.
     expect(screen.getByTestId('console-classic-table')).toBeInTheDocument();
+    const row1 = screen.getByTestId('console-row-1');
+    expect(within(row1).getByText('10.0.0.11')).toBeInTheDocument();
+    expect(within(row1).queryByRole('link', { name: '10.0.0.11' })).toBeNull();
+  });
+
+  it('prints a missing storage area as a red "Deleted N"', async () => {
+    stub({ monitors: [{ ...MONITORS[0], storage_id: 9 }] });
+    await mount();
+    const row1 = await screen.findByTestId('console-row-1');
+    await waitFor(() => expect(within(row1).getByText('Deleted 9')).toBeInTheDocument());
+  });
+
+  it('selects a row on a click anywhere but its links, as data-click-to-select does', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    const row1 = screen.getByTestId('console-row-1');
+    const box = within(row1).getByRole('checkbox', { name: 'Select Front Door' });
+    // A Stream viewer gets the thumbnail (the Stream-less case is tested above).
+    expect(within(row1).getByRole('link', { name: 'Watch Front Door' })).toBeInTheDocument();
+    await user.click(within(row1).getByText('1920x1080'));
+    expect(box).toBeChecked();
+    await user.click(within(row1).getByText('1920x1080'));
+    expect(box).not.toBeChecked();
+    // The checkbox itself still toggles once, not twice.
+    await user.click(box);
+    expect(box).toBeChecked();
   });
 
   it('deletes the selected monitors after confirming', async () => {
@@ -559,7 +587,7 @@ describe('ClassicConsolePage — verbs', () => {
       await user.click(screen.getByRole('button', { name: 'Delete' }));
 
       expect(confirm).toHaveBeenCalledWith(
-        'Delete 2 monitors? Recorded events are kept until storage reclaims them.',
+        'Deleting a monitor only marks it as deleted.  Events will age out. If you want them to be immediately removed, please delete them first.\nAre you sure you wish to delete?',
       );
       await waitFor(() => expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(2));
       expect(calls.map((c) => c.path).sort()).toEqual(['/monitors/1', '/monitors/2']);

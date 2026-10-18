@@ -317,7 +317,8 @@ export function useClassicConsolePage(): ClassicConsolePageState {
   const deleteSelected = () => {
     const ids = allRows.filter((r) => selectedIds.has(r.monitor.id)).map((r) => r.monitor.id);
     if (ids.length === 0) return;
-    if (window.confirm(t('Delete {{count}} monitor? Recorded events are kept until storage reclaims them.', { count: ids.length }))) {
+    // console.js `deleteMonitor`, word for word.
+    if (window.confirm(t('Deleting a monitor only marks it as deleted.  Events will age out. If you want them to be immediately removed, please delete them first.\nAre you sure you wish to delete?'))) {
       deleteMutation.mutate(ids);
     }
   };

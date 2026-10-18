@@ -150,14 +150,52 @@ export function sortRows(rows: ConsoleRow[], key: ConsoleSortKey, dir: SortDir, 
   return dir === 'asc' ? sorted : sorted.reverse();
 }
 
-/** bootstrap-table's client-side search: substring over the text cells. */
+/**
+ * The console search box (ajax/console.php): substring over Name, Function,
+ * Path, Device, Host, Id and the runtime Status, plus the text the Function
+ * and Source cells show.
+ */
 export function searchRows(rows: ConsoleRow[], query: string): ConsoleRow[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(({ monitor: m, runtime }) =>
-    [String(m.id), m.name, monitorSource(m), m.type, ...functionLines(m, runtime)]
-      .some((v) => v.toLowerCase().includes(q)),
+    [
+      String(m.id), m.name, m.function, m.path, m.device, m.host, runtime?.status,
+      monitorSource(m), ...functionLines(m, runtime),
+    ].some((v) => (v ?? '').toLowerCase().includes(q)),
   );
+}
+
+/**
+ * The status console.php counts a row under: `Deleted` for a soft-deleted
+ * monitor (its runtime row is stale), the runtime status, or with no runtime
+ * row `NotRunning` (`Running` for a WebSite monitor, which has no capture
+ * process).
+ */
+export function consoleStatus(m: Monitor, runtime: MonitorRuntime | undefined): string {
+  if (isDeleted(m)) return 'Deleted';
+  if (runtime?.status) return runtime.status;
+  return m.type === 'WebSite' ? 'Running' : 'NotRunning';
+}
+
+/**
+ * The toolbar's status breakdown (console.php `$status_counts`): one entry
+ * per status in order of first appearance down the sequence order, the
+ * share printed as PHP's `round(…, 1)` does (`100`, `33.3`).
+ */
+export function statusBreakdown(rows: ConsoleRow[]): Array<{ status: string; pct: string }> {
+  if (rows.length === 0) return [];
+  const bySequence = [...rows].sort((a, b) =>
+    (a.monitor.sequence ?? 0) - (b.monitor.sequence ?? 0) || a.monitor.id - b.monitor.id);
+  const counts = new Map<string, number>();
+  for (const r of bySequence) {
+    const st = consoleStatus(r.monitor, r.runtime);
+    counts.set(st, (counts.get(st) ?? 0) + 1);
+  }
+  return [...counts].map(([status, n]) => ({
+    status,
+    pct: String(Math.round((1000 * n) / rows.length) / 10),
+  }));
 }
 
 export function pageSlice<T>(rows: T[], page: number, pageSize: number): T[] {
