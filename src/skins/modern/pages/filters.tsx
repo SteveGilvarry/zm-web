@@ -56,6 +56,12 @@ export default function FiltersPage() {
           <span className="text-sm text-fg truncate">
             {selectedFilter ? t('Editing — {{name}}', { name: selectedFilter.name }) : t('New filter')}
           </span>
+          {/* Legacy's read-only Id row (filter.php:170). */}
+          {selectedFilter && (
+            <span className="text-xs text-fg-dim font-mono tabular-nums" data-testid="filter-id">
+              {t('Id {{id}}', { id: selectedFilter.id })}
+            </span>
+          )}
           <span className="ms-auto" />
           <button
             type="button"
