@@ -106,7 +106,7 @@ export default function SettingsStoragePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
-                    {rows.map(({ storage, serverId, serverName, diskPercent }) => (
+                    {rows.map(({ storage, serverId, serverName, diskPercent, eventCount }) => (
                       <tr key={storage.id} className="hover:bg-surface-2 transition-colors">
                         <td className="px-4 py-2 font-mono tabular-nums text-xs text-fg-dim">{storage.id}</td>
                         <td className="px-4 py-2 font-medium text-fg">{storage.name}</td>
@@ -164,11 +164,13 @@ export default function SettingsStoragePage() {
                         <td className="px-4 py-2">
                           <Link
                             to="/events"
+                            search={{ storage: storage.id }}
                             className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                            title={t('The events list cannot be pre-filtered by storage area yet; this opens the full list.')}
                           >
                             <Film size={12} aria-hidden />
-                            {t('Events')}
+                            {eventCount == null
+                              ? t('Events')
+                              : t('{{count}} using {{size}}', { count: eventCount, size: formatBytes(storage.disk_space ?? 0) })}
                           </Link>
                         </td>
                         <td className="px-4 py-2">

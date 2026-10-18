@@ -9,7 +9,7 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
-import { formatBytes } from '@/lib/format';
+import { formatBytes, humanFilesize } from '@/lib/format';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
@@ -71,7 +71,7 @@ export default function ClassicSettingsStoragePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {st.rows.map(({ storage, serverId, serverName, diskPercent }) => (
+                    {st.rows.map(({ storage, serverId, serverName, diskPercent, eventCount }) => (
                       <tr key={storage.id}>
                         <td className={clsx(classicTd, 'font-mono text-xs')}>{storage.id}</td>
                         <td className={classicTd}>
@@ -111,7 +111,9 @@ export default function ClassicSettingsStoragePage() {
                         </td>
                         <td className={clsx(classicTd, 'text-xs')}>
                           <Link to="/events" search={{ storage: storage.id }} className={classicLink}>
-                            {t('Events')}
+                            {eventCount == null
+                              ? t('Events')
+                              : t('{{count}} using {{size}}', { count: eventCount, size: humanFilesize(storage.disk_space ?? 0) })}
                           </Link>
                         </td>
                         <td className={classicTd}>
@@ -119,8 +121,14 @@ export default function ClassicSettingsStoragePage() {
                             type="checkbox"
                             checked={st.marked.has(storage.id)}
                             onChange={() => st.toggleMark(storage.id)}
-                            disabled={!canEdit || st.isProtected(storage)}
-                            title={st.isProtected(storage) ? t('The Default storage area cannot be deleted') : undefined}
+                            disabled={!canEdit || st.isProtected(storage) || (eventCount ?? 0) > 0}
+                            title={
+                              st.isProtected(storage)
+                                ? t('The Default storage area cannot be deleted')
+                                : (eventCount ?? 0) > 0
+                                  ? t("Can't delete as long as there are events stored here.")
+                                  : undefined
+                            }
                             aria-label={t('Mark {{name}}', { name: storage.name })}
                           />
                         </td>

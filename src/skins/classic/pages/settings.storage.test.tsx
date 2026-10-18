@@ -125,7 +125,9 @@ describe('ClassicSettingsStoragePage', () => {
     await mount();
 
     const cold = (await screen.findByRole('button', { name: 'Cold archive' })).closest('tr')!;
-    expect(within(cold).getByRole('link', { name: 'Events' })).toHaveAttribute('href', '/events');
+    // Legacy prints "N using X": the event count and the events' disk space.
+    const link = await within(cold).findByRole('link', { name: '0 using 10.00GB' });
+    expect(link).toHaveAttribute('href', '/events');
   });
 
   it('carries the legacy Id / Scheme / Server / Disk Space columns', async () => {
@@ -368,23 +370,17 @@ describe('ClassicSettingsStoragePage', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('delete is blocked while events still live on the area', async () => {
+  it('a storage area that still holds events cannot be marked, as legacy', async () => {
     signIn();
     seed();
     usageTotal = 12;
-    const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('checkbox', { name: 'Mark Cold archive' }));
-    await user.click(screen.getByRole('button', { name: 'Delete' }));
-    await waitFor(() =>
-      expect(screen.getByRole('dialog')).toHaveTextContent(
-        '"Cold archive" still holds 12 events. Move or delete those events before removing the storage area.'));
-    // Only an OK button — no way to force it through.
-    expect(within(screen.getByRole('dialog')).queryByRole('button', { name: 'Delete' })).toBeNull();
-    sent = [];
-    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'OK' }));
-    expect(sent).toHaveLength(0);
+    const mark = await screen.findByRole('checkbox', { name: 'Mark Cold archive' });
+    await waitFor(() => expect(mark).toBeDisabled());
+    expect(mark).toHaveAttribute('title', "Can't delete as long as there are events stored here.");
+    const cold = screen.getByRole('button', { name: 'Cold archive' }).closest('tr')!;
+    expect(within(cold).getByRole('link', { name: '12 using 10.00GB' })).toBeInTheDocument();
   });
 
   it('offers a delete-anyway path when the count itself fails', async () => {
