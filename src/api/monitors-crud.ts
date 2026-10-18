@@ -261,6 +261,15 @@ export async function createMonitor(input: MonitorCreateInput): Promise<Monitor>
 }
 
 /**
+ * POST a complete create body as-is. The full editor uses this: it already
+ * holds every field, so unlike {@link createMonitor} nothing is derived
+ * from `function`.
+ */
+export async function postMonitor(payload: MonitorCreatePayload): Promise<Monitor> {
+  return apiPost<MonitorCreatePayload, Monitor>('/monitors', payload);
+}
+
+/**
  * Clone an existing monitor. Fetches the full record, converts it to a
  * create payload, suffixes the name with "(clone)", and POSTs as new.
  */

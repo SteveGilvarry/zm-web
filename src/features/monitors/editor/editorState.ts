@@ -97,3 +97,8 @@ export function randomHexColour(rand: () => number = Math.random): string {
   return `#${n.toString(16).padStart(6, '0')}`;
 }
 
+
+/** True when the stored value is one of the field's stored-only options. */
+export function storedOnly(field: FieldDef, stored: FieldValue | undefined): boolean {
+  return stored != null && !!field.storedOnlyOptions?.some((o) => String(o.value) === String(stored));
+}
