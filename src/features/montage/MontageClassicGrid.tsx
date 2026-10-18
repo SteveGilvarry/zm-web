@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { StreamCell } from '@/components/common/StreamCell';
 import { ZonesOverlay } from '@/features/events/ZonesOverlay';
 import { displayDimensions } from '@/features/monitors/orientation';
-import { useMonitorStatuses, formatFps, runtimeTone, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
+import { useMonitorStatuses, formatFps, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import type { MontageStatusPosition } from '@/stores/montage';
 import type { Monitor, StreamProtocol } from '@/types';
 import { GRIDSTACK_COLUMNS, type GridStackItem } from './layoutFormat';
@@ -123,13 +123,6 @@ export function MontageClassicGrid({
 /*  Cell                                                                      */
 /* -------------------------------------------------------------------------- */
 
-const TONE_DOT: Record<ReturnType<typeof runtimeTone>, string> = {
-  ok: 'bg-emerald-500',
-  warn: 'bg-amber-500',
-  down: 'bg-red-500',
-  unknown: 'bg-zinc-400',
-};
-
 function ClassicCell({
   monitor, protocol, runtime, statusPosition, style, showZones, editMode, fitted = false, isDragging, onDragStart, onDragEnd, onDrop,
   ratio, onRatioChange, item, onResize,
@@ -156,10 +149,12 @@ function ClassicCell({
   const { t, i18n } = useTranslation();
   const frameRef = useRef<HTMLDivElement>(null);
   const zoom = useTileZoom();
-  const tone = runtimeTone(runtime?.status);
+  // Legacy `#monitorStatus<id>`: `Name (id=N)`, then `State:Connected` and
+  // the capture fps.
+  const nameLabel = `${monitor.name} (id=${monitor.id})`;
   const caption = runtime
-    ? `${runtime.status} · ${formatFps(runtime.captureFps, i18n.language)}`
-    : `#${monitor.id}`;
+    ? `${t('State')}:${runtime.status} ${formatFps(runtime.captureFps, i18n.language)}`
+    : `${t('State')}:`;
   // Legacy's gridstack resize handles. Width is all that persists there too:
   // `sizeToContent` recomputes the height from the tile, and so do we.
   const drag = useRef<{ startX: number; startW: number; columnWidth: number } | null>(null);
@@ -268,8 +263,8 @@ function ClassicCell({
             data-testid={`montage-classic-hover-${monitor.id}`}
             className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 px-2 py-1 bg-black/60 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
           >
-            <span className="truncate">{monitor.name}</span>
-            <span className="ms-auto font-mono tabular-nums whitespace-nowrap">{caption}</span>
+            <span className="truncate">{nameLabel}</span>
+            <span className="ms-auto tabular-nums whitespace-nowrap">{caption}</span>
           </div>
         )}
       </div>
@@ -283,16 +278,15 @@ function ClassicCell({
           <Link
             to="/monitors/$monitorId"
             params={{ monitorId: String(monitor.id) }}
-            className="inline-flex items-center gap-1.5 text-[#337ab7] hover:underline truncate"
+            className="text-[#337ab7] hover:underline truncate"
           >
-            <span
-              className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', TONE_DOT[tone])}
-              role="img"
-              aria-label={runtime?.status ?? t('Unknown')}
-            />
-            <span className="truncate">{monitor.name}</span>
+            {nameLabel}
           </Link>
-          <span className="font-mono text-[10px] text-zinc-500 flex-shrink-0 tabular-nums" data-testid={`montage-classic-status-${monitor.id}`}>
+          <span
+            className="text-zinc-600 flex-shrink-0 tabular-nums"
+            title={t('Capturing FPS')}
+            data-testid={`montage-classic-status-${monitor.id}`}
+          >
             {caption}
           </span>
         </div>

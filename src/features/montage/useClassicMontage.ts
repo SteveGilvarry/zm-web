@@ -207,7 +207,11 @@ export function useClassicMontage(visibleMonitors: Monitor[], options: ClassicMo
     : undefined;
   // A persisted saved layout can be deleted from another tab or another
   // session; once the list has loaded without it, fall back to Auto.
-  const layoutId = classicLayoutId.startsWith('saved:') && layoutsQ.isSuccess && !activeSaved
+  // A remembered preset legacy does not have (an older build offered 5, 20
+  // and 32 Wide) falls back the same way.
+  const unknownPreset = classicLayoutId.startsWith('preset:')
+    && !MONTAGE_PRESETS.some((p) => `preset:${p.id}` === classicLayoutId);
+  const layoutId = unknownPreset || (classicLayoutId.startsWith('saved:') && layoutsQ.isSuccess && !activeSaved)
     ? `preset:${DEFAULT_PRESET_ID}`
     : classicLayoutId;
   const preset = MONTAGE_PRESETS.find((p) => `preset:${p.id}` === layoutId);

@@ -132,6 +132,16 @@ describe('useClassicMontage — saved layout list', () => {
     expect(result.current.isSavedLayout).toBe(false);
   });
 
+  it('offers only legacy\'s presets and drops a remembered one legacy lacks', async () => {
+    stubLayouts();
+    useMontageStore.setState({ classicLayoutId: 'preset:5w' });
+    const { result } = await mounted();
+    expect(result.current.layoutOptions.filter((o) => o.value.startsWith('preset:')).map((o) => o.label)).toEqual([
+      'Auto', '1 Wide', '2 Wide', '3 Wide', '4 Wide', '6 Wide', '8 Wide', '12 Wide', '16 Wide', '24 Wide', '48 Wide',
+    ]);
+    expect(result.current.layoutId).toBe('preset:auto');
+  });
+
   it('falls back to the auto column count for a saved layout not named "N Wide"', async () => {
     stubLayouts();
     const { result } = await mounted();
