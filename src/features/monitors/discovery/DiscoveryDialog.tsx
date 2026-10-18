@@ -15,6 +15,12 @@ export interface DiscoveryDialogProps {
   onClose: () => void;
   /** Called with the monitor created from a discovered profile. */
   onCreated?: (monitor: Monitor) => void;
+  /**
+   * Editing an existing monitor (legacy `?view=onvifprobe&mid=`): the chosen
+   * profile's source, size and ONVIF settings go into that monitor's draft
+   * instead of creating a new one. Its name is left alone.
+   */
+  onApply?: (values: Partial<MonitorCreateInput>) => void;
 }
 
 /** Probe durations offered, in ms. WS-Discovery answers arrive within a second or two on a LAN. */
@@ -33,14 +39,14 @@ const TIMEOUTS = [2000, 5000, 10000];
  * route: prefill the Add dialog for a camera that needs a different name,
  * resolution or function before it exists.
  */
-export function DiscoveryDialog({ open, onClose, onCreated }: DiscoveryDialogProps) {
+export function DiscoveryDialog({ open, onClose, onCreated, onApply }: DiscoveryDialogProps) {
   if (!open) return null;
-  return <DiscoveryWizard onClose={onClose} onCreated={onCreated} />;
+  return <DiscoveryWizard onClose={onClose} onCreated={onCreated} onApply={onApply} />;
 }
 
 export default DiscoveryDialog;
 
-function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'open'>) {
+function DiscoveryWizard({ onClose, onCreated, onApply }: Omit<DiscoveryDialogProps, 'open'>) {
   const { t } = useTranslation();
   const d = useDiscovery((monitor) => { onCreated?.(monitor); onClose(); });
   const [timeoutMs, setTimeoutMs] = useState(TIMEOUTS[1]);
@@ -52,9 +58,20 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
   const primary = buttonClasses('primary', 'sm');
   const secondary = buttonClasses('secondary', 'sm');
 
+  const profilePrefill = (profile: InspectProfile) =>
+    prefillFromProfile(d.result!, profile, { username: d.username, password: d.password }, d.selected?.name);
+
   const startCreate = (profile: InspectProfile) => {
     if (!d.result) return;
-    setPrefill(prefillFromProfile(d.result, profile, { username: d.username, password: d.password }, d.selected?.name));
+    setPrefill(profilePrefill(profile));
+  };
+
+  const applyProfile = (profile: InspectProfile) => {
+    if (!d.result || !onApply) return;
+    const values = profilePrefill(profile);
+    delete (values as { name?: string }).name;
+    onApply(values);
+    onClose();
   };
 
   const submitInspect = (e: FormEvent) => {
@@ -279,6 +296,12 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                           </td>
                           <td className="px-3 py-2 font-mono text-fg-dim break-all" dir="ltr">{p.stream_uri ?? t('(not provided)')}</td>
                           <td className="px-3 py-2 text-end whitespace-nowrap">
+                            {onApply ? (
+                              <button type="button" onClick={() => applyProfile(p)} className={primary}>
+                                <Check size={12} />
+                                {t('Use this profile')}
+                              </button>
+                            ) : (<>
                             <button
                               type="button"
                               onClick={() => startCreate(p)}
@@ -296,6 +319,7 @@ function DiscoveryWizard({ onClose, onCreated }: Omit<DiscoveryDialogProps, 'ope
                               {d.onboarding === p.token ? <Loader2 size={12} className="animate-spin" /> : <Plus size={12} />}
                               {t('Add camera')}
                             </button>
+                            </>)}
                           </td>
                         </tr>
                       ))}

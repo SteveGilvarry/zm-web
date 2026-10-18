@@ -1,9 +1,10 @@
+import { useState, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
 import {
   X, Save, Undo2, Loader2, ChevronRight, AlertCircle, Trash2,
-  MonitorPlay, RefreshCw, PencilRuler, ExternalLink,
+  MonitorPlay, RefreshCw, PencilRuler, ExternalLink, ListOrdered, Rss,
 } from 'lucide-react';
 import { buttonClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
@@ -17,6 +18,8 @@ import { GroupsMembership } from './RelationSelects';
 import { FieldInput } from './FieldInput';
 import { sameValue, isUnsetSecret, storedOnly } from './editorState';
 import { useMonitorEditor } from './useMonitorEditor';
+import { PresetDialog } from '../presets/PresetDialog';
+import { DiscoveryDialog } from '../discovery/DiscoveryDialog';
 
 interface MonitorEditorProps {
   monitor: Monitor;
@@ -64,6 +67,22 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
   const monitorId = String(monitor.id);
 
   const linkClass = buttonClasses('secondary', 'sm');
+  // Legacy Presets / ONVIF probe: both write into this draft; nothing saves until Save.
+  const [sourceDialog, setSourceDialog] = useState<'preset' | 'onvif' | null>(null);
+  const sourceTools = (
+    <RequirePerm feature="monitors" level="Edit">
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={() => setSourceDialog('preset')} className={linkClass}>
+          <ListOrdered size={12} />
+          {t('Presets')}
+        </button>
+        <button type="button" onClick={() => setSourceDialog('onvif')} className={linkClass}>
+          <Rss size={12} />
+          {t('ONVIF probe')}
+        </button>
+      </div>
+    </RequirePerm>
+  );
 
   return (
     <div
@@ -186,6 +205,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
             baseline={ed.baseline}
             errors={ed.fieldErrors}
             onUpdate={ed.updateField}
+            tools={activeTabDef.id === 'source' ? sourceTools : undefined}
           />
           {activeTabDef.id === 'general' && (
             <div className="max-w-4xl mx-auto px-6 pb-6">
@@ -257,6 +277,11 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
           </RequirePerm>
         </div>
       </footer>
+
+      {sourceDialog === 'preset' && (
+        <PresetDialog onApply={ed.applyValues} onClose={() => setSourceDialog(null)} />
+      )}
+      <DiscoveryDialog open={sourceDialog === 'onvif'} onApply={ed.applyValues} onClose={() => setSourceDialog(null)} />
     </div>
   );
 }
@@ -272,17 +297,22 @@ interface FormPaneProps {
   baseline: Record<string, FieldValue>;
   errors: FieldErrors;
   onUpdate: (key: string, value: FieldValue) => void;
+  /** Tab-level actions shown beside the heading (Source: Presets, ONVIF probe). */
+  tools?: ReactNode;
 }
 
-function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate }: FormPaneProps) {
+function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate, tools }: FormPaneProps) {
   const fields = visibleFields(tab, draft);
   return (
     <div className="max-w-4xl mx-auto px-6 py-5">
-      <header className="mb-5 pb-3 border-b border-border-subtle">
-        <h3 className="text-base font-semibold text-fg">{tab.label}</h3>
-        {tab.description && (
-          <p className="text-xs text-fg-dim mt-1">{tab.description}</p>
-        )}
+      <header className="mb-5 pb-3 border-b border-border-subtle flex items-start justify-between gap-4">
+        <div>
+          <h3 className="text-base font-semibold text-fg">{tab.label}</h3>
+          {tab.description && (
+            <p className="text-xs text-fg-dim mt-1">{tab.description}</p>
+          )}
+        </div>
+        {tools}
       </header>
 
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
