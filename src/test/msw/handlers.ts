@@ -526,6 +526,8 @@ const events: HttpHandler[] = [
     const rows = eventId ? db.frames.filter((f) => f.event_id === eventId) : db.frames;
     return HttpResponse.json(pageOf(request, rows));
   }),
+  // No Stats rows by default; a test that wants them overrides this.
+  http.get(`${API}/stats`, ({ request }) => HttpResponse.json(pageOf(request, []))),
   http.get(`${API}/event-data`, ({ request }) => HttpResponse.json(pageOf(request, []))),
   http.get(`${API}/event-summaries`, ({ request }) => HttpResponse.json(pageOf(request, []))),
   http.get(`${API}/event-summaries/:id`, ({ params }) =>

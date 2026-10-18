@@ -71,6 +71,15 @@ interface EventPlaybackState {
   rate: number;
   codec: PlaybackCodec;
   navScope: EventNavScope | null;
+  /** Frame view's stats table (legacy `zmFrameStats` cookie, default on). */
+  showFrameStats: boolean;
+  /**
+   * Tag ids this operator applied, most recent first — legacy's
+   * `availableTags` order (`LastAssignedDate DESC`, then the user's own
+   * `TagOrder`), which `/tags` cannot give: it has no last-assigned field.
+   * Tag & Next / Tag & Prev and Ctrl+↓ apply the first of these.
+   */
+  tagRecency: number[];
   setReplayMode: (mode: ReplayMode) => void;
   setScale: (monitorId: number, scale: PlaybackScale) => void;
   setShowZones: (show: boolean) => void;
@@ -78,7 +87,13 @@ interface EventPlaybackState {
   setRate: (rate: number) => void;
   setCodec: (codec: PlaybackCodec) => void;
   setNavScope: (scope: EventNavScope) => void;
+  setShowFrameStats: (show: boolean) => void;
+  /** Move a tag to the front of `tagRecency` (legacy `addTag` splices it to index 0). */
+  noteTagUsed: (tagId: number) => void;
 }
+
+/** How many recently used tags are remembered. */
+export const TAG_RECENCY_LIMIT = 50;
 
 /**
  * Event-playback preferences. Persisted via sessionStorage so they
@@ -97,6 +112,8 @@ export const useEventPlaybackStore = create<EventPlaybackState>()(
       rate: 1,
       codec: 'auto',
       navScope: null,
+      showFrameStats: true,
+      tagRecency: [],
       setReplayMode: (mode) => set({ replayMode: REPLAY_MODES.includes(mode) ? mode : 'none' }),
       setScale: (monitorId, scale) =>
         set((s) => ({ scaleByMonitor: { ...s.scaleByMonitor, [monitorId]: scale } })),
@@ -106,6 +123,11 @@ export const useEventPlaybackStore = create<EventPlaybackState>()(
       setCodec: (codec) => set({ codec: PLAYBACK_CODECS.includes(codec) ? codec : 'auto' }),
       setNavScope: (scope) =>
         set((s) => (JSON.stringify(s.navScope) === JSON.stringify(scope) ? {} : { navScope: scope })),
+      setShowFrameStats: (show) => set({ showFrameStats: show }),
+      noteTagUsed: (tagId) =>
+        set((s) => ({
+          tagRecency: [tagId, ...s.tagRecency.filter((id) => id !== tagId)].slice(0, TAG_RECENCY_LIMIT),
+        })),
     }),
     {
       name: 'zm-event-playback',

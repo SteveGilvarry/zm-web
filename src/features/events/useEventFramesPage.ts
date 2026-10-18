@@ -59,6 +59,14 @@ export interface EventFramesPageState {
   thumbWidth: number;
   /** Access token for the `<img>` URLs, which cannot send a header. */
   token: string | null;
+
+  /** Frame numbers whose "+" stats row is open (legacy's bootstrap-table detail view). */
+  isExpanded: (frameId: number) => boolean;
+  toggleExpanded: (frameId: number) => void;
+  /** A row click: legacy `?view=frame&eid=&fid=`. */
+  openFrame: (frameId: number) => void;
+  /** A Score click: legacy `?view=stats&eid=&fid=`. */
+  openStats: (frameId: number) => void;
 }
 
 /**
@@ -88,6 +96,7 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
   const [sort, setSort] = useState<FramesSortKey | null>(null);
   const [dir, setDir] = useState<SortDir>('asc');
   const [hiddenColumns, setHiddenColumns] = useState<FramesColumnKey[]>([...FRAMES_DEFAULT_HIDDEN]);
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
 
   const setSearch = (patch: EventFramesSearchParams) => {
     navigate({
@@ -178,5 +187,26 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
     showThumbs,
     thumbWidth,
     token: accessToken,
+
+    isExpanded: (fid) => expanded.has(fid),
+    toggleExpanded: (fid) => setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(fid)) next.delete(fid);
+      else next.add(fid);
+      return next;
+    }),
+    openFrame: (fid) => {
+      void navigate({
+        to: '/events/$eventId/frames/$frameId',
+        params: { eventId: String(eventId), frameId: String(fid) },
+      });
+    },
+    openStats: (fid) => {
+      void navigate({
+        to: '/events/$eventId/stats',
+        params: { eventId: String(eventId) },
+        search: { fid },
+      });
+    },
   };
 }

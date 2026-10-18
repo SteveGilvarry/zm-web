@@ -37,6 +37,8 @@ export type PageKey =
   | 'events.list'
   | 'events.detail'
   | 'events.frames'
+  | 'events.frame'
+  | 'events.stats'
   | 'filters'
   | 'groups'
   | 'logs'
@@ -65,6 +67,10 @@ export interface PagePropsMap {
   'events.list': Record<never, never>;
   'events.detail': { eventId: number };
   'events.frames': { eventId: number };
+  /** `frameId` 0 is legacy's `fid=0`: the frame with the max score. */
+  'events.frame': { eventId: number; frameId: number };
+  /** No `frameId` opens the max-score frame. */
+  'events.stats': { eventId: number; frameId?: number };
   filters: Record<never, never>;
   groups: Record<never, never>;
   logs: Record<never, never>;

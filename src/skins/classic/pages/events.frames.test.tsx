@@ -268,3 +268,72 @@ describe('EventFramesPage — classic toolbar', () => {
     expect(call.search({ page: 3 })).toEqual({ page_size: 0 });
   });
 });
+
+describe('EventFramesPage — classic stats and frame links', () => {
+  function stubStats() {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v3/events/:id', () =>
+        HttpResponse.json({ id: 42, monitor_id: 1, storage_id: 1, name: 'Front Door Motion', width: 640, height: 480 }),
+      ),
+      http.get('/api/v3/monitors/:id/zones', () =>
+        HttpResponse.json({
+          items: [{ id: 3, monitor_id: 1, name: 'Driveway', area: 5000, coords: '0,0 50,0 50,100 0,100' }],
+          total: 1, per_page: 100, current_page: 1, last_page: 1,
+        }),
+      ),
+      http.get('/api/v3/stats', ({ request }) => {
+        seen.push(new URL(request.url).search);
+        return HttpResponse.json({
+          items: [{
+            id: 9, monitor_id: 1, zone_id: 3, event_id: 42, frame_id: 2,
+            pixel_diff: 25, alarm_pixels: 15360, filter_pixels: 10000, blob_pixels: 9999, blobs: 2,
+            min_blob_size: 1000, max_blob_size: 8000, min_x: 12, max_x: 300, min_y: 34, max_y: 400, score: 37,
+          }],
+          total: 1, per_page: 100, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    return seen;
+  }
+
+  it('opens the frame\'s stats under its row from the "+"', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    const seen = stubStats();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Show stats for frame 2' }));
+    const table = await screen.findByTestId('frame-stats-2');
+    expect(within(table).getByText('Stats - 42 - 2')).toBeInTheDocument();
+    const row = await within(table).findByTestId('stats-row-3');
+    expect(within(row).getByText('Driveway')).toBeInTheDocument();
+    expect(within(row).getByText('15360 (10%)')).toBeInTheDocument();
+    expect(within(row).getByText('1000-8000 (0%-5%)')).toBeInTheDocument();
+    expect(seen[0]).toContain('event_id=42');
+    expect(seen[0]).toContain('frame_id=2');
+    // The "+" does not also open the frame.
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Hide stats for frame 2' }));
+    expect(screen.queryByTestId('frame-detail-2')).not.toBeInTheDocument();
+  });
+
+  it('opens the stats page from Score and the frame from anywhere else on the row', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.click(screen.getByTestId('frame-score-2'));
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/events/$eventId/stats', params: { eventId: '42' }, search: { fid: 2 },
+    });
+
+    await user.click(within(screen.getByTestId('frame-row-3')).getByText('Normal'));
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/events/$eventId/frames/$frameId', params: { eventId: '42', frameId: '3' },
+    });
+  });
+});

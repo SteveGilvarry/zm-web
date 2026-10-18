@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { ArrowLeft, Download, RefreshCw, Search } from 'lucide-react';
@@ -17,6 +18,9 @@ import {
   ClassicButton, ClassicPageTitle, ClassicPager, ClassicTable, ClassicTbody, ClassicTd, ClassicThead,
 } from '../components/events/primitives';
 import { classicInput } from '../components/events/styles';
+import { ClassicStatsTable } from '../components/events/ClassicStatsTable';
+import { useFrameStats } from '@/features/events/useFrameStats';
+import type { ZmEvent } from '@/types';
 
 /**
  * Legacy `?view=frames` — classic skin. Striped white table, alarm rows in
@@ -96,6 +100,8 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
             <ClassicTable testId="frames-table">
               <ClassicThead>
                 <tr>
+                  {/* bootstrap-table's detail-view column: the "+" per row. */}
+                  <td aria-hidden className="w-6 px-1 py-1" />
                   {FRAMES_COLUMNS.filter((c) => s.isVisible(c.key)).map((col) => (
                     <th
                       key={col.key}
@@ -121,15 +127,27 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
               </ClassicThead>
               <ClassicTbody>
                 {s.frames.map((f) => (
-                  <FrameRow
-                    key={f.id}
-                    frame={f}
-                    maxScore={s.maxScore}
-                    isVisible={s.isVisible}
-                    showThumbs={s.showThumbs}
-                    thumbWidth={s.thumbWidth}
-                    token={s.token}
-                  />
+                  <Fragment key={f.id}>
+                    <FrameRow
+                      frame={f}
+                      maxScore={s.maxScore}
+                      isVisible={s.isVisible}
+                      showThumbs={s.showThumbs}
+                      thumbWidth={s.thumbWidth}
+                      token={s.token}
+                      expanded={s.isExpanded(f.frame_id)}
+                      onToggle={() => s.toggleExpanded(f.frame_id)}
+                      onOpen={() => s.openFrame(f.frame_id)}
+                      onStats={() => s.openStats(f.frame_id)}
+                    />
+                    {s.isExpanded(f.frame_id) && (
+                      <tr data-testid={`frame-detail-${f.frame_id}`}>
+                        <td colSpan={s.visibleColumns.length + 1} className="px-2 py-2 bg-white!">
+                          <FrameStatsDetail event={s.event} eventId={eventId} frameId={f.frame_id} />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 ))}
               </ClassicTbody>
             </ClassicTable>
@@ -152,8 +170,22 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
   );
 }
 
+/** The "+" row: legacy `detailFormatter` loads `getStatsTableHTML` for the frame. */
+function FrameStatsDetail({ event, eventId, frameId }: { event: ZmEvent | undefined; eventId: number; frameId: number }) {
+  const stats = useFrameStats(event, frameId);
+  return (
+    <ClassicStatsTable
+      eventId={eventId}
+      frameId={frameId}
+      rows={stats.rows}
+      isLoading={stats.isLoading}
+      testId={`frame-stats-${frameId}`}
+    />
+  );
+}
+
 function FrameRow({
-  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token,
+  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token, expanded, onToggle, onOpen, onStats,
 }: {
   frame: Frame;
   maxScore: number;
@@ -161,7 +193,13 @@ function FrameRow({
   showThumbs: boolean;
   thumbWidth: number;
   token: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  /** Any cell but the "+" and Score: legacy `processClicks` opens the frame. */
+  onOpen: () => void;
+  onStats: () => void;
 }) {
+  const { t } = useTranslation();
   const { formatDateTime } = useDateTimeFormat();
   const alarm = f.type === 'Alarm';
   const pct = maxScore > 0 ? Math.round((f.score / maxScore) * 100) : 0;
@@ -171,8 +209,20 @@ function FrameRow({
       data-frame-type={f.type}
       // Legacy colours alarm frames with bootstrap's "danger" row tint. The
       // important-flag beats the striped/hover backgrounds from ClassicTbody.
-      className={alarm ? 'bg-[#f8d7da]! text-[#721c24]' : undefined}
+      className={clsx('cursor-pointer', alarm && 'bg-[#f8d7da]! text-[#721c24]')}
+      onClick={onOpen}
     >
+      <ClassicTd center className="w-6 px-1">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          aria-expanded={expanded}
+          aria-label={expanded ? t('Hide stats for frame {{n}}', { n: f.frame_id }) : t('Show stats for frame {{n}}', { n: f.frame_id })}
+          className="w-5 font-bold text-[#337ab7] hover:text-[#23527c]"
+        >
+          {expanded ? '−' : '+'}
+        </button>
+      </ClassicTd>
       {isVisible('event_id') && <ClassicTd numeric>{f.event_id}</ClassicTd>}
       {isVisible('frame_id') && <ClassicTd numeric>{f.frame_id}</ClassicTd>}
       {isVisible('type') && <ClassicTd>{f.type}</ClassicTd>}
@@ -181,7 +231,12 @@ function FrameRow({
       )}
       {isVisible('delta') && <ClassicTd numeric>{Number(f.delta).toFixed(2)}</ClassicTd>}
       {isVisible('score') && (
-        <ClassicTd numeric>
+        <ClassicTd
+          numeric
+          onClick={(e) => { e.stopPropagation(); onStats(); }}
+          title={t('Stats')}
+          data-testid={`frame-score-${f.frame_id}`}
+        >
           <span className="inline-flex items-center justify-end gap-2">
             <span
               aria-hidden
