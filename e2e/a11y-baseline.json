@@ -28,6 +28,9 @@
     "color-contrast",
     "link-name"
   ],
+  "classic/monitors.zones": [
+    "color-contrast"
+  ],
   "classic/montage": [
     "color-contrast"
   ],
