@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { useRef, type CSSProperties } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +28,9 @@ import {
   Pencil,
   Camera,
   Image as ImageIcon,
-  Search, ChevronLeft} from 'lucide-react';
+  Search, ChevronLeft, Plus, Minus} from 'lucide-react';
+import { Modal } from '@/components/common/Modal';
+import { Button } from '@/components/common/Button';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import type { CapturingMode, AnalysingMode, RecordingMode } from '@/types';
@@ -77,16 +79,21 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   const page = useWatchPage(monitorId);
   const { formatTime } = useDateTimeFormat();
   // Digital zoom on the live picture; the camera is not moved.
-  const { ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom } =
-    usePinchZoom<HTMLDivElement>();
+  // Double-click fullscreens the picture, as legacy's does on the stream.
+  const stageBoxRef = useRef<HTMLDivElement | null>(null);
+  const {
+    ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom, zoomIn, zoomOut,
+  } = usePinchZoom<HTMLDivElement>(true, false, {
+    onDoubleClick: () => page.toggleStageFullscreen(stageBoxRef.current),
+  });
   const {
     monitor, monitorLoading, events, liveStats, runtime, protocol, activeStream,
     isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, volume, setVolume,
     siblings, siblingIndex, prevMonitorId, nextMonitorId,
     isFullscreen, isWide,
     editorOpen, openEditor, closeEditor, updateModes, isUpdating,
-    startStream, stopStream, changeProtocol, toggleFullscreen, toggleMute, retry,
-    viewMode, setViewMode, stage, downloadImage, isDownloading,
+    startStream, stopStream, pauseStream, isPaused, viewingFps, changeProtocol, toggleFullscreen,
+    toggleMute, retry, viewMode, setViewMode, stage, downloadImage, isDownloading, contentRef, idle,
   } = page;
   const id = monitorId;
   const [stageRef, box] = useMeasuredBox<HTMLDivElement>();
@@ -176,6 +183,35 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         />
       )}
 
+      {/* Digital zoom steps: legacy's Zoom IN / Zoom OUT over the picture.
+          Out of the way until the pointer is over the stage. */}
+      {!stills && (
+        <div
+          data-testid="watch-zoom-buttons"
+          className="absolute top-2 start-2 z-20 flex items-center gap-0.5 rounded bg-black/60 p-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+        >
+          <button
+            type="button"
+            onClick={zoomOut}
+            disabled={!zoomed}
+            aria-label={t('Zoom out')}
+            title={t('Zoom out')}
+            className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-40 transition-colors"
+          >
+            <Minus size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={zoomIn}
+            aria-label={t('Zoom in')}
+            title={t('Zoom in')}
+            className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <Plus size={14} aria-hidden />
+          </button>
+        </div>
+      )}
+
       {zoomed && (
         <button
           type="button"
@@ -219,6 +255,12 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             {runtime && (
               <span className="text-xs font-mono tabular-nums text-white/70 whitespace-nowrap" data-testid="watch-runtime">
                 {runtime.status}
+                {viewingFps != null && (
+                  <>
+                    {' · '}
+                    <span title={t('Viewing FPS')}>{t('View: {{fps}}', { fps: formatFps(viewingFps, i18n.language) })}</span>
+                  </>
+                )}
                 {' · '}
                 {narrowStage
                   ? formatFps(runtime.captureFps, i18n.language)
@@ -265,12 +307,34 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
               >
                 <Maximize2 size={14} />
               </button>
+              {isPaused ? (
+                <button
+                  type="button"
+                  onClick={startStream}
+                  aria-label={t('Play')}
+                  title={t('Play')}
+                  className="p-1.5 rounded text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <Play size={14} aria-hidden />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={pauseStream}
+                  disabled={!isStreaming}
+                  aria-label={t('Pause')}
+                  title={t('Pause')}
+                  className="p-1.5 rounded text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-40 transition-colors"
+                >
+                  <Pause size={14} aria-hidden />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={stopStream}
                 className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white/80 hover:text-white hover:bg-white/10 transition-colors"
               >
-                <Pause size={12} aria-hidden />
+                <Square size={12} aria-hidden />
                 {t('Stop')}
               </button>
             </div>
@@ -642,6 +706,16 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
 
             <button
               type="button"
+              onClick={page.refresh}
+              aria-label={t('Refresh')}
+              title={t('Refresh')}
+              className={toolBtn}
+            >
+              <RefreshCw size={16} aria-hidden />
+            </button>
+
+            <button
+              type="button"
               onClick={downloadImage}
               disabled={!isEnabled || isDownloading}
               aria-label={t('Download Image')}
@@ -713,7 +787,9 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           </div>
         )}
 
-        <div className="flex-1 min-h-0 flex">
+        {/* Fullscreen takes this whole region, rail included, as legacy's
+            Fullscreen takes `#content` with the PTZ panel. */}
+        <div ref={contentRef} className="flex-1 min-h-0 flex bg-bg">
           {/* The picture takes the frame; the rail scrolls beside it. */}
           <section
             ref={stageRef}
@@ -721,7 +797,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             className="flex-1 min-w-0 min-h-0 p-2 flex items-center justify-center"
             dir="ltr"
           >
-            <div className="relative max-w-full max-h-full" style={stageStyle}>
+            <div ref={stageBoxRef} className="group relative max-w-full max-h-full" style={stageStyle} data-testid="watch-stage">
               {videoPanel}
             </div>
           </section>
@@ -740,6 +816,14 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           </aside>
         </div>
       </main>
+
+      {/* `ZM_WEB_VIEWING_TIMEOUT`: the stream stopped itself; offer it back. */}
+      <Modal isOpen={idle.prompted} onClose={idle.resume} title={t('Are you still watching?')}>
+        <p className="text-sm text-fg-muted mb-4">{t('Video paused. Continue watching?')}</p>
+        <div className="flex justify-end">
+          <Button variant="primary" onClick={idle.resume}>{t('Continue watching')}</Button>
+        </div>
+      </Modal>
 
       {editorOpen && (
         <MonitorEditor

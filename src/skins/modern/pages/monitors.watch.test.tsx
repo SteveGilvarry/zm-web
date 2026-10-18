@@ -19,6 +19,7 @@ import { delay, http, HttpResponse } from 'msw';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
+import { configListHandler } from '@/test/msw/handlers';
 import { makeMonitor, makePtzCapabilities } from '@/test/fixtures';
 import { useToastStore } from '@/components/common/toastStore';
 import { useWatchPrefsStore } from '@/stores/watchPrefs';
@@ -787,3 +788,69 @@ describe('modern Watch page — digital zoom and volume', () => {
     expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
   });
 });
+
+describe('modern Watch page — stage controls, pause and idle', () => {
+  it('steps the digital zoom from the buttons over the picture', async () => {
+    stream.state = 'connected';
+    const user = userEvent.setup();
+    const { container } = renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    const surface = container.querySelector('video')!.parentElement!;
+    const buttons = screen.getByTestId('watch-zoom-buttons');
+    expect(within(buttons).getByRole('button', { name: 'Zoom out' })).toBeDisabled();
+    await user.click(within(buttons).getByRole('button', { name: 'Zoom in' }));
+    await waitFor(() => expect(surface.style.transform).toMatch(/scale\(1\.3\)/));
+    await user.click(within(buttons).getByRole('button', { name: 'Zoom out' }));
+    await waitFor(() => expect(surface.style.transform).toBe(''));
+  });
+
+  it('fullscreens the picture on a double-click instead of resetting the zoom', async () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { configurable: true, value: request });
+    try {
+      stream.state = 'connected';
+      const { container } = renderRoute('/monitors/1');
+      await findWatch('Front Door');
+      await settleAutoStart();
+      fireEvent.doubleClick(container.querySelector('video')!.parentElement!);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request.mock.contexts[0]).toBe(screen.getByTestId('watch-stage'));
+    } finally {
+      delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
+    }
+  });
+
+  it('pauses the picture in place and plays it again without a new session', async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    stream.state = 'connected';
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(pause).toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Play' }));
+    expect(streamCalls).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    pause.mockRestore();
+  });
+
+  it('asks whether anyone is watching after ZM_WEB_VIEWING_TIMEOUT and resumes on the answer', async () => {
+    server.use(configListHandler({ ZM_WEB_VIEWING_TIMEOUT: '1' }));
+    stream.state = 'connected';
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 4_000 });
+    expect(streamCalls).toContain('webrtc:stop');
+    await user.click(within(dialog).getByRole('button', { name: 'Continue watching' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(streamCalls).toContain('webrtc:start');
+  });
+});
+
