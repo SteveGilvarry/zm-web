@@ -11,13 +11,18 @@ import { SEED } from './seed/seed-data';
 
 const UI = {
   modern: {
-    // A segmented control, not a select.
+    // A segmented threshold control: "error" means that severity or worse,
+    // which the backend spells `min_level` by name.
     pickError: (p: Page) =>
       p.getByRole('group', { name: /minimum level/i }).getByRole('button', { name: /^error$/i }).click(),
+    errorRequest: (q: URLSearchParams) => q.get('min_level') === 'error',
     component: (p: Page) => p.getByLabel('Component filter').first(),
   },
   classic: {
-    pickError: (p: Page) => p.getByLabel(/^level$/i).selectOption('error'),
+    // Legacy's exact-level multi-select: ERR, FAT and PNC picked by hand,
+    // sent as zm-api's `level` list on the inverted scale.
+    pickError: (p: Page) => p.getByLabel(/^level$/i).selectOption(['ERR', 'FAT', 'PNC']),
+    errorRequest: (q: URLSearchParams) => q.get('level') === '-2,-3,-4',
     component: (p: Page) => p.getByLabel(/^component$/i).first(),
   },
 } satisfies Record<Skin, unknown>;
@@ -59,19 +64,16 @@ test.describe('Logs', () => {
       await expect(page.getByRole('button', { name: /download csv/i })).toBeVisible();
     });
 
-    test(`${skin}: the level filter asks for that severity or worse @route:logs`, async ({
+    test(`${skin}: the level filter asks for errors and worse @route:logs`, async ({
       loggedInPage: page,
     }) => {
       await gotoSkin(page, '/logs', skin);
       await expect(page.locator('tbody tr').first()).toBeVisible();
 
-      const pending = logsRequest(page, (q) => q.get('min_level') === 'error');
+      const pending = logsRequest(page, UI[skin].errorRequest);
       await UI[skin].pickError(page);
       const resp = await pending;
 
-      // Legacy's Level dropdown always meant "this severity or worse", which
-      // the backend spells `min_level` by name — not the inverted number.
-      expect(new URL(resp.url()).searchParams.get('min_level')).toBe('error');
       // The seed writes 20 ERR + 10 FAT + 10 PNC rows.
       expect((await resp.json()).total).toBe(
         SEED.logs.byCode.ERR + SEED.logs.byCode.FAT + SEED.logs.byCode.PNC,
