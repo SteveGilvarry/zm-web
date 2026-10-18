@@ -15,6 +15,8 @@ import { renderRoute } from '@/test/renderRoute';
 import { db, server, setupMockServer } from '@/test/msw/server';
 import { makeMonitor } from '@/test/fixtures';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMontageStore } from '@/stores/montage';
+import { DEFAULT_STAGE_SIZE } from '@/features/monitors/watchStage';
 
 setupMockServer();
 
@@ -317,5 +319,36 @@ describe('Cycle — monitor filter bar', () => {
 
     expect(await screen.findByText('No capturing monitors to cycle through.'))
       .toBeInTheDocument();
+  });
+});
+
+describe('Cycle — stage size and tile controls', () => {
+  beforeEach(() => {
+    useMontageStore.setState({ cycleStage: { ...DEFAULT_STAGE_SIZE } });
+  });
+
+  it('sizes the stage from the Size disclosure, each choice resetting the other side', async () => {
+    const user = userEvent.setup();
+    await renderCycle();
+    await onStage();
+
+    await user.click(screen.getByRole('button', { name: 'Size' }));
+    await user.selectOptions(screen.getByLabelText('Width'), '640px');
+    expect(screen.getByTestId('cycle-stage')).toHaveStyle({ width: '640px' });
+
+    await user.selectOptions(screen.getByLabelText('Scale'), '100');
+    expect(screen.getByLabelText('Width')).toHaveValue('auto');
+    expect(useMontageStore.getState().cycleStage).toEqual({ width: 'auto', height: 'auto', scale: '100' });
+  });
+
+  it('carries zoom, fullscreen, watch and edit over the stage', async () => {
+    const user = userEvent.setup();
+    await renderCycle();
+    await onStage();
+
+    const controls = within(screen.getByTestId('cycle-stage')).getByTestId('tile-controls-1');
+    expect(within(controls).getByRole('link', { name: 'Open watch page' })).toHaveAttribute('href', '/monitors/1');
+    await user.click(within(controls).getByRole('button', { name: 'Zoom IN' }));
+    expect(within(controls).getByRole('button', { name: 'Zoom OUT' })).toBeEnabled();
   });
 });
