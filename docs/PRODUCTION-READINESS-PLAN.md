@@ -470,7 +470,7 @@ Six read-only audits (console, events + filters, event view, watch, montage/cycl
 | Options + Log + admin | 101 | 16 | 62 | 85 |
 | **All areas, row-weighted** | **671** | **61** | **66** | **74** |
 
-Nothing was browser-verified. The Vite proxy cannot reach the box from the tool sandbox (only curl can), so every row is `verified: code` against the 1.39.41 source and the captured HTML. The rows each report asks to check first in a browser are listed at its end.
+Nothing was browser-verified. The Vite proxy cannot reach the box from the tool sandbox (only curl can), so every row is `verified: code` against the 1.39.41 source and the captured HTML. The rows each report asks to check first in a browser are listed at its end. **Browser check the same evening** (`browser-check.md` in the review directory): the review-timeline offset, the inert modern column chooser and the dropped Watch controls are confirmed in the running app; Montage Save duplication, the report interval unit and the ungated event commands are confirmed in code. Montage Review opens empty against the box because `/events` with both `start_time` and `end_time` returns nothing (zm-api#173); that is the backend, not the page.
 
 Ranked across areas, frontend-possible first:
 
