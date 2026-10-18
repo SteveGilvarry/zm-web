@@ -105,7 +105,7 @@ describe('ZoneEditor — motion settings', () => {
     await user.clear(minBlobs);
     await user.type(minBlobs, '3');
     // Clearing a box clears the column rather than keeping the old number.
-    await user.clear(screen.getByLabelText('Min/Max Blob Area (max)'));
+    await user.clear(screen.getByLabelText('Min/Max Blob Area (max) (px)'));
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -127,11 +127,12 @@ describe('ZoneEditor — motion settings', () => {
     await openZone(user);
 
     await user.selectOptions(screen.getByLabelText('Check Method'), 'AlarmedPixels');
-    expect(screen.getByLabelText('Filter Width/Height (min)')).toBeDisabled();
-    expect(screen.getByLabelText('Min/Max Filtered Area (min)')).toBeDisabled();
+    expect(screen.getByLabelText('Filter width')).toBeDisabled();
+    expect(screen.getByLabelText('Min/Max Filtered Area (min) (%)')).toBeDisabled();
+    expect(screen.getByLabelText('Min/Max Filtered Area (min) (px)')).toBeDisabled();
     expect(screen.getByLabelText('Min/Max Blobs (min)')).toBeDisabled();
     // The alarm rows stay on whatever the method is.
-    expect(screen.getByLabelText('Min/Max Alarmed Area (min)')).toBeEnabled();
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (px)')).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: /save/i }));
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -147,9 +148,9 @@ describe('ZoneEditor — motion settings', () => {
     await openZone(user);
 
     await user.selectOptions(screen.getByLabelText('Check Method'), 'FilteredPixels');
-    expect(screen.getByLabelText('Filter Width/Height (min)')).toBeEnabled();
-    expect(screen.getByLabelText('Min/Max Filtered Area (max)')).toBeEnabled();
-    expect(screen.getByLabelText('Min/Max Blob Area (min)')).toBeDisabled();
+    expect(screen.getByLabelText('Filter width')).toBeEnabled();
+    expect(screen.getByLabelText('Min/Max Filtered Area (max) (px)')).toBeEnabled();
+    expect(screen.getByLabelText('Min/Max Blob Area (min) (%)')).toBeDisabled();
   });
 
   it('turns every setting off for an Inactive zone', async () => {
@@ -181,15 +182,130 @@ describe('ZoneEditor — motion settings', () => {
     expect(screen.getByLabelText('Alarm Colour')).toBeDisabled();
   });
 
-  it('labels the area thresholds in the zone\'s own units', async () => {
+  it('mirrors each area threshold as a share of the zone and as pixels', async () => {
     const user = userEvent.setup();
-    stub({ ...BLOBS_ZONE, units: 'Percent' });
+    stub();
     await openZone(user);
 
-    // A Percent zone caps its area thresholds at 100.
-    expect(screen.getByLabelText('Min/Max Alarmed Area (min)')).toHaveAttribute('max', '100');
+    // The polygon is 400×300 = 120,000 px; 100 px of it is 0.08%.
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (px)')).toHaveValue(100);
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (%)')).toHaveValue(0.08);
+    // The % box is capped at 100, the px box at the zone's own area.
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (%)')).toHaveAttribute('max', '100');
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (px)')).toHaveAttribute('max', '120000');
     // A pixel-difference threshold is not an area, so it keeps its 0-255 range.
     expect(screen.getByLabelText('Min/Max Pixel Threshold (min)')).toHaveAttribute('max', '255');
+
+    // Typing a percentage moves the pixels, and the % box keeps what was typed.
+    const pct = screen.getByLabelText('Min/Max Alarmed Area (max) (%)');
+    await user.clear(pct);
+    await user.type(pct, '12.5');
+    expect(pct).toHaveValue(12.5);
+    expect(screen.getByLabelText('Min/Max Alarmed Area (max) (px)')).toHaveValue(15000);
+
+    // Typing pixels moves the percentage, clamped to the zone.
+    const px = screen.getByLabelText('Min/Max Blob Area (max) (px)');
+    await user.clear(px);
+    await user.type(px, '999999');
+    expect(px).toHaveValue(120000);
+    expect(screen.getByLabelText('Min/Max Blob Area (max) (%)')).toHaveValue(100);
+  });
+
+  it('shows the alarm colour as a picker and three 0–255 boxes that drive each other', async () => {
+    const user = userEvent.setup();
+    stub();
+    const sent = captureSave();
+    await openZone(user);
+
+    expect(screen.getByLabelText('Red')).toHaveValue(255);
+    expect(screen.getByLabelText('Green')).toHaveValue(0);
+    expect(screen.getByLabelText('Blue')).toHaveValue(0);
+
+    const green = screen.getByLabelText('Green');
+    await user.clear(green);
+    await user.type(green, '300');
+    // Clamped to a byte as you type, like legacy's limitRangeToUnsignedByte.
+    expect(green).toHaveValue(255);
+    expect(screen.getByLabelText('Alarm Colour')).toHaveValue('#ffff00');
+
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0].body).toMatchObject({ alarm_rgb: 0xffff00 });
+  });
+
+  it('refuses a colour with an empty channel', async () => {
+    const user = userEvent.setup();
+    stub();
+    const sent = captureSave();
+    await openZone(user);
+    await user.clear(screen.getByLabelText('Blue'));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    expect(screen.getByRole('alert', { name: 'Cannot save the zone' }))
+      .toHaveTextContent('You must set an alarm RGB colour');
+    expect(sent).toHaveLength(0);
+  });
+
+  it('refuses a minimum that is not below its maximum, and says which', async () => {
+    const user = userEvent.setup();
+    stub();
+    const sent = captureSave();
+    await openZone(user);
+    const maxBlobs = screen.getByLabelText('Min/Max Blobs (max)');
+    await user.clear(maxBlobs);
+    await user.type(maxBlobs, '1');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    expect(screen.getByRole('alert', { name: 'Cannot save the zone' }))
+      .toHaveTextContent('Minimum blobs should be less than maximum');
+    expect(sent).toHaveLength(0);
+
+    // Fixing it and saving again goes through.
+    await user.clear(maxBlobs);
+    await user.type(maxBlobs, '5');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+  });
+
+  it('keeps the filter size odd and 3–15 once the box is left', async () => {
+    const user = userEvent.setup();
+    stub();
+    await openZone(user);
+    const fx = screen.getByLabelText('Filter width');
+    await user.clear(fx);
+    await user.type(fx, '8');
+    expect(fx).toHaveValue(8);
+    await user.tab();
+    expect(fx).toHaveValue(7);
+  });
+
+  it('enables Reset only after a change, and Reset puts the zone back as it was opened', async () => {
+    const user = userEvent.setup();
+    stub();
+    await openZone(user);
+    const reset = screen.getByRole('button', { name: 'Reset' });
+    expect(reset).toBeDisabled();
+
+    await user.selectOptions(screen.getByLabelText('Check Method'), 'AlarmedPixels');
+    const name = screen.getByLabelText('Name');
+    await user.type(name, ' 2');
+    await user.clear(screen.getByLabelText('Point 1 X'));
+    await user.type(screen.getByLabelText('Point 1 X'), '50');
+    expect(reset).toBeEnabled();
+
+    await user.click(reset);
+    expect(screen.getByLabelText('Check Method')).toHaveValue('Blobs');
+    expect(screen.getByLabelText('Name')).toHaveValue('Driveway');
+    expect(screen.getByLabelText('Point 1 X')).toHaveValue(100);
+    expect(reset).toBeDisabled();
+  });
+
+  it('does not count retyping the same number as a change', async () => {
+    const user = userEvent.setup();
+    stub();
+    await openZone(user);
+    const box = screen.getByLabelText('Min/Max Pixel Threshold (min)');
+    await user.clear(box);
+    await user.type(box, '25');
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
   });
 
   it('creates a zone with the settings the form shows', async () => {
@@ -205,15 +321,22 @@ describe('ZoneEditor — motion settings', () => {
     expect(screen.getByLabelText('Check Method')).toHaveValue('Blobs');
     expect(screen.getByLabelText('Alarm Colour')).toHaveValue('#ff0000');
     await user.type(screen.getByLabelText('Min/Max Pixel Threshold (min)'), '30');
+    await user.type(screen.getByLabelText('Filter width'), '3');
+    await user.type(screen.getByLabelText('Filter height'), '3');
+    await user.type(screen.getByLabelText('Min/Max Alarmed Area (min) (px)'), '400');
+    await user.type(screen.getByLabelText('Min/Max Filtered Area (min) (px)'), '300');
+    await user.type(screen.getByLabelText('Min/Max Blob Area (min) (px)'), '200');
+    await user.type(screen.getByLabelText('Min/Max Blobs (min)'), '1');
     await user.click(screen.getByRole('button', { name: /save/i }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].method).toBe('POST');
     expect(sent[0].body).toMatchObject({
-      type: 'Active', units: 'Pixels', num_coords: 4,
+      type: 'Active', units: 'Percent', num_coords: 4,
       check_method: 'Blobs', alarm_rgb: 16711680, min_pixel_threshold: 30,
+      min_alarm_pixels: 400, min_blobs: 1,
       // Untouched boxes clear their columns, which is a new row's default anyway.
-      max_pixel_threshold: null, min_blobs: null,
+      max_pixel_threshold: null, max_blobs: null,
     });
   });
 });

@@ -232,6 +232,8 @@ export interface Monitor {
   stream_channel?: string;
   /** 0 or 1 — serve this monitor through go2rtc. */
   go2rtc_enabled?: number;
+  /** Legacy's preferred live player (`''` = Auto, `zms`, `go2rtc_webrtc`, `janus`…). Response-only. */
+  default_player?: string | null;
   /** 0–100, how strongly the analysis image blends over the frame. */
   analysis_image_opacity?: number;
   /** Object-detection mode. */

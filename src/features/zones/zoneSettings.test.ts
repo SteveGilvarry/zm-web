@@ -97,10 +97,11 @@ describe('zoneSettingRows', () => {
     expect(r.extend_alarm_frames).toBe('3');
   });
 
-  it('suffixes the area thresholds with % for a Percent zone', () => {
-    // Live values from monitor 1: Percent units, fractional thresholds.
+  it('suffixes the area thresholds with % for a zone stored in percent coords', () => {
+    // What legacy 1.39.41's own editor saves: percent coords, percent-of-zone thresholds.
     const r = rows(makeZone({
       units: 'Percent',
+      coords: '0.00,0.00 100.00,0.00 100.00,100.00 0.00,100.00',
       min_alarm_pixels: 0.05, max_alarm_pixels: 75.06,
       min_filter_pixels: 0.05, max_filter_pixels: 75.06,
       min_blob_pixels: 0.05, max_blob_pixels: null,
@@ -117,6 +118,17 @@ describe('zoneSettingRows', () => {
       units: 'Pixels', min_alarm_pixels: 3456, max_alarm_pixels: 691200,
     }));
     expect(r.alarm_pixels).toBe('3,456 / 691,200');
+  });
+
+  it('reads an integer-coord zone\'s thresholds as pixels even when Units says Percent', () => {
+    // Monitor 1 on the dev box: Units=Percent, pixel coords, 0.05 — which the
+    // daemon truncates to 0 pixels (zm_zone.cpp:1070-1076). Printing "0.05%"
+    // would claim a threshold that is not there.
+    const r = rows(makeZone({
+      units: 'Percent', coords: '0,0 1919,0 1919,1079 0,1079',
+      min_alarm_pixels: 0.05, max_alarm_pixels: 75.06,
+    }));
+    expect(r.alarm_pixels).toBe('0.05 / 75.06');
   });
 
   it('prints the backend\'s stored area', () => {
