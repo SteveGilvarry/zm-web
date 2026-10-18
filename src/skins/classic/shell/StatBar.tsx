@@ -13,6 +13,7 @@ import {
   DB_THRESHOLDS, RAM_THRESHOLDS, STAT_TONE_CLASS, STORAGE_THRESHOLDS, statTone,
 } from './statTone';
 import { versionState } from './versionState';
+import { ClassicVersionReminder } from './VersionReminder';
 
 /**
  * Classic sub-header stat strip (legacy navbar-two): Load / Cpu / DB /
@@ -140,13 +141,22 @@ export function ClassicStatBar() {
           {t('Swap')}: {swapUsedPct}%
         </span>
       )}
-      <span
-        className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
-        title={versionTitle}
-        data-testid="stat-version"
-      >
-        {version?.version ? `v${version.version}` : ''}
-      </span>
+      {ver.status === 'update-available' && can('system', 'Edit') && version?.version ? (
+        <ClassicVersionReminder
+          version={version.version}
+          lastVersion={configs?.ZM_DYN_LAST_VERSION ?? ''}
+          title={versionTitle}
+          className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
+        />
+      ) : (
+        <span
+          className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
+          title={versionTitle}
+          data-testid="stat-version"
+        >
+          {version?.version ? `v${version.version}` : ''}
+        </span>
+      )}
     </div>
   );
 }
