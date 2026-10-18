@@ -178,6 +178,34 @@ describe('ClassicReportsListPage — extra paths', () => {
     expect(within(row).queryByText('—')).toBeNull();
   });
 
+  it('searches by name or id and pages ten rows at a time, as bootstrap-table does', async () => {
+    const many = Array.from({ length: 23 }, (_, i) => ({
+      id: i + 1, name: `Report ${String(i + 1).padStart(2, '0')}`, filter_id: null,
+      start_date_time: null, end_date_time: null, interval: 86400,
+    }));
+    stub(many);
+    const user = userEvent.setup();
+    await mount();
+    await screen.findByText('Report 01');
+
+    expect(screen.getByText('Showing 1 to 10 of 23 rows')).toBeInTheDocument();
+    expect(screen.queryByText('Report 11')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Go to page 3' }));
+    expect(screen.getByText('Report 21')).toBeInTheDocument();
+    expect(screen.getByText('Showing 21 to 23 of 23 rows')).toBeInTheDocument();
+
+    await user.selectOptions(screen.getByLabelText('Rows per page'), 'All');
+    expect(screen.getByText('Report 01')).toBeInTheDocument();
+    expect(screen.getByText('Report 23')).toBeInTheDocument();
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'report 1');
+    expect(screen.getByText('Showing 1 to 10 of 10 rows')).toBeInTheDocument();
+    await user.clear(screen.getByRole('searchbox', { name: 'Search' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), '07');
+    expect(screen.getByTestId('report-row-7')).toBeInTheDocument();
+    expect(screen.queryByTestId('report-row-17')).toBeNull();
+  });
+
   it('shows the empty message when there are no saved reports', async () => {
     stub([]);
     await mount();

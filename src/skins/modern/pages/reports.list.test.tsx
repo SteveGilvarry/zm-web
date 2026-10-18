@@ -288,6 +288,24 @@ describe('ReportsListPage — modern skin', () => {
     expect(await screen.findByText(/report is referenced/i)).toBeVisible();
   });
 
+  it('narrows the table with the search box', async () => {
+    db.reports = [
+      makeReport({ id: 1, name: 'Nightly' }),
+      makeReport({ id: 2, name: 'Weekend sweep' }),
+    ];
+    const user = userEvent.setup();
+    renderRoute('/reports');
+    await reportsTable();
+
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'week');
+    expect(screen.queryByRole('link', { name: 'Nightly' })).toBeNull();
+    expect(screen.getByRole('link', { name: 'Weekend sweep' })).toBeVisible();
+
+    await user.clear(screen.getByRole('searchbox', { name: 'Search' }));
+    await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'nothing');
+    expect(await screen.findByText('No reports match your search')).toBeVisible();
+  });
+
   it('deletes the marked reports in one go after confirming', async () => {
     db.reports = [
       makeReport({ id: 1, name: 'Nightly' }),

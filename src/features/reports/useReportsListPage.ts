@@ -27,7 +27,23 @@ export interface ReportsListPageState {
   /** Delete every marked report, then clear the marks. */
   removeSelected: () => void;
   isDeleting: boolean;
+  /** The table's search box (legacy bootstrap-table `data-search`): Id or Name. */
+  search: string;
+  setSearch: (v: string) => void;
+  /** Reports the search leaves, in list order. */
+  filteredReports: Report[];
+  /** The page of `filteredReports` on screen, for a paged table. */
+  pageRows: Report[];
+  page: number;
+  setPage: (p: number) => void;
+  pageSize: number;
+  setPageSize: (n: number) => void;
+  totalPages: number;
 }
+
+/** Legacy `reports.php` `data-page-list`; {@link REPORTS_ALL_PAGE_SIZE} is "All". */
+export const REPORTS_ALL_PAGE_SIZE = 1_000_000;
+export const REPORTS_PAGE_SIZES = [10, 25, 50, 100, 200, REPORTS_ALL_PAGE_SIZE] as const;
 
 /** Saved-report table + create toggle for the Reports list page. */
 export function useReportsListPage(): ReportsListPageState {
@@ -50,6 +66,17 @@ export function useReportsListPage(): ReportsListPageState {
   const filterLookup = new Map(filters.map((f) => [f.id, f.name]));
 
   const [showCreate, setShowCreate] = useState(false);
+
+  const [search, setSearchState] = useState('');
+  const [page, setPageState] = useState(1);
+  const [pageSize, setPageSizeState] = useState(10);
+  const q = search.trim().toLowerCase();
+  const filteredReports = q
+    ? reports.filter((r) => String(r.id) === q || (r.name ?? '').toLowerCase().includes(q))
+    : reports;
+  const totalPages = Math.max(1, Math.ceil(filteredReports.length / pageSize));
+  const currentPage = Math.min(page, totalPages);
+  const pageRows = filteredReports.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
   const [selected, setSelected] = useState<Set<number>>(() => new Set());
   // Marks on rows that are gone (deleted elsewhere, refetched) do not count.
@@ -103,6 +130,21 @@ export function useReportsListPage(): ReportsListPageState {
       if (selectedIds.size > 0) deleteMutation.mutate([...selectedIds]);
     },
     isDeleting: deleteMutation.isPending,
+    search,
+    setSearch: (v: string) => {
+      setSearchState(v);
+      setPageState(1);
+    },
+    filteredReports,
+    pageRows,
+    page: currentPage,
+    setPage: (n: number) => setPageState(Math.max(1, n)),
+    pageSize,
+    setPageSize: (n: number) => {
+      setPageSizeState(n);
+      setPageState(1);
+    },
+    totalPages,
   };
 }
 

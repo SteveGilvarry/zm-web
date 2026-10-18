@@ -44,6 +44,14 @@ export default function ReportsListPage() {
       <main className="flex-1 min-h-0 flex flex-col">
         <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
           <span className="text-sm text-fg-muted">{t('Saved reports')}</span>
+          <input
+            type="search"
+            value={s.search}
+            onChange={(e) => s.setSearch(e.target.value)}
+            placeholder={t('Search')}
+            aria-label={t('Search')}
+            className={clsx(field, 'ms-3 w-48')}
+          />
           <span className="ms-auto" />
           <button
             onClick={s.refetch}
@@ -91,8 +99,8 @@ export default function ReportsListPage() {
             isError={s.isError}
             error={s.error}
             onRetry={s.refetch}
-            empty={reports.length === 0}
-            emptyMessage={t('No reports yet. Create one to start.')}
+            empty={s.filteredReports.length === 0}
+            emptyMessage={s.search ? t('No reports match your search') : t('No reports yet. Create one to start.')}
           >
             <div className="overflow-x-auto rounded border border-border-subtle bg-surface">
               <table className="w-full text-sm">
@@ -115,7 +123,7 @@ export default function ReportsListPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {reports.map((r) => (
+                  {s.filteredReports.map((r) => (
                     <tr key={r.id} className="border-b border-border-subtle last:border-0 hover:bg-surface-2 transition-colors">
                       <td className="px-3 py-1">
                         <input

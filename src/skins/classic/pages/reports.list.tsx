@@ -8,12 +8,14 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
+  REPORTS_ALL_PAGE_SIZE,
+  REPORTS_PAGE_SIZES,
   useCreateReportForm,
   useReportsListPage,
 } from '@/features/reports/useReportsListPage';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import {
-  ClassicButton, ClassicPageTitle, ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead, ClassicToolbar,
+  ClassicButton, ClassicClearableInput, ClassicPageTitle, ClassicPager, ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead, ClassicToolbar,
 } from '@/skins/classic/components/events/primitives';
 import { classicInput, classicLink, classicSelect } from '@/skins/classic/components/events/styles';
 
@@ -41,7 +43,18 @@ export default function ClassicReportsListPage() {
         <div className="max-w-screen-2xl mx-auto space-y-3">
           <ClassicPageTitle>{t('Reports')}</ClassicPageTitle>
 
-          <ClassicToolbar>
+          <ClassicToolbar
+            end={(
+              <ClassicClearableInput
+                type="search"
+                value={s.search}
+                onChange={s.setSearch}
+                placeholder={t('Search')}
+                ariaLabel={t('Search')}
+                className="w-56"
+              />
+            )}
+          >
             <ClassicButton onClick={() => window.history.back()} aria-label={t('Back')} title={t('Back')}>←</ClassicButton>
             <ClassicButton onClick={s.refetch} aria-label={t('Refresh')} title={t('Refresh')}>⟳</ClassicButton>
             <RequirePerm feature="events" level="Edit">
@@ -75,7 +88,7 @@ export default function ClassicReportsListPage() {
             isError={s.isError}
             error={s.error}
             onRetry={s.refetch}
-            empty={reports.length === 0}
+            empty={s.filteredReports.length === 0}
             emptyMessage={t('No matching records found')}
           >
             <ClassicTable testId="reports-table">
@@ -97,7 +110,7 @@ export default function ClassicReportsListPage() {
                 </tr>
               </ClassicThead>
               <ClassicTbody>
-                {reports.map((r) => (
+                {s.pageRows.map((r) => (
                   <tr key={r.id} data-testid={`report-row-${r.id}`}>
                     <ClassicTd center>
                       <input
@@ -128,6 +141,17 @@ export default function ClassicReportsListPage() {
                 ))}
               </ClassicTbody>
             </ClassicTable>
+            <ClassicPager
+              page={s.page}
+              pageSize={s.pageSize === REPORTS_ALL_PAGE_SIZE ? Math.max(s.filteredReports.length, 1) : s.pageSize}
+              total={s.filteredReports.length}
+              totalPages={s.totalPages}
+              pageSizeOptions={REPORTS_PAGE_SIZES}
+              pageSizeLabel={(n) => (n === REPORTS_ALL_PAGE_SIZE ? t('All') : String(n))}
+              onPage={s.setPage}
+              onPageSize={s.setPageSize}
+              shown={s.pageRows.length}
+            />
           </QueryState>
         </div>
       </main>
