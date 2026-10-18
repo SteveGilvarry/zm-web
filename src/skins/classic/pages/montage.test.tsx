@@ -67,7 +67,7 @@ afterEach(() => {
   useMonitorFilterStore.getState().reset();
   useMontageStore.setState({
     protocol: 'webrtc', statusPosition: 'inside', showZones: false,
-    montageRatio: 'auto', montageRatioById: {},
+    montageRatio: 'auto', montageRatioById: {}, classicLayoutId: 'preset:auto',
   });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -218,16 +218,30 @@ describe('ClassicMontagePage', () => {
   });
 
   it('lets a system-View user save their own layout but not delete one', async () => {
+    const user = userEvent.setup();
     signIn(perms({ system: 'View' }));
     stub();
+    const deleted: string[] = [];
+    server.use(http.delete('/api/v3/montage_layouts/:id', ({ params }) => {
+      deleted.push(String(params.id));
+      return new HttpResponse(null, { status: 204 });
+    }));
     await mount();
 
     await screen.findByTestId('montage-classic-grid');
     // Legacy `save_layout` is open to any user; only `delete_layout` calls
-    // `enoperm()`.
+    // `enoperm()`. The button is still there, and answers with that modal.
     expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete layout' })).toBeNull();
-    expect(screen.getByLabelText('Layout')).toBeInTheDocument();
+    const select = screen.getByRole('combobox', { name: 'Layout' });
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Night wall' })).toBeInTheDocument());
+    await user.selectOptions(select, 'saved:12');
+    await user.click(screen.getByRole('button', { name: 'Delete layout' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'ZoneMinder Error' });
+    expect(dialog).toHaveTextContent('You do not have permissions to access this resource.');
+    await user.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(deleted).toEqual([]);
   });
 
   it('lists presets then saved layouts and re-columns the wall on choice', async () => {
@@ -293,12 +307,12 @@ describe('ClassicMontagePage', () => {
 
     await screen.findByTestId('montage-classic-grid');
     await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
-    // Legacy shows an inline Name field, not a prompt(); it opens seeded
-    // with the current layout's name.
+    // Legacy shows an inline Name field, not a prompt(); it opens empty.
     const nameField = await screen.findByRole('textbox', { name: 'Layout name' });
-    await user.clear(nameField);
+    expect(nameField).toHaveValue('');
+    expect(nameField).toHaveAttribute('placeholder', 'Enter new name for layout if desired');
     await user.type(nameField, 'Morning wall');
-    await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(body).toBeDefined());
     expect(body!.name).toBe('Morning wall');
@@ -307,6 +321,52 @@ describe('ClassicMontagePage', () => {
 
     // Edit mode closes again once the layout is stored.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument());
+  });
+
+  it('Save with the Name empty overwrites the selected layout instead of adding one', async () => {
+    const user = userEvent.setup();
+    stub();
+    const posts: unknown[] = [];
+    const patches: Array<{ id: string; body: Record<string, unknown> }> = [];
+    server.use(
+      http.post('/api/v3/montage_layouts', async ({ request }) => {
+        posts.push(await request.json());
+        return HttpResponse.json({ id: 44, name: 'x', user_id: 7, positions: SAVED_POSITIONS });
+      }),
+      http.patch('/api/v3/montage_layouts/:id', async ({ params, request }) => {
+        patches.push({ id: String(params.id), body: (await request.json()) as Record<string, unknown> });
+        return HttpResponse.json({ id: 12, name: 'Night wall', user_id: 7, positions: SAVED_POSITIONS });
+      }),
+    );
+    await mount();
+
+    const select = await screen.findByRole('combobox', { name: 'Layout' });
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Night wall' })).toBeInTheDocument());
+    await user.selectOptions(select, 'saved:12');
+    await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
+    // The layout is this user's: no "you may not edit" notice.
+    expect(screen.queryByRole('alert')).toBeNull();
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0].id).toBe('12');
+    expect(patches[0].body).not.toHaveProperty('name');
+    expect(JSON.parse(String(patches[0].body.positions))).toHaveProperty('gridStack');
+    expect(posts).toEqual([]);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument());
+  });
+
+  it('Edit Layout on a preset says it cannot be overwritten, and an empty Save is refused', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'You may not edit this layout, but you can create a new one from it. Please give it a name.');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/cannot edit the built in layouts/));
   });
 
   it('Edit Layout resizes a tile on the 48-column canvas and saves its gridStack', async () => {
@@ -334,7 +394,7 @@ describe('ClassicMontagePage', () => {
     await waitFor(() => expect(screen.getByTestId('montage-classic-cell-1')).toHaveStyle({ gridColumn: '1 / span 24' }));
 
     await user.type(await screen.findByRole('textbox', { name: 'Layout name' }), 'Wide left');
-    await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(body).toBeDefined());
     const positions = JSON.parse(String(body!.positions));
@@ -359,9 +419,9 @@ describe('ClassicMontagePage', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
     // Legacy `save_layout` refuses ZM_PRESET_LAYOUT_NAMES outright.
     await user.type(await screen.findByRole('textbox', { name: 'Layout name' }), '4 Wide');
-    await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/built in layouts/i);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/conflicts with the built in layouts/i));
     expect(posts).toEqual([]);
   });
 
@@ -380,7 +440,6 @@ describe('ClassicMontagePage', () => {
   it('Delete layout is disabled on a preset and DELETEs a saved one after confirm', async () => {
     const user = userEvent.setup();
     stub();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const deleted: string[] = [];
     server.use(
       http.delete('/api/v3/montage_layouts/:id', ({ params }) => {
@@ -398,7 +457,13 @@ describe('ClassicMontagePage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Delete layout' })).toBeEnabled());
 
     await user.click(screen.getByRole('button', { name: 'Delete layout' }));
+    // Legacy's Bootstrap delconfirm modal, not window.confirm.
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Confirmation' });
+    expect(dialog).toHaveTextContent('Are you sure you wish to delete current layout?');
+    expect(deleted).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(deleted).toEqual(['12']));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('switches the player protocol into every cell', async () => {

@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { Maximize, Pencil, Save, Shapes, Trash2, X } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { Modal } from '@/components/common/Modal';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { MontageClassicGrid } from '@/features/montage/MontageClassicGrid';
@@ -89,19 +91,19 @@ export default function ClassicMontagePage() {
           {montage.editMode ? (
             <>
               <label className="flex flex-col items-center gap-0.5 text-sm">
-                <span className="font-semibold">{t('Name')}</span>
                 <input
                   type="text"
                   value={montage.saveName}
                   onChange={(e) => montage.setSaveName(e.target.value)}
-                  placeholder={t('Layout name')}
+                  placeholder={t('Enter new name for layout if desired')}
+                  autoComplete="off"
                   // The filter row has a `Name` field too; this one says
                   // which name it means.
                   aria-label={t('Layout name')}
-                  className={clsx(classicInputClass, 'w-44 text-zinc-900')}
+                  className={clsx(classicInputClass, 'w-64 text-zinc-900')}
                 />
               </label>
-              <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save Layout')}</ClassicButton>
+              <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save')}</ClassicButton>
               <ClassicButton size="sm" icon={<X size={13} />} onClick={montage.cancelEdit}>{t('Cancel')}</ClassicButton>
               {montage.saveError && (
                 <span role="alert" className="text-xs text-red-200">{montage.saveError}</span>
@@ -110,17 +112,17 @@ export default function ClassicMontagePage() {
           ) : (
             <ClassicButton tone="primary" size="sm" icon={<Pencil size={13} />} onClick={montage.beginEdit}>{t('Edit Layout')}</ClassicButton>
           )}
-          {montage.canDelete && (
-            <ClassicButton
-              tone="danger"
-              size="sm"
-              icon={<Trash2 size={13} />}
-              onClick={montage.remove}
-              disabled={!montage.isSavedLayout || montage.busy}
-              aria-label={t('Delete layout')}
-              title={t('Delete layout')}
-            />
-          )}
+          {/* Always rendered, disabled on a preset; without System Edit the
+              click answers with legacy's "no permission" modal. */}
+          <ClassicButton
+            tone="danger"
+            size="sm"
+            icon={<Trash2 size={13} />}
+            onClick={montage.remove}
+            disabled={!montage.isSavedLayout || montage.busy}
+            aria-label={t('Delete layout')}
+            title={t('Delete layout')}
+          />
           <ClassicIconButton onClick={() => toggleFullscreen(wallEl.current)} aria-label={t('Fullscreen')}>
             <Maximize size={14} aria-hidden />
           </ClassicIconButton>
@@ -167,6 +169,23 @@ export default function ClassicMontagePage() {
           </RequirePerm>
         </ClassicPage>
       </div>
+
+      {/* Legacy `delconfirm` modal with key ConfirmDeleteLayout. */}
+      <ConfirmDialog
+        isOpen={montage.deleteConfirmOpen}
+        onClose={montage.cancelDelete}
+        onConfirm={montage.confirmDelete}
+        title={t('Delete Confirmation')}
+        message={t('Are you sure you wish to delete current layout?')}
+        confirmText={t('Delete')}
+        isLoading={montage.busy}
+      />
+      {/* Legacy `enoperm()`. */}
+      <Modal isOpen={montage.noPermOpen} onClose={montage.closeNoPerm} title={t('ZoneMinder Error')}>
+        <p className="text-sm mb-1">{t('You do not have permissions to access this resource.')}</p>
+        <p className="text-sm mb-3">{t('Please contact your adminstrator for details.')}</p>
+        <ClassicButton onClick={montage.closeNoPerm}>{t('Close')}</ClassicButton>
+      </Modal>
     </AppShell>
   );
 }
