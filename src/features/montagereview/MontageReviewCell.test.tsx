@@ -304,6 +304,23 @@ describe('MontageReviewCell — click', () => {
     expect(navigate).toHaveBeenCalled();
   });
 
+  it('marks the zoom corners with + and -, and only when they zoom', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { unmount } = renderCell({ onZoom: vi.fn() });
+    const link = await screen.findByRole('link', { name: '#9' });
+    expect(screen.getByTestId('review-zoom-in-1')).toHaveTextContent('+');
+    expect(screen.getByTestId('review-zoom-out-1')).toHaveTextContent('-');
+    // The badges give the corners up and sit along the bottom.
+    expect(link.parentElement).toHaveClass('bottom-1.5');
+    expect(screen.getByText('Front Door').parentElement).toHaveClass('bottom-1.5');
+    unmount();
+
+    renderCell();
+    await screen.findByRole('link', { name: '#9' });
+    expect(screen.queryByTestId('review-zoom-in-1')).toBeNull();
+    expect(screen.getByText('Front Door').parentElement).toHaveClass('top-1.5');
+  });
+
   it('opens a new tab on Ctrl+click instead of navigating', async () => {
     stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
     const open = vi.spyOn(window, 'open').mockReturnValue(null);
