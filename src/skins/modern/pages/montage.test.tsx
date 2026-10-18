@@ -339,6 +339,19 @@ describe('MontagePage (modern) — toolbar', () => {
     await waitFor(() => expect(screen.queryByTestId('montage-stopped-1')).toBeNull());
   });
 
+  it('puts legacy\'s tile buttons (zoom, full screen, watch, edit) on each tile', async () => {
+    const user = userEvent.setup();
+    renderRoute('/montage');
+    await findWall();
+
+    const controls = await screen.findByTestId('tile-controls-1');
+    expect(within(controls).getByRole('link', { name: 'Open watch page' })).toHaveAttribute('href', '/monitors/1');
+    expect(within(controls).getByRole('button', { name: 'Open full screen' })).toBeInTheDocument();
+    expect(within(controls).getByRole('button', { name: 'Zoom OUT' })).toBeDisabled();
+    await user.click(within(controls).getByRole('button', { name: 'Zoom IN' }));
+    expect(within(controls).getByRole('button', { name: 'Zoom OUT' })).toBeEnabled();
+  });
+
   it('?header=0 drops the control line (legacy kiosk)', async () => {
     renderRoute('/montage?header=0');
     await findWall();

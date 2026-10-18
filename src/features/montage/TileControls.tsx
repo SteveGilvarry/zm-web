@@ -14,7 +14,7 @@ export interface TileControlsProps {
 }
 
 const btn =
-  'inline-flex items-center justify-center w-8 h-8 rounded-sm bg-black/60 text-white hover:bg-black/80 ' +
+  'pointer-events-auto inline-flex items-center justify-center w-8 h-8 rounded-sm bg-black/60 text-white hover:bg-black/80 ' +
   'disabled:opacity-40 disabled:cursor-not-allowed';
 
 /**
@@ -30,7 +30,7 @@ export function TileControls({ monitorId, targetRef, zoom }: TileControlsProps) 
   return (
     <div
       data-testid={`tile-controls-${monitorId}`}
-      className="absolute inset-x-0 top-0 z-20 flex justify-center gap-1 p-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+      className="pointer-events-none absolute inset-x-0 top-0 z-20 flex justify-center gap-1 p-1 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
     >
       <button type="button" className={btn} onClick={zoom.zoomIn} disabled={zoom.zoom >= TILE_ZOOM_MAX} aria-label={t('Zoom IN')} title={t('Zoom IN')}>
         <Plus size={16} aria-hidden />

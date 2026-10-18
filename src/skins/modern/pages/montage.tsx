@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
@@ -15,6 +15,8 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { Button } from '@/components/common/Button';
 import { Modal } from '@/components/common/Modal';
 import { useMontageIdle } from '@/features/montage/useMontageIdle';
+import { TileControls } from '@/features/montage/TileControls';
+import { useTileZoom } from '@/features/montage/tileZoom';
 import { WebsiteTile } from '@/features/montage/WebsiteTile';
 import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
 import { RequirePerm } from '@/features/auth/RequirePerm';
@@ -325,19 +327,19 @@ export default function MontagePage() {
                   // ends up portrait, fit otherwise.
                 />
               );
+              const framed = <TileFrame monitorId={m.id}>{cell}{zones}</TileFrame>;
               if (statusPosition === 'hover') {
                 return (
                   <>
-                    {cell}
-                    {zones}
+                    {framed}
                     <HoverCaption monitor={m} caption={captionFor(runtime)} />
                   </>
                 );
               }
-              if (statusPosition !== 'outside') return <>{cell}{zones}</>;
+              if (statusPosition !== 'outside') return framed;
               return (
                 <div className="absolute inset-0 flex flex-col">
-                  <div className="relative flex-1 min-h-0">{cell}{zones}</div>
+                  <div className="relative flex-1 min-h-0">{framed}</div>
                   <OutsideCaption monitor={m} runtime={runtime} caption={captionFor(runtime)} />
                 </div>
               );
@@ -365,6 +367,22 @@ export default function MontagePage() {
         </Modal>
       </main>
     </AppShell>
+  );
+}
+
+/**
+ * The picture of one tile with legacy's per-tile buttons over it: zoom in
+ * and out, full screen, watch page and (with Monitors Edit) the editor.
+ * A component of its own because the zoom is per tile state.
+ */
+function TileFrame({ monitorId, children }: { monitorId: number; children: ReactNode }) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const zoom = useTileZoom();
+  return (
+    <div ref={frameRef} className="group absolute inset-0 overflow-hidden">
+      <div className="absolute inset-0" style={zoom.style}>{children}</div>
+      <TileControls monitorId={monitorId} targetRef={frameRef} zoom={zoom} />
+    </div>
   );
 }
 
