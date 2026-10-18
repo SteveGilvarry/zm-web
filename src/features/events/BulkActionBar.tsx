@@ -162,11 +162,18 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
       )}
     >
       <div className="flex items-center gap-1">
-        <span className={clsx('px-2 text-xs tabular-nums', classic ? 'text-zinc-600' : 'font-mono text-fg-muted')}>
-          {t('{{count}} selected', { count: ids.length })}
-        </span>
-        {!classic && <div className="w-px h-5 bg-border-subtle mx-1" />}
+        {/* Legacy's #rightButtons carry no count and no clear (events.php:134-140). */}
+        {!classic && (
+          <>
+            <span className="px-2 text-xs tabular-nums font-mono text-fg-muted">
+              {t('{{count}} selected', { count: ids.length })}
+            </span>
+            <div className="w-px h-5 bg-border-subtle mx-1" />
+          </>
+        )}
 
+        {/* Legacy order: View, Archive, Unarchive, Edit, Export, Download,
+            Delete. Export waits on zm-api#30. */}
         <BulkBtn
           variant={variant}
           icon={<Eye size={12} />}
@@ -174,21 +181,7 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
           onClick={view}
           disabled={busy || ids.length === 0}
         />
-        <BulkBtn
-          variant={variant}
-          icon={<Download size={12} />}
-          label={t('Download')}
-          onClick={downloadAll}
-          disabled={busy || ids.length === 0}
-        />
         <RequirePerm feature="events" level="Edit">
-          <BulkBtn
-            variant={variant}
-            icon={<Pencil size={12} />}
-            label={t('Edit')}
-            onClick={() => setEditOpen(true)}
-            disabled={busy || ids.length === 0}
-          />
           <BulkBtn
             variant={variant}
             icon={<Archive size={12} />}
@@ -206,6 +199,23 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
           />
           <BulkBtn
             variant={variant}
+            icon={<Pencil size={12} />}
+            label={t('Edit')}
+            onClick={() => setEditOpen(true)}
+            disabled={busy || ids.length === 0}
+          />
+        </RequirePerm>
+        <BulkBtn
+          variant={variant}
+          icon={<Download size={12} />}
+          label={t('Download')}
+          title={t('Download Video')}
+          onClick={downloadAll}
+          disabled={busy || ids.length === 0}
+        />
+        <RequirePerm feature="events" level="Edit">
+          <BulkBtn
+            variant={variant}
             icon={<Trash2 size={12} />}
             label={t('Delete')}
             tone="danger"
@@ -214,18 +224,19 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
           />
         </RequirePerm>
 
-        {!classic && <div className="w-px h-5 bg-border-subtle mx-1" />}
-        <button
-          onClick={() => { dismiss(); onClear(); }}
-          disabled={busy || (classic && ids.length === 0 && !progress.action)}
-          aria-label={t('Clear selection')}
-          className={clsx(
-            'p-1.5 rounded transition-colors disabled:opacity-50',
-            classic ? 'text-zinc-500 hover:text-zinc-800' : 'text-fg-dim hover:text-fg hover:bg-surface-2',
-          )}
-        >
-          <X size={12} />
-        </button>
+        {!classic && (
+          <>
+            <div className="w-px h-5 bg-border-subtle mx-1" />
+            <button
+              onClick={() => { dismiss(); onClear(); }}
+              disabled={busy}
+              aria-label={t('Clear selection')}
+              className="p-1.5 rounded transition-colors disabled:opacity-50 text-fg-dim hover:text-fg hover:bg-surface-2"
+            >
+              <X size={12} />
+            </button>
+          </>
+        )}
       </div>
 
       {/* Progress while running; result line afterwards. */}
@@ -308,19 +319,23 @@ function BulkBtn({
     : (tone === 'danger'
       ? 'rounded border-danger/40 text-danger hover:bg-danger/10'
       : 'rounded border-border-subtle text-fg-muted hover:text-fg hover:border-border');
+  // Classic is icon-only with a tooltip, as legacy's buttons are.
+  const iconOnly = variant === 'classic';
   return (
     <button
       onClick={onClick}
       disabled={disabled}
-      title={title}
+      title={title ?? (iconOnly ? label : undefined)}
+      aria-label={iconOnly ? label : undefined}
       className={clsx(
-        'flex items-center gap-1.5 px-2 py-1 border text-xs font-medium transition-colors',
+        'flex items-center gap-1.5 border text-xs font-medium transition-colors',
+        iconOnly ? 'px-2.5 py-1.5' : 'px-2 py-1',
         cls,
         disabled && 'opacity-60 cursor-not-allowed',
       )}
     >
       {icon}
-      {label}
+      {!iconOnly && label}
     </button>
   );
 }

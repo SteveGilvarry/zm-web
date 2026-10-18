@@ -62,6 +62,20 @@ describe('BulkActionBar — visibility', () => {
       expect(screen.getByRole('button', { name })).toBeInTheDocument();
     }
   });
+
+  it('classic: icon-only buttons in legacy order, always there, disabled until a row is picked', () => {
+    renderWithProviders(
+      <BulkActionBar variant="classic" selectedIds={new Set()} onClear={() => {}} />,
+    );
+    const buttons = within(screen.getByRole('region', { name: 'Bulk event actions' })).getAllByRole('button');
+    expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(
+      ['View', 'Archive', 'Unarchive', 'Edit', 'Download', 'Delete'],
+    );
+    expect(buttons.every((b) => b.textContent === '')).toBe(true);
+    expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
+    expect(screen.getByRole('button', { name: 'Download' })).toHaveAttribute('title', 'Download Video');
+    expect(screen.queryByText(/selected/)).toBeNull();
+  });
 });
 
 describe('BulkActionBar — view', () => {
