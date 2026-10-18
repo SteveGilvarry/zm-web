@@ -105,7 +105,8 @@ describe('Settings → Options page', () => {
     expect(screen.getByText('Running')).toBeInTheDocument();
     // categories are humanised in the sidebar
     expect(screen.getByRole('button', { name: /System\s*1/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Web\s*2/ })).toBeInTheDocument();
+    // 1.39.41 calls the web category Display.
+    expect(screen.getByRole('button', { name: /Display\s*2/ })).toBeInTheDocument();
     // both configs listed under "All"
     expect(screen.getByText('ZM_OPT_USE_AUTH')).toBeInTheDocument();
     expect(screen.getByText('ZM_WEB_TITLE')).toBeInTheDocument();
@@ -190,7 +191,7 @@ describe('Settings → Options page', () => {
     expect(screen.queryByText('ZM_OPT_USE_AUTH')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /System\s*1/ }));
-    expect(screen.getByPlaceholderText('Search in system...')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Search in System...')).toHaveValue('');
     expect(screen.getByText('ZM_OPT_USE_AUTH')).toBeInTheDocument();
     expect(screen.queryByText('ZM_WEB_TITLE')).not.toBeInTheDocument();
   });

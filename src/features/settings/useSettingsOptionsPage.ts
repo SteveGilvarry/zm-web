@@ -48,8 +48,15 @@ export function formatBytes(bytes: number): string {
  * Configs are fetched once and filtered client-side. The selected category
  * lives in `?category=` so the classic rail (and bookmarks) can deep-link
  * straight to a tab, as legacy `?view=options&tab=web` did.
+ *
+ * Saving follows legacy's one form per tab: "Save" writes the edited rows
+ * of the tab on screen, and leaving a tab with unsaved rows asks first and
+ * then drops them.
+ *
+ * `defaultCategory` is the tab shown with no `?category=` (legacy opens on
+ * `system`); without it the page shows every category.
  */
-export function useSettingsOptionsPage() {
+export function useSettingsOptionsPage({ defaultCategory }: { defaultCategory?: string } = {}) {
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const queryClient = useQueryClient();
@@ -99,7 +106,12 @@ export function useSettingsOptionsPage() {
   });
   const { data: allConfigsData, isLoading: configsLoading } = configsQ;
 
-  const allConfigs = useMemo(() => allConfigsData?.items ?? [], [allConfigsData]);
+  // A `System` row (ZM_PATH_FFMPEG…) is the installer's: legacy draws it
+  // disabled (`options.php:272`), so it reads as read-only here too.
+  const allConfigs = useMemo(
+    () => (allConfigsData?.items ?? []).map((c) => (c.system === 1 && c.readonly !== 1 ? { ...c, readonly: 1 } : c)),
+    [allConfigsData],
+  );
 
   // Categories the rail shows, with counts; bandwidth/hidden/dynamic never,
   // x10 only while ZM_OPT_X10 is on.
@@ -119,7 +131,10 @@ export function useSettingsOptionsPage() {
 
   // Selected category comes from the URL; anything not currently visible
   // (a hidden category, a typo) reads as "All" without rewriting the URL.
-  const requestedCategory = typeof search.category === 'string' ? search.category : null;
+  const fallbackCategory = defaultCategory
+    ? categoryList.find((c) => c.name.toLowerCase() === defaultCategory.toLowerCase())?.name ?? null
+    : null;
+  const requestedCategory = typeof search.category === 'string' ? search.category : fallbackCategory;
   const selectedCategory =
     requestedCategory === DISPLAY_TAB || categoryList.some((c) => c.name === requestedCategory)
       ? requestedCategory
@@ -150,6 +165,11 @@ export function useSettingsOptionsPage() {
   );
 
   const selectCategory = (cat: string | null) => {
+    if (cat !== selectedCategory && pendingCount > 0) {
+      if (!window.confirm(t('Discard {{count}} unsaved change?', { count: pendingCount }))) return;
+      setDirty({});
+      setEditingConfig(null);
+    }
     void navigate({
       to: '/settings',
       search: (prev: Record<string, unknown>) => {
@@ -298,16 +318,43 @@ export function useSettingsOptionsPage() {
       return next;
     });
   };
+  // Only the tab on screen saves; with no tab selected ("All") every row does.
+  const inTab = (row: ZmConfig) => !selectedCategory || row.category === selectedCategory;
   const dirtyEntries = Object.entries(dirty).filter(([name, value]) => {
     const row = allConfigs.find((c) => c.name === name);
-    return row && row.value !== value;
+    return row && inTab(row) && row.value !== value;
   });
+  /** Pattern errors on drafted rows (in-place form); a Save waits for them. */
+  const draftErrors: Record<string, string> = {};
+  for (const [name, value] of dirtyEntries) {
+    const row = allConfigs.find((c) => c.name === name);
+    const err = row ? configPatternError(row, value) : null;
+    if (err) draftErrors[name] = err;
+  }
+  const editingCounts = !!editingRow && inTab(editingRow) && editValue !== editingRow.value && !editError;
+  const pendingCount = dirtyEntries.length + (editingCounts ? 1 : 0);
   const saveAll = () => {
+    if (Object.keys(draftErrors).length > 0) return;
     // Include the row currently open in the editor.
     const entries = new Map(dirtyEntries);
-    if (editingRow && editValue !== editingRow.value && !editError) entries.set(editingRow.name, editValue);
+    if (editingRow && editingCounts) entries.set(editingRow.name, editValue);
     if (entries.size === 0) return;
     saveAllMutation.mutate([...entries]);
+  };
+  /** The value a row shows in an in-place form: its draft, else what is stored. */
+  const draftValue = (config: ZmConfig) => dirty[config.name] ?? config.value;
+  /** Type into a row in place; typing it back to the stored value clears the draft. */
+  const setDraft = (name: string, value: string) => {
+    const row = allConfigs.find((c) => c.name === name);
+    setDirty((d) => {
+      if (row && row.value === value) {
+        if (!(name in d)) return d;
+        const next = { ...d };
+        delete next[name];
+        return next;
+      }
+      return { ...d, [name]: value };
+    });
   };
 
   /** Write `default_value` back (legacy "reset" per row); no-op without one. */
@@ -374,8 +421,11 @@ export function useSettingsOptionsPage() {
     savingConfig: configMutation.isPending ? configMutation.variables?.name ?? null : null,
     // save all dirty rows
     dirty,
-    dirtyCount: dirtyEntries.length + (editingRow && editValue !== editingRow.value && !editError ? 1 : 0),
+    dirtyCount: pendingCount,
     saveAll,
+    draftValue,
+    setDraft,
+    draftErrors,
     isSavingAll: saveAllMutation.isPending,
     discardDirty,
   };
