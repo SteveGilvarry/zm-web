@@ -13,7 +13,7 @@ import {
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { AddMonitorDialog } from '@/features/monitors/AddMonitorDialog';
+import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
 import {
   MONITORS_STATUS_FILTERS,
   useMonitorsListPage,
@@ -50,7 +50,7 @@ export function MonitorsListLayout({
   const {
     isAuthenticated, isLoading, isError, error, monitors, filteredMonitors, total, totalPages, page, setPage,
     viewMode, setViewMode, searchQuery, setSearchQuery, statusFilter, setStatusFilter,
-    showAdd, openAdd, closeAdd, refetch,
+    addSeed, openAdd, closeAdd, refetch,
   } = state;
 
   const statusLabel = (status: MonitorsStatusFilter): string => {
@@ -240,7 +240,7 @@ export function MonitorsListLayout({
         </div>
       </main>
 
-      <AddMonitorDialog open={showAdd} onClose={closeAdd} />
+      {addSeed && <MonitorEditor seed={addSeed} onClose={closeAdd} />}
     </AppShell>
   );
 }

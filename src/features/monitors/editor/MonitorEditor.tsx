@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { Link } from '@tanstack/react-router';
 import {
   X, Save, Undo2, Loader2, ChevronRight, AlertCircle, Trash2,
-  MonitorPlay, RefreshCw, PencilRuler, ExternalLink, ListOrdered, Rss,
+  MonitorPlay, RefreshCw, PencilRuler, ExternalLink, ListOrdered, Rss, Plus,
 } from 'lucide-react';
 import { buttonClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
@@ -17,12 +17,16 @@ import {
 import { GroupsMembership } from './RelationSelects';
 import { FieldInput } from './FieldInput';
 import { sameValue, isUnsetSecret, storedOnly } from './editorState';
-import { useMonitorEditor } from './useMonitorEditor';
+import { useMonitorEditor, type MonitorEditorSeed } from './useMonitorEditor';
 import { PresetDialog } from '../presets/PresetDialog';
 import { DiscoveryDialog } from '../discovery/DiscoveryDialog';
 
 interface MonitorEditorProps {
-  monitor: Monitor;
+  /** The monitor to edit. Omit it and pass `seed` to add one (legacy Add / Clone). */
+  monitor?: Monitor;
+  seed?: MonitorEditorSeed;
+  /** After a create, with the new row. */
+  onCreated?: (monitor: Monitor) => void;
   onClose: () => void;
   /**
    * Called after the monitor has been deleted. Defaults to `onClose`; the
@@ -56,15 +60,15 @@ interface MonitorEditorProps {
  * refetches of the *same* monitor leave the in-progress draft untouched.
  */
 export function MonitorEditor(props: MonitorEditorProps) {
-  return <MonitorEditorBody key={props.monitor.id} {...props} />;
+  return <MonitorEditorBody key={props.monitor?.id ?? 'new'} {...props} />;
 }
 
-function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) {
+function MonitorEditorBody({ monitor, seed, onCreated, onClose, onDeleted }: MonitorEditorProps) {
   const { t } = useTranslation();
   const tabs = useMonitorTabs();
-  const ed = useMonitorEditor({ tabs, monitor, onClose, onDeleted });
-  const { activeTabDef, diffCount, busy } = ed;
-  const monitorId = String(monitor.id);
+  const ed = useMonitorEditor({ tabs, monitor, seed, onClose, onDeleted, onCreated });
+  const { activeTabDef, diffCount, busy, isNew } = ed;
+  const monitorId = String(monitor?.id ?? '');
 
   const linkClass = buttonClasses('secondary', 'sm');
   // Legacy Presets / ONVIF probe: both write into this draft; nothing saves until Save.
@@ -87,22 +91,32 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
   return (
     <div
       data-testid="monitor-editor"
+      role="dialog"
+      aria-modal="true"
+      aria-label={monitor ? t('Edit · {{name}}', { name: monitor.name }) : t('Add monitor')}
       className="fixed inset-0 z-40 bg-bg flex flex-col animate-in fade-in duration-150"
     >
       {/* Header strip — title, quick links, delete, cancel */}
       <div className="flex items-center justify-between gap-4 px-5 py-2.5 border-b border-border bg-surface">
         <div className="flex items-center gap-3 min-w-0">
           <div className="w-8 h-8 rounded border border-border-subtle bg-surface-2 flex items-center justify-center flex-shrink-0">
-            <span className="text-fg-muted font-mono tabular-nums text-xs font-semibold">M{monitor.id}</span>
+            {monitor
+              ? <span className="text-fg-muted font-mono tabular-nums text-xs font-semibold">M{monitor.id}</span>
+              : <Plus size={14} className="text-fg-muted" aria-hidden />}
           </div>
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-fg truncate">{t('Edit · {{name}}', { name: monitor.name })}</h2>
+            <h2 className="text-sm font-semibold text-fg truncate">
+              {monitor ? t('Edit · {{name}}', { name: monitor.name }) : t('Add monitor')}
+            </h2>
             <div className="text-label text-fg-dim">
-              {t('Configuration')}
+              {ed.clonedFrom
+                ? t('Configuration cloned from Monitor: {{name}}', { name: ed.clonedFrom })
+                : isNew ? t('Nothing is created until you save.') : t('Configuration')}
             </div>
           </div>
         </div>
         <nav aria-label={t('Monitor shortcuts')} className="flex items-center gap-2">
+          {monitor && (<>
           <Link to="/monitors/$monitorId" params={{ monitorId }} className={linkClass}>
             <MonitorPlay size={12} />
             {t('Watch')}
@@ -126,6 +140,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
               {t('Delete')}
             </button>
           </RequirePerm>
+          </>)}
           <button
             type="button"
             onClick={ed.requestClose}
@@ -200,7 +215,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
         <div className="flex-1 overflow-y-auto">
           <FormPane
             tab={activeTabDef}
-            monitorId={monitor.id}
+            monitorId={monitor?.id ?? 0}
             draft={ed.draft}
             baseline={ed.baseline}
             errors={ed.fieldErrors}
@@ -253,6 +268,17 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
             level="Edit"
             fallback={<span className="text-xs text-fg-dim">{t('Read-only: you lack Monitors edit permission.')}</span>}
           >
+            {isNew ? (
+              <button
+                type="button"
+                onClick={() => ed.save(true)}
+                disabled={busy}
+                className={buttonClasses('primary', 'sm')}
+              >
+                {ed.saving ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+                {ed.saving ? t('Saving…') : t('Create monitor')}
+              </button>
+            ) : (<>
             <button
               type="button"
               onClick={() => ed.save(false)}
@@ -274,6 +300,7 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
             >
               {t('Save and close')}
             </button>
+            </>)}
           </RequirePerm>
         </div>
       </footer>

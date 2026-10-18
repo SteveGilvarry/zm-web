@@ -612,7 +612,7 @@ describe('ClassicConsolePage — verbs', () => {
     }
   });
 
-  it('Clone opens the Add form prefilled from the source and saves nothing until Create', async () => {
+  it('Clone opens the editor prefilled from the source and saves nothing until Save', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
@@ -620,13 +620,12 @@ describe('ClassicConsolePage — verbs', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Select Front Door' }));
     await user.click(screen.getByRole('button', { name: 'Clone' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Add monitor' });
-    expect(within(dialog).getByRole('status')).toHaveTextContent('Configuration cloned from Monitor: Front Door');
-    expect(within(dialog).getByDisplayValue('Clone of Front Door')).toBeInTheDocument();
-    expect(within(dialog).getByDisplayValue('rtsp://10.0.0.11/h264')).toBeInTheDocument();
+    const editor = await screen.findByTestId('monitor-editor');
+    expect(within(editor).getByText('Configuration cloned from Monitor: Front Door')).toBeInTheDocument();
+    expect(within(editor).getByDisplayValue('Clone of Front Door')).toBeInTheDocument();
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
 
-    await user.click(within(dialog).getByRole('button', { name: 'Create monitor' }));
+    await user.click(within(editor).getByRole('button', { name: /^create monitor$/i }));
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
     const post = calls.find((c) => c.method === 'POST')!;
     expect((post.body as { name: string; path: string }).name).toBe('Clone of Front Door');

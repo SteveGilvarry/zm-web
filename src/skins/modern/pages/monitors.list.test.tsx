@@ -382,7 +382,7 @@ describe('Monitors list — mutations', () => {
   });
 });
 
-describe('Monitors list — Add dialog', () => {
+describe('Monitors list — Add opens the full editor', () => {
   it('opens from ?new=true and reflects the param in the router', async () => {
     const { router } = await renderList('/monitors?new=true');
 
@@ -407,14 +407,16 @@ describe('Monitors list — Add dialog', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add monitor' }));
     const dialog = await screen.findByRole('dialog', { name: 'Add monitor' });
+    // Every tab of the editor, not a short form.
+    expect(within(dialog).getByRole('button', { name: 'Buffers' })).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole('button', { name: 'Close' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     await waitFor(() =>
       expect(screen.queryByRole('dialog', { name: 'Add monitor' })).not.toBeInTheDocument(),
     );
   });
 
-  it('creates a monitor and refreshes the list', async () => {
+  it('starts from the legacy defaults and creates the monitor', async () => {
     let body: Record<string, unknown> | undefined;
     server.use(
       http.post('/api/v3/monitors', async ({ request }) => {
@@ -428,18 +430,23 @@ describe('Monitors list — Add dialog', () => {
     await renderList('/monitors?new=true');
     const dialog = await screen.findByRole('dialog', { name: 'Add monitor' });
 
-    await user.type(within(dialog).getByPlaceholderText('Front Door'), 'Back Gate');
+    const maxId = Math.max(...db.monitors.map((m) => m.id));
+    const name = within(dialog).getByRole('textbox', { name: 'Name' });
+    expect(name).toHaveValue(`Monitor-${maxId + 1}`);
+    await user.clear(name);
+    await user.type(name, 'Back Gate');
     await user.click(within(dialog).getByRole('button', { name: /Create monitor/i }));
 
     await waitFor(() => expect(body).toBeDefined());
-    expect(body!.name).toBe('Back Gate');
-    expect(body!.type).toBe('Ffmpeg');
-    expect(body!.width).toBe(1920);
-    expect(body!.height).toBe(1080);
+    expect(body).toMatchObject({
+      name: 'Back Gate', type: 'Ffmpeg', width: 1920, height: 1080, deleted: false,
+      // The box's new-monitor buffers, not the row defaults.
+      max_image_buffer_count: 121, pre_event_count: 5, image_buffer_count: 3,
+    });
     expect(await screen.findByText('Monitor "Back Gate" created.')).toBeInTheDocument();
   });
 
-  it('refuses to submit without a name', async () => {
+  it('refuses to create without a name', async () => {
     let posted = false;
     server.use(
       http.post('/api/v3/monitors', () => {
@@ -451,16 +458,11 @@ describe('Monitors list — Add dialog', () => {
     await renderList('/monitors?new=true');
     const dialog = await screen.findByRole('dialog', { name: 'Add monitor' });
 
-    const create = within(dialog).getByRole('button', { name: /Create monitor/i });
-    expect(create).toBeDisabled();
-    await user.click(create);
+    await user.clear(within(dialog).getByRole('textbox', { name: 'Name' }));
+    await user.click(within(dialog).getByRole('button', { name: /Create monitor/i }));
+    expect(await within(dialog).findByText('Fix the highlighted fields first.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Required.')).toBeInTheDocument();
     expect(posted).toBe(false);
-
-    // A name unblocks it; blanking it out blocks it again.
-    await user.type(within(dialog).getByPlaceholderText('Front Door'), 'Back Gate');
-    expect(create).toBeEnabled();
-    await user.clear(within(dialog).getByPlaceholderText('Front Door'));
-    expect(create).toBeDisabled();
   });
 
   it('rejects a zero resolution before it reaches the API', async () => {
@@ -475,14 +477,14 @@ describe('Monitors list — Add dialog', () => {
     await renderList('/monitors?new=true');
     const dialog = await screen.findByRole('dialog', { name: 'Add monitor' });
 
-    await user.type(within(dialog).getByPlaceholderText('Front Door'), 'Back Gate');
+    await user.click(within(dialog).getByRole('button', { name: 'Source' }));
     const width = within(dialog).getByRole('spinbutton', { name: 'Width (px)' });
     await user.clear(width);
     await user.type(width, '0');
     await user.click(within(dialog).getByRole('button', { name: /Create monitor/i }));
 
     expect(await within(dialog).findByText('Fix the highlighted fields first.')).toBeInTheDocument();
-    expect(within(dialog).getByText('Must be at least 1.')).toBeInTheDocument();
+    expect(within(dialog).getByText('Width and height must be whole numbers of at least 1.')).toBeInTheDocument();
     expect(posted).toBe(false);
   });
 });

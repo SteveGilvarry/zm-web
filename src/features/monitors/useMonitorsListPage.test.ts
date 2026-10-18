@@ -103,16 +103,18 @@ describe('useMonitorsListPage', () => {
     await waitFor(() => expect(deleted).toEqual(['3']));
   });
 
-  it('toggles view mode and the add dialog', async () => {
+  it('toggles view mode and seeds the Add editor', async () => {
     stubList();
     const { result } = renderHook(() => useMonitorsListPage(), { wrapper: makeWrapper() });
     expect(result.current.viewMode).toBe('grid');
     act(() => result.current.setViewMode('list'));
     expect(result.current.viewMode).toBe('list');
-    expect(result.current.showAdd).toBe(false);
+    expect(result.current.addSeed).toBeNull();
     act(() => result.current.openAdd());
-    expect(result.current.showAdd).toBe(true);
+    // The seed names the monitor after the next id across every monitor.
+    await waitFor(() => expect(result.current.addSeed).not.toBeNull());
+    expect(result.current.addSeed!.values.name).toMatch(/^Monitor-\d+$/);
     act(() => result.current.closeAdd());
-    expect(result.current.showAdd).toBe(false);
+    expect(result.current.addSeed).toBeNull();
   });
 });

@@ -3,8 +3,13 @@ import { useTranslation } from 'react-i18next';
 import { Wifi } from 'lucide-react';
 import { ClassicButton } from '@/skins/classic/components/Button';
 import { useZmConfigTable } from '@/features/config/useZmConfig';
+import type { MonitorCreatePayload } from '@/api/monitors-crud';
 
-type DialogProps = { open: boolean; onClose: () => void };
+type DialogProps = {
+  open: boolean;
+  onClose: () => void;
+  onEditFirst?: (prefill: Partial<MonitorCreatePayload>) => void;
+};
 type DialogModule = { default?: ComponentType<DialogProps>; DiscoveryDialog?: ComponentType<DialogProps> };
 
 /**
@@ -24,7 +29,10 @@ const DiscoveryDialog = loader
  * Shown only where the box can actually scan: console.php:186 gates the
  * button on `ZM_PATH_ARP` or `ZM_PATH_ARP_SCAN` being configured.
  */
-export function ScanNetworkButton() {
+export function ScanNetworkButton({ onEditFirst }: {
+  /** "Edit first" on a discovered profile: open the Add editor with it. */
+  onEditFirst?: (prefill: Partial<MonitorCreatePayload>) => void;
+} = {}) {
   const { t } = useTranslation();
   const [open, setOpen] = useState(false);
   const { data: configs } = useZmConfigTable();
@@ -37,7 +45,7 @@ export function ScanNetworkButton() {
       </ClassicButton>
       {open && (
         <Suspense fallback={null}>
-          <DiscoveryDialog open={open} onClose={() => setOpen(false)} />
+          <DiscoveryDialog open={open} onClose={() => setOpen(false)} onEditFirst={onEditFirst} />
         </Suspense>
       )}
     </>

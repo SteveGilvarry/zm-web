@@ -6,7 +6,6 @@ import type { InspectProfile } from '@/api/discovery';
 import type { MonitorCreateInput } from '@/api/monitors-crud';
 import type { Monitor } from '@/types';
 import { buttonClasses } from '@/components/common/styles';
-import { AddMonitorDialog } from '../AddMonitorDialog';
 import { useDiscovery } from './useDiscovery';
 import { prefillFromProfile } from './streamUri';
 
@@ -21,6 +20,11 @@ export interface DiscoveryDialogProps {
    * instead of creating a new one. Its name is left alone.
    */
   onApply?: (values: Partial<MonitorCreateInput>) => void;
+  /**
+   * "Edit first": hand the profile's prefill to the caller, which opens the
+   * full editor on a new monitor with it. Without it the button is hidden.
+   */
+  onEditFirst?: (prefill: Partial<MonitorCreateInput>) => void;
 }
 
 /** Probe durations offered, in ms. WS-Discovery answers arrive within a second or two on a LAN. */
@@ -36,21 +40,20 @@ const TIMEOUTS = [2000, 5000, 10000];
  * RTSP URI and writes the row itself — the credentials the operator just
  * typed end up on the monitor, which the client-side route cannot promise
  * because the API never reads a password back. "Edit first" keeps the old
- * route: prefill the Add dialog for a camera that needs a different name,
+ * route: prefill the full editor for a camera that needs a different name,
  * resolution or function before it exists.
  */
-export function DiscoveryDialog({ open, onClose, onCreated, onApply }: DiscoveryDialogProps) {
+export function DiscoveryDialog({ open, ...rest }: DiscoveryDialogProps) {
   if (!open) return null;
-  return <DiscoveryWizard onClose={onClose} onCreated={onCreated} onApply={onApply} />;
+  return <DiscoveryWizard {...rest} />;
 }
 
 export default DiscoveryDialog;
 
-function DiscoveryWizard({ onClose, onCreated, onApply }: Omit<DiscoveryDialogProps, 'open'>) {
+function DiscoveryWizard({ onClose, onCreated, onApply, onEditFirst }: Omit<DiscoveryDialogProps, 'open'>) {
   const { t } = useTranslation();
   const d = useDiscovery((monitor) => { onCreated?.(monitor); onClose(); });
   const [timeoutMs, setTimeoutMs] = useState(TIMEOUTS[1]);
-  const [prefill, setPrefill] = useState<Partial<MonitorCreateInput> | null>(null);
 
   // The shared field recipe minus its `w-full` — the wait-time select sits
   // inline next to the Scan button.
@@ -62,8 +65,9 @@ function DiscoveryWizard({ onClose, onCreated, onApply }: Omit<DiscoveryDialogPr
     prefillFromProfile(d.result!, profile, { username: d.username, password: d.password }, d.selected?.name);
 
   const startCreate = (profile: InspectProfile) => {
-    if (!d.result) return;
-    setPrefill(profilePrefill(profile));
+    if (!d.result || !onEditFirst) return;
+    onEditFirst(profilePrefill(profile));
+    onClose();
   };
 
   const applyProfile = (profile: InspectProfile) => {
@@ -78,17 +82,6 @@ function DiscoveryWizard({ onClose, onCreated, onApply }: Omit<DiscoveryDialogPr
     e.preventDefault();
     d.inspect();
   };
-
-  if (prefill) {
-    return (
-      <AddMonitorDialog
-        open
-        initial={prefill}
-        onClose={() => setPrefill(null)}
-        onCreated={(m) => { onCreated?.(m); onClose(); }}
-      />
-    );
-  }
 
   return (
     <div
@@ -302,14 +295,16 @@ function DiscoveryWizard({ onClose, onCreated, onApply }: Omit<DiscoveryDialogPr
                                 {t('Use this profile')}
                               </button>
                             ) : (<>
-                            <button
-                              type="button"
-                              onClick={() => startCreate(p)}
-                              className={clsx(secondary, 'me-2')}
-                            >
-                              <SlidersHorizontal size={12} />
-                              {t('Edit first')}
-                            </button>
+                            {onEditFirst && (
+                              <button
+                                type="button"
+                                onClick={() => startCreate(p)}
+                                className={clsx(secondary, 'me-2')}
+                              >
+                                <SlidersHorizontal size={12} />
+                                {t('Edit first')}
+                              </button>
+                            )}
                             <button
                               type="button"
                               onClick={() => d.onboard(p.token)}

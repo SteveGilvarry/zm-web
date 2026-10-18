@@ -26,6 +26,7 @@ import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 import { TABS } from '@/features/monitors/editor/fields';
 import { MONITOR_CREATE_DEFAULTS } from './monitors-crud';
+import { LEGACY_NEW_MONITOR } from '@/features/monitors/editor/newMonitor';
 import { MONITOR_ENUMS } from './monitors';
 
 /* ------------------------------------------------------------------------ */
@@ -200,6 +201,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   'monitors-crud': {
     toCreatePayload: 'pure',
     createMonitor: { args: [{ name: 'm', storage_id: 1 }] },
+    postMonitor: { args: [MONITOR_CREATE_DEFAULTS] },
     cloneMonitor: { args: [1] },
     deleteMonitor: { args: [1] },
     patchMonitor: { args: [1, { name: 'm' }] },
@@ -559,6 +561,16 @@ describe('MONITOR_CREATE_DEFAULTS match CreateMonitorRequest', () => {
   it('enum-valued defaults are enum members', () => {
     const bad: string[] = [];
     for (const [k, v] of Object.entries(MONITOR_CREATE_DEFAULTS)) {
+      const e = resolve(props[k])?.enum;
+      if (e && v != null && !e.includes(v)) bad.push(`${k}=${String(v)}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
+  it('the legacy new-monitor overrides are request properties with enum-valid values', () => {
+    const bad: string[] = [];
+    for (const [k, v] of Object.entries(LEGACY_NEW_MONITOR)) {
+      if (!(k in props)) { bad.push(`${k} unknown`); continue; }
       const e = resolve(props[k])?.enum;
       if (e && v != null && !e.includes(v)) bad.push(`${k}=${String(v)}`);
     }

@@ -637,6 +637,45 @@ describe('MonitorEditor — Remote protocol after the RTSP removal', () => {
   });
 });
 
+describe('MonitorEditor — create mode (Add / Clone)', () => {
+  it('posts the whole draft over the seed, then attaches the chosen groups', async () => {
+    const { newMonitorSeed } = await import('./newMonitor');
+    let body: Record<string, unknown> | null = null;
+    const attached: unknown[] = [];
+    server.use(
+      http.post('/api/v3/monitors', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...body, id: 70 });
+      }),
+      http.post('/api/v3/groups-monitors', async ({ request }) => {
+        attached.push(await request.json());
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MonitorEditor seed={newMonitorSeed([{ id: 69, name: 'X' } as Monitor])} onClose={onClose} onCreated={onCreated} />,
+    );
+    expect(screen.getByRole('dialog', { name: 'Add monitor' })).toBeInTheDocument();
+    // No Watch / Zones / Delete for a monitor that does not exist yet.
+    expect(screen.queryByRole('button', { name: /^delete$/i })).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Monitor-70')).toBeInTheDocument();
+    await user.click(await screen.findByRole('checkbox', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: /^buffers$/i }));
+    expect(screen.getByRole('spinbutton', { name: /^max image buffer/i })).toHaveValue(121);
+
+    await user.click(screen.getByRole('button', { name: /^create monitor$/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 70 })));
+    expect(body).toMatchObject({ name: 'Monitor-70', max_image_buffer_count: 121, deleted: false });
+    // Untyped secrets fall back to the seed's blanks rather than null.
+    expect(body!.pass).toBe('');
+    expect(attached).toEqual([{ group_id: 2, monitor_id: 70 }]);
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
 describe('MonitorEditor — event commands need System edit', () => {
   const withCommands = { ...monitor, event_start_command: '/usr/bin/notify start' } as unknown as Monitor;
 
