@@ -1,4 +1,4 @@
-import { useEffect, type CSSProperties } from 'react';
+import { useEffect, useState, type CSSProperties } from 'react';
 import { useTranslation } from 'react-i18next';
 import { getOrientationStyle, isOrientationRotated } from '@/types';
 import { stageVideoStyle } from '@/features/monitors/orientation';
@@ -63,22 +63,38 @@ export function ZoneLiveView({ monitorId, player, stillUrl, frame, orientation }
       />
     );
   }
-  if (player === 'stills') return <ZoneSnapshot monitorId={monitorId} />;
+  if (player === 'stills') return <ZoneSnapshot monitorId={monitorId} frame={frame} orientation={orientation} layout={layout} />;
   return <ZoneVideo monitorId={monitorId} protocol={player} layout={layout} />;
 }
 
 type MediaLayout = ReturnType<typeof mediaLayout>;
 
-function ZoneSnapshot({ monitorId }: { monitorId: number }) {
+function ZoneSnapshot({ monitorId, frame, orientation, layout }: {
+  monitorId: number;
+  frame: { width: number; height: number };
+  orientation?: string | null;
+  layout: MediaLayout;
+}) {
   const { t } = useTranslation();
   const url = useRefreshingSnapshot(monitorId, true);
+  // Oriented by ZoneMinder already, so drawn as it is — unless the image
+  // that arrives is the raw sensor frame (older zm-api), which still needs
+  // the turn the stream gets. Decided from the loaded image's own shape.
+  const [raw, setRaw] = useState(false);
   if (!url) return null;
-  // Already oriented by ZoneMinder: no transform, just fill the view frame.
   return (
     <img
       src={url}
       alt={t('Monitor snapshot')}
-      className="absolute inset-0 w-full h-full object-fill pointer-events-none"
+      className={raw ? layout.className : 'absolute inset-0 w-full h-full object-fill pointer-events-none'}
+      style={raw ? layout.style : undefined}
+      onLoad={(e) => {
+        const el = e.currentTarget;
+        if (!isOrientationRotated(orientation) || !el.naturalWidth || !el.naturalHeight) return;
+        const framePortrait = frame.height > frame.width;
+        const imagePortrait = el.naturalHeight > el.naturalWidth;
+        setRaw(framePortrait !== imagePortrait);
+      }}
     />
   );
 }

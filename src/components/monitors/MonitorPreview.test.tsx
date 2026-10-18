@@ -182,3 +182,26 @@ describe('MonitorPreview — hover-to-live', () => {
     vi.useRealTimers();
   });
 });
+
+describe('MonitorPreview — snapshots the server already turned', () => {
+  it('drops the rotate once a Rotate90 snapshot loads portrait', () => {
+    render(<MonitorPreview monitorId={1} monitorName="Garage" isActive={true} orientation="Rotate90" rotationFit="fill" />);
+    const img = screen.getByRole('img', { name: 'Garage' }) as HTMLImageElement;
+    expect(img.style.transform).toContain('rotate(90deg)');
+    // zm-api serves ZoneMinder's oriented frame: 2160x3840 for a 3840x2160 sensor.
+    Object.defineProperty(img, 'naturalWidth', { value: 2160, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 3840, configurable: true });
+    fireEvent.load(img);
+    expect(img.style.transform).toBe('');
+    expect(img).toHaveClass('object-cover');
+  });
+
+  it('keeps the rotate when the snapshot loads as the raw landscape frame', () => {
+    render(<MonitorPreview monitorId={1} monitorName="Garage" isActive={true} orientation="Rotate90" rotationFit="fill" />);
+    const img = screen.getByRole('img', { name: 'Garage' }) as HTMLImageElement;
+    Object.defineProperty(img, 'naturalWidth', { value: 3840, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 2160, configurable: true });
+    fireEvent.load(img);
+    expect(img.style.transform).toContain('rotate(90deg)');
+  });
+});

@@ -236,6 +236,22 @@ describe('ZoneEditor — Player', () => {
     const img = await screen.findByAltText('Monitor snapshot');
     expect(img.style.transform).toBe('');
     expect(img).toHaveClass('w-full', 'h-full');
+    // The oriented JPEG is portrait like the frame: still no transform.
+    Object.defineProperty(img, 'naturalWidth', { value: 2160, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 3840, configurable: true });
+    fireEvent.load(img);
+    expect(img.style.transform).toBe('');
+  });
+
+  it('turns a snapshot that arrives as the raw landscape frame', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ZoneEditor monitorId={1} width={1000} height={2000} orientation="ROTATE_90" />);
+    await user.click(await screen.findByText('Yard'));
+    const img = await screen.findByAltText('Monitor snapshot');
+    Object.defineProperty(img, 'naturalWidth', { value: 3840, configurable: true });
+    Object.defineProperty(img, 'naturalHeight', { value: 2160, configurable: true });
+    fireEvent.load(img);
+    expect(img.style.transform).toContain('rotate(90deg)');
   });
 
   it('leaves a flipped camera\'s snapshot alone too', async () => {
