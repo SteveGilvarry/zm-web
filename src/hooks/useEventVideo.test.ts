@@ -182,6 +182,48 @@ describe('useEventVideo — hls.js playback', () => {
     expect(result.current.error).toBeNull();
   });
 
+  it('retries the playlist of an event still recording, as legacy\'s live HLS does', () => {
+    vi.useFakeTimers();
+    try {
+      const video = makeVideo();
+      const { result } = renderHook(() => useEventVideo(refTo(video), 42, HLS_INFO, 'auto', true));
+
+      // No fragments yet: a fatal network error waits 3 s and loads it again.
+      act(() => { hlsState.instances[0].fire('hlsError', { fatal: true, type: 'networkError' }); });
+      expect(result.current.mode).toBe('hls');
+      expect(hlsState.instances).toHaveLength(1);
+      act(() => { vi.advanceTimersByTime(3000); });
+      expect(hlsState.instances).toHaveLength(2);
+      // The same playlist, asked for again.
+      expect(hlsState.instances[1].loadSource).toHaveBeenCalledWith(
+        hlsState.instances[0].loadSource.mock.calls[0][0],
+      );
+
+      // A decode failure is still a decode failure.
+      act(() => { hlsState.instances[1].fire('hlsError', { fatal: true, type: 'mediaError' }); });
+      expect(result.current.mode).toBe('unsupported');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up on a recording after legacy\'s thirty retries', () => {
+    vi.useFakeTimers();
+    try {
+      const video = makeVideo();
+      const { result } = renderHook(() => useEventVideo(refTo(video), 42, HLS_INFO, 'auto', true));
+      for (let i = 0; i < 30; i++) {
+        act(() => { hlsState.instances.at(-1)!.fire('hlsError', { fatal: true, type: 'networkError' }); });
+        act(() => { vi.advanceTimersByTime(5000); });
+      }
+      expect(hlsState.instances).toHaveLength(31);
+      act(() => { hlsState.instances.at(-1)!.fire('hlsError', { fatal: true, type: 'networkError' }); });
+      expect(result.current.mode).toBe('unsupported');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('ignores a non-fatal hls error', () => {
     const video = makeVideo();
     const { result } = renderHook(() => useEventVideo(refTo(video), 42, HLS_INFO));

@@ -72,7 +72,7 @@ beforeEach(() => {
   // Reset session-store between tests so cross-test bleed doesn't change
   // the dropdown defaults.
   useEventPlaybackStore.setState({
-    replayMode: 'none', scaleByMonitor: {}, showZones: false, showStats: false, rate: 1,
+    replayMode: 'none', scaleByMonitor: {}, zonesByMonitor: {}, showStats: false, rate: 1,
     navScope: null,
   });
   mockSearch = {};
@@ -342,7 +342,8 @@ describe('EventDetailPage — time-bounded neighbours', () => {
   });
 
   it('walks every monitor when the list was unfiltered', async () => {
-    useEventPlaybackStore.setState({ navScope: { monitorId: null } });
+    // The list's position, with no monitor filter.
+    mockSearch = { page: 1, page_size: 25, sort: 'start_time', dir: 'asc' };
     const queries: URLSearchParams[] = [];
     stubBase();
     server.use(
@@ -354,6 +355,21 @@ describe('EventDetailPage — time-bounded neighbours', () => {
     await mount();
     await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
     expect(queries.every((q) => !q.has('monitor_id'))).toBe(true);
+  });
+
+  it('stays on the event\'s own monitor without a list in the URL, whatever list was last open', async () => {
+    useEventPlaybackStore.setState({ navScope: { monitorId: null } });
+    const queries: URLSearchParams[] = [];
+    stubBase();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        queries.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [], total: 0, per_page: 10, current_page: 1, last_page: 1 });
+      }),
+    );
+    await mount();
+    await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
+    expect(queries.every((q) => q.get('monitor_id') === '1')).toBe(true);
     useEventPlaybackStore.setState({ navScope: null });
   });
 });
@@ -580,7 +596,20 @@ describe('EventDetailPage — stats panel toggle', () => {
     const panel = await screen.findByTestId('event-stats-panel');
     expect(panel.textContent).toMatch(/42/);
     expect(panel.textContent).toMatch(/99/);
-    expect(panel.textContent).toMatch(/25\.0 MB/);
+    // Size on the storage it lives on, once /storage has answered.
+    await waitFor(() => expect(panel.textContent).toMatch(/25\.0 MB on Default/));
+    // Max score opens the max-score frame, as legacy's Max link does.
+    expect(within(panel).getByRole('link', { name: '99' })).toHaveAttribute('href', '/events/100/frames/0');
+    expect(panel.textContent).toMatch(/Emailed/);
+  });
+
+  it('links the monitor\'s events and reads the wall-clock time in the status line', async () => {
+    stubBase();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'All Events' })).toHaveAttribute('href', '/events');
+    expect(screen.getByTestId('event-replay-status').textContent).toMatch(/Time: /);
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 });
 

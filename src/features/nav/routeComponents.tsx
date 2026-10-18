@@ -1,4 +1,4 @@
-import { Outlet, useNavigate, useLocation, useParams } from '@tanstack/react-router';
+import { Outlet, useNavigate, useLocation, useParams, useSearch } from '@tanstack/react-router';
 import { TanStackRouterDevtools } from '@tanstack/react-router-devtools';
 import { useEffect } from 'react';
 import { useAuthStore } from '@/stores/auth';
@@ -52,6 +52,17 @@ export function EventDetailRoute() {
 export function EventFramesRoute() {
   const { eventId } = useParams({ from: '/events/$eventId_/frames' });
   return <SkinPage page="events.frames" eventId={parseInt(eventId, 10)} />;
+}
+
+export function EventFrameRoute() {
+  const { eventId, frameId } = useParams({ from: '/events/$eventId_/frames_/$frameId' });
+  return <SkinPage page="events.frame" eventId={parseInt(eventId, 10)} frameId={parseInt(frameId, 10) || 0} />;
+}
+
+export function EventStatsRoute() {
+  const { eventId } = useParams({ from: '/events/$eventId_/stats' });
+  const { fid } = useSearch({ from: '/events/$eventId_/stats' });
+  return <SkinPage page="events.stats" eventId={parseInt(eventId, 10)} frameId={fid} />;
 }
 
 export function MonitorWatchRoute() {

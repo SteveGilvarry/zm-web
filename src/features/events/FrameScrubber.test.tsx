@@ -101,19 +101,37 @@ describe('FrameScrubber — legacy progress bar', () => {
     expect(screen.queryByTestId('scrubber-time-labels')).not.toBeInTheDocument();
   });
 
-  it('draws one alarm span per stretch, with a height that follows its score', async () => {
-    // Frames 1 and 4 are alarms (every third), so two separate stretches.
+  it('draws the motion score as a line with the alarm periods shaded behind it', async () => {
+    // Frames 1, 4 and 7 are alarms (every third), so three separate periods.
     server.use(http.get('/api/v3/frames', () => HttpResponse.json(frameFixture(7))));
     renderWithProviders(
       <FrameScrubber eventId={1} durationSec={10} currentTimeSec={0} onSeek={() => {}} />,
     );
 
-    const cues = await screen.findAllByTestId('alarm-cue');
-    expect(cues).toHaveLength(3);
-    // Scores are (i+1)*5, so the peak of the event is the last alarm frame's.
-    const heights = cues.map((c) => parseFloat((c as HTMLElement).style.height));
-    expect(heights[0]).toBeLessThan(heights[2]);
-    expect(heights[2]).toBe(100);
+    const bands = await screen.findAllByTestId('level-graph-band');
+    expect(bands).toHaveLength(3);
+    // Frame 7 is the last one, so its period runs on to the end of the event:
+    // from 3 s to 10 s on a 1000-wide box is x 300, width 700.
+    expect(bands[2].getAttribute('x')).toBe('300');
+    expect(bands[2].getAttribute('width')).toBe('700');
+
+    // Scores are (i+1)*5, so the line climbs to the event's peak at frame 7.
+    const points = screen.getByTestId('level-graph-motion').getAttribute('points')!.split(' ');
+    expect(points).toHaveLength(7);
+    // 48 tall, 2 of headroom: 48 − 5/35 × 46.
+    expect(points[0]).toBe('0,41.43');
+    expect(points[6]).toBe('300,2');
+  });
+
+  it('draws no line for an event that never scored', async () => {
+    const flat = frameFixture(3);
+    flat.items.forEach((f) => { f.score = 0; });
+    server.use(http.get('/api/v3/frames', () => HttpResponse.json(flat)));
+    renderWithProviders(
+      <FrameScrubber eventId={1} durationSec={10} currentTimeSec={0} onSeek={() => {}} />,
+    );
+    await screen.findByTestId('level-graph');
+    expect(screen.queryByTestId('level-graph-motion')).not.toBeInTheDocument();
   });
 
   it('follows the pointer with an indicator showing the time under it', async () => {
@@ -130,7 +148,7 @@ describe('FrameScrubber — legacy progress bar', () => {
         startTime={start}
       />,
     );
-    await screen.findAllByTestId('alarm-cue');
+    await screen.findByTestId('level-graph');
 
     // jsdom gives every element a zero-size box; the track needs a real one
     // for the pointer position to mean anything.
@@ -144,7 +162,10 @@ describe('FrameScrubber — legacy progress bar', () => {
 
     const indicator = await screen.findByTestId('scrubber-indicator');
     // A quarter of the way along a 100 s event is 25 s past the start.
-    expect(indicator.textContent).toBe(new Date(start.getTime() + 25_000).toLocaleTimeString());
+    // …with the score of the nearest frame (the last, at 2 s, scoring 25).
+    expect(indicator.textContent).toBe(
+      `${new Date(start.getTime() + 25_000).toLocaleTimeString()} — motion 25`,
+    );
     expect(indicator.style.left).toBe('25%');
   });
 });

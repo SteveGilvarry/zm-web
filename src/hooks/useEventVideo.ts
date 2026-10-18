@@ -65,11 +65,24 @@ export function resolvePlaybackMode(
  * are relative and are left untouched (the backend serves them off the playlist
  * path).
  */
+/** Legacy's live-HLS retry budget (event.php:437–459). */
+export const LIVE_HLS_MAX_RETRIES = 30;
+/** 3 s for the first three retries, 5 s after that. */
+export function liveRetryDelay(attempt: number): number {
+  return attempt <= 3 ? 3000 : 5000;
+}
+
 export function useEventVideo(
   videoRef: React.RefObject<HTMLVideoElement | null>,
   eventId: number,
   info: EventVideoInfo | undefined,
   codec: PlaybackCodec = 'auto',
+  /**
+   * The event is still recording (no end time yet). Its playlist grows as
+   * it goes and starts out with no fragments, so a fatal network error is
+   * retried — legacy's live HLS retry — rather than taken as unsupported.
+   */
+  live = false,
 ): EventVideoResult {
   const { t } = useTranslation();
   const hlsRef = useRef<Hls | null>(null);
@@ -78,6 +91,10 @@ export function useEventVideo(
   // forcing another container — starts clean without an effect resetting it.
   const [fatalKey, setFatalKey] = useState<string | null>(null);
   const key = `${eventId}:${codec}`;
+  // Bumped to re-attach the playlist after a live retry's wait.
+  const [attempt, setAttempt] = useState(0);
+  const retries = useRef(0);
+  useEffect(() => { retries.current = 0; }, [key]);
 
   const baseMode = useMemo(() => resolvePlaybackMode(info, codec), [info, codec]);
   const mode: EventPlaybackMode = fatalKey === key ? 'unsupported' : baseMode;
@@ -124,17 +141,31 @@ export function useEventVideo(
       });
       hlsRef.current = hls;
       hls.attachMedia(video);
+      let retryTimer: ReturnType<typeof setTimeout> | null = null;
       hls.on(Hls.Events.ERROR, (_event, data) => {
-        // A fatal error here is almost always "MSE can't decode this codec"
-        // (HEVC in a software-only Chrome) — present it as unsupported rather
-        // than a transient stream error.
-        if (data.fatal) {
-          setFatalKey(key);
-          destroy();
+        if (!data.fatal) return;
+        destroy();
+        // A recording still in progress: an empty or not-yet-written
+        // playlist is expected, so wait and load it again.
+        if (live && data.type !== 'mediaError' && retries.current < LIVE_HLS_MAX_RETRIES) {
+          retries.current += 1;
+          retryTimer = setTimeout(() => setAttempt((n) => n + 1), liveRetryDelay(retries.current));
+          return;
         }
+        // Otherwise a fatal error is almost always "MSE can't decode this
+        // codec" (HEVC in a software-only Chrome) — present it as
+        // unsupported rather than a transient stream error.
+        setFatalKey(key);
       });
+      // Playing again resets the budget, as legacy's 'playing' handler does.
+      const onPlaying = () => { retries.current = 0; };
+      video.addEventListener('playing', onPlaying);
       hls.loadSource(playlistUrl);
-      return destroy;
+      return () => {
+        if (retryTimer) clearTimeout(retryTimer);
+        video.removeEventListener('playing', onPlaying);
+        destroy();
+      };
     }
 
     // Safari native HLS. <video> can't send headers, so auth rides on
@@ -142,7 +173,7 @@ export function useEventVideo(
     // playlist URL and left as the backend wrote them.
     video.src = playlistUrl;
     return destroy;
-  }, [videoRef, eventId, info, baseMode, codec, key]);
+  }, [videoRef, eventId, info, baseMode, codec, key, live, attempt]);
 
   return { mode, error };
 }

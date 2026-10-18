@@ -18,6 +18,8 @@ export const ALL_PAGE_KEYS: readonly PageKey[] = [
   'events.list',
   'events.detail',
   'events.frames',
+  'events.frame',
+  'events.stats',
   'filters',
   'groups',
   'logs',

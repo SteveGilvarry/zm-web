@@ -132,6 +132,9 @@ export interface EventDetailPageState {
   playbackError: ReturnType<typeof useEventVideo>['error'];
   isPlaying: boolean;
   isMuted: boolean;
+  /** 0–1, video.js's volume slider. */
+  volume: number;
+  setVolume: (v: number) => void;
   currentTime: number;
   duration: number;
   setCurrentTime: (t: number) => void;
@@ -194,6 +197,9 @@ export interface EventDetailPageState {
   /** Legacy `tagAndPrev` / `tagAndNext`: apply the first free tag, then move. */
   tagAndPrev: () => void;
   tagAndNext: () => void;
+
+  /** Legacy's Refresh, without reloading the app: refetch everything this page shows. */
+  refresh: () => void;
 
   handleVideoEnded: () => void;
   handlePlayPause: () => void;
@@ -270,7 +276,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const {
     replayMode, setReplayMode,
     scaleByMonitor, setScale: setMonitorScale,
-    showZones, setShowZones,
+    zonesByMonitor, setShowZones: setMonitorZones,
     showStats, setShowStats,
     rate, setRate,
     codec, setCodec,
@@ -279,6 +285,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolumeState] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
   // Precise duration from the <video> loadedmetadata event; 0 until it fires.
   const [metaDuration, setMetaDuration] = useState(0);
@@ -350,6 +357,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     id,
     videoInfo,
     codec,
+    // No end time yet: still recording, so its playlist is retried.
+    !!event && !event.end_date_time,
   );
 
   // Seed the scrubber length from /info up front; the precise duration from
@@ -508,16 +517,18 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const listPrev = listReversed ? rowAfter : rowBefore;
   const listNext = listReversed ? rowBefore : rowAfter;
 
-  // Scope for the time-based fallback: the monitor this URL is filtered to,
-  // the one the events list was filtered to, every monitor when it was
-  // unfiltered, or — before the list has been visited — the event's own
-  // monitor. The timestamp goes back to the backend verbatim, so the dev
-  // box's server-local-stamped-Z values and the fixed build's true UTC both
-  // stay self-consistent.
+  // Scope for the time-based fallback, as legacy's `getNearEvents` builds
+  // it from the URL: the monitor this URL is filtered to; every monitor when
+  // the URL carries an unfiltered list (or several monitors, which `/events`
+  // cannot narrow to); and with no list context at all — arriving from the
+  // console, a montage or a link — the event's own monitor (event.php:167,
+  // the `MonitorId = <this event's>` default term). The timestamp goes back
+  // to the backend verbatim, so the dev box's server-local-stamped-Z values
+  // and the fixed build's true UTC both stay self-consistent.
   const navMonitorId: number | null = urlMonitorIds.length === 1
     ? urlMonitorIds[0]
-    : listCtx || navScope !== null
-      ? (navScope?.monitorId ?? null)
+    : listCtx || urlMonitorIds.length > 1
+      ? null
       : (event?.monitor_id ?? null);
   const scopeMonitor = navMonitorId ?? undefined;
   const startAt = event?.start_date_time ?? null;
@@ -604,7 +615,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     }
   };
   const navPrev = () => goTo(prevEventId);
-  const navNext = () => goTo(nextEventId);
+  // Legacy keeps Next live at the end of the run; pressing it says so
+  // (`streamNext`, event.js:725).
+  const navNext = () => {
+    if (nextEventId != null) goTo(nextEventId);
+    else if (event) setNoMoreEvents(true);
+  };
 
   // ----- End of playback ---------------------------------------------------
   //
@@ -955,6 +971,17 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     playbackError,
     isPlaying,
     isMuted,
+    volume,
+    setVolume: (v: number) => {
+      const next = Math.min(1, Math.max(0, v));
+      setVolumeState(next);
+      const el = videoRef.current;
+      if (el) {
+        el.volume = next;
+        // Dragging the slider up unmutes, as video.js's does.
+        if (next > 0 && el.muted) { el.muted = false; setIsMuted(false); }
+      }
+    },
     currentTime,
     duration,
     setCurrentTime,
@@ -965,8 +992,9 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     setReplayMode,
     scale,
     setScale,
-    showZones,
-    setShowZones,
+    // Remembered per monitor, as legacy's `zmEventShowZones<mid>` cookie is.
+    showZones: event ? (zonesByMonitor[event.monitor_id] ?? false) : false,
+    setShowZones: (v: boolean) => { if (event) setMonitorZones(event.monitor_id, v); },
     showStats,
     setShowStats,
     playerMaxWidth,
@@ -995,6 +1023,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     tagApiRef,
     tagAndPrev,
     tagAndNext,
+
+    refresh: () => {
+      for (const key of ['event', 'eventInfo', 'eventData', 'eventFrames']) {
+        void queryClient.invalidateQueries({ queryKey: [key, id] });
+      }
+    },
 
     handleVideoEnded,
     handlePlayPause,

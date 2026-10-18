@@ -57,8 +57,21 @@ export interface EventFramesPageState {
   showThumbs: boolean;
   /** `ZM_WEB_LIST_THUMB_WIDTH`. */
   thumbWidth: number;
+  /** `ZM_WEB_ANIMATE_THUMBS` — hovering a thumbnail shows the frame full size. */
+  animateThumbs: boolean;
   /** Access token for the `<img>` URLs, which cannot send a header. */
   token: string | null;
+
+  /** Frame numbers whose "+" stats row is open (legacy's bootstrap-table detail view). */
+  isExpanded: (frameId: number) => boolean;
+  toggleExpanded: (frameId: number) => void;
+  /** A row click: legacy `?view=frame&eid=&fid=`. */
+  openFrame: (frameId: number) => void;
+  /** A Score click: legacy `?view=stats&eid=&fid=`. */
+  openStats: (frameId: number) => void;
+  /** bootstrap-table's card view (`show-toggle`): each row as a stacked block. */
+  cardView: boolean;
+  toggleCardView: () => void;
 }
 
 /**
@@ -79,6 +92,7 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
   const showThumbs = useZmConfig('ZM_WEB_LIST_THUMBS', true);
   const configThumbWidth = useZmConfig('ZM_WEB_LIST_THUMB_WIDTH', 48);
   const thumbWidth = configThumbWidth > 0 ? configThumbWidth : 48;
+  const animateThumbs = useZmConfig('ZM_WEB_ANIMATE_THUMBS', true);
 
   const page = search.page ?? 1;
   const pageSize = search.page_size ?? defaultPageSize;
@@ -88,6 +102,8 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
   const [sort, setSort] = useState<FramesSortKey | null>(null);
   const [dir, setDir] = useState<SortDir>('asc');
   const [hiddenColumns, setHiddenColumns] = useState<FramesColumnKey[]>([...FRAMES_DEFAULT_HIDDEN]);
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+  const [cardView, setCardView] = useState(false);
 
   const setSearch = (patch: EventFramesSearchParams) => {
     navigate({
@@ -177,6 +193,30 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
     exportCsv: () => downloadCsv(`event-${eventId}-frames.csv`, framesToCsv(frames, visibleColumns)),
     showThumbs,
     thumbWidth,
+    animateThumbs,
     token: accessToken,
+
+    isExpanded: (fid) => expanded.has(fid),
+    toggleExpanded: (fid) => setExpanded((prev) => {
+      const next = new Set(prev);
+      if (next.has(fid)) next.delete(fid);
+      else next.add(fid);
+      return next;
+    }),
+    openFrame: (fid) => {
+      void navigate({
+        to: '/events/$eventId/frames/$frameId',
+        params: { eventId: String(eventId), frameId: String(fid) },
+      });
+    },
+    cardView,
+    toggleCardView: () => setCardView((v) => !v),
+    openStats: (fid) => {
+      void navigate({
+        to: '/events/$eventId/stats',
+        params: { eventId: String(eventId) },
+        search: { fid },
+      });
+    },
   };
 }

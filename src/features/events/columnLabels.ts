@@ -1,6 +1,7 @@
 import { useTranslation } from 'react-i18next';
 import type { EventsColumnKey } from '@/stores/eventsColumns';
 import type { FramesColumnKey } from './framesTable';
+import type { StatsColumnKey } from './statsTable';
 
 /**
  * Display labels for the events-list columns. Built inside a hook so `t()`
@@ -42,5 +43,21 @@ export function useFramesColumnLabels(): Record<FramesColumnKey, string> {
     delta: t('Time Delta'),
     score: t('Score'),
     thumbnail: t('Thumbnail'),
+  };
+}
+
+/** The stats table (legacy `getStatsTableHTML`, `lang/en_gb.php`). */
+export function useStatsColumnLabels(): Record<StatsColumnKey, string> {
+  const { t } = useTranslation();
+  return {
+    zoneName: t('Zone'),
+    pixelDiff: t('Pixel Diff'),
+    alarmPx: t('Alarm Px'),
+    filterPx: t('Filter Px'),
+    blobPx: t('Blob Px'),
+    blobs: t('Blobs'),
+    blobSizes: t('Blob Sizes'),
+    alarmLimits: t('Alarm Limits'),
+    score: t('Score'),
   };
 }

@@ -33,10 +33,12 @@ import { Route as SettingsStorageRouteImport } from './routes/settings/storage'
 import { Route as SettingsUsersRouteImport } from './routes/settings/users'
 import { Route as TimelineIndexRouteImport } from './routes/timeline/index'
 import { Route as EventsEventIdFramesRouteImport } from './routes/events/$eventId_.frames'
+import { Route as EventsEventIdStatsRouteImport } from './routes/events/$eventId_.stats'
 import { Route as MonitorsMonitorIdZonesRouteImport } from './routes/monitors/$monitorId_.zones'
 import { Route as SettingsAiClassesRouteImport } from './routes/settings/ai.classes'
 import { Route as SettingsAiDatasetsRouteImport } from './routes/settings/ai.datasets'
 import { Route as SettingsAiModelsRouteImport } from './routes/settings/ai.models'
+import { Route as EventsEventIdFramesFrameIdRouteImport } from './routes/events/$eventId_.frames_.$frameId'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -158,6 +160,11 @@ const EventsEventIdFramesRoute = EventsEventIdFramesRouteImport.update({
   path: '/events/$eventId/frames',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EventsEventIdStatsRoute = EventsEventIdStatsRouteImport.update({
+  id: '/events/$eventId_/stats',
+  path: '/events/$eventId/stats',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MonitorsMonitorIdZonesRoute = MonitorsMonitorIdZonesRouteImport.update({
   id: '/monitors/$monitorId_/zones',
   path: '/monitors/$monitorId/zones',
@@ -178,6 +185,12 @@ const SettingsAiModelsRoute = SettingsAiModelsRouteImport.update({
   path: '/settings/ai/models',
   getParentRoute: () => rootRouteImport,
 } as any)
+const EventsEventIdFramesFrameIdRoute =
+  EventsEventIdFramesFrameIdRouteImport.update({
+    id: '/events/$eventId_/frames_/$frameId',
+    path: '/events/$eventId/frames/$frameId',
+    getParentRoute: () => rootRouteImport,
+  } as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -204,10 +217,12 @@ export interface FileRoutesByFullPath {
   '/settings/': typeof SettingsIndexRoute
   '/timeline/': typeof TimelineIndexRoute
   '/events/$eventId/frames': typeof EventsEventIdFramesRoute
+  '/events/$eventId/stats': typeof EventsEventIdStatsRoute
   '/monitors/$monitorId/zones': typeof MonitorsMonitorIdZonesRoute
   '/settings/ai/classes': typeof SettingsAiClassesRoute
   '/settings/ai/datasets': typeof SettingsAiDatasetsRoute
   '/settings/ai/models': typeof SettingsAiModelsRoute
+  '/events/$eventId/frames/$frameId': typeof EventsEventIdFramesFrameIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -234,10 +249,12 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsIndexRoute
   '/timeline': typeof TimelineIndexRoute
   '/events/$eventId/frames': typeof EventsEventIdFramesRoute
+  '/events/$eventId/stats': typeof EventsEventIdStatsRoute
   '/monitors/$monitorId/zones': typeof MonitorsMonitorIdZonesRoute
   '/settings/ai/classes': typeof SettingsAiClassesRoute
   '/settings/ai/datasets': typeof SettingsAiDatasetsRoute
   '/settings/ai/models': typeof SettingsAiModelsRoute
+  '/events/$eventId/frames/$frameId': typeof EventsEventIdFramesFrameIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -265,10 +282,12 @@ export interface FileRoutesById {
   '/settings/': typeof SettingsIndexRoute
   '/timeline/': typeof TimelineIndexRoute
   '/events/$eventId_/frames': typeof EventsEventIdFramesRoute
+  '/events/$eventId_/stats': typeof EventsEventIdStatsRoute
   '/monitors/$monitorId_/zones': typeof MonitorsMonitorIdZonesRoute
   '/settings/ai/classes': typeof SettingsAiClassesRoute
   '/settings/ai/datasets': typeof SettingsAiDatasetsRoute
   '/settings/ai/models': typeof SettingsAiModelsRoute
+  '/events/$eventId_/frames_/$frameId': typeof EventsEventIdFramesFrameIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -297,10 +316,12 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/timeline/'
     | '/events/$eventId/frames'
+    | '/events/$eventId/stats'
     | '/monitors/$monitorId/zones'
     | '/settings/ai/classes'
     | '/settings/ai/datasets'
     | '/settings/ai/models'
+    | '/events/$eventId/frames/$frameId'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -327,10 +348,12 @@ export interface FileRouteTypes {
     | '/settings'
     | '/timeline'
     | '/events/$eventId/frames'
+    | '/events/$eventId/stats'
     | '/monitors/$monitorId/zones'
     | '/settings/ai/classes'
     | '/settings/ai/datasets'
     | '/settings/ai/models'
+    | '/events/$eventId/frames/$frameId'
   id:
     | '__root__'
     | '/'
@@ -357,10 +380,12 @@ export interface FileRouteTypes {
     | '/settings/'
     | '/timeline/'
     | '/events/$eventId_/frames'
+    | '/events/$eventId_/stats'
     | '/monitors/$monitorId_/zones'
     | '/settings/ai/classes'
     | '/settings/ai/datasets'
     | '/settings/ai/models'
+    | '/events/$eventId_/frames_/$frameId'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -388,10 +413,12 @@ export interface RootRouteChildren {
   SettingsIndexRoute: typeof SettingsIndexRoute
   TimelineIndexRoute: typeof TimelineIndexRoute
   EventsEventIdFramesRoute: typeof EventsEventIdFramesRoute
+  EventsEventIdStatsRoute: typeof EventsEventIdStatsRoute
   MonitorsMonitorIdZonesRoute: typeof MonitorsMonitorIdZonesRoute
   SettingsAiClassesRoute: typeof SettingsAiClassesRoute
   SettingsAiDatasetsRoute: typeof SettingsAiDatasetsRoute
   SettingsAiModelsRoute: typeof SettingsAiModelsRoute
+  EventsEventIdFramesFrameIdRoute: typeof EventsEventIdFramesFrameIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -564,6 +591,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof EventsEventIdFramesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/events/$eventId_/stats': {
+      id: '/events/$eventId_/stats'
+      path: '/events/$eventId/stats'
+      fullPath: '/events/$eventId/stats'
+      preLoaderRoute: typeof EventsEventIdStatsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/monitors/$monitorId_/zones': {
       id: '/monitors/$monitorId_/zones'
       path: '/monitors/$monitorId/zones'
@@ -590,6 +624,13 @@ declare module '@tanstack/react-router' {
       path: '/settings/ai/models'
       fullPath: '/settings/ai/models'
       preLoaderRoute: typeof SettingsAiModelsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/events/$eventId_/frames_/$frameId': {
+      id: '/events/$eventId_/frames_/$frameId'
+      path: '/events/$eventId/frames/$frameId'
+      fullPath: '/events/$eventId/frames/$frameId'
+      preLoaderRoute: typeof EventsEventIdFramesFrameIdRouteImport
       parentRoute: typeof rootRouteImport
     }
   }
@@ -620,10 +661,12 @@ const rootRouteChildren: RootRouteChildren = {
   SettingsIndexRoute: SettingsIndexRoute,
   TimelineIndexRoute: TimelineIndexRoute,
   EventsEventIdFramesRoute: EventsEventIdFramesRoute,
+  EventsEventIdStatsRoute: EventsEventIdStatsRoute,
   MonitorsMonitorIdZonesRoute: MonitorsMonitorIdZonesRoute,
   SettingsAiClassesRoute: SettingsAiClassesRoute,
   SettingsAiDatasetsRoute: SettingsAiDatasetsRoute,
   SettingsAiModelsRoute: SettingsAiModelsRoute,
+  EventsEventIdFramesFrameIdRoute: EventsEventIdFramesFrameIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

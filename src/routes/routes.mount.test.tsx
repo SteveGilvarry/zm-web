@@ -29,6 +29,8 @@ const ROUTES: Array<{ id: string; path: string; heading: RegExp; anonymous?: tru
   { id: '/events/', path: '/events', heading: /^Events$/ },
   { id: '/events/$eventId', path: '/events/101', heading: /^Event-101$/ },
   { id: '/events/$eventId_/frames', path: '/events/101/frames', heading: /Frames/ },
+  { id: '/events/$eventId_/frames_/$frameId', path: '/events/101/frames/1', heading: /^Frame 101-1$/ },
+  { id: '/events/$eventId_/stats', path: '/events/101/stats', heading: /^Stats — Event 101/ },
   { id: '/filters/', path: '/filters', heading: /^Filters$/ },
   { id: '/groups/', path: '/groups', heading: /^Groups$/ },
   { id: '/logs/', path: '/logs', heading: /^Log$/ },
