@@ -1,6 +1,6 @@
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { clsx } from 'clsx';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
   AlertCircle, AlertTriangle, Download, ExternalLink, Filter, FilterX, GalleryHorizontal, Maximize, Maximize2,
@@ -65,6 +65,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   const { t } = useTranslation();
   const { can } = usePerms();
   const page = useWatchPage(monitorId);
+  const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   // `zmFilterBarFlip#mfbpanel`: open by default (`filterSettingsInline()`).
   const showFilters = useUiStore((s) => s.classicMonitorFilterBarOpen);

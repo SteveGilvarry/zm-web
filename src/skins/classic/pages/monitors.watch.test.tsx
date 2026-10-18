@@ -696,7 +696,9 @@ describe('ClassicMonitorWatchPage — stage', () => {
     await mount();
     await ready();
     await user.click(screen.getByRole('button', { name: 'Edit monitor' }));
-    expect(await screen.findByRole('heading', { name: 'Edit · Driveway' })).toBeInTheDocument();
+    // The classic editor (monitor.php), not the modern overlay.
+    const editor = await screen.findByTestId('monitor-editor');
+    expect(within(editor).getByRole('heading', { name: 'Monitor - 3 - Driveway' })).toBeInTheDocument();
   });
 });
 
