@@ -113,6 +113,12 @@ export interface FilterFeatures {
   message: boolean;
   /** Only `canEdit('System')` may set the command a filter shells out to. */
   executeCmd: boolean;
+  /**
+   * What zmfilter.pl mails through when a filter names no server:
+   * `ZM_EMAIL_HOST`, else localhost (filter.php:381). The Email Server
+   * placeholder.
+   */
+  emailHost: string;
 }
 
 /** A question the page has to put to the operator before it can go ahead. */
@@ -227,6 +233,7 @@ export function useFiltersPage(): FiltersPageState {
     email: useZmConfig('ZM_OPT_EMAIL', false),
     message: useZmConfig('ZM_OPT_MESSAGE', false),
     executeCmd: canEditSystem,
+    emailHost: useZmConfig('ZM_EMAIL_HOST', '') || 'localhost',
   };
   const monitors = monitorsQ.data ?? [];
   const storage = storageQ.data?.items ?? [];

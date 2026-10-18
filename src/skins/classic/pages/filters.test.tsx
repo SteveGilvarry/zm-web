@@ -276,10 +276,10 @@ describe('ClassicFiltersPage', () => {
     expect(body).toMatchObject({ execute_interval: 60, auto_delete: 0 });
   });
 
-  it('Save As prompts for a name and POSTs a copy', async () => {
+  it('Save As POSTs a copy under the name in the Name field, as legacy does', async () => {
     const user = userEvent.setup();
     stub();
-    const prompt = vi.spyOn(window, 'prompt').mockReturnValue('PurgeWhenFull spare');
+    const prompt = vi.spyOn(window, 'prompt');
     let body: Record<string, unknown> | undefined;
     server.use(http.post('/api/v3/filters', async ({ request }) => {
       body = (await request.json()) as Record<string, unknown>;
@@ -288,30 +288,38 @@ describe('ClassicFiltersPage', () => {
     await mount();
 
     await user.selectOptions(await chooser(), '1');
+    await user.clear(screen.getByLabelText('Name'));
+    await user.type(screen.getByLabelText('Name'), 'PurgeWhenFull spare');
     await user.click(screen.getByRole('button', { name: 'Save As' }));
 
-    expect(prompt).toHaveBeenCalledWith('Save filter as', 'PurgeWhenFull copy');
+    expect(prompt).not.toHaveBeenCalled();
     await waitFor(() => expect(body).toBeDefined());
     expect(body!.name).toBe('PurgeWhenFull spare');
     expect(body!.query_json).toBe(PURGE_WHEN_FULL_QUERY_JSON);
   });
 
-  it('Save As does nothing when the prompt is dismissed', async () => {
+  it('groups the terms and sort in a Query fieldset, with legacy\'s limits and titles', async () => {
     const user = userEvent.setup();
     stub();
-    vi.spyOn(window, 'prompt').mockReturnValue(null);
-    const posts: unknown[] = [];
-    server.use(http.post('/api/v3/filters', async ({ request }) => {
-      posts.push(await request.json());
-      return HttpResponse.json(PURGE_WHEN_FULL_ROW);
-    }));
     await mount();
-
     await user.selectOptions(await chooser(), '1');
-    await user.click(screen.getByRole('button', { name: 'Save As' }));
+    const query = screen.getByRole('group', { name: 'Query' });
+    expect(within(query).getAllByTestId('filter-term')).toHaveLength(3);
+    expect(within(query).getByLabelText('Sort by')).toBeInTheDocument();
+    expect(screen.getByLabelText('Name')).toHaveAttribute('maxlength', '64');
+    expect(screen.getByLabelText('Skip Locked')).toHaveAttribute(
+      'title', 'Leave out events another filter is already working on. Requires Lock Rows.',
+    );
+    expect(screen.getByLabelText('Command')).toHaveAttribute('maxlength', '255');
+  });
 
-    await new Promise((r) => setTimeout(r, 20));
-    expect(posts).toEqual([]);
+  it('Save As needs a name, like Save', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await user.selectOptions(await chooser(), '1');
+    await user.clear(screen.getByLabelText('Name'));
+    expect(screen.getByRole('button', { name: 'Save As' })).toBeDisabled();
   });
 
   it('Delete confirms by name, then DELETEs and clears the form', async () => {
@@ -426,20 +434,23 @@ describe('ClassicFiltersPage', () => {
     await mount();
 
     await chooser();
-    expect(screen.queryByLabelText('Command')).toBeNull();
+    // Legacy shows the command box beside its checkbox, ticked or not.
+    expect(screen.getByLabelText('Command')).toBeInTheDocument();
+    expect(screen.queryByLabelText('Copy to')).toBeNull();
 
     await user.click(screen.getByLabelText('Execute command on all matches'));
     await user.type(await screen.findByLabelText('Command'), '/usr/bin/notify %EI%');
 
     await user.click(screen.getByLabelText('Email details of all matches'));
-    await user.type(await screen.findByLabelText('Email to'), 'ops@example.net');
-    expect(screen.getByLabelText('Subject')).toBeInTheDocument();
-    expect(screen.getByLabelText('Body')).toBeInTheDocument();
-    expect(screen.getByLabelText('Format')).toHaveValue('Individual');
+    await user.type(await screen.findByLabelText('Email To'), 'ops@example.net');
+    expect(screen.getByLabelText('Email Subject')).toBeInTheDocument();
+    expect(screen.getByLabelText('Email Body')).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: 'Individual' })).toBeChecked();
+    expect(screen.getByLabelText('Email Server')).toHaveAttribute('placeholder', 'localhost');
 
     await user.click(screen.getByLabelText('Copy all matches'));
     const copyTo = await screen.findByLabelText('Copy to');
-    expect(within(copyTo).getByRole('option', { name: 'Default — /var/cache/zm' })).toBeInTheDocument();
+    expect(within(copyTo).getByRole('option', { name: 'Default' })).toBeInTheDocument();
 
     await user.click(screen.getByLabelText('Move all matches'));
     expect(await screen.findByLabelText('Move to')).toBeInTheDocument();
@@ -481,10 +492,10 @@ describe('ClassicFiltersPage', () => {
     await user.selectOptions(await chooser(), '2');
 
     await user.click(screen.getByLabelText('Email details of all matches'));
-    await user.type(await screen.findByLabelText('Email to'), 'ops@example.net');
-    await user.type(screen.getByLabelText('Subject'), 'ZM alarm');
-    await user.type(screen.getByLabelText('Body'), 'Event %EI% fired');
-    await user.selectOptions(screen.getByLabelText('Format'), 'Summary');
+    await user.type(await screen.findByLabelText('Email To'), 'ops@example.net');
+    await user.type(screen.getByLabelText('Email Subject'), 'ZM alarm');
+    await user.type(screen.getByLabelText('Email Body'), 'Event %EI% fired');
+    await user.click(screen.getByRole('radio', { name: 'Summary' }));
 
     await user.click(screen.getByLabelText('Move all matches'));
     await user.selectOptions(await screen.findByLabelText('Move to'), '1');
@@ -776,9 +787,9 @@ describe('ClassicFiltersPage — legacy header details', () => {
 
     await user.selectOptions(await chooser(), '2');
     await user.click(screen.getByLabelText('Email details of all matches'));
-    await user.type(await screen.findByLabelText('Email server'), 'smtp.example.com');
+    await user.type(await screen.findByLabelText('Email Server'), 'smtp.example.com');
     await user.click(screen.getByLabelText('Move all matches'));
-    await user.selectOptions(screen.getByDisplayValue('Zero (unspecified)'), '');
+    await user.selectOptions(screen.getByDisplayValue('Zero'), '');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(body.email_server).toBe('smtp.example.com'));

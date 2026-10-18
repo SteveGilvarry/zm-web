@@ -168,6 +168,7 @@ export default function FiltersPage() {
                   <input
                     id="filter-name"
                     value={draftName}
+                    maxLength={64}
                     onChange={(e) => setDraftName(e.target.value)}
                     placeholder={t('Untitled filter')}
                     className={clsx(input, 'flex-1 text-sm')}
@@ -334,7 +335,7 @@ export default function FiltersPage() {
                           <option value="Summary">{t('Summary (one email per run)')}</option>
                         </select>
                       </div>
-                      <TextField id="filter-email-server" label={t('Email server')} value={c.email_server ?? ''} onChange={(v) => setColumn('email_server', v || null)} placeholder={t('smtp.example.com (optional override)')} />
+                      <TextField id="filter-email-server" label={t('Email server')} value={c.email_server ?? ''} onChange={(v) => setColumn('email_server', v || null)} placeholder={s.features.emailHost} />
                     </div>
                   )}
 

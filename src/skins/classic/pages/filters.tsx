@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 
@@ -40,13 +40,12 @@ export default function ClassicFiltersPage() {
   if (!s.isAuthenticated) return null;
 
   const flag = (key: FlagKey) => c[key] === 1;
-  const onSaveAs = () => {
-    const name = prompt(t('Save filter as'), draftName ? t('{{name}} copy', { name: draftName }) : '');
-    if (name) s.requestSaveAs(name);
-  };
+  // Legacy's Save As writes a new filter under whatever the Name field says
+  // (actions/filter.php:93), so it needs a name just as Save does.
+  const onSaveAs = () => s.requestSaveAs(draftName);
 
-  const check = (id: string, label: string, flagKey: FlagKey) => (
-    <FlagCheck id={id} label={label} checked={flag(flagKey)} onToggle={() => toggleFlag(flagKey)} />
+  const check = (id: string, label: string, flagKey: FlagKey, extra?: ReactNode) => (
+    <FlagCheck id={id} label={label} checked={flag(flagKey)} onToggle={() => toggleFlag(flagKey)} extra={extra} />
   );
 
   return (
@@ -88,7 +87,7 @@ export default function ClassicFiltersPage() {
                 </>
               )}
               <label htmlFor="filter-name" className="text-end text-sm text-zinc-700">{t('Name')}</label>
-              <input id="filter-name" value={draftName} onChange={(e) => setDraftName(e.target.value)} className={clsx(classicInput, 'w-full')} />
+              <input id="filter-name" value={draftName} maxLength={64} onChange={(e) => setDraftName(e.target.value)} className={clsx(classicInput, 'w-full')} />
               <label htmlFor="filter-user" className="text-end text-sm text-zinc-700">{t('User to run filter as')}</label>
               <select
                 id="filter-user"
@@ -102,8 +101,9 @@ export default function ClassicFiltersPage() {
               </select>
             </div>
 
-            {/* Terms */}
-            <div className="max-w-4xl mx-auto">
+            {/* Terms + sort: legacy's "Query" fieldset (filter.php:189, new since 1.39.22). */}
+            <fieldset id="QueryOptions" className="max-w-4xl mx-auto border border-[#dee2e6] px-3 pb-3">
+              <legend className="px-1 text-base">{t('Query')}</legend>
               {unreadable ? (
                 <div className="border border-[#ffeeba] bg-[#fff3cd] text-[#856404] text-xs p-2 space-y-1" data-testid="unreadable-query">
                   <p>
@@ -124,7 +124,13 @@ export default function ClassicFiltersPage() {
                       <option value="0">{t('Desc')}</option>
                     </select>
                     <label htmlFor="filter-skip-locked">{t('Skip Locked')}</label>
-                    <select id="filter-skip-locked" value={draftQuery.skip_locked === '1' ? '1' : '0'} onChange={(e) => setDraftQuery({ ...draftQuery, skip_locked: e.target.value })} className={classicSelect}>
+                    <select
+                      id="filter-skip-locked"
+                      value={draftQuery.skip_locked === '1' ? '1' : '0'}
+                      onChange={(e) => setDraftQuery({ ...draftQuery, skip_locked: e.target.value })}
+                      title={t('Leave out events another filter is already working on. Requires Lock Rows.')}
+                      className={classicSelect}
+                    >
                       <option value="0">{t('No')}</option>
                       <option value="1">{t('Yes')}</option>
                     </select>
@@ -134,55 +140,40 @@ export default function ClassicFiltersPage() {
                   </div>
                 </>
               ) : null}
-            </div>
+            </fieldset>
           </div>
 
-          {/* Actions / Options */}
+          {/* Actions / Options, each control beside its checkbox as in filter.php:245-366. */}
           <div className="grid grid-cols-2 gap-8 px-4 py-3 border-b border-[#337ab7]">
             <section>
               <h2 className="text-center text-xl mb-2">{t('Actions')}</h2>
-              <div className="grid grid-cols-[1fr_1fr] gap-y-2">
-                <div className="col-span-2 grid grid-cols-[1fr_minmax(0,12rem)] gap-y-2 justify-items-end pe-[40%]">
-                  {check('f-archive', t('Archive all matches'), 'auto_archive')}
-                  <span />
-                  {check('f-unarchive', t('Unarchive all matches'), 'auto_unarchive')}
-                  <span />
-                  {check('f-disk', t('Update used disk space'), 'update_disk_space')}
-                  <span />
-                  {features.video && <>{check('f-video', t('Create video for all matches'), 'auto_video')}<span /></>}
-                  {features.upload && <>{check('f-upload', t('Upload all matches'), 'auto_upload')}<span /></>}
-                  {features.email && <>{check('f-email', t('Email details of all matches'), 'auto_email')}<span /></>}
-                  {features.message && <>{check('f-message', t('Message details of all matches'), 'auto_message')}<span /></>}
-                  {features.executeCmd && <>{check('f-execute', t('Execute command on all matches'), 'auto_execute')}<span /></>}
-                  {check('f-delete', t('Delete all matches'), 'auto_delete')}
-                  <span />
-                  {check('f-copy', t('Copy all matches'), 'auto_copy')}
-                  <span />
-                  {check('f-move', t('Move all matches'), 'auto_move')}
-                  <span />
-                </div>
+              <div className="flex flex-col items-end gap-y-2 pe-[30%]">
+                {check('f-archive', t('Archive all matches'), 'auto_archive')}
+                {check('f-unarchive', t('Unarchive all matches'), 'auto_unarchive')}
+                {check('f-disk', t('Update used disk space'), 'update_disk_space')}
+                {features.video && check('f-video', t('Create video for all matches'), 'auto_video')}
+                {features.upload && check('f-upload', t('Upload all matches'), 'auto_upload')}
+                {features.email && check('f-email', t('Email details of all matches'), 'auto_email')}
+                {features.message && check('f-message', t('Message details of all matches'), 'auto_message')}
+                {/* System editors only; the command box sits beside the checkbox. */}
+                {features.executeCmd && check('f-execute', t('Execute command on all matches'), 'auto_execute', (
+                  <input
+                    aria-label={t('Command')}
+                    value={c.auto_execute_cmd ?? ''}
+                    maxLength={255}
+                    onChange={(e) => setColumn('auto_execute_cmd', e.target.value)}
+                    className={clsx(classicInput, 'w-56 font-mono')}
+                  />
+                ))}
+                {check('f-delete', t('Delete all matches'), 'auto_delete')}
+                {/* The target select stays hidden until the box is ticked. */}
+                {check('f-copy', t('Copy all matches'), 'auto_copy', flag('auto_copy') && (
+                  <StorageSelect label={t('Copy to')} value={c.auto_copy_to} storage={storage} onChange={(v) => setColumn('auto_copy_to', v)} />
+                ))}
+                {check('f-move', t('Move all matches'), 'auto_move', flag('auto_move') && (
+                  <StorageSelect label={t('Move to')} value={c.auto_move_to} storage={storage} onChange={(v) => setColumn('auto_move_to', v)} />
+                ))}
               </div>
-              {flag('auto_execute') && features.executeCmd && (
-                <input aria-label={t('Command')} value={c.auto_execute_cmd ?? ''} onChange={(e) => setColumn('auto_execute_cmd', e.target.value)} placeholder="/usr/local/bin/notify.sh %EI%" className={clsx(classicInput, 'w-full mt-2 font-mono')} />
-              )}
-              {flag('auto_email') && (
-                <div className="mt-2 space-y-1">
-                  <input aria-label={t('Email to')} value={c.email_to ?? ''} onChange={(e) => setColumn('email_to', e.target.value)} placeholder={t('Email to')} className={clsx(classicInput, 'w-full')} />
-                  <input aria-label={t('Subject')} value={c.email_subject ?? ''} onChange={(e) => setColumn('email_subject', e.target.value)} placeholder={t('Subject')} className={clsx(classicInput, 'w-full')} />
-                  <textarea aria-label={t('Body')} value={c.email_body ?? ''} onChange={(e) => setColumn('email_body', e.target.value)} rows={3} placeholder={t('Body')} className={clsx(classicInput, 'w-full font-mono')} />
-                  <select aria-label={t('Format')} value={c.email_format || 'Individual'} onChange={(e) => setColumn('email_format', e.target.value)} className={classicSelect}>
-                    <option value="Individual">{t('Individual (one email per event)')}</option>
-                    <option value="Summary">{t('Summary (one email per run)')}</option>
-                  </select>
-                  <input aria-label={t('Email server')} value={c.email_server ?? ''} onChange={(e) => setColumn('email_server', e.target.value || null)} placeholder={t('Email server')} className={clsx(classicInput, 'w-full')} />
-                </div>
-              )}
-              {(flag('auto_copy') || flag('auto_move')) && (
-                <div className="mt-2 space-y-1">
-                  {flag('auto_copy') && <StorageSelect label={t('Copy to')} value={c.auto_copy_to} storage={storage} onChange={(v) => setColumn('auto_copy_to', v)} />}
-                  {flag('auto_move') && <StorageSelect label={t('Move to')} value={c.auto_move_to} storage={storage} onChange={(v) => setColumn('auto_move_to', v)} />}
-                </div>
-              )}
               {s.deleteEverythingRisk && (
                 <p className="mt-2 text-xs text-[#a94442]" role="alert">
                   {t('No conditions + Delete all matches = every event will be deleted when this filter runs.')}
@@ -191,19 +182,60 @@ export default function ClassicFiltersPage() {
             </section>
             <section>
               <h2 className="text-center text-xl mb-2">{t('Options')}</h2>
-              <div className="grid grid-cols-[1fr_minmax(0,12rem)] gap-y-2 justify-items-end pe-[30%]">
+              <div className="flex flex-col items-end gap-y-2 pe-[30%]">
                 {check('f-background', t('Run filter in background'), 'background')}
-                <span />
                 <label htmlFor="f-interval" className="flex items-center justify-end gap-2 text-sm text-zinc-700">
                   {t('Execute Interval')}
                   <input id="f-interval" type="number" min={0} value={c.execute_interval} onChange={(e) => setColumn('execute_interval', Math.max(0, parseInt(e.target.value || '0', 10) || 0))} className={clsx(classicInput, 'w-28')} />
                   <span>{t('seconds')}</span>
                 </label>
-                <span />
                 {check('f-concurrent', t('Run filter concurrently'), 'concurrent')}
-                <span />
                 {check('f-lock', t('Lock Rows'), 'lock_rows')}
-                <span />
+                {/* EmailOptions: under Options, shown while Email is ticked (filter.php:350-385). */}
+                {features.email && flag('auto_email') && (
+                  <div id="EmailOptions" className="flex flex-col items-end gap-y-2">
+                    <LabelledField id="f-email-to" label={t('Email To')}>
+                      <input id="f-email-to" type="email" multiple value={c.email_to ?? ''} onChange={(e) => setColumn('email_to', e.target.value)} className={clsx(classicInput, 'w-56')} />
+                    </LabelledField>
+                    <LabelledField id="f-email-subject" label={t('Email Subject')}>
+                      <input id="f-email-subject" value={c.email_subject ?? ''} onChange={(e) => setColumn('email_subject', e.target.value)} className={clsx(classicInput, 'w-56')} />
+                    </LabelledField>
+                    <LabelledField id="f-email-body" label={t('Email Body')}>
+                      <textarea
+                        id="f-email-body"
+                        value={c.email_body ?? ''}
+                        onChange={(e) => setColumn('email_body', e.target.value)}
+                        // Legacy sizes the box to the body's own line count.
+                        rows={Math.max(1, (c.email_body ?? '').split('\n').length)}
+                        className={clsx(classicInput, 'w-56 font-mono')}
+                      />
+                    </LabelledField>
+                    <div role="radiogroup" aria-label={t('Email Format')} className="flex items-center gap-3 text-sm text-zinc-700">
+                      <span>{t('Email Format')}</span>
+                      {(['Individual', 'Summary'] as const).map((format) => (
+                        <label key={format} className="inline-flex items-center gap-1">
+                          <input
+                            type="radio"
+                            name="email-format"
+                            value={format}
+                            checked={(c.email_format || 'Individual') === format}
+                            onChange={() => setColumn('email_format', format)}
+                          />
+                          {format === 'Individual' ? t('Individual') : t('Summary')}
+                        </label>
+                      ))}
+                    </div>
+                    <LabelledField id="f-email-server" label={t('Email Server')}>
+                      <input
+                        id="f-email-server"
+                        value={c.email_server ?? ''}
+                        onChange={(e) => setColumn('email_server', e.target.value || null)}
+                        placeholder={features.emailHost}
+                        className={clsx(classicInput, 'w-56')}
+                      />
+                    </LabelledField>
+                  </div>
+                )}
               </div>
             </section>
           </div>
@@ -221,7 +253,7 @@ export default function ClassicFiltersPage() {
             )}
             <RequirePerm feature="events" level="Edit">
               <button type="button" onClick={s.requestSave} disabled={!canSave || s.savePending || s.createPending} className={grey}>{t('Save')}</button>
-              <button type="button" onClick={onSaveAs} disabled={!draftQuery || !s.canWeEdit || s.createPending} className={grey}>{t('Save As')}</button>
+              <button type="button" onClick={onSaveAs} disabled={!draftQuery || !draftName.trim() || !s.canWeEdit || s.createPending} className={grey}>{t('Save As')}</button>
               <button
                 type="button"
                 onClick={() => { if (selectedFilter) s.requestDelete(selectedFilter); }}
@@ -261,29 +293,47 @@ export default function ClassicFiltersPage() {
   );
 }
 
-function FlagCheck({ id, label, checked, onToggle }: { id: string; label: string; checked: boolean; onToggle: () => void }) {
+function FlagCheck({ id, label, checked, onToggle, extra }: {
+  id: string; label: string; checked: boolean; onToggle: () => void;
+  /** What legacy puts after the checkbox on the same line (command box, target select). */
+  extra?: ReactNode;
+}) {
   return (
-    <label htmlFor={id} className="flex items-center justify-end gap-2 text-sm text-zinc-700">
-      {label}
-      <input id={id} type="checkbox" checked={checked} onChange={onToggle} className="w-4 h-4" />
-    </label>
+    <span className="flex items-center justify-end gap-2 text-sm text-zinc-700">
+      <label htmlFor={id} className="flex items-center gap-2">
+        {label}
+        <input id={id} type="checkbox" checked={checked} onChange={onToggle} className="w-4 h-4" />
+      </label>
+      {extra}
+    </span>
   );
 }
 
+function LabelledField({ id, label, children }: { id: string; label: string; children: ReactNode }) {
+  return (
+    <span className="flex items-center justify-end gap-2 text-sm text-zinc-700">
+      <label htmlFor={id}>{label}</label>
+      {children}
+    </span>
+  );
+}
+
+/** Legacy's `$storageareas`: NULL Unspecified, Zero, then the areas by name (filter.php:109). */
 function StorageSelect({ label, value, storage, onChange }: {
   label: string; value: FilterColumns['auto_copy_to']; storage: Array<{ id: number; name: string; path: string }>;
   onChange: (v: number | null) => void;
 }) {
   const { t } = useTranslation();
   return (
-    <label className="flex items-center gap-2 text-sm text-zinc-700">
-      {label}
-      <select value={value == null ? '' : String(value)} onChange={(e) => onChange(e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)} className={classicSelect}>
-        <option value="">{t('NULL Unspecified')}</option>
-        <option value="0">{t('Zero (unspecified)')}</option>
-        {storage.map((st) => <option key={st.id} value={String(st.id)}>{st.name} — {st.path}</option>)}
-      </select>
-    </label>
+    <select
+      aria-label={label}
+      value={value == null ? '' : String(value)}
+      onChange={(e) => onChange(e.target.value === '' ? null : parseInt(e.target.value, 10) || 0)}
+      className={classicSelect}
+    >
+      <option value="">{t('NULL Unspecified')}</option>
+      <option value="0">{t('Zero')}</option>
+      {storage.map((st) => <option key={st.id} value={String(st.id)}>{st.name}</option>)}
+    </select>
   );
 }
-
