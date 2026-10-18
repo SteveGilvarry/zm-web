@@ -1,6 +1,6 @@
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Eye, X, Loader2, Archive, ArchiveRestore, Trash2, ChevronLeft, ChevronRight, Download, LayoutGrid, List } from 'lucide-react';
@@ -67,6 +67,27 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
   });
 
   const hasAction = actions.archive || actions.unarchive || actions.delete;
+
+  const runExecute = () => {
+    if (listed.length === 0) {
+      alert(t('No matches to act on.'));
+      return;
+    }
+    const prompt = actions.delete
+      ? t("Delete {{count}} listed events? This can't be undone.", { count: listed.length })
+      : actions.archive
+        ? t('Archive {{count}} listed events?', { count: listed.length })
+        : t('Unarchive {{count}} listed events?', { count: listed.length });
+    if (confirm(prompt)) executeMutation.mutate();
+  };
+
+  // Execute pressed before the matches were listed: list them, then ask.
+  const executeWhenListed = useRef(false);
+  useEffect(() => {
+    if (!executeWhenListed.current || !open || preview.isLoading || preview.isFetching) return;
+    executeWhenListed.current = false;
+    runExecute();
+  });
 
   const monitorName = (id: number) => monitors.find((m) => m.id === id)?.name ?? String(id);
   const exportMatches = () => {
@@ -148,18 +169,16 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
           <button
             type="button"
             onClick={() => {
-              if (listed.length === 0) {
-                alert(t('No matches to act on.'));
+              // Legacy enables Execute on the ticked actions alone
+              // (filter.js:74-105); the matches it acts on are listed first.
+              if (!open || preview.isFetching) {
+                executeWhenListed.current = true;
+                setOpen(true);
                 return;
               }
-              const prompt = actions.delete
-                ? t("Delete {{count}} listed events? This can't be undone.", { count: listed.length })
-                : actions.archive
-                  ? t('Archive {{count}} listed events?', { count: listed.length })
-                  : t('Unarchive {{count}} listed events?', { count: listed.length });
-              if (confirm(prompt)) executeMutation.mutate();
+              runExecute();
             }}
-            disabled={executeMutation.isPending || !open || listed.length === 0}
+            disabled={executeMutation.isPending}
             className={btn(false, actions.delete ? 'danger' : 'warn')}
           >
             {executeMutation.isPending

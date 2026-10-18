@@ -162,6 +162,28 @@ describe('MatchesPreview — execute archive and unarchive', () => {
       expect(useToastStore.getState().toasts.some((t) => /Applied to 2 event/.test(t.message))).toBe(true));
   });
 
+  it('is enabled by the ticked action alone, listing the matches before it asks', async () => {
+    const user = userEvent.setup();
+    stubPreview();
+    const patched: string[] = [];
+    server.use(http.patch('/api/v3/events/:id', ({ params }) => {
+      patched.push(String(params.id));
+      return HttpResponse.json({ id: Number(params.id) });
+    }));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderWithProviders(
+      <MatchesPreview query={query} monitors={monitors} actions={{ archive: true, unarchive: false, delete: false }} />,
+    );
+    const execute = screen.getByRole('button', { name: /execute/i });
+    expect(execute).toBeEnabled();
+    await user.click(execute);
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('Archive 2 listed events?'));
+    await waitFor(() => expect(patched).toEqual(['11', '12']));
+    expect(screen.getByText('Event 11')).toBeInTheDocument();
+  });
+
   it('unarchives when that is the draft action', async () => {
     const user = userEvent.setup();
     stubPreview();

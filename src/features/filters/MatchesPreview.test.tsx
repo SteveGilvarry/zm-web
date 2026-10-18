@@ -156,7 +156,8 @@ describe('MatchesPreview — execute now', () => {
 
     rerender(<MatchesPreview query={{ terms: [] }} monitors={[]} actions={{ ...noActions, delete: true }} />);
     const exec = screen.getByRole('button', { name: /^execute$/i });
-    expect(exec).toBeDisabled();
+    // The ticked action is enough, as in legacy (filter.js:74-105).
+    expect(exec).toBeEnabled();
 
     await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(exec).toBeEnabled());
