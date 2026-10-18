@@ -172,164 +172,164 @@ export default function ClassicMontageReviewPage() {
           {panelOpen ? <FilterX size={18} aria-hidden /> : <Filter size={18} aria-hidden />}
         </button>
         {panelOpen && (
-        <div id="review-panel" className="flex flex-col gap-2">
-        <button
-          type="button"
-          onClick={() => setMonitorFiltersOpen((o) => !o)}
-          aria-expanded={monitorFiltersOpen}
-          className="self-start flex items-center gap-1 text-sm text-white/90 hover:text-white"
-        >
-          {monitorFiltersOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
-          {t('Monitor Filters')}
-        </button>
-        {monitorFiltersOpen && (
-          <ClassicFilterRow monitors={page.allMonitors} state={filter} tone="dark" />
-        )}
-        {/* Legacy's event terms, in its order: the Monitor select spliced in
-            first, then Archive Status, Date Time >= and <=, Tags, Notes
-            (`montagereview.php:318-327`, `simple_widget`). */}
-        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm">
-          <Term label={t('Monitor')} op="">
-            <MultiSelect
-              label={t('Monitor')}
-              value={filter.valuesMulti.monitorId}
-              options={page.allMonitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
-              onChange={(next) => filter.setMulti('monitorId', next)}
-            />
-          </Term>
-          <Term label={t('Archive Status')} op="=">
-            <select
-              aria-label={t('Archive Status')}
-              value={page.filters.archived}
-              onChange={(e) => page.setFilters({ archived: e.target.value as 'all' | 'unarchived' | 'archived' })}
-              className={selectClass}
-            >
-              <option value="all">{t('All')}</option>
-              <option value="unarchived">{t('Unarchived Only')}</option>
-              <option value="archived">{t('Archived Only')}</option>
-            </select>
-          </Term>
-          <Term label={t('Date Time')} op=">=">
-            <input
-              type="datetime-local"
-              step={1}
-              aria-label={t('Date Time >=')}
-              value={toLocalInputValue(clock.rangeStart)}
-              onChange={(e) => page.setRangeBound('start', new Date(e.target.value))}
-              className={classicInputClass}
-            />
-          </Term>
-          <Term label={t('Date Time')} op="<=">
-            <input
-              type="datetime-local"
-              step={1}
-              aria-label={t('Date Time <=')}
-              value={toLocalInputValue(clock.rangeEnd)}
-              onChange={(e) => page.setRangeBound('end', new Date(e.target.value))}
-              className={classicInputClass}
-            />
-          </Term>
-          <Term label={t('Tags')} op="=">
-            <MultiSelect
-              label={t('Tags')}
-              value={page.filters.tagIds.map(String)}
-              options={[
-                { value: String(REVIEW_NO_TAG), label: t('No Tag') },
-                { value: String(REVIEW_ANY_TAG), label: t('Any Tag') },
-                ...page.tags.map((tag) => ({ value: String(tag.id), label: tag.name })),
-              ]}
-              onChange={(next) => page.setFilters({ tagIds: next.map(Number) })}
-            />
-          </Term>
-          <Term label={t('Notes')} op="LIKE">
-            <MultiSelect
-              label={t('Notes')}
-              value={page.filters.notes}
-              options={notesOptions}
-              onChange={(next) => page.setFilters({ notes: next })}
-            />
-          </Term>
-        </div>
-        <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
-          {!page.fit && (
-            <label className="flex items-center gap-2">
-              <span className="font-semibold">{t('Scale')}</span>
-              <input
-                type="range" min={0.1} max={1} step={0.1}
-                value={page.scale}
-                onChange={(e) => page.setScale(Number(e.target.value))}
-                aria-label={t('Scale')}
-                aria-valuetext={t('{{scale}} x', { scale: page.scale.toFixed(2) })}
+          <div id="review-panel" className="flex flex-col gap-2">
+          <button
+            type="button"
+            onClick={() => setMonitorFiltersOpen((o) => !o)}
+            aria-expanded={monitorFiltersOpen}
+            className="self-start flex items-center gap-1 text-sm text-white/90 hover:text-white"
+          >
+            {monitorFiltersOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+            {t('Monitor Filters')}
+          </button>
+          {monitorFiltersOpen && (
+            <ClassicFilterRow monitors={page.allMonitors} state={filter} tone="dark" />
+          )}
+          {/* Legacy's event terms, in its order: the Monitor select spliced in
+              first, then Archive Status, Date Time >= and <=, Tags, Notes
+              (`montagereview.php:318-327`, `simple_widget`). */}
+          <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm">
+            <Term label={t('Monitor')} op="">
+              <MultiSelect
+                label={t('Monitor')}
+                value={filter.valuesMulti.monitorId}
+                options={page.allMonitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
+                onChange={(next) => filter.setMulti('monitorId', next)}
               />
-              <span className="tabular-nums w-14">{t('{{scale}} x', { scale: page.scale.toFixed(2) })}</span>
+            </Term>
+            <Term label={t('Archive Status')} op="=">
+              <select
+                aria-label={t('Archive Status')}
+                value={page.filters.archived}
+                onChange={(e) => page.setFilters({ archived: e.target.value as 'all' | 'unarchived' | 'archived' })}
+                className={selectClass}
+              >
+                <option value="all">{t('All')}</option>
+                <option value="unarchived">{t('Unarchived Only')}</option>
+                <option value="archived">{t('Archived Only')}</option>
+              </select>
+            </Term>
+            <Term label={t('Date Time')} op=">=">
+              <input
+                type="datetime-local"
+                step={1}
+                aria-label={t('Date Time >=')}
+                value={toLocalInputValue(clock.rangeStart)}
+                onChange={(e) => page.setRangeBound('start', new Date(e.target.value))}
+                className={classicInputClass}
+              />
+            </Term>
+            <Term label={t('Date Time')} op="<=">
+              <input
+                type="datetime-local"
+                step={1}
+                aria-label={t('Date Time <=')}
+                value={toLocalInputValue(clock.rangeEnd)}
+                onChange={(e) => page.setRangeBound('end', new Date(e.target.value))}
+                className={classicInputClass}
+              />
+            </Term>
+            <Term label={t('Tags')} op="=">
+              <MultiSelect
+                label={t('Tags')}
+                value={page.filters.tagIds.map(String)}
+                options={[
+                  { value: String(REVIEW_NO_TAG), label: t('No Tag') },
+                  { value: String(REVIEW_ANY_TAG), label: t('Any Tag') },
+                  ...page.tags.map((tag) => ({ value: String(tag.id), label: tag.name })),
+                ]}
+                onChange={(next) => page.setFilters({ tagIds: next.map(Number) })}
+              />
+            </Term>
+            <Term label={t('Notes')} op="LIKE">
+              <MultiSelect
+                label={t('Notes')}
+                value={page.filters.notes}
+                options={notesOptions}
+                onChange={(next) => page.setFilters({ notes: next })}
+              />
+            </Term>
+          </div>
+          <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
+            {!page.fit && (
+              <label className="flex items-center gap-2">
+                <span className="font-semibold">{t('Scale')}</span>
+                <input
+                  type="range" min={0.1} max={1} step={0.1}
+                  value={page.scale}
+                  onChange={(e) => page.setScale(Number(e.target.value))}
+                  aria-label={t('Scale')}
+                  aria-valuetext={t('{{scale}} x', { scale: page.scale.toFixed(2) })}
+                />
+                <span className="tabular-nums w-14">{t('{{scale}} x', { scale: page.scale.toFixed(2) })}</span>
+              </label>
+            )}
+            {!isLive && (
+            <label className="flex items-center gap-2">
+              <span className="font-semibold">{t('Speed')}</span>
+              {/* Legacy is a 13-step slider over REVIEW_SPEEDS, 0 = paused. */}
+              <input
+                type="range"
+                min={0}
+                max={REVIEW_SPEEDS.length - 1}
+                step={1}
+                value={reviewSpeedIndex(clock.speed)}
+                onChange={(e) => clock.setSpeed(REVIEW_SPEEDS[Number(e.target.value)])}
+                aria-label={t('Speed')}
+                aria-valuetext={speedLabel}
+              />
+              {/* `montagereview.js:963` — a playback multiplier to two places
+                  ("1.00 x"), not a frame rate. The `N fps` in the PHP is the
+                  pre-JS server render, overwritten by `setSpeed` on load. */}
+              <span className="tabular-nums w-16" data-testid="review-speed">
+                {speedLabel}
+              </span>
             </label>
-          )}
-          {!isLive && (
-          <label className="flex items-center gap-2">
-            <span className="font-semibold">{t('Speed')}</span>
-            {/* Legacy is a 13-step slider over REVIEW_SPEEDS, 0 = paused. */}
-            <input
-              type="range"
-              min={0}
-              max={REVIEW_SPEEDS.length - 1}
-              step={1}
-              value={reviewSpeedIndex(clock.speed)}
-              onChange={(e) => clock.setSpeed(REVIEW_SPEEDS[Number(e.target.value)])}
-              aria-label={t('Speed')}
-              aria-valuetext={speedLabel}
-            />
-            {/* `montagereview.js:963` — a playback multiplier to two places
-                ("1.00 x"), not a frame rate. The `N fps` in the PHP is the
-                pre-JS server render, overwritten by `setSpeed` on load. */}
-            <span className="tabular-nums w-16" data-testid="review-speed">
-              {speedLabel}
-            </span>
-          </label>
-          )}
-        </div>
-        <div className="flex flex-wrap items-center justify-center gap-1.5" role="toolbar" aria-label={t('Review range')}>
-          {/* Live view hides what only history uses (`redrawScreen`). */}
-          {!isLive && (
-            <>
-              <ClassicButton onClick={() => page.pan(-0.5)}>&lt; {t('Pan')}</ClassicButton>
-              <ClassicButton onClick={() => page.zoom(0.5)}>{t('In')} +</ClassicButton>
-              <ClassicButton onClick={() => page.zoom(2)}>{t('Out')} -</ClassicButton>
-            </>
-          )}
-          {presetBtn('24h', t('24 Hour'))}
-          {presetBtn('8h', t('8 Hour'))}
-          {presetBtn('1h', t('1 Hour'))}
-          <ClassicButton
-            onClick={page.fitToEvents}
-            disabled={isLive || page.isFittingEvents || page.selectedMonitors.length === 0}
-          >
-            {t('All Events')}
-          </ClassicButton>
-          <ClassicButton onClick={page.toggleLive}>
-            {isLive ? t('History') : t('Live')}
-          </ClassicButton>
-          <ClassicButton
-            tone={page.fit ? 'primary' : 'default'}
-            aria-pressed={page.fit}
-            onClick={() => page.setFit(!page.fit)}
-          >
-            {page.fit ? t('Scale') : t('Fit')}
-          </ClassicButton>
-          {!isLive && <ClassicButton onClick={() => page.pan(0.5)}>{t('Pan')} &gt;</ClassicButton>}
-          {/* Legacy `#collapse`: the timeline's own toggle, last in the row. */}
-          <ClassicButton
-            onClick={() => setTimelineOpen(!timelineOpen)}
-            aria-expanded={timelineOpen}
-            aria-label={t('Toggle timeline visibility')}
-            title={t('Toggle timeline visibility')}
-          >
-            {timelineOpen ? <History size={14} aria-hidden /> : <Clock size={14} aria-hidden />}
-          </ClassicButton>
-          {page.fitEventsEmpty && (
-            <span role="status" className="text-xs text-red-700">{t('No events to fit')}</span>
-          )}
-        </div>
-        </div>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center justify-center gap-1.5" role="toolbar" aria-label={t('Review range')}>
+            {/* Live view hides what only history uses (`redrawScreen`). */}
+            {!isLive && (
+              <>
+                <ClassicButton onClick={() => page.pan(-0.5)}>&lt; {t('Pan')}</ClassicButton>
+                <ClassicButton onClick={() => page.zoom(0.5)}>{t('In')} +</ClassicButton>
+                <ClassicButton onClick={() => page.zoom(2)}>{t('Out')} -</ClassicButton>
+              </>
+            )}
+            {presetBtn('24h', t('24 Hour'))}
+            {presetBtn('8h', t('8 Hour'))}
+            {presetBtn('1h', t('1 Hour'))}
+            <ClassicButton
+              onClick={page.fitToEvents}
+              disabled={isLive || page.isFittingEvents || page.selectedMonitors.length === 0}
+            >
+              {t('All Events')}
+            </ClassicButton>
+            <ClassicButton onClick={page.toggleLive}>
+              {isLive ? t('History') : t('Live')}
+            </ClassicButton>
+            <ClassicButton
+              tone={page.fit ? 'primary' : 'default'}
+              aria-pressed={page.fit}
+              onClick={() => page.setFit(!page.fit)}
+            >
+              {page.fit ? t('Scale') : t('Fit')}
+            </ClassicButton>
+            {!isLive && <ClassicButton onClick={() => page.pan(0.5)}>{t('Pan')} &gt;</ClassicButton>}
+            {/* Legacy `#collapse`: the timeline's own toggle, last in the row. */}
+            <ClassicButton
+              onClick={() => setTimelineOpen(!timelineOpen)}
+              aria-expanded={timelineOpen}
+              aria-label={t('Toggle timeline visibility')}
+              title={t('Toggle timeline visibility')}
+            >
+              {timelineOpen ? <History size={14} aria-hidden /> : <Clock size={14} aria-hidden />}
+            </ClassicButton>
+            {page.fitEventsEmpty && (
+              <span role="status" className="text-xs text-red-700">{t('No events to fit')}</span>
+            )}
+          </div>
+          </div>
         )}
       </div>
 
