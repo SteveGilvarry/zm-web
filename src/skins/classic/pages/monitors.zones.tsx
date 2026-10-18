@@ -57,7 +57,7 @@ function StreamStatus({ monitor, runtime }: { monitor: Monitor; runtime: Monitor
       {runtime && (
         <>
           <span>{t('State: {{state}}', { state: runtime.status })}</span>
-          <span title={t('Capturing FPS')}>{t('{{fps}} fps', { fps: formatFpsLegacy(runtime.captureFpsRaw) })}</span>
+          <span title={t('Capturing FPS')}>{formatFpsLegacy(runtime.captureFpsRaw)}</span>
         </>
       )}
     </p>
