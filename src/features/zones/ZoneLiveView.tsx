@@ -14,7 +14,12 @@ interface ZoneLiveViewProps {
   stillUrl?: string | null;
   /** The view frame (rotation applied), which the parent box already has the shape of. */
   frame: { width: number; height: number };
-  /** The monitor's Orientation: snapshots and streams arrive unrotated. */
+  /**
+   * The monitor's Orientation. Streams arrive unrotated (zm-api relays the
+   * camera's own picture) and are turned onto the frame here; snapshots come
+   * from ZoneMinder's captured image, which already has the orientation
+   * applied — a ROTATE_90 camera's JPEG is portrait — so they are drawn as is.
+   */
   orientation?: string | null;
 }
 
@@ -58,22 +63,22 @@ export function ZoneLiveView({ monitorId, player, stillUrl, frame, orientation }
       />
     );
   }
-  if (player === 'stills') return <ZoneSnapshot monitorId={monitorId} layout={layout} />;
+  if (player === 'stills') return <ZoneSnapshot monitorId={monitorId} />;
   return <ZoneVideo monitorId={monitorId} protocol={player} layout={layout} />;
 }
 
 type MediaLayout = ReturnType<typeof mediaLayout>;
 
-function ZoneSnapshot({ monitorId, layout }: { monitorId: number; layout: MediaLayout }) {
+function ZoneSnapshot({ monitorId }: { monitorId: number }) {
   const { t } = useTranslation();
   const url = useRefreshingSnapshot(monitorId, true);
   if (!url) return null;
+  // Already oriented by ZoneMinder: no transform, just fill the view frame.
   return (
     <img
       src={url}
       alt={t('Monitor snapshot')}
-      className={layout.className}
-      style={layout.style}
+      className="absolute inset-0 w-full h-full object-fill pointer-events-none"
     />
   );
 }

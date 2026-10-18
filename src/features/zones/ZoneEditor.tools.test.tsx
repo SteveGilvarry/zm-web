@@ -227,24 +227,23 @@ describe('ZoneEditor — Player', () => {
     expect(stream.hlsStart).not.toHaveBeenCalled();
   });
 
-  it('turns an unrotated camera image onto a rotated camera\'s frame', async () => {
+  it('draws a rotated camera\'s snapshot as it comes: ZoneMinder already turned it', async () => {
     const user = userEvent.setup();
-    // A 2000×1000 sensor on ROTATE_90: the view frame is 1000×2000.
+    // A 2000×1000 sensor on ROTATE_90: the view frame is 1000×2000 and the
+    // JPEG zm-api serves is portrait already (measured on the box: 2160×3840).
     renderWithProviders(<ZoneEditor monitorId={1} width={1000} height={2000} orientation="ROTATE_90" />);
     await user.click(await screen.findByText('Yard'));
     const img = await screen.findByAltText('Monitor snapshot');
-    expect(img.style.transform).toContain('rotate(90deg)');
-    // Laid out at the native landscape size, as a share of the portrait box.
-    expect(img.style.width).toBe('200%');
-    expect(img.style.height).toBe('50%');
+    expect(img.style.transform).toBe('');
+    expect(img).toHaveClass('w-full', 'h-full');
   });
 
-  it('flips without rotating for a flipped camera', async () => {
+  it('leaves a flipped camera\'s snapshot alone too', async () => {
     const user = userEvent.setup();
     renderWithProviders(<ZoneEditor monitorId={1} width={2000} height={1000} orientation="FLIP_HORI" />);
     await user.click(await screen.findByText('Yard'));
     const img = await screen.findByAltText('Monitor snapshot');
-    expect(img.style.transform).toBe('scaleX(-1)');
+    expect(img.style.transform).toBe('');
     expect(img).toHaveClass('w-full', 'h-full');
   });
 
