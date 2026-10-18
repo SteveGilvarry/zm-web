@@ -126,7 +126,7 @@ function ReportDetailBody({
                 className={field}
               />
             </Field>
-            <Field label={t('Interval')}>
+            <Field label={t('Interval (seconds)')}>
               <input
                 type="number"
                 min={0}
@@ -134,7 +134,7 @@ function ReportDetailBody({
                 onChange={(e) =>
                   f.setInterval(e.target.value === '' ? '' : parseInt(e.target.value, 10))
                 }
-                placeholder={t('minutes (blank = one-off)')}
+                placeholder={t('seconds (blank = one-off)')}
                 className={clsx(field, 'w-48')}
               />
             </Field>

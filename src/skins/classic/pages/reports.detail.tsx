@@ -157,7 +157,7 @@ function ReportDetailBody({
                   min={0}
                   value={f.interval}
                   onChange={(e) => f.setInterval(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                  placeholder={t('minutes (blank = one-off)')}
+                  placeholder={t('seconds (blank = one-off)')}
                   className={classicInput}
                 />
               </td>

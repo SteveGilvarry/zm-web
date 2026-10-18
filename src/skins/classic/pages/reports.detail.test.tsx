@@ -60,7 +60,7 @@ const REPORT = {
   filter_id: 4,
   start_date_time: '2026-08-01T00:00:00Z',
   end_date_time: '2026-08-08T00:00:00Z',
-  interval: 60,
+  interval: 86400,
 };
 
 const FILTERS = [
@@ -115,7 +115,7 @@ describe('ClassicReportDetailPage', () => {
     const name = await screen.findByLabelText('Name');
     expect(name).toHaveValue('Weekly motion');
     expect(screen.getByLabelText('Filter')).toHaveValue('4');
-    expect(screen.getByLabelText('Interval')).toHaveValue(60);
+    expect(screen.getByLabelText('Interval')).toHaveValue(86400);
     // Start/End are datetime-local, i.e. the report's stamps in local time.
     expect((screen.getByLabelText('Start') as HTMLInputElement).value).toMatch(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/);
     // The filter select lists every filter plus the "select" placeholder.
@@ -135,7 +135,7 @@ describe('ClassicReportDetailPage', () => {
     await user.type(name, '  Monthly motion  ');
     await user.selectOptions(screen.getByLabelText('Filter'), '5');
     await user.clear(screen.getByLabelText('Interval'));
-    await user.type(screen.getByLabelText('Interval'), '30');
+    await user.type(screen.getByLabelText('Interval'), '3600');
     await user.click(screen.getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
@@ -143,7 +143,7 @@ describe('ClassicReportDetailPage', () => {
     expect(sent[0].path).toBe('/reports/7');
     expect(sent[0].body!.name).toBe('Monthly motion');
     expect(sent[0].body!.filter_id).toBe(5);
-    expect(sent[0].body!.interval).toBe(30);
+    expect(sent[0].body!.interval).toBe(3600);
     expect(typeof sent[0].body!.start_date_time).toBe('string');
 
     expect(await screen.findByText('Saved.')).toBeInTheDocument();
