@@ -129,6 +129,8 @@ export interface FieldDef {
   zeroOption?: string;
   /** Not a monitor column (group membership, computed readouts): never extracted, diffed or sent. */
   virtual?: boolean;
+  /** For 'textarea': rows for the current value (legacy grows Options with its entries). Default 3. */
+  rows?: (value: FieldValue) => number;
   /**
    * Permission needed to change the field. Without it the field renders
    * read-only with `reason` as its tooltip, and the editor never sends it.

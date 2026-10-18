@@ -174,6 +174,25 @@ describe('ClassicMonitorEditor', () => {
     expect(screen.getByText('Host Name')).toBeInTheDocument();
   });
 
+  it('Back goes back; Cancel leaves for wherever the page sends it (the console)', async () => {
+    const onBack = vi.fn();
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(<ClassicMonitorEditor monitor={monitor} onClose={onClose} onBack={onBack} />);
+    await user.click(screen.getByRole('button', { name: 'Back' }));
+    expect(onBack).toHaveBeenCalledTimes(1);
+    expect(onClose).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Cancel' }));
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('the Options textarea grows with its entries, as monitor.php sizes it', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ClassicMonitorEditor monitor={{ ...monitor, options: 'a=1,b=2,c=3' } as Monitor} onClose={() => {}} />);
+    await user.click(tab('Source'));
+    expect(screen.getByRole('textbox', { name: 'Options' })).toHaveAttribute('rows', '3');
+  });
+
   it('a Web Site monitor gets General and Source only', () => {
     renderWithProviders(<ClassicMonitorEditor monitor={{ ...monitor, type: 'WebSite' } as Monitor} onClose={() => {}} />);
     const rail = within(screen.getByRole('navigation', { name: 'Monitor tabs' }));

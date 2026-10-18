@@ -23,7 +23,10 @@ interface ClassicMonitorEditorProps {
   /** The monitor to edit; omit with `seed` for Add / Clone. */
   monitor?: Monitor;
   seed?: MonitorEditorSeed;
+  /** Cancel and Save and close (legacy: both go to the console). */
   onClose: () => void;
+  /** Back (legacy `history.back()`). Defaults to `onClose`. */
+  onBack?: () => void;
   onCreated?: (monitor: Monitor) => void;
   /** Legacy `?tab=`: the tab to open on, and where to report a tab change. */
   initialTab?: string;
@@ -68,7 +71,7 @@ export function ClassicMonitorEditor(props: ClassicMonitorEditorProps) {
 }
 
 function ClassicMonitorEditorBody({
-  monitor, seed, onClose, onCreated, initialTab, onTabChange, onRefresh,
+  monitor, seed, onClose, onBack, onCreated, initialTab, onTabChange, onRefresh,
 }: ClassicMonitorEditorProps & { onRefresh: () => void }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
@@ -133,7 +136,7 @@ function ClassicMonitorEditorBody({
         <div className="flex-1 min-w-0">
           <ClassicHeader
             title={title}
-            onBack={ed.requestClose}
+            onBack={onBack ?? onClose}
             onRefresh={onRefresh}
             end={canEdit ? (
               <>

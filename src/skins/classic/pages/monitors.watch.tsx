@@ -132,7 +132,9 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
       {page.editorOpen && (
         <ClassicMonitorEditor
           monitor={monitor}
-          onClose={page.closeEditor}
+          // Legacy: Cancel and Save and close go to the console; Back returns here.
+          onClose={() => { void navigate({ to: '/' }); }}
+          onBack={page.closeEditor}
           initialTab={page.editorTab}
           onTabChange={page.setEditorTab}
         />

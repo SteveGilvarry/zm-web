@@ -574,7 +574,8 @@ describe('ClassicMonitorWatchPage', () => {
     expect(rail.getAllByRole('button').map((b) => b.textContent)).toEqual([
       'General', 'Source', 'Analysis', 'Recording', 'Viewing', 'ONVIF', 'Timestamp', 'Buffers', 'Control', 'Misc', 'Zones', 'MQTT',
     ]);
-    await user.click(within(editor).getByRole('button', { name: 'Cancel' }));
+    // Back returns to the watch page.
+    await user.click(within(editor).getByRole('button', { name: 'Back' }));
     expect(screen.queryByTestId('monitor-editor')).toBeNull();
   });
 

@@ -124,7 +124,7 @@ export function buildClassicTabs(t: Translate): TabDef[] {
         { kind: 'undelete', key: 'deleted', label: t('Monitor is Deleted, Undelete?'),
           visibleIf: (_d, stored) => isSet(stored.deleted) },
         { kind: 'text', key: 'name', label: t('Name'), required: true },
-        { kind: 'textarea', key: 'notes', label: t('Notes') },
+        { kind: 'textarea', key: 'notes', label: t('Notes'), rows: () => 4 },
         { kind: 'select', key: 'device_class', label: t('Device Class'),
           options: [{ value: 'Camera', label: t('Camera') }, { value: 'Speaker', label: t('Speaker') }] },
         { kind: 'manufacturer-select', key: 'manufacturer_id', label: t('Manufacturer') },
@@ -218,6 +218,8 @@ export function buildClassicTabs(t: Translate): TabDef[] {
             { value: 'rtpMulti', label: 'UDP Multicast' }, { value: 'rtpRtspHttp', label: 'HTTP Tunnel' },
           ] },
         { kind: 'textarea', key: 'options', label: t('Options'), show: STREAMING, helpLink: true,
+          // monitor.php: one row per comma- or newline-separated entry, at least two.
+          rows: (v) => Math.max(2, String(v ?? '').split(/[,\r\n]+/).length),
           help: t('Passed on to FFmpeg, separated by commas, e.g. allowed_media_types=video or reorder_queue_size=nnn.') },
 
         { kind: 'select', key: 'decoding', label: t('Decoding'), helpLink: true,
@@ -328,6 +330,7 @@ export function buildClassicTabs(t: Translate): TabDef[] {
           options: [{ value: 'auto', label: t('Auto') }, ...ENCODERS.map((e) => ({ value: e, label: e }))],
           disabledOption: (v, d) => !encoderFitsCodec(v, d.output_codec) },
         { kind: 'textarea', key: 'encoder_parameters', label: t('Optional Encoder Parameters'), helpLink: true,
+          rows: (v) => Math.max(1, String(v ?? '').split('\n').length),
           help: t('Passed to the encoder as name=value, separated by commas or newlines. For quality use crf: 1 is best, 51 worst, 23 the default.') },
         { kind: 'select', key: 'output_container', label: t('Output Container'),
           options: [

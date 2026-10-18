@@ -63,7 +63,7 @@ export function FieldInput({
   if (field.kind === 'textarea') {
     return (
       <textarea
-        rows={3}
+        rows={field.rows ? field.rows(value) : 3}
         value={value == null ? '' : String(value)}
         onChange={(e) => onChange(e.target.value)}
         placeholder={field.placeholder}
