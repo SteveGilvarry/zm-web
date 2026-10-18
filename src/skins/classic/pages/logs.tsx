@@ -1,15 +1,19 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Download, RefreshCw, RefreshCwOff, Trash2 } from 'lucide-react';
+import {
+  ArrowLeft, Columns3, Download, Maximize2, RefreshCw, RefreshCwOff, Trash2, X,
+} from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
-import { RequirePerm } from '@/features/auth/RequirePerm';
-import { LOG_LEVEL, levelLabel, type LogEntry } from '@/api/logs';
+import { usePerms } from '@/features/auth/usePerms';
+import { LOG_LEVEL, levelLabel, type LogEntry, type LogSortField } from '@/api/logs';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
-import { LEVEL_CHIPS, useLogTimeFormat, useLogsPage } from '@/features/logs/useLogsPage';
+import { useLogTimeFormat, useLogsPage } from '@/features/logs/useLogsPage';
+import { LOG_LEVEL_CODES, type LogLevelCode } from '@/features/logs/levels';
+import { useLogState, type LogState } from '@/features/logs/useLogState';
 import { LogMessage } from '@/features/logs/LogMessage';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
@@ -17,47 +21,83 @@ import {
 } from '@/skins/classic/components/events/primitives';
 import { classicInput, classicLink, classicSelect } from '@/skins/classic/components/events/styles';
 
-/** Level dropdown labels by chip code (kept literal for the extractor). */
-function useChipLabel(): (code: string) => string {
-  const { t } = useTranslation();
-  return (code) => {
-    switch (code) {
-      case 'PNC': return t('Panic');
-      case 'FAT': return t('Fatal');
-      case 'ERR': return t('Error');
-      case 'WAR': return t('Warning');
-      case 'INF': return t('Info');
-      case 'DBG': return t('Debug');
-      default: return t('All');
-    }
-  };
-}
-
-/** Legacy `?view=log` row bands: errors and worse red, warnings amber, the rest white. */
+/**
+ * Legacy row classes (`logpanel.js` post-body, `skin.css:1921-1934`):
+ * FAT/PNC bold on #ffcccc, ERR #ffcccc, WAR #ffe4b5, debug grey italic.
+ */
 function levelBand(level: number): string {
-  if (level <= LOG_LEVEL.ERROR) return 'bg-[#f8d7da]';
-  if (level === LOG_LEVEL.WARNING) return 'bg-[#fff3cd]';
+  if (level <= LOG_LEVEL.FATAL) return 'bg-[#ffcccc] font-bold';
+  if (level === LOG_LEVEL.ERROR) return 'bg-[#ffcccc]';
+  if (level === LOG_LEVEL.WARNING) return 'bg-[#ffe4b5]';
+  if (level >= LOG_LEVEL.DEBUG) return 'bg-white text-[#666666] italic';
   return 'bg-white';
 }
 
+/** Bootstrap's `text-success` / `text-warning` / `text-danger` (`logpanel.js:77`). */
+const STATE_CLASS: Record<LogState, string> = {
+  ok: 'text-[#28a745]',
+  alert: 'text-[#ffc107]',
+  alarm: 'text-[#dc3545]',
+};
+
+/** The table's columns in legacy's order (`logpanel.php:204-216`). */
+type ClassicLogColumn = 'datetime' | 'component' | 'server' | 'pid' | 'level' | 'message' | 'file' | 'line';
+const CLASSIC_COLUMNS: ClassicLogColumn[] = ['datetime', 'component', 'server', 'pid', 'level', 'message', 'file', 'line'];
+
 /**
- * Log viewer — classic skin. Status line, legacy filter bar (labels above the
- * controls), a fixed seven-column table banded by severity, bootstrap-table
- * footer, and the destructive Clear Logs button. Same data as Mission
- * Control via `useLogsPage`.
+ * The `sort` each header sends (`ajax/log.php:119-129`). Level sorts on
+ * `Code`, as legacy's does; Server is not sortable.
+ */
+const SORT_FIELD: Partial<Record<ClassicLogColumn, LogSortField>> = {
+  datetime: 'time', component: 'component', pid: 'pid', level: 'code',
+  message: 'message', file: 'file', line: 'line',
+};
+
+const HIDDEN_PREF_KEY = 'zm-web.logs.classicHiddenColumns';
+
+/** bootstrap-table's `data-cookie` column memory, kept per browser. */
+function useHiddenColumns(): [ClassicLogColumn[], (c: ClassicLogColumn) => void] {
+  const [hidden, setHidden] = useState<ClassicLogColumn[]>(() => {
+    try {
+      const parsed = JSON.parse(window.localStorage.getItem(HIDDEN_PREF_KEY) ?? '[]') as unknown;
+      return Array.isArray(parsed)
+        ? parsed.filter((c): c is ClassicLogColumn => CLASSIC_COLUMNS.includes(c as ClassicLogColumn))
+        : [];
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { window.localStorage.setItem(HIDDEN_PREF_KEY, JSON.stringify(hidden)); } catch { /* ignore */ }
+  }, [hidden]);
+  const toggle = (c: ClassicLogColumn) =>
+    setHidden((h) => (h.includes(c) ? h.filter((x) => x !== c) : [...h, c]));
+  return [hidden, toggle];
+}
+
+/**
+ * Log viewer — classic skin, after `includes/logpanel.php`: the State /
+ * Total / Available / Displaying / Updated line, the toolbar (Back,
+ * Refresh, Clear Logs, then the Component, Server, Level and date terms),
+ * bootstrap-table's search / refresh / auto refresh / fullscreen / columns
+ * / export, and a checkbox table sortable on every column. Same data as the
+ * modern skin via `useLogsPage`.
  */
 export default function ClassicLogsPage() {
   const { t } = useTranslation();
   const s = useLogsPage();
-  const chipLabel = useChipLabel();
+  const { can } = usePerms();
+  const canEdit = can('system', 'Edit');
   useDocumentTitle(t('Log'));
   const formatLogTime = useLogTimeFormat();
   const { formatDateTime } = useDateTimeFormat();
+  const logState = useLogState(s.isAuthenticated);
+  const [hidden, toggleHidden] = useHiddenColumns();
+  const [showColumnMenu, setShowColumnMenu] = useState(false);
+  const tableRef = useRef<HTMLDivElement>(null);
   const {
-    logs, total, page, pageSize, totalPages, pageSizeOptions, setPageSize,
-    componentFilter, minLevel, serverFilter,
-    startInput, endInput, messageQuery, sort, toggleSort, searchDraft, setSearchDraft, setSearch,
-    allComponents, servers, showServerFilter, isLoading, isFetching,
+    logs, total, totalUnfiltered, page, pageSize, totalPages, pageSizeOptions, setPageSize,
+    componentFilter, levels, setLevels, serverFilter,
+    startInput, endInput, messageQuery, sort, sortBy, toggleSort, searchDraft, setSearchDraft, setSearch,
+    allComponents, servers, showServerFilter, serverLookup, isLoading, isFetching,
   } = s;
 
   // "Updated:" in the status line — re-stamped when a fetch settles. Derived
@@ -70,20 +110,57 @@ export default function ClassicLogsPage() {
 
   if (!s.isAuthenticated) return null;
 
+  // Server only exists on a multi-server install, as in legacy.
+  const columns = CLASSIC_COLUMNS.filter((c) => (c !== 'server' || showServerFilter) && !hidden.includes(c));
+  const fmt = (n: number) => n.toLocaleString();
+  const stateLabel = logState === 'alarm' ? t('alarm') : logState === 'alert' ? t('alert') : t('ok');
   const first = logs.length === 0 ? 0 : (page - 1) * pageSize + 1;
   const last = logs.length === 0 ? 0 : first + logs.length - 1;
+  // Legacy's bracketed request status after the Updated time.
+  const status = s.refreshPaused ? t('stopped') : isFetching ? t('in process') : null;
+
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else void tableRef.current?.requestFullscreen?.();
+  };
+
+  // `data-click-to-select`: a click anywhere on the row ticks it, except on
+  // the event links inside the message.
+  const onRowClick = (e: MouseEvent, id: number) => {
+    if ((e.target as HTMLElement).closest('a, input, button')) return;
+    s.toggleSelected(id);
+  };
+
+  const columnLabel = (c: ClassicLogColumn): string => {
+    switch (c) {
+      case 'datetime': return t('Date/Time');
+      case 'component': return t('Component');
+      case 'server': return t('Server');
+      case 'pid': return t('PID');
+      case 'level': return t('Level');
+      case 'message': return t('Message');
+      case 'file': return t('File');
+      case 'line': return t('Line');
+    }
+  };
 
   return (
     <AppShell title={t('Log')}>
       <main className="flex-1 p-4 overflow-auto bg-zinc-50">
         <div className="max-w-screen-2xl mx-auto space-y-3">
           <p className="text-center text-sm text-zinc-800" data-testid="log-status">
-            {t('Total: {{total}} - Displaying: {{first}} to {{last}} - Updated: {{time}}', {
-              total,
-              first,
-              last,
-              time: formatDateTime(updatedAt),
-            })}
+            {t('State')}:{' '}
+            <span className={STATE_CLASS[logState]} data-testid="log-state">{stateLabel}</span>
+            {' - '}
+            {totalUnfiltered != null
+              ? t('Total: {{total}} - Available: {{available}} - Displaying: {{first}} to {{last}} - Updated: {{time}}', {
+                total: fmt(total), available: fmt(totalUnfiltered), first: fmt(first), last: fmt(last),
+                time: formatDateTime(updatedAt),
+              })
+              : t('Total: {{total}} - Displaying: {{first}} to {{last}} - Updated: {{time}}', {
+                total: fmt(total), first: fmt(first), last: fmt(last), time: formatDateTime(updatedAt),
+              })}
+            {status && ` [${status}]`}
           </p>
           {s.clearedMessage !== null && (
             <p role="status" className="text-center text-xs text-[#0c5460] bg-[#d1ecf1] border border-[#bee5eb] px-2 py-1">
@@ -117,6 +194,52 @@ export default function ClassicLogsPage() {
                 </form>
                 <ClassicButton
                   tone="primary"
+                  onClick={s.toggleAutoRefresh}
+                  aria-pressed={s.autoRefresh}
+                  aria-label={t('Auto refresh')}
+                  title={s.autoRefresh
+                    ? t('Auto refresh every {{count}} second', { count: s.refreshSeconds })
+                    : t('Auto refresh off')}
+                >
+                  {s.autoRefresh
+                    ? <RefreshCw size={14} aria-hidden />
+                    : <RefreshCwOff size={14} aria-hidden />}
+                </ClassicButton>
+                <ClassicButton tone="primary" onClick={toggleFullscreen} aria-label={t('Toggle fullscreen')} title={t('Toggle fullscreen')}>
+                  <Maximize2 size={14} aria-hidden />
+                </ClassicButton>
+                <div className="relative">
+                  <ClassicButton
+                    tone="primary"
+                    onClick={() => setShowColumnMenu((v) => !v)}
+                    aria-label={t('Columns')}
+                    aria-expanded={showColumnMenu}
+                    title={t('Columns')}
+                  >
+                    <Columns3 size={14} aria-hidden />
+                  </ClassicButton>
+                  {showColumnMenu && (
+                    <>
+                      <div className="fixed inset-0 z-10" aria-hidden onClick={() => setShowColumnMenu(false)} />
+                      <div role="menu" aria-label={t('Columns')} className="absolute end-0 top-full mt-1 z-20 min-w-40 py-1 bg-white border border-[#ced4da] shadow">
+                        {CLASSIC_COLUMNS.filter((c) => c !== 'server' || showServerFilter).map((c) => (
+                          <label key={c} className="flex items-center gap-2 px-3 py-1 text-sm text-zinc-800 hover:bg-zinc-100 cursor-pointer">
+                            <input
+                              type="checkbox"
+                              checked={!hidden.includes(c)}
+                              // bootstrap-table keeps at least one column on.
+                              disabled={!hidden.includes(c) && columns.length === 1}
+                              onChange={() => toggleHidden(c)}
+                            />
+                            {columnLabel(c)}
+                          </label>
+                        ))}
+                      </div>
+                    </>
+                  )}
+                </div>
+                <ClassicButton
+                  tone="primary"
                   onClick={s.exportCsv}
                   disabled={logs.length === 0}
                   aria-label={t('Download CSV')}
@@ -133,24 +256,18 @@ export default function ClassicLogsPage() {
             <ClassicButton tone="primary" onClick={s.refetch} aria-label={t('Refresh')} title={t('Refresh')}>
               <RefreshCw size={14} className={clsx(isFetching && 'animate-spin')} aria-hidden />
             </ClassicButton>
-            <ClassicButton
-              onClick={s.toggleAutoRefresh}
-              aria-pressed={s.autoRefresh}
-              aria-label={t('Auto refresh')}
-              title={s.autoRefresh
-                ? t('Auto refresh every {{count}} second', { count: s.refreshSeconds })
-                : t('Auto refresh off')}
-            >
-              {s.autoRefresh
-                ? <RefreshCw size={14} aria-hidden />
-                : <RefreshCwOff size={14} aria-hidden />}
-            </ClassicButton>
-            <RequirePerm feature="system" level="Edit">
-              <ClassicButton tone="danger" onClick={s.askClear} disabled={s.clearing} title={t('Clear Logs')}>
+            {/* Legacy: disabled until rows are ticked; clears just those. */}
+            {canEdit && (
+              <ClassicButton
+                tone="danger"
+                onClick={s.askClear}
+                disabled={s.clearing || s.selectedIds.length === 0}
+                title={t('Clear Logs')}
+              >
                 <Trash2 size={14} aria-hidden />
-                {t('CLEAR LOGS')}
+                {t('Clear Logs')}
               </ClassicButton>
-            </RequirePerm>
+            )}
 
             <ClassicFilterField label={t('Component')} htmlFor="log-component" className="ms-2">
               <select
@@ -181,21 +298,31 @@ export default function ClassicLogsPage() {
               </ClassicFilterField>
             )}
 
-            {/* Legacy's Level dropdown always meant "this level or worse". */}
+            {/* Legacy's Chosen multi-select: exact levels, nothing picked = All. */}
             <ClassicFilterField label={t('Level')} htmlFor="log-level">
-              <select
-                id="log-level"
-                value={minLevel ?? ''}
-                onChange={(e) => setSearch({
-                  min_level: e.target.value === '' ? undefined : (e.target.value as typeof minLevel),
-                  page: undefined,
-                })}
-                className={classicSelect}
-              >
-                {LEVEL_CHIPS.map((chip) => (
-                  <option key={chip.code} value={chip.value ?? ''}>{chipLabel(chip.code)}</option>
-                ))}
-              </select>
+              <div className="flex items-start gap-1">
+                <select
+                  id="log-level"
+                  multiple
+                  size={3}
+                  title={t('All')}
+                  value={levels}
+                  onChange={(e) => setLevels(Array.from(e.target.selectedOptions, (o) => o.value as LogLevelCode))}
+                  className={clsx(classicSelect, 'w-24')}
+                >
+                  {LOG_LEVEL_CODES.map((code) => <option key={code} value={code}>{code}</option>)}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setLevels([])}
+                  disabled={levels.length === 0}
+                  aria-label={t('Clear {{field}}', { field: t('Level') })}
+                  title={t('Clear {{field}}', { field: t('Level') })}
+                  className="p-1 text-zinc-500 hover:text-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <X size={12} aria-hidden />
+                </button>
+              </div>
             </ClassicFilterField>
 
             <ClassicFilterField label={t('Start Date/Time')} htmlFor="log-start">
@@ -218,39 +345,70 @@ export default function ClassicLogsPage() {
             </ClassicFilterField>
           </ClassicToolbar>
 
-          <QueryState
-            isLoading={isLoading}
-            isError={s.isError}
-            error={s.error}
-            onRetry={s.refetch}
-            empty={logs.length === 0}
-            emptyMessage={t('No matching records found')}
-          >
-            <ClassicTable testId="log-table">
-              <ClassicThead>
-                <tr>
-                  <ClassicTh sortable active dir={sort} onSort={toggleSort}>{t('Date/Time')}</ClassicTh>
-                  <ClassicTh>{t('Component')}</ClassicTh>
-                  <ClassicTh>{t('PID')}</ClassicTh>
-                  <ClassicTh>{t('Level')}</ClassicTh>
-                  <ClassicTh className="w-full">{t('Message')}</ClassicTh>
-                  <ClassicTh>{t('File')}</ClassicTh>
-                  <ClassicTh numeric>{t('Line')}</ClassicTh>
-                </tr>
-              </ClassicThead>
-              {/* Plain tbody: the striped ClassicTbody would paint over the level bands. */}
-              <tbody>
-                {logs.map((log) => <LogRow key={log.id} log={log} formatLogTime={formatLogTime} />)}
-              </tbody>
-            </ClassicTable>
-          </QueryState>
+          <div ref={tableRef} className="bg-white">
+            <QueryState
+              isLoading={isLoading}
+              isError={s.isError}
+              error={s.error}
+              onRetry={s.refetch}
+              empty={logs.length === 0}
+              emptyMessage={t('No matching records found')}
+            >
+              <ClassicTable testId="log-table">
+                <ClassicThead>
+                  <tr>
+                    {canEdit && (
+                      <th className="px-2 py-1.5 border-b border-[#dee2e6] w-8">
+                        <input
+                          type="checkbox"
+                          aria-label={t('Select all')}
+                          checked={s.allSelected}
+                          onChange={(e) => s.setAllSelected(e.target.checked)}
+                        />
+                      </th>
+                    )}
+                    {columns.map((c) => {
+                      const field = SORT_FIELD[c];
+                      return (
+                        <ClassicTh
+                          key={c}
+                          sortable={field !== undefined}
+                          active={field !== undefined && field === sortBy}
+                          dir={sort}
+                          onSort={field ? () => toggleSort(field) : undefined}
+                          numeric={c === 'line'}
+                          className={c === 'message' ? 'w-full' : undefined}
+                        >
+                          {columnLabel(c)}
+                        </ClassicTh>
+                      );
+                    })}
+                  </tr>
+                </ClassicThead>
+                {/* Plain tbody: the striped ClassicTbody would paint over the level bands. */}
+                <tbody>
+                  {logs.map((log) => (
+                    <LogRow
+                      key={log.id}
+                      log={log}
+                      columns={columns}
+                      formatLogTime={formatLogTime}
+                      serverName={log.server_id != null ? serverLookup[log.server_id] : undefined}
+                      selectable={canEdit}
+                      selected={s.isSelected(log.id)}
+                      onToggle={() => s.toggleSelected(log.id)}
+                      onClick={canEdit ? (e) => onRowClick(e, log.id) : undefined}
+                    />
+                  ))}
+                </tbody>
+              </ClassicTable>
+            </QueryState>
+          </div>
 
           <ConfirmDialog
             isOpen={s.confirmingClear}
-            title={t('Clear Logs')}
-            message={s.clearIsFiltered
-              ? t('Delete every log row matching the filters on screen? This cannot be undone.')
-              : t('Delete every row in the log table? This cannot be undone.')}
+            title={t('Clear Logs Confirmation')}
+            message={t('Are you sure you wish to delete the selected log entries?')}
             confirmText={t('Clear Logs')}
             isLoading={s.clearing}
             onConfirm={s.confirmClear}
@@ -275,20 +433,59 @@ export default function ClassicLogsPage() {
 
 const cell = 'px-2 py-1.5 border-b border-[#dee2e6] align-top';
 
-function LogRow({ log, formatLogTime }: { log: LogEntry; formatLogTime: (timeKey: string) => string }) {
+function LogRow({
+  log, columns, formatLogTime, serverName, selectable, selected, onToggle, onClick,
+}: {
+  log: LogEntry;
+  columns: ClassicLogColumn[];
+  formatLogTime: (timeKey: string) => string;
+  serverName: string | undefined;
+  selectable: boolean;
+  selected: boolean;
+  onToggle: () => void;
+  onClick?: (e: MouseEvent) => void;
+}) {
+  const { t } = useTranslation();
+  const td = (c: ClassicLogColumn) => {
+    switch (c) {
+      case 'datetime': return <td key={c} className={clsx(cell, 'whitespace-nowrap')}>{formatLogTime(log.time_key)}</td>;
+      case 'component': return <td key={c} className={clsx(cell, 'whitespace-nowrap')}>{log.component}</td>;
+      case 'server': return <td key={c} className={clsx(cell, 'whitespace-nowrap')}>{serverName ?? log.server_id ?? ''}</td>;
+      case 'pid': return <td key={c} className={clsx(cell, 'whitespace-nowrap tabular-nums')}>{log.pid ?? ''}</td>;
+      case 'level':
+        return (
+          <td key={c} className={clsx(cell, 'whitespace-nowrap')} title={levelLabel(log.level)}>
+            {log.code || levelLabel(log.level)}
+          </td>
+        );
+      case 'message':
+        return (
+          <td key={c} className={clsx(cell, 'whitespace-pre-wrap break-words')}>
+            <LogMessage message={log.message} className={classicLink} />
+          </td>
+        );
+      case 'file': return <td key={c} className={clsx(cell, 'whitespace-nowrap')}>{log.file ?? ''}</td>;
+      case 'line': return <td key={c} className={clsx(cell, 'whitespace-nowrap text-end tabular-nums')}>{log.line ?? ''}</td>;
+    }
+  };
   return (
-    <tr className={levelBand(log.level)} data-level={log.level} data-testid={`log-row-${log.id}`}>
-      <td className={clsx(cell, 'whitespace-nowrap')}>{formatLogTime(log.time_key)}</td>
-      <td className={clsx(cell, 'whitespace-nowrap')}>{log.component}</td>
-      <td className={clsx(cell, 'whitespace-nowrap tabular-nums')}>{log.pid ?? ''}</td>
-      <td className={clsx(cell, 'whitespace-nowrap')} title={levelLabel(log.level)}>
-        {log.code || levelLabel(log.level)}
-      </td>
-      <td className={clsx(cell, 'whitespace-pre-wrap break-words')}>
-        <LogMessage message={log.message} className={classicLink} />
-      </td>
-      <td className={clsx(cell, 'whitespace-nowrap')}>{log.file ?? ''}</td>
-      <td className={clsx(cell, 'whitespace-nowrap text-end tabular-nums')}>{log.line ?? ''}</td>
+    <tr
+      className={clsx(levelBand(log.level), selectable && 'cursor-pointer')}
+      data-level={log.level}
+      data-testid={`log-row-${log.id}`}
+      onClick={onClick}
+    >
+      {selectable && (
+        <td className={cell}>
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onToggle}
+            aria-label={t('Select log {{id}}', { id: log.id })}
+          />
+        </td>
+      )}
+      {columns.map(td)}
     </tr>
   );
 }

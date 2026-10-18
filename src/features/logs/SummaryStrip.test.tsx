@@ -90,6 +90,22 @@ describe('SummaryStrip', () => {
     expect(screen.getByText(/101.*150/)).toBeInTheDocument();
   });
 
+  it('prints the whole-table count as Available when it is known', () => {
+    render(
+      <SummaryStrip
+        summary={{ errors: 0, warnings: 0, info: 0, debug: 0 }}
+        total={500}
+        available={12345}
+        shownCount={50}
+        page={1}
+        pageSize={50}
+        activeLevel={undefined}
+        {...noopHandlers}
+      />,
+    );
+    expect(screen.getByText('Total: 500 · Available: 12,345 · Displaying: 1–50')).toBeInTheDocument();
+  });
+
   it('offers a Debug card when given a handler', () => {
     render(
       <SummaryStrip
