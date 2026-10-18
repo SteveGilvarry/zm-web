@@ -152,11 +152,13 @@ describe('useClassicConsolePage', () => {
     act(() => result.current.toggleSelected(1));
     act(() => result.current.cloneSelected());
     await waitFor(() => expect(result.current.addOpen).toBe(true));
-    expect(result.current.cloneSeed?.from).toBe('Cam 1');
-    expect(result.current.cloneSeed?.values.name).toBe('Clone of Cam 1');
-    expect(result.current.cloneSeed?.values.path).toBe('rtsp://10.0.0.1/h264');
+    expect(result.current.editorSeed?.clonedFrom).toBe('Cam 1');
+    expect(result.current.editorSeed?.groupsFrom).toBe(1);
+    expect(result.current.editorSeed?.values.name).toBe('Clone of Cam 1');
+    expect(result.current.editorSeed?.values.path).toBe('rtsp://10.0.0.1/h264');
     act(() => result.current.closeAdd());
-    expect(result.current.cloneSeed).toBeNull();
+    expect(result.current.editorSeed).toBeNull();
+    expect(result.current.addOpen).toBe(false);
   });
 
   it('footer scope: the visible ids once the table is narrowed, nothing when it is not', () => {

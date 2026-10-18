@@ -25,16 +25,25 @@ describe('Source tab visibility follows the legacy per-type form', () => {
     expect(deint.options!.length).toBe(13);
   });
 
-  it('Remote: method list depends on protocol; RTSP describe only for rtsp', () => {
+  it('Remote: HTTP is the only protocol offered; a stored rtsp monitor keeps it, marked removed', () => {
     const http = visibleFields(source, { type: 'Remote', protocol: 'http' });
-    expect(http.find((f) => f.key === 'method')!.options!.map((o) => o.value)).toEqual(['simple', 'regexp', 'jpegTags']);
-    expect(http.some((f) => f.key === 'rtsp_describe')).toBe(false);
+    const protocol = http.find((f) => f.key === 'protocol')!;
+    expect(protocol.options!.map((o) => o.value)).toEqual(['http']);
+    expect(protocol.storedOnlyOptions!.map((o) => o.value)).toEqual(['rtsp']);
+    expect(protocol.storedOnlyWarning).toMatch(/RTSP support has been removed/);
+    // JPEG tags is unset upstream as unsupported.
+    expect(http.find((f) => f.key === 'method')!.options!.map((o) => o.value)).toEqual(['simple', 'regexp']);
     const rtsp = visibleFields(source, { type: 'Remote', protocol: 'rtsp' });
     expect(rtsp.find((f) => f.key === 'method')!.options!.map((o) => o.value)).toEqual(['rtpUni', 'rtpMulti', 'rtpRtsp', 'rtpRtspHttp']);
-    expect(rtsp.some((f) => f.key === 'rtsp_describe')).toBe(true);
     // Exactly one `method` field is visible at a time.
     expect(http.filter((f) => f.key === 'method')).toHaveLength(1);
     expect(rtsp.filter((f) => f.key === 'method')).toHaveLength(1);
+  });
+
+  it('offers only the 1.39.41 source types and never RTSP describe', () => {
+    const type = TABS.flatMap((t) => t.fields).find((f) => f.key === 'type')!;
+    expect(type.options!.map((o) => o.value).sort()).toEqual(['Ffmpeg', 'File', 'Local', 'Remote', 'VNC', 'WebSite']);
+    expect(TABS.flatMap((t) => t.fields).some((f) => f.key === 'rtsp_describe')).toBe(false);
   });
 
   it('WebSite: URL, plain width/height and no image adjustments; the adjustments group heading goes too', () => {
@@ -49,7 +58,7 @@ describe('Source tab visibility follows the legacy per-type form', () => {
     expect(fields.find((f) => f.key === 'width')!.kind).toBe('number');
   });
 
-  it('VNC: host, port, user, pass; cURL: URL + auth; File: path only', () => {
+  it('VNC: host, port, user, pass; a stored cURL monitor still shows URL + auth; File: path only', () => {
     expect(labels({ type: 'VNC' })).toEqual(expect.arrayContaining(['host', 'port', 'user', 'pass']));
     expect(labels({ type: 'VNC' })).not.toContain('path');
     expect(labels({ type: 'cURL' })).toEqual(expect.arrayContaining(['path', 'user', 'pass']));
@@ -59,6 +68,31 @@ describe('Source tab visibility follows the legacy per-type form', () => {
 
   it('fields without `show` are always visible', () => {
     expect(isFieldVisible({ kind: 'text', key: 'name', label: 'Name' }, { type: 'Local' })).toBe(true);
+  });
+});
+
+describe('rows that follow other values (monitor.js)', () => {
+  const keysOf = (tabId: string, draft: Record<string, FieldValue>) =>
+    visibleFields(TABS.find((t) => t.id === tabId)!, draft).map((f) => f.key);
+
+  it('the secondary sources wait for a second path', () => {
+    expect(keysOf('analysis', { type: 'Ffmpeg' })).not.toContain('analysis_source');
+    expect(keysOf('analysis', { type: 'Ffmpeg', second_path: 'rtsp://cam/sub' })).toContain('analysis_source');
+    expect(keysOf('recording', { type: 'Ffmpeg', second_path: 'rtsp://cam/sub' })).toContain('recording_source');
+  });
+
+  it('codec and encoder wait for Encode, and the encoder list follows the codec', () => {
+    expect(keysOf('recording', { video_writer: 2 })).not.toContain('encoder');
+    expect(keysOf('recording', { video_writer: 1 })).toEqual(expect.arrayContaining(['output_codec', 'encoder']));
+    const encoder = TABS.flatMap((t) => t.fields).find((f) => f.key === 'encoder')!;
+    expect(encoder.disabledOption!('hevc_nvenc', { output_codec: 27 })).toBe(true);
+    expect(encoder.disabledOption!('h264_nvenc', { output_codec: 27 })).toBe(false);
+  });
+
+  it('the Janus extras wait for Janus; the RTSP auth user for restream', () => {
+    expect(keysOf('viewing', { janus_enabled: 0 })).not.toContain('janus_audio_enabled');
+    expect(keysOf('viewing', { janus_enabled: 1 })).toEqual(expect.arrayContaining(['janus_audio_enabled', 'janus_profile_override', 'janus_rtsp_session_timeout']));
+    expect(keysOf('viewing', { restream: 1 })).toContain('rtsp_user');
   });
 });
 

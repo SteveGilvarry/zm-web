@@ -24,8 +24,10 @@ import { describe, expect, it, beforeAll, afterAll } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
-import { TABS } from '@/features/monitors/editor/fields';
+import { TABS, columnFields } from '@/features/monitors/editor/fields';
+import { CLASSIC_TABS } from '@/features/monitors/editor/classicFields';
 import { MONITOR_CREATE_DEFAULTS } from './monitors-crud';
+import { LEGACY_NEW_MONITOR } from '@/features/monitors/editor/newMonitor';
 import { MONITOR_ENUMS } from './monitors';
 
 /* ------------------------------------------------------------------------ */
@@ -200,6 +202,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   'monitors-crud': {
     toCreatePayload: 'pure',
     createMonitor: { args: [{ name: 'm', storage_id: 1 }] },
+    postMonitor: { args: [MONITOR_CREATE_DEFAULTS] },
     cloneMonitor: { args: [1] },
     deleteMonitor: { args: [1] },
     patchMonitor: { args: [1, { name: 'm' }] },
@@ -513,18 +516,19 @@ describe('API wrappers match the OpenAPI paths', () => {
 
 describe('monitor editor fields match UpdateMonitorRequest', () => {
   const update = schemas.UpdateMonitorRequest.properties!;
-  const fields = TABS.flatMap((t) => t.fields).filter((f) => f.kind !== 'group');
+  // Both skins' catalogues edit the same draft, so both are held to the schema.
+  const fields = columnFields([...TABS, ...CLASSIC_TABS]);
 
   it('every field key is a request property', () => {
     const unknown = fields.map((f) => f.key).filter((k) => !(k in update));
     expect(unknown).toEqual([]);
   });
 
-  for (const f of fields.filter((f) => f.kind === 'select' && f.options)) {
-    it(`${f.key} options are members of the request schema`, () => {
+  for (const f of fields.filter((f) => (f.kind === 'select' || f.kind === 'radio') && f.options)) {
+    it(`${f.key} (${f.label}) options are members of the request schema`, () => {
       const schema = resolve(update[f.key]);
       expect(schema, `${f.key} has no resolvable schema`).toBeDefined();
-      const values = f.options!.map((o) => o.value);
+      const values = [...f.options!, ...(f.storedOnlyOptions ?? [])].map((o) => o.value);
       if (schema!.enum) {
         const bad = values.filter((v) => !schema!.enum!.includes(v));
         expect(bad, `${f.key} options outside enum ${JSON.stringify(schema!.enum)}`).toEqual([]);
@@ -565,6 +569,16 @@ describe('MONITOR_CREATE_DEFAULTS match CreateMonitorRequest', () => {
     expect(bad).toEqual([]);
   });
 
+  it('the legacy new-monitor overrides are request properties with enum-valid values', () => {
+    const bad: string[] = [];
+    for (const [k, v] of Object.entries(LEGACY_NEW_MONITOR)) {
+      if (!(k in props)) { bad.push(`${k} unknown`); continue; }
+      const e = resolve(props[k])?.enum;
+      if (e && v != null && !e.includes(v)) bad.push(`${k}=${String(v)}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
   it('deleted is the boolean the request schema wants', () => {
     expect(resolve(props.deleted)?.type).toBe('boolean');
     expect(typeof MONITOR_CREATE_DEFAULTS.deleted).toBe('boolean');
@@ -586,7 +600,7 @@ describe('MONITOR_ENUMS mirror the request enums', () => {
 
 describe('monitor editor field metadata matches the request schema', () => {
   const update = schemas.UpdateMonitorRequest.properties!;
-  const fields = TABS.flatMap((t) => t.fields).filter((f) => f.kind !== 'group');
+  const fields = columnFields([...TABS, ...CLASSIC_TABS]);
   const types = resolve(update.type)!.enum as string[];
 
   it('selects with a null option are nullable in the schema', () => {

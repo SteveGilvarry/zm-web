@@ -10,7 +10,7 @@ import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
-import { AddMonitorDialog } from '@/features/monitors/AddMonitorDialog';
+import { ClassicMonitorEditor } from '@/skins/classic/components/monitor/ClassicMonitorEditor';
 import { ScanNetworkButton } from '@/features/console/ScanNetworkButton';
 import { useClassicConsolePage, type ClassicConsolePageState, type EventsScope } from '@/features/console/useClassicConsolePage';
 import { CONSOLE_COLUMNS, consoleColumnLabel, type ConsoleColumnKey } from '@/features/console/consoleColumns';
@@ -114,7 +114,8 @@ export default function ClassicConsolePage() {
 
   return (
     <AppShell title={t('Console')}>
-      <ClassicPage>
+      {/* Add / Clone is legacy's own monitor page; the console stays mounted, hidden, underneath. */}
+      <ClassicPage hidden={!!page.editorSeed}>
         {showFilters && (
           <ClassicFilterRow state={page.filter} className="mb-2" />
         )}
@@ -166,7 +167,7 @@ export default function ClassicConsolePage() {
             </span>
           )}
           <RequirePerm feature="monitors" level="Edit">
-            <ScanNetworkButton />
+            <ScanNetworkButton onEditFirst={page.openAddWith} />
             {/* Legacy shows the button to any Monitors editor but disables it
                 without Create (console.php:196). */}
             <ClassicButton
@@ -306,12 +307,7 @@ export default function ClassicConsolePage() {
         />
       </ClassicPage>
 
-      <AddMonitorDialog
-        open={page.addOpen}
-        onClose={page.closeAdd}
-        initial={page.cloneSeed?.values}
-        clonedFrom={page.cloneSeed?.from}
-      />
+      {page.editorSeed && <ClassicMonitorEditor seed={page.editorSeed} onClose={page.closeAdd} />}
     </AppShell>
   );
 }

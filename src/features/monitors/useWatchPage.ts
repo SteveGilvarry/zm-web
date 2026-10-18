@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
+import { useNavigate } from '@tanstack/react-router';
 import { getMonitor, getAllMonitors, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
 import { getAuthToken } from '@/api/client';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
-import { useRouteSearch, searchFlag } from './useRouteSearch';
+import { useRouteSearch, searchFlag, searchString } from './useRouteSearch';
 import { displayDimensions } from './orientation';
 import { DEFAULT_STAGE_SIZE, stageStyle, type StageSize } from './watchStage';
 import { useWebRtcStream, type StreamHookResult } from '@/hooks/useWebRtcStream';
@@ -98,6 +99,9 @@ export interface WatchPageState {
   editorOpen: boolean;
   openEditor: () => void;
   closeEditor: () => void;
+  /** Legacy `?tab=`: the editor tab in the URL, and a setter that keeps it there. */
+  editorTab: string | undefined;
+  setEditorTab: (tab: string) => void;
   updateModes: (data: WatchModeUpdate) => void;
   isUpdating: boolean;
   /** Play: starts a stopped stream, or resumes a paused one. */
@@ -191,6 +195,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const queryClient = useQueryClient();
   const toast = useToast();
   const search = useRouteSearch();
+  const navigate = useNavigate();
   const id = monitorId;
 
   const prefs = useWatchPrefsStore();
@@ -579,6 +584,10 @@ export function useWatchPage(monitorId: number): WatchPageState {
     editorOpen,
     openEditor: () => setEditorOpen(true),
     closeEditor: () => setEditorOpen(false),
+    editorTab: searchString(search, 'tab'),
+    setEditorTab: (tab) => {
+      void navigate({ to: '.', search: (prev: Record<string, unknown>) => ({ ...prev, tab }), replace: true });
+    },
     updateModes: (data) => updateMonitorMutation.mutate(data),
     isUpdating: updateMonitorMutation.isPending,
     startStream,

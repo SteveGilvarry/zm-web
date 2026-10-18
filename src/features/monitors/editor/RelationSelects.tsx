@@ -17,6 +17,7 @@ import { listServers } from '@/api/servers';
 import { listControlPresets } from '@/api/controlPresets';
 import { getMonitors } from '@/api/monitors';
 import { listGroups } from '@/api/groups';
+import { getUsers } from '@/api/users';
 import { useToast } from '@/components/common/toastStore';
 import { buttonClasses } from '@/components/common/styles';
 import type { FieldValue } from './fields';
@@ -180,7 +181,10 @@ export function ModelSelect({ manufacturerId, ...props }: LookupProps & { manufa
   );
 }
 
-export function StorageSelect({ value, onChange, className }: LookupProps) {
+export function StorageSelect({ value, onChange, className, zeroOption }: LookupProps & {
+  /** Label of an option that writes 0 (legacy "Unspecified"). */
+  zeroOption?: string;
+}) {
   const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['storage', { page_size: 200 }],
@@ -196,7 +200,8 @@ export function StorageSelect({ value, onChange, className }: LookupProps) {
         disabled={q.isLoading}
         className={clsx(className, 'cursor-pointer')}
       >
-        {items.length === 0 && <option value="">{t('Default')}</option>}
+        {zeroOption && <option value="0">{zeroOption}</option>}
+        {items.length === 0 && !zeroOption && <option value="">{t('Default')}</option>}
         {items.map((s) => (
           <option key={s.id} value={s.id}>{s.name}{s.path ? ` — ${s.path}` : ''}</option>
         ))}
@@ -345,6 +350,41 @@ export function GroupsMembership({ value, onChange }: { value: number[]; onChang
           {g.name}
         </label>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Legacy "User for RTSP Server Auth": None or one of the users, stored as
+ * the user id. Legacy lists only the users who can view the monitor; the
+ * API does not say who can, so every user is offered.
+ */
+export function UserSelect({ value, onChange, className }: LookupProps) {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['users', { page_size: 500 }],
+    queryFn: () => getUsers({ page: 1, page_size: 500 }),
+    staleTime: 5 * 60_000,
+  });
+  const users = q.data?.items ?? [];
+  const current = value == null ? '' : String(value);
+  return (
+    <div>
+      <select
+        value={current}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        disabled={q.isLoading}
+        className={clsx(className, 'cursor-pointer')}
+      >
+        <option value="">{t('None')}</option>
+        {users.map((u) => (
+          <option key={u.id} value={u.id}>{u.username}</option>
+        ))}
+        {current !== '' && !users.some((u) => String(u.id) === current) && (
+          <option value={current}>{current}</option>
+        )}
+      </select>
+      {q.isError && <p className="text-xs text-danger mt-1">{t('Could not load users.')}</p>}
     </div>
   );
 }

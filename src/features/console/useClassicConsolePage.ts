@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { getMonitor, updateMonitor } from '@/api/monitors';
-import { deleteMonitor, toCreatePayload, type MonitorCreateInput } from '@/api/monitors-crud';
+import { deleteMonitor, type MonitorCreatePayload } from '@/api/monitors-crud';
 import { listManufacturers } from '@/api/manufacturers';
 import { listModels } from '@/api/models';
 import { listServers } from '@/api/servers';
@@ -15,6 +15,8 @@ import { useZmConfig } from '@/features/config/useZmConfig';
 import { useMonitorFilterRow, type MonitorFilterRowState } from '@/features/monitors/useMonitorFilterRow';
 import { useRouteSearch, searchFlag } from '@/features/monitors/useRouteSearch';
 import { summarizeRuntime, type RuntimeTotals } from '@/features/monitors/useMonitorStatuses';
+import { cloneSeed, newMonitorSeed } from '@/features/monitors/editor/newMonitor';
+import type { MonitorEditorSeed } from '@/features/monitors/editor/useMonitorEditor';
 import type { Monitor } from '@/types';
 import { monitorIdsToSearch } from '@/features/events/eventsSearch';
 import { fetchMonitorsExport, MONITORS_EXPORT_FILENAME } from './exportMonitors';
@@ -33,26 +35,7 @@ import {
   type SortDir,
 } from './consoleTable';
 
-/**
- * The Add form's starting values when CLONE opened it: the legacy
- * `?view=monitor&dupId=N` page, prefilled and unsaved.
- */
-export interface CloneSeed {
-  /** Name of the monitor the values came from, for the form's notice. */
-  from: string;
-  values: MonitorCreateInput;
-}
-
-/**
- * Legacy `monitor.php` names a clone `Clone of <name>`, and keeps prefixing
- * `Clone of ` until the name is free.
- */
-export function cloneName(source: string, taken: Iterable<string>): string {
-  const names = new Set(taken);
-  let name = `Clone of ${source}`;
-  while (names.has(name)) name = `Clone of ${name}`;
-  return name;
-}
+export { cloneName } from '@/features/monitors/editor/newMonitor';
 
 /**
  * Monitor scope for the footer's events-list links. Legacy adds
@@ -118,11 +101,14 @@ export interface ClassicConsolePageState {
   showStorage: boolean;
   canEdit: boolean;
 
+  /** The Add / Clone editor is open (or about to open, for `?new=true`). */
   addOpen: boolean;
+  /** What the editor starts from; null while it is closed. */
+  editorSeed: MonitorEditorSeed | null;
   openAdd: () => void;
+  /** Add, starting from a prefill (an ONVIF profile from Scan Network's "Edit first"). */
+  openAddWith: (prefill: Partial<MonitorCreatePayload>) => void;
   closeAdd: () => void;
-  /** Set while the Add form was opened by CLONE; null for a plain ADD. */
-  cloneSeed: CloneSeed | null;
   cloneSelected: () => void;
   editSelected: () => void;
   deleteSelected: () => void;
@@ -165,9 +151,16 @@ export function useClassicConsolePage(): ClassicConsolePageState {
   const [sortMode, setSortMode] = useState(false);
   const pageSize = pageSizeOverride ?? configPageSize;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  // `?new=true` (legacy `?view=monitor` with no id) opens the Add dialog on load.
-  const [addOpen, setAddOpen] = useState(() => searchFlag(search, 'new'));
-  const [cloneSeed, setCloneSeed] = useState<CloneSeed | null>(null);
+  // `?new=true` (legacy `?view=monitor` with no id) opens Add on load, once
+  // the monitor list is in: the new name needs the next id.
+  const [pendingNew, setPendingNew] = useState(() => searchFlag(search, 'new'));
+  const [editorSeed, setEditorSeed] = useState<MonitorEditorSeed | null>(null);
+  const seedNew = (prefill?: Partial<MonitorCreatePayload>) =>
+    newMonitorSeed(data.monitors, prefill, { prefix: t('Monitor') });
+  if (pendingNew && !data.loading.monitors) {
+    setPendingNew(false);
+    setEditorSeed(seedNew());
+  }
 
   /* ----- Lookup tables for the id columns ------------------------------- */
   const manufacturersQ = useQuery({
@@ -266,22 +259,11 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     qc.invalidateQueries({ queryKey: ['monitors'] });
     qc.invalidateQueries({ queryKey: ['eventSummaries'] });
   };
-  // CLONE fetches the full source row and opens the Add form with it;
+  // CLONE fetches the full source row and opens the editor with it;
   // nothing is written until the operator saves (legacy `dupId`).
   const cloneMutation = useMutation({
-    mutationFn: async (m: Monitor): Promise<CloneSeed> => {
-      const src = await getMonitor(m.id);
-      const payload = toCreatePayload(src, { name: cloneName(src.name, data.monitors.map((x) => x.name)) });
-      return {
-        from: src.name,
-        values: {
-          ...payload,
-          type: payload.type as MonitorCreateInput['type'],
-          function: payload.function as MonitorCreateInput['function'],
-        },
-      };
-    },
-    onSuccess: (seed) => { setCloneSeed(seed); setAddOpen(true); },
+    mutationFn: async (m: Monitor): Promise<MonitorEditorSeed> => cloneSeed(await getMonitor(m.id), data.monitors),
+    onSuccess: setEditorSeed,
     onError: toast.apiError,
   });
   const deleteMutation = useMutation({
@@ -381,10 +363,11 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     showServer: serverCount > 0,
     showStorage: storageCount > 1 && can('system', 'Edit'),
     canEdit: can('monitors', 'Edit'),
-    addOpen,
-    openAdd: () => { setCloneSeed(null); setAddOpen(true); },
-    closeAdd: () => { setAddOpen(false); setCloneSeed(null); },
-    cloneSeed,
+    addOpen: pendingNew || editorSeed != null,
+    editorSeed,
+    openAdd: () => setEditorSeed(seedNew()),
+    openAddWith: (prefill) => setEditorSeed(seedNew(prefill)),
+    closeAdd: () => { setPendingNew(false); setEditorSeed(null); },
     cloneSelected,
     editSelected,
     deleteSelected,

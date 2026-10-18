@@ -1,6 +1,6 @@
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { clsx } from 'clsx';
-import { Link } from '@tanstack/react-router';
+import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
   AlertCircle, AlertTriangle, Download, ExternalLink, Filter, FilterX, GalleryHorizontal, Maximize, Maximize2,
@@ -16,7 +16,7 @@ import { usePerms } from '@/features/auth/usePerms';
 import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
 import { ColumnChooser } from '@/features/events/ColumnChooser';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
-import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
+import { ClassicMonitorEditor } from '@/skins/classic/components/monitor/ClassicMonitorEditor';
 import { stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
 import { useMonitorEvents } from '@/features/monitors/useMonitorEvents';
 import { useAvailableHeight } from '@/features/monitors/useStageFit';
@@ -65,6 +65,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   const { t } = useTranslation();
   const { can } = usePerms();
   const page = useWatchPage(monitorId);
+  const navigate = useNavigate();
   const canGoBack = useCanGoBack();
   // `zmFilterBarFlip#mfbpanel`: open by default (`filterSettingsInline()`).
   const showFilters = useUiStore((s) => s.classicMonitorFilterBarOpen);
@@ -128,7 +129,18 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
 
   return (
     <AppShell title={monitor.name}>
-      <ClassicPage>
+      {/* Legacy `?view=monitor&mid=` is its own page; the watch page stays mounted, hidden, so the stream survives a round trip. */}
+      {page.editorOpen && (
+        <ClassicMonitorEditor
+          monitor={monitor}
+          // Legacy: Cancel and Save and close go to the console; Back returns here.
+          onClose={() => { void navigate({ to: '/' }); }}
+          onBack={page.closeEditor}
+          initialTab={page.editorTab}
+          onTabChange={page.setEditorTab}
+        />
+      )}
+      <ClassicPage hidden={page.editorOpen}>
         {/* Legacy `#mfbflip` + `#mfbpanel`: the shared monitor filter bar,
             open unless the operator folded it away. */}
         <div className="flex items-start gap-2 mb-2">
@@ -504,7 +516,6 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
         </div>
       </Modal>
 
-      {page.editorOpen && <MonitorEditor monitor={monitor} onClose={page.closeEditor} />}
     </AppShell>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, fireEvent, waitFor } from '@testing-library/react';
+import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -50,6 +50,7 @@ const monitor: Monitor = {
   recording: 'OnMotion',
   function: 'Modect',
   type: 'Ffmpeg',
+  path: 'rtsp://10.0.0.1/main',
 
   // Timestamp tab
   label_format: '',
@@ -222,10 +223,12 @@ describe('MonitorEditor — Viewing tab', () => {
     renderWithProviders(<MonitorEditor monitor={{ ...monitor, restream: 0 }} onClose={() => {}} />);
     await user.click(screen.getByRole('button', { name: /^viewing$/i }));
 
-    // Switch order follows the field list: RTSP server, Janus WebRTC, Janus
-    // audio, Janus RTSP restream, RTSP-to-Web.
-    expect(screen.getByText('Janus RTSP restream')).toBeInTheDocument();
-    await user.click(screen.getAllByRole('switch')[3]);
+    // The Janus extras wait for Janus (monitor.js), the auth user for restream.
+    expect(screen.queryByText('Janus audio')).not.toBeInTheDocument();
+    expect(screen.queryByText('RTSP server auth user')).not.toBeInTheDocument();
+    const row = screen.getByText('Janus RTSP restream').closest('div')!;
+    await user.click(within(row).getByRole('switch'));
+    expect(screen.getByText('RTSP server auth user')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /^save 1$/i }));
 
     await waitFor(() => expect(patched).toEqual({ restream: 1 }));

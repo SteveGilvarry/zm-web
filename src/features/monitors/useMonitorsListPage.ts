@@ -1,4 +1,4 @@
-import { useMemo, useState, type Dispatch, type SetStateAction } from 'react';
+import { useEffect, useMemo, useState, type Dispatch, type SetStateAction } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { getMonitors, getLiveSessions } from '@/api/monitors';
@@ -7,6 +7,8 @@ import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { useMonitorStatuses, type MonitorRuntime } from './useMonitorStatuses';
 import { useRouteSearch, searchFlag } from './useRouteSearch';
+import { newMonitorSeed } from './editor/newMonitor';
+import type { MonitorEditorSeed } from './editor/useMonitorEditor';
 import type { Monitor } from '@/types';
 
 export type MonitorsViewMode = 'grid' | 'list';
@@ -41,7 +43,9 @@ export interface MonitorsListPageState {
   setSearchQuery: (q: string) => void;
   statusFilter: MonitorsStatusFilter;
   setStatusFilter: (f: MonitorsStatusFilter) => void;
-  showAdd: boolean;
+  /** What the Add editor starts from; null while it is closed. */
+  addSeed: MonitorEditorSeed | null;
+  /** Opens the full editor on a new monitor (`Monitor-N`, the box's defaults). */
   openAdd: () => void;
   closeAdd: () => void;
   refetch: () => void;
@@ -63,8 +67,21 @@ export function useMonitorsListPage(): MonitorsListPageState {
   const toast = useToast();
   const search = useRouteSearch();
   const [viewMode, setViewMode] = useState<MonitorsViewMode>('grid');
-  // `?new=true` (legacy `?view=monitor` with no id) opens the Add dialog.
-  const [showAdd, setShowAdd] = useState(() => searchFlag(search, 'new'));
+  // Add seeds from every monitor, not just this page: the new name takes
+  // the next id and must not collide.
+  const [addSeed, setAddSeed] = useState<MonitorEditorSeed | null>(null);
+  const addMutation = useMutation({
+    mutationFn: async () =>
+      newMonitorSeed((await getMonitors({ page: 1, page_size: 1000 })).items, {}, { prefix: t('Monitor') }),
+    onSuccess: setAddSeed,
+    onError: toast.apiError,
+  });
+  // `?new=true` (legacy `?view=monitor` with no id) opens Add on load.
+  const [openOnLoad] = useState(() => searchFlag(search, 'new'));
+  const { mutate: startAdd } = addMutation;
+  useEffect(() => {
+    if (openOnLoad && isAuthenticated) startAdd();
+  }, [openOnLoad, isAuthenticated, startAdd]);
 
   const cloneMutation = useMutation({
     mutationFn: (id: number) => cloneMonitor(id),
@@ -154,9 +171,9 @@ export function useMonitorsListPage(): MonitorsListPageState {
     setSearchQuery,
     statusFilter,
     setStatusFilter,
-    showAdd,
-    openAdd: () => setShowAdd(true),
-    closeAdd: () => setShowAdd(false),
+    addSeed,
+    openAdd: () => addMutation.mutate(),
+    closeAdd: () => setAddSeed(null),
     refetch: () => { void refetch(); },
     clone: (id) => cloneMutation.mutate(id),
     requestDelete,
