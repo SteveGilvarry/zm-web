@@ -7,6 +7,10 @@ import type { Control } from '@/api/controls';
  * `CanIndicatorLight` exist in newer ZoneMinder schemas but not in
  * `ControlResponse`, so they are not offered.
  *
+ * Type is gone: 1.39.39 dropped `Controls.Type` (`104327349`) and Libvlc
+ * went with it (`bf8a73e9f`). zm-api still requires one on create, so a
+ * new profile is sent as `CONTROL_CREATE_TYPE`; an edit leaves it alone.
+ *
  * `can_auto_scan` / `num_scan_paths` are in the request and response but on
  * no legacy tab, and nothing in the dashboard drives from them, so the form
  * does not edit them — an extra tab of controls no operator asked for is
@@ -16,12 +20,11 @@ export type ControlTabKey =
   | 'main' | 'move' | 'pan' | 'tilt' | 'zoom' | 'focus'
   | 'gain' | 'white' | 'iris' | 'presets';
 
-export type ControlFieldKey = Exclude<keyof Control, 'id'>;
+export type ControlFieldKey = Exclude<keyof Control, 'id' | 'type'>;
 
 export type ControlField =
   | { key: 'name'; kind: 'text'; required: true }
   | { key: 'protocol'; kind: 'text'; required?: false }
-  | { key: 'type'; kind: 'type' }
   | { key: ControlFieldKey; kind: 'flag' }
   | { key: ControlFieldKey; kind: 'number' };
 
@@ -30,13 +33,8 @@ export interface ControlTab {
   fields: ControlField[];
 }
 
-/**
- * The Type select, exactly the five `controlcap.php:219-225` offers — a
- * control profile is a PTZ driver, and the backend's `MonitorType` enum
- * carries three more (`WebSite`, `VNC`, `File`) that no ZoneMinder PTZ
- * driver can be.
- */
-export const CONTROL_TYPES = ['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'cURL'] as const;
+/** `Type` for a new profile: zm-api's `CreateControlRequest` requires one; legacy's column default. */
+export const CONTROL_CREATE_TYPE = 'Local';
 
 const flag = (key: ControlFieldKey): ControlField => ({ key, kind: 'flag' });
 const num = (key: ControlFieldKey): ControlField => ({ key, kind: 'number' });
@@ -63,7 +61,6 @@ export const CONTROL_TABS: readonly ControlTab[] = [
     key: 'main',
     fields: [
       { key: 'name', kind: 'text', required: true },
-      { key: 'type', kind: 'type' },
       { key: 'protocol', kind: 'text' },
       flag('can_wake'), flag('can_sleep'), flag('can_reset'), flag('can_reboot'),
     ],
@@ -127,7 +124,6 @@ const AXIS_WORD: Record<string, (t: TFunction) => string> = {
 export function controlFieldLabel(t: TFunction, key: ControlFieldKey): string {
   switch (key) {
     case 'name': return t('Name');
-    case 'type': return t('Type');
     case 'protocol': return t('Protocol');
     case 'can_wake': return t('Can Wake');
     case 'can_sleep': return t('Can Sleep');
@@ -177,7 +173,7 @@ export function emptyControlForm(): ControlFormValues {
   const out = {} as ControlFormValues;
   for (const tab of CONTROL_TABS) {
     for (const f of tab.fields) {
-      out[f.key] = f.kind === 'flag' ? 0 : f.kind === 'type' ? 'Local' : f.kind === 'number' ? '' : '';
+      out[f.key] = f.kind === 'flag' ? 0 : '';
     }
   }
   return out;
@@ -200,7 +196,7 @@ export function controlToForm(c: Control): ControlFormValues {
  * Wire payload. Blank numbers go out as null (the columns are nullable);
  * blank protocol too. Flags are always sent so unticking sticks.
  */
-export function formToPayload(values: ControlFormValues): Omit<Control, 'id'> {
+export function formToPayload(values: ControlFormValues): Omit<Control, 'id' | 'type'> {
   const out: Record<string, unknown> = {};
   for (const tab of CONTROL_TABS) {
     for (const f of tab.fields) {
@@ -213,7 +209,7 @@ export function formToPayload(values: ControlFormValues): Omit<Control, 'id'> {
       else out[f.key] = typeof v === 'string' ? v.trim() : v;
     }
   }
-  return out as unknown as Omit<Control, 'id'>;
+  return out as unknown as Omit<Control, 'id' | 'type'>;
 }
 
 /** Legacy list column: `H64` when the profile has a home preset, else the count. */
