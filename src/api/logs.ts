@@ -34,8 +34,21 @@ export function isLogMinLevel(v: unknown): v is LogMinLevel {
   return typeof v === 'string' && (LOG_MIN_LEVELS as readonly string[]).includes(v);
 }
 
-/** `LogSort` — order on `time_key`. Default `desc` (newest first). */
+/** `LogSort` — sort direction. Default `desc` (newest first). */
 export type LogSort = 'asc' | 'desc';
+
+/**
+ * `LogSortField` — the column the list is ordered by (zm-api#142). Default
+ * `time`. Mirrors legacy's sortable headers.
+ */
+export const LOG_SORT_FIELDS = [
+  'time', 'id', 'component', 'server_id', 'pid', 'level', 'code', 'message', 'file', 'line',
+] as const;
+export type LogSortField = (typeof LOG_SORT_FIELDS)[number];
+
+export function isLogSortField(v: unknown): v is LogSortField {
+  return typeof v === 'string' && (LOG_SORT_FIELDS as readonly string[]).includes(v);
+}
 
 /** Filters shared by `GET /logs` and `DELETE /logs`. */
 export interface LogFilterParams {
@@ -43,8 +56,18 @@ export interface LogFilterParams {
   component?: string;
   /** Severity threshold: this level or worse. */
   min_level?: LogMinLevel;
-  /** Exact `Logs.Level` match (inverted scale: 0 = INFO, -2 = ERROR). */
-  level?: number;
+  /**
+   * Exact `Logs.Level` match, one value or a comma list (`-1,-5`), on the
+   * inverted scale: 0 = INFO, -1 = WARNING, -2 = ERROR, -3 = FATAL,
+   * -4 = PANIC, -5 = AUDIT, positive = debug (zm-api#142). Legacy's level
+   * multi-select maps onto this; for "this severe or worse" use `min_level`.
+   */
+  level?: number | string;
+  /**
+   * Only these log ids, as a comma list. On `DELETE` this clears exactly the
+   * rows an operator ticked (zm-api#142).
+   */
+  ids?: string;
   /** Case-insensitive substring match on the message. */
   search?: string;
   /** Unix seconds; rows at or after this instant. */
@@ -58,15 +81,32 @@ export interface LogQueryParams extends LogFilterParams {
   page?: number;
   page_size?: number;
   sort?: LogSort;
+  /** Column to sort on; default `time`. */
+  sort_by?: LogSortField;
+  /**
+   * Also return `total_unfiltered`, the row count of the whole table — the
+   * "Available" figure legacy prints next to the filtered total. Off by
+   * default: it is a second `COUNT(*)` on every request.
+   */
+  unfiltered_total?: boolean;
 }
 
-export async function listLogs(
-  params?: LogQueryParams,
-): Promise<PaginatedResponse<LogEntry>> {
-  return apiGet<PaginatedResponse<LogEntry>>(
-    '/logs',
-    params as Record<string, string | number | undefined>,
-  );
+/** `PaginatedLogsResponse`: the page plus `total_unfiltered` when asked for. */
+export interface LogsPage extends PaginatedResponse<LogEntry> {
+  total_unfiltered?: number | null;
+}
+
+export async function listLogs(params?: LogQueryParams): Promise<LogsPage> {
+  return apiGet<LogsPage>('/logs', params as Record<string, string | number | undefined>);
+}
+
+/**
+ * Distinct `Logs.Component` values, sorted — what legacy's Component select
+ * lists (zm-api#142). Before this route the UI could only offer the
+ * components on the current page.
+ */
+export async function listLogComponents(): Promise<string[]> {
+  return apiGet<string[]>('/logs/components');
 }
 
 /**

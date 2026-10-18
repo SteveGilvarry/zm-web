@@ -188,9 +188,11 @@ const CALLS: Record<string, Record<string, Call>> = {
   },
   logs: {
     listLogs: { args: [] },
+    listLogComponents: { args: [] },
     getLog: { args: [1] },
     clearLogs: { args: [] },
     isLogMinLevel: 'pure',
+    isLogSortField: 'pure',
     levelLabel: 'pure',
     levelColor: 'pure',
     levelRowTint: 'pure',
@@ -205,6 +207,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   monitors: {
     canonicalEnum: 'pure',
     getMonitors: { args: [] },
+    getAllMonitors: { args: [{ include_deleted: true }] },
     getMonitor: { args: [1] },
     updateMonitor: { args: [1, { name: 'm' }] },
     deleteMonitor: { args: [1] },
@@ -282,6 +285,10 @@ const CALLS: Record<string, Record<string, Call>> = {
       }],
     },
     deleteServer: { args: [1] },
+  },
+  stats: {
+    listStats: { args: [{ event_id: 1, frame_id: 2 }] },
+    getAllStatsForEvent: { args: [1] },
   },
   states: {
     listStates: { args: [] },

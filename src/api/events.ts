@@ -21,6 +21,9 @@ export const EVENT_SORT_FIELDS = [
   // zm-api#20 widened the enum; a backend older than that answers 400 for
   // these five.
   'name', 'cause', 'monitor_id', 'notes', 'frames',
+  // zm-api#136 added the last three legacy columns (2026-10). Tags is the
+  // only legacy sort still without a backend field.
+  'archived', 'emailed', 'disk_space',
 ] as const;
 export type EventSortField = (typeof EVENT_SORT_FIELDS)[number];
 export type SortDirection = 'asc' | 'desc';
@@ -31,9 +34,9 @@ export function isEventSortField(v: unknown): v is EventSortField {
 
 /**
  * Map a legacy `ZM_WEB_EVENT_SORT_FIELD` value (the PHP UI's column names)
- * onto the backend's sort enum. The only legacy columns left without a
- * backend equivalent are `DiskSpace` and `Tags`; they fall back to
- * `start_time`, which is the legacy default anyway.
+ * onto the backend's sort enum. The only legacy column left without a
+ * backend equivalent is `Tags`; it falls back to `start_time`, which is the
+ * legacy default anyway.
  */
 export function legacySortFieldToApi(legacy: string): EventSortField {
   switch (legacy.trim()) {
@@ -50,6 +53,9 @@ export function legacySortFieldToApi(legacy: string): EventSortField {
     case 'Notes': return 'notes';
     case 'Frames': return 'frames';
     case 'Monitor': case 'MonitorId': case 'MonitorName': return 'monitor_id';
+    case 'Archived': return 'archived';
+    case 'Emailed': return 'emailed';
+    case 'DiskSpace': return 'disk_space';
     default: return isEventSortField(legacy) ? legacy : 'start_time';
   }
 }
@@ -76,14 +82,42 @@ export interface EventQueryParams {
   name?: string;
   /** Case-insensitive substring match on `Events.Notes` (zm-api#20). */
   notes?: string;
-  /** Comma-separated tag ids; an event matching **any** of them is kept. */
+  /**
+   * Comma-separated tag ids. With `tag_op` `in` (the default) an event
+   * carrying **any** of them is kept; with `not_in`, events carrying none of
+   * them. `none` keeps untagged events and `any` keeps events with at least
+   * one tag — legacy's `0` and `-1` (zm-api#136).
+   */
   tag_id?: string;
+  tag_op?: TagOp;
+  /**
+   * Also return `total_length_seconds` and `total_disk_space` summed over the
+   * whole result rather than the page. Off by default: it costs the backend a
+   * second aggregate query.
+   */
+  totals?: boolean;
   sort?: EventSortField;
   direction?: SortDirection;
 }
 
-export async function getEvents(params?: EventQueryParams): Promise<PaginatedResponse<ZmEvent>> {
-  return apiGet<PaginatedResponse<ZmEvent>>('/events', params as Record<string, string | number | undefined>);
+/** `TagOp` in the OpenAPI spec — how `tag_id` is applied. */
+export type TagOp = 'in' | 'not_in';
+
+/** Legacy's special tag ids: `0` = No Tag, `-1` = Any Tag. */
+export const TAG_NONE = 'none';
+export const TAG_ANY = 'any';
+
+/**
+ * `PaginatedEventsResponse`: the page plus, when `totals` was requested, the
+ * sums legacy prints in the events footer (`Length`, `DiskSpace`).
+ */
+export interface EventsPage extends PaginatedResponse<ZmEvent> {
+  total_disk_space?: number | null;
+  total_length_seconds?: number | null;
+}
+
+export async function getEvents(params?: EventQueryParams): Promise<EventsPage> {
+  return apiGet<EventsPage>('/events', params as Record<string, string | number | undefined>);
 }
 
 export async function getEvent(id: number): Promise<ZmEvent> {

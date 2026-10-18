@@ -44,7 +44,7 @@ describe('parseEventsSearch', () => {
   });
 
   it('rejects sort fields the backend does not know', () => {
-    expect(parseEventsSearch({ sort: 'disk_space', dir: 'sideways', page: 0 })).toEqual({});
+    expect(parseEventsSearch({ sort: 'tags', dir: 'sideways', page: 0 })).toEqual({});
   });
 
   it('accepts the sort fields zm-api#20 added', () => {

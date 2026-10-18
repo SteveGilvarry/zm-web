@@ -1,6 +1,6 @@
 import { apiGet, apiPost, apiPatch, apiDelete, getAuthToken, ApiClientError } from './client';
 import { API_BASE, wsBase } from '@/api/base';
-import type { Monitor, PaginatedResponse, PaginationParams, StartLiveRequest, StartLiveResponse, LiveStats } from '@/types';
+import type { Monitor, PaginatedResponse, StartLiveRequest, StartLiveResponse, LiveStats } from '@/types';
 
 /**
  * Enum vocabularies of `Create/UpdateMonitorRequest` (OpenAPI components).
@@ -45,8 +45,37 @@ export function canonicalEnum(value: string, members: readonly string[]): string
   return members.find((m) => foldEnum(m) === key) ?? value;
 }
 
-export async function getMonitors(params?: PaginationParams): Promise<PaginatedResponse<Monitor>> {
-  return apiGet<PaginatedResponse<Monitor>>('/monitors', params);
+export interface MonitorListParams {
+  page?: number;
+  page_size?: number;
+  /**
+   * Also return soft-deleted rows (`deleted: true`) — legacy's `Deleted`
+   * status filter and the `(deleted)` console rows (zm-api#137).
+   */
+  include_deleted?: boolean;
+}
+
+export async function getMonitors(params?: MonitorListParams): Promise<PaginatedResponse<Monitor>> {
+  return apiGet<PaginatedResponse<Monitor>>('/monitors', params as Record<string, string | number | boolean | undefined>);
+}
+
+/**
+ * Every monitor, walking pages. Most callers want the whole list (console,
+ * montage, filter rows, permission grids) and used to ask for one page of
+ * 100 or 1000, which silently dropped rows on a large install and, in one
+ * place, sent `per_page`, a parameter the backend does not read. Pages of
+ * 500; capped at 20 pages (10,000 monitors) to bound a runaway loop.
+ */
+export async function getAllMonitors(
+  params?: Pick<MonitorListParams, 'include_deleted'>,
+): Promise<Monitor[]> {
+  const out: Monitor[] = [];
+  for (let page = 1; page <= 20; page++) {
+    const res = await getMonitors({ ...params, page, page_size: 500 });
+    out.push(...res.items);
+    if (res.current_page >= res.last_page || res.items.length === 0) break;
+  }
+  return out;
 }
 
 export async function getMonitor(id: number): Promise<Monitor> {

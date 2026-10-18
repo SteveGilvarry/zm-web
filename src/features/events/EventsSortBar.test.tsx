@@ -57,7 +57,7 @@ describe('COLUMN_SORT_FIELD', () => {
   it('leaves the columns the backend cannot sort by unmapped', () => {
     // zm-api has no sort for these, so their headers stay inert rather than
     // silently sorting by something else.
-    for (const key of ['tags', 'storage', 'disk_space', 'archived', 'emailed'] as const) {
+    for (const key of ['tags', 'storage'] as const) {
       expect(COLUMN_SORT_FIELD[key]).toBeUndefined();
     }
   });

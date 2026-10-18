@@ -119,9 +119,11 @@ describe('ClassicEventsTable — header', () => {
     // The active column carries the direction for assistive tech.
     const cause = screen.getByRole('button', { name: /^Cause/ }).closest('th')!;
     expect(cause).toHaveAttribute('aria-sort', 'descending');
-    // Tags and DiskSpace still have no backend column, so they stay inert.
+    // Tags still has no backend column, so it stays inert; DiskSpace gained
+    // one with zm-api#136.
     expect(screen.queryByRole('button', { name: /^Tags/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^DiskSpace/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: /^DiskSpace/ }));
+    expect(onSort).toHaveBeenLastCalledWith('disk_space');
   });
 
   it('links Frames / Alarm Frames / Max Score cells to the frames view', () => {

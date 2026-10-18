@@ -295,7 +295,7 @@ async function networkFetch(url: string, init: RequestInit): Promise<Response> {
   }
 }
 
-export async function apiGet<T>(endpoint: string, params?: Record<string, string | number | undefined>): Promise<T> {
+export async function apiGet<T>(endpoint: string, params?: Record<string, string | number | boolean | undefined>): Promise<T> {
   const url = new URL(`${API_BASE}${endpoint}`, window.location.origin);
 
   if (params) {

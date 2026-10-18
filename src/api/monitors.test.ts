@@ -14,6 +14,7 @@ import {
   getHlsPlaylistUrl,
   canonicalEnum,
   MONITOR_ENUMS,
+  getAllMonitors,
 } from './monitors';
 import { useAuthStore } from '@/stores/auth';
 import { isDeleted } from '@/types';
@@ -29,6 +30,43 @@ afterEach(() => server.resetHandlers());
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
+});
+
+describe('getAllMonitors', () => {
+  it('walks every page with page_size 500 and forwards include_deleted', async () => {
+    const seen: URL[] = [];
+    server.use(
+      http.get('*/api/v3/monitors', ({ request }) => {
+        const url = new URL(request.url);
+        seen.push(url);
+        const page = Number(url.searchParams.get('page'));
+        const item = (id: number) => ({ id, name: `m${id}`, deleted: id === 3 });
+        return HttpResponse.json(
+          page === 1
+            ? { items: [item(1), item(2)], total: 3, current_page: 1, per_page: 500, last_page: 2 }
+            : { items: [item(3)], total: 3, current_page: 2, per_page: 500, last_page: 2 },
+        );
+      }),
+    );
+    const all = await getAllMonitors({ include_deleted: true });
+    expect(all.map((m) => m.id)).toEqual([1, 2, 3]);
+    expect(seen).toHaveLength(2);
+    expect(seen[0].searchParams.get('page_size')).toBe('500');
+    expect(seen[0].searchParams.get('include_deleted')).toBe('true');
+    expect(seen[1].searchParams.get('page')).toBe('2');
+  });
+
+  it('sends no include_deleted when not asked, so old backends are unaffected', async () => {
+    let url: URL | undefined;
+    server.use(
+      http.get('*/api/v3/monitors', ({ request }) => {
+        url = new URL(request.url);
+        return HttpResponse.json({ items: [], total: 0, current_page: 1, per_page: 500, last_page: 1 });
+      }),
+    );
+    await getAllMonitors();
+    expect(url?.searchParams.has('include_deleted')).toBe(false);
+  });
 });
 
 describe('getMonitors', () => {

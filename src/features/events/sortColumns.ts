@@ -4,9 +4,10 @@ import type { EventsColumnKey } from '@/stores/eventsColumns';
 
 /**
  * Which table columns the backend can sort by. zm-api#20 added Name, Cause,
- * Monitor, Notes and Frames; Tags, Storage, DiskSpace, Archived and Emailed
- * have no `EventSortField`, so those headers stay inert. `monitor_id` sorts
- * by id, not by the monitor's name — the header still reads "Monitor".
+ * Monitor, Notes and Frames; zm-api#136 added Archived, Emailed and
+ * DiskSpace. Tags and Storage have no `EventSortField`, so those headers
+ * stay inert. `monitor_id` sorts by id, not by the monitor's name — the
+ * header still reads "Monitor".
  */
 export const COLUMN_SORT_FIELD: Partial<Record<EventsColumnKey, EventSortField>> = {
   id: 'id',
@@ -21,6 +22,9 @@ export const COLUMN_SORT_FIELD: Partial<Record<EventsColumnKey, EventSortField>>
   tot_score: 'tot_score',
   avg_score: 'avg_score',
   max_score: 'max_score',
+  archived: 'archived',
+  emailed: 'emailed',
+  disk_space: 'disk_space',
 };
 
 /** Labels for the sort bar / sort select, keyed by backend field. */
@@ -40,5 +44,8 @@ export function useSortFieldLabels(): Record<EventSortField, string> {
     monitor_id: t('Monitor'),
     notes: t('Notes'),
     frames: t('Frames'),
+    archived: t('Archived'),
+    emailed: t('Emailed'),
+    disk_space: t('Disk space'),
   };
 }

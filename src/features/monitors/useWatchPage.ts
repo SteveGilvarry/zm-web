@@ -441,7 +441,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
   // so moving between cameras costs nothing once any page has loaded it.
   const { data: monitorList } = useQuery({
     queryKey: ['monitors'],
-    queryFn: () => getMonitors({ per_page: 1000 }),
+    queryFn: () => getMonitors({ page: 1, page_size: 1000 }),
     enabled: isAuthenticated,
     staleTime: 60_000,
   });
