@@ -18,6 +18,7 @@ const UI = {
       await p.getByRole('button', { name: `Delete group ${name}` }).click();
     },
     membersLabel: /members/i,
+    newDialog: /create group/i,
   },
   classic: {
     newGroup: (p: Page) => p.getByRole('button', { name: /^new$/i }),
@@ -25,10 +26,16 @@ const UI = {
     edit: (p: Page, name: string) => p.getByRole('button', { name: new RegExp(`\\d+ ${name}$`) }),
     del: async (p: Page, name: string) => {
       await p.getByRole('checkbox', { name: `Mark ${name}` }).check();
-      p.once('dialog', (d) => void d.accept());
       await p.getByRole('button', { name: /^delete$/i }).click();
+      // Legacy's getDelConfirmModal('ConfirmDeleteGroups'), not a browser confirm.
+      await p
+        .getByRole('dialog', { name: 'Delete' })
+        .getByRole('button', { name: /^delete$/i })
+        .click();
     },
     membersLabel: /monitors/i,
+    // ajax/modals/group.php titles a new group's modal just "Group".
+    newDialog: /^group$/i,
   },
 } satisfies Record<Skin, unknown>;
 
@@ -68,7 +75,7 @@ test.describe('Groups', () => {
       await expect(page.getByText('e2e-Outdoor').first()).toBeVisible();
 
       await UI[skin].newGroup(page).click();
-      const dialog = page.getByRole('dialog', { name: /create group/i });
+      const dialog = page.getByRole('dialog', { name: UI[skin].newDialog });
       await expect(dialog).toBeVisible();
       await dialog.getByLabel('Name', { exact: true }).fill(name);
 

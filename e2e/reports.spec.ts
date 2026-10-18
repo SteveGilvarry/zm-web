@@ -18,14 +18,22 @@ test.describe('Reports', () => {
 
       const link = page.locator(`a[href="/reports/${SEED.report}"]`).first();
       await expect(link).toBeVisible();
-      await expect(link).toContainText('e2e-Weekly motion');
       if (skin === 'modern') {
+        await expect(link).toContainText('e2e-Weekly motion');
         // The row names the filter it runs, not just an id.
         await expect(page.getByText('e2e-Motion only').first()).toBeVisible();
         await expect(page.getByText('168 min').first()).toBeVisible();
       } else {
-        // reports.php: Id, Name, Starting, Ending, Interval as stored (seconds).
-        await expect(page.getByRole('row', { name: /e2e-Weekly motion/ })).toContainText('10080');
+        // reports.php: Id, Name, Starting, Ending, Interval as stored
+        // (seconds). Id and Name are separate cells, each linking the report.
+        const row = page.getByTestId(`report-row-${SEED.report}`);
+        await expect(row).toContainText('10080');
+        for (const name of [String(SEED.report), 'e2e-Weekly motion']) {
+          await expect(row.getByRole('link', { name, exact: true })).toHaveAttribute(
+            'href',
+            `/reports/${SEED.report}`,
+          );
+        }
       }
     });
 

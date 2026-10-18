@@ -25,7 +25,6 @@ const UI = {
     // option text too; match on the caption prefix.
     selectHls: (p: Page) => p.getByLabel(/^player/i).selectOption('hls'),
     selectWebRtc: (p: Page) => p.getByLabel(/^player/i).selectOption('webrtc'),
-    stills: (p: Page) => p.getByRole('button', { name: /^stills$/i }).first().click(),
   },
 } satisfies Record<Skin, unknown>;
 
@@ -49,8 +48,16 @@ test.describe('Watch', () => {
       await expect(page.getByTestId('watch-runtime')).toContainText('15.0');
       await expect(page.locator('video')).toHaveCount(1);
       // Both skins expose the legacy alarm controls and a scale picker.
+      // Classic has legacy's single toggle (watch.js forceAlarm/cancelAlarm),
+      // which reads "Cancel Forced Alarm" only while an alarm is forced; the
+      // hermetic stack has no zmc, so it never is. Modern keeps a separate
+      // Cancel Alarm.
       await expect(page.getByRole('button', { name: /^force alarm$/i })).toBeVisible();
-      await expect(page.getByRole('button', { name: /^cancel alarm$/i })).toBeVisible();
+      if (skin === 'modern') {
+        await expect(page.getByRole('button', { name: /^cancel alarm$/i })).toBeVisible();
+      } else {
+        await expect(page.getByRole('button', { name: /cancel/i })).toHaveCount(0);
+      }
       await expect(page.getByLabel(/^scale/i).first()).toBeVisible();
       // …and a way back to the monitor's events.
       await expect(page.locator(`a[href*="/events?monitor_id=${MON}"]`).first()).toBeVisible();
@@ -120,31 +127,33 @@ test.describe('Watch', () => {
       }, { timeout: 15_000 })
       .toBe('fits');
   });
-    test(`${skin}: the stills view stops asking for a live stream @route:monitors.watch`, async ({
-      loggedInPage: page,
-    }) => {
-      await gotoSkin(page, `/monitors/${MON}`, skin);
-      await UI[skin].stills(page);
-
-      // Snapshot mode swaps the <video> for a refreshing <img> pointed at
-      // /snapshot. Assert the swap, not that the picture renders: a hermetic
-      // stack has no capture daemon, so the endpoint answers 404 (no shared
-      // memory) or 503, and the app deliberately hides an image that fails to
-      // load. This used to pass only because `.first()` sometimes matched a
-      // different image that did load.
-      const still = page.locator('img[src*="/snapshot"]').first();
-      await expect(still).toHaveAttribute('src', /\/snapshot/, { timeout: 15_000 });
-
-      // …and stops asking for a live one. The modern skin keeps both stream
-      // hooks mounted and only starts the active protocol, so the <video>
-      // element staying in the DOM is by design — what must stop is the
-      // traffic.
-      const liveCalls: string[] = [];
-      page.on('request', (r) => {
-        if (r.url().includes('/api/v3/live/') && r.method() === 'POST') liveCalls.push(r.url());
-      });
-      await page.waitForTimeout(2_000);
-      expect(liveCalls).toEqual([]);
-    });
   }
+
+  // Classic has no Stream/Stills toggle: 1.39.41's watch page has none.
+  test(`modern: the stills view stops asking for a live stream @route:monitors.watch`, async ({
+    loggedInPage: page,
+  }) => {
+    await gotoSkin(page, `/monitors/${MON}`, 'modern');
+    await page.getByRole('button', { name: /^stills$/i }).first().click();
+
+    // Snapshot mode swaps the <video> for a refreshing <img> pointed at
+    // /snapshot. Assert the swap, not that the picture renders: a hermetic
+    // stack has no capture daemon, so the endpoint answers 404 (no shared
+    // memory) or 503, and the app deliberately hides an image that fails to
+    // load. This used to pass only because `.first()` sometimes matched a
+    // different image that did load.
+    const still = page.locator('img[src*="/snapshot"]').first();
+    await expect(still).toHaveAttribute('src', /\/snapshot/, { timeout: 15_000 });
+
+    // …and stops asking for a live one. The modern skin keeps both stream
+    // hooks mounted and only starts the active protocol, so the <video>
+    // element staying in the DOM is by design — what must stop is the
+    // traffic.
+    const liveCalls: string[] = [];
+    page.on('request', (r) => {
+      if (r.url().includes('/api/v3/live/') && r.method() === 'POST') liveCalls.push(r.url());
+    });
+    await page.waitForTimeout(2_000);
+    expect(liveCalls).toEqual([]);
+  });
 });
