@@ -14,6 +14,7 @@ import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useConsoleColumnsStore } from '@/features/console/consoleColumns';
 import { useToastStore } from '@/components/common/toastStore';
 import { useUiStore } from '@/stores/ui';
@@ -203,6 +204,7 @@ afterEach(() => {
   mockSearch = {};
   mockNavigate.mockReset();
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useConsoleColumnsStore.getState().reset();
   useToastStore.getState().clear();
   useUiStore.setState({ classicFilterPanelOpen: true });

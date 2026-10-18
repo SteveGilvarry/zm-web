@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listGroups, listGroupMonitors, type Group } from '@/api/groups';
 import { listServers, type Server } from '@/api/servers';
@@ -6,18 +6,22 @@ import { getStorageList } from '@/api/storage';
 import type { ZmStorage } from '@/types';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { getAllMonitors } from '@/api/monitors';
 import { isDeleted, type Monitor } from '@/types';
 import { filterMonitors } from './filterMonitors';
-import type { MonitorRuntime } from './useMonitorStatuses';
+import { useMonitorStatuses, type MonitorRuntime } from './useMonitorStatuses';
 
 /**
- * The legacy `_monitor_filters.php` row: eight fields, in this order.
+ * The legacy `_monitor_filters.php` row, in this order.
  * Group / Capturing / Analysing / Recording / Monitor are shared with the
  * modern chip bar through `useMonitorFilterStore` (so `?group=` and a chip
- * picked on Console carry over); Name / Source are regexes and Status is the
- * *runtime* state (`/monitor-status`), which the chip bar does not model, so
- * those three live in this hook.
+ * picked on Console carry over). Name / Source are regexes, Status is the
+ * *runtime* state (`/monitor-status`) plus `Deleted`, and Server / Storage
+ * only show on a multi-server or multi-storage box; the chip bar models none
+ * of those, so they live in `useMonitorFilterRowStore`. Both stores persist,
+ * as legacy's `zmFilter_*` cookies do, so every page mounting the row sees
+ * the same selection. This hook is the only reader and writer of the second.
  */
 export type FilterRowField =
   | 'groupId' | 'name' | 'capturing' | 'analysing' | 'recording' | 'status' | 'source' | 'monitorId'
@@ -106,7 +110,10 @@ export function applyLocalFilters(
   const storageIds = splitValues(values.storageId ?? '');
   return monitors.filter((m) => {
     if (!matchesText(values.name, m.name)) return false;
-    if (!matchesText(values.source, monitorSource(m))) return false;
+    // Legacy tries `Source()` first, then the full `Path` (credentials and all).
+    if (values.source && !matchesText(values.source, monitorSource(m)) && !matchesText(values.source, m.path)) {
+      return false;
+    }
     if (isDeleted(m)) {
       // `(… AND Status IN …) OR Deleted=true`: a deleted monitor passes
       // whatever else the Status select holds, and only when Deleted is in it.
@@ -114,7 +121,9 @@ export function applyLocalFilters(
     } else {
       if (includeDeleted && statuses.length === 0) return false;
       if (statuses.length) {
-        const status = runtimeById[m.id]?.status ?? 'Unknown';
+        // `COALESCE(Status, 'NotRunning')`: a monitor with no runtime row
+        // (Capturing=None never gets one) counts as Not Running.
+        const status = runtimeById[m.id]?.status ?? 'NotRunning';
         if (!statuses.includes(status)) return false;
       }
     }
@@ -124,8 +133,55 @@ export function applyLocalFilters(
   });
 }
 
+/** One entry of the GroupId select: legacy indents children under their parent. */
+export interface GroupOption {
+  id: number;
+  name: string;
+  depth: number;
+}
+
+/**
+ * `Group::get_dropdown_options`: groups sorted by lower-cased name, each
+ * followed by its children (recursively), depth counted from the root.
+ * Groups whose parent is missing are treated as roots so none disappear.
+ */
+export function groupDropdownOptions(groups: Group[]): GroupOption[] {
+  const byName = [...groups].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  const ids = new Set(groups.map((g) => g.id));
+  const children = new Map<number, Group[]>();
+  for (const g of byName) {
+    if (g.parent_id != null && ids.has(g.parent_id)) {
+      if (!children.has(g.parent_id)) children.set(g.parent_id, []);
+      children.get(g.parent_id)!.push(g);
+    }
+  }
+  const out: GroupOption[] = [];
+  const seen = new Set<number>();
+  const walk = (g: Group, depth: number) => {
+    if (seen.has(g.id)) return; // a parent loop in the data must not hang the page
+    seen.add(g.id);
+    out.push({ id: g.id, name: g.name, depth });
+    for (const c of children.get(g.id) ?? []) walk(c, depth + 1);
+  };
+  for (const g of byName) if (g.parent_id == null || !ids.has(g.parent_id)) walk(g, 0);
+  return out;
+}
+
+/**
+ * `Group::get_group_sql`: the picked groups plus their direct children.
+ * Legacy goes one level down, not the whole subtree, and so does this.
+ */
+export function expandGroupIds(picked: number[], groups: Group[]): number[] {
+  if (picked.length === 0) return picked;
+  const set = new Set(picked);
+  for (const g of groups) if (g.parent_id != null && picked.includes(g.parent_id)) set.add(g.id);
+  return [...set];
+}
+
 export interface MonitorFilterRowState {
   groups: Group[];
+  /** The GroupId select's options, tree-ordered with a depth for the indent. */
+  groupOptions: GroupOption[];
   /** Legacy shows the Server select only when the box has more than one. */
   servers: Server[];
   /** Same rule for Storage. */
@@ -138,21 +194,31 @@ export interface MonitorFilterRowState {
   setMulti: (field: FilterRowField, values: string[]) => void;
   clear: (field: FilterRowField) => void;
   reset: () => void;
+  /**
+   * The Monitor select's options: monitors passing every field but Monitor
+   * (legacy builds `$monitors_dropdown` after the other filters).
+   */
+  monitorOptions: Monitor[];
   /** Monitors passing every field. */
   filtered: Monitor[];
   /** Fields with a value — drives the "filtered" hint. */
   activeCount: number;
 }
 
-const EMPTY_RUNTIME: Record<number, MonitorRuntime> = {};
-
+/**
+ * @param monitors the page's live monitors.
+ * @param runtimeById `/monitor-status` rows, when the page already polls
+ *   them. Left out, the hook polls them itself, and only while a runtime
+ *   status is picked.
+ */
 export function useMonitorFilterRow(
   monitors: Monitor[],
-  runtimeById: Record<number, MonitorRuntime> = EMPTY_RUNTIME,
+  runtimeById?: Record<number, MonitorRuntime>,
 ): MonitorFilterRowState {
   const { isAuthenticated } = useAuthStore();
   const store = useMonitorFilterStore();
-  const [local, setLocal] = useState({ name: '', source: '', status: '', serverId: '', storageId: '' });
+  const row = useMonitorFilterRowStore();
+  const { name, source, status, serverId, storageId } = row;
 
   const groupsQ = useQuery({
     queryKey: ['groups'],
@@ -176,26 +242,34 @@ export function useMonitorFilterRow(
     enabled: isAuthenticated,
     staleTime: 5 * 60_000,
   });
-  const groups = groupsQ.data?.items ?? [];
+  const groups = useMemo(() => groupsQ.data?.items ?? [], [groupsQ.data]);
   const servers = serversQ.data?.items ?? [];
   const storages = storageQ.data?.items ?? [];
   const groupMonitors = groupMonitorsQ.data?.items;
+  const groupOptions = useMemo(() => groupDropdownOptions(groups), [groups]);
 
+  const statuses = splitValues(status);
   // Soft-deleted monitors are fetched only while the Status select holds
   // Deleted, so a page that never asks pays nothing. The page's own list
   // stays the live monitors; the deleted rows are appended here.
-  const wantDeleted = splitValues(local.status).includes(DELETED_STATUS);
+  const wantDeleted = statuses.includes(DELETED_STATUS);
   const deletedQ = useQuery({
     queryKey: ['monitors', 'all', { include_deleted: true }],
     queryFn: () => getAllMonitors({ include_deleted: true }),
     enabled: isAuthenticated && wantDeleted,
   });
   const deletedRows = deletedQ.data;
+  // Rows cached from an earlier Deleted pick may linger once it is cleared;
+  // `applyLocalFilters` drops them then, so the pool need not.
   const pool = useMemo(() => {
-    if (!wantDeleted || !deletedRows) return monitors;
+    if (!deletedRows) return monitors;
     const live = new Set(monitors.map((m) => m.id));
     return [...monitors, ...deletedRows.filter((m) => isDeleted(m) && !live.has(m.id))];
-  }, [monitors, wantDeleted, deletedRows]);
+  }, [monitors, deletedRows]);
+
+  const wantRuntime = statuses.some((s) => s !== DELETED_STATUS);
+  const ownRuntime = useMonitorStatuses(runtimeById === undefined && wantRuntime).byId;
+  const runtime = runtimeById ?? ownRuntime;
 
   const membership = useMemo(() => {
     const map = new Map<number, Set<number>>();
@@ -212,28 +286,34 @@ export function useMonitorFilterRow(
     analysing: store.analysing.join(','),
     recording: store.recording.join(','),
     monitorId: store.monitorIds.join(','),
-    serverId: local.serverId,
-    storageId: local.storageId,
-    name: local.name,
-    source: local.source,
-    status: local.status,
+    name, source, status, serverId, storageId,
   };
   const valuesMulti = Object.fromEntries(
     FILTER_ROW_FIELDS.map((f) => [f, splitValues(values[f])]),
   ) as Record<FilterRowField, string[]>;
 
-  const filtered = useMemo(() => {
+  const monitorOptions = useMemo(() => {
     const viaStore = filterMonitors(pool, {
-      groupIds: store.groupIds,
+      groupIds: expandGroupIds(store.groupIds, groups),
       capturing: store.capturing,
       analysing: store.analysing,
       recording: store.recording,
       status: [],
       source: [],
-      monitorIds: store.monitorIds,
+      monitorIds: [],
     }, membership);
-    return applyLocalFilters(viaStore, local, runtimeById);
-  }, [pool, store.groupIds, store.capturing, store.analysing, store.recording, store.monitorIds, membership, local, runtimeById]);
+    return applyLocalFilters(viaStore, { name, source, status, serverId, storageId }, runtime);
+  }, [pool, store.groupIds, groups, store.capturing, store.analysing, store.recording, membership,
+    name, source, status, serverId, storageId, runtime]);
+
+  // Legacy drops the Monitor selection when none of it survives the other
+  // filters (`$found_selected_monitor`), rather than showing an empty list.
+  const filtered = useMemo(() => {
+    const picked = new Set(store.monitorIds);
+    if (picked.size === 0) return monitorOptions;
+    const hit = monitorOptions.filter((m) => picked.has(m.id));
+    return hit.length ? hit : monitorOptions;
+  }, [monitorOptions, store.monitorIds]);
 
   const set = (field: FilterRowField, value: string) => {
     const list = splitValues(value);
@@ -243,7 +323,7 @@ export function useMonitorFilterRow(
       case 'analysing': store.setAnalysing(list); break;
       case 'recording': store.setRecording(list); break;
       case 'monitorId': store.setMonitorIds(parseIdList(value)); break;
-      default: setLocal((s) => ({ ...s, [field]: value }));
+      default: row.setField(field, value);
     }
   };
   const setMulti = (field: FilterRowField, list: string[]) => set(field, list.join(','));
@@ -254,11 +334,12 @@ export function useMonitorFilterRow(
     store.setAnalysing([]);
     store.setRecording([]);
     store.setMonitorIds([]);
-    setLocal({ name: '', source: '', status: '', serverId: '', storageId: '' });
+    row.reset();
   };
 
   return {
     groups,
+    groupOptions,
     servers,
     storages,
     values,
@@ -267,6 +348,7 @@ export function useMonitorFilterRow(
     setMulti,
     clear: (field) => set(field, ''),
     reset,
+    monitorOptions,
     filtered,
     activeCount: FILTER_ROW_FIELDS.filter((f) => values[f] !== '').length,
   };

@@ -125,7 +125,7 @@ export default function ClassicConsolePage() {
     <AppShell title={t('Console')}>
       <ClassicPage>
         {showFilters && (
-          <ClassicFilterRow monitors={page.data.monitors} state={page.filter} className="mb-2" />
+          <ClassicFilterRow state={page.filter} className="mb-2" />
         )}
 
         <ClassicToolbar

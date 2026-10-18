@@ -96,7 +96,7 @@ export default function ClassicMontageReviewPage() {
   return (
     <AppShell title={t('Montage Review')}>
       <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2 text-white">
-        <ClassicFilterRow monitors={page.allMonitors} state={filter} tone="dark" />
+        <ClassicFilterRow state={filter} tone="dark" />
         <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
           <label className="flex flex-col items-center gap-0.5">
             <span className="font-semibold">{t('Date Time')} &gt;=</span>

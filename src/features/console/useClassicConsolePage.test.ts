@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useToastStore } from '@/components/common/toastStore';
 import { useConsoleColumnsStore } from './consoleColumns';
 
@@ -76,6 +77,7 @@ afterEach(() => {
   patched.length = 0; deleted.length = 0; navigate.mockClear();
   mockSearch = {};
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useConsoleColumnsStore.getState().reset();
   useToastStore.getState().clear();
 });

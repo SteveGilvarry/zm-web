@@ -12,6 +12,7 @@ import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 
 let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({
@@ -88,6 +89,7 @@ afterEach(() => {
   server.resetHandlers();
   mockSearch = {};
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 

@@ -2,7 +2,6 @@ import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { X } from 'lucide-react';
-import type { Monitor } from '@/types';
 import {
   ANALYSING_OPTIONS,
   CAPTURING_OPTIONS,
@@ -14,8 +13,6 @@ import {
 import { classicInputClass } from './Select';
 
 interface ClassicFilterRowProps {
-  /** Every monitor — the Monitor select lists them. */
-  monitors: Monitor[];
   state: MonitorFilterRowState;
   className?: string;
   /** `dark` for the legacy blue-grey header band (white labels). */
@@ -29,9 +26,9 @@ interface ClassicFilterRowProps {
  * multiple, as legacy's Chosen widgets are; Server and Storage appear only
  * when the box has more than one.
  */
-export function ClassicFilterRow({ monitors, state, className, tone = 'light' }: ClassicFilterRowProps) {
+export function ClassicFilterRow({ state, className, tone = 'light' }: ClassicFilterRowProps) {
   const { t } = useTranslation();
-  const { values, valuesMulti, set, setMulti, clear, groups, servers, storages } = state;
+  const { valuesMulti, values, set, setMulti, clear, groupOptions, monitorOptions, servers, storages } = state;
 
   const modeLabel = (v: string): string => {
     switch (v) {
@@ -65,7 +62,8 @@ export function ClassicFilterRow({ monitors, state, className, tone = 'light' }:
     >
       <SelectField
         label={t('GroupId')} field="groupId" value={valuesMulti.groupId} set={setMulti} clear={clear}
-        options={groups.map((g) => ({ value: String(g.id), label: g.name }))}
+        // Legacy indents each child three &nbsp; per level (Group.php).
+        options={groupOptions.map((g) => ({ value: String(g.id), label: '\u00a0'.repeat(3 * g.depth) + g.name }))}
       />
       <TextField label={t('Name')} field="name" value={values.name} set={set} />
       <SelectField
@@ -99,7 +97,8 @@ export function ClassicFilterRow({ monitors, state, className, tone = 'light' }:
       <TextField label={t('Source')} field="source" value={values.source} set={set} />
       <SelectField
         label={t('Monitor')} field="monitorId" value={valuesMulti.monitorId} set={setMulti} clear={clear} wide
-        options={monitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
+        // Only the monitors the other fields let through, as legacy lists them.
+        options={monitorOptions.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
       />
     </div>
   );

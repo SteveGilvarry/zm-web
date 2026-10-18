@@ -43,6 +43,8 @@ function makeState(
   const merged = { ...EMPTY, ...values };
   return {
     groups,
+    groupOptions: groups.map((g) => ({ id: g.id, name: g.name, depth: 0 })),
+    monitorOptions: monitors,
     servers: [],
     storages: [],
     ...over,
@@ -65,7 +67,7 @@ function mount(
   over?: Partial<Pick<MonitorFilterRowState, 'servers' | 'storages'>>,
 ) {
   return renderWithProviders(
-    <ClassicFilterRow monitors={monitors} state={makeState(values, over)} tone={tone} className="mb-2" />,
+    <ClassicFilterRow state={makeState(values, over)} tone={tone} className="mb-2" />,
   );
 }
 
@@ -123,6 +125,20 @@ describe('ClassicFilterRow', () => {
   it('labels each monitor option with its id', () => {
     mount();
     expect(optionLabels('Monitor')).toEqual(['1 Front Door', '2 Driveway East']);
+  });
+
+  it('indents child groups under their parent', () => {
+    const state = makeState();
+    state.groupOptions = [{ id: 1, name: 'Outside', depth: 0 }, { id: 2, name: 'Yard', depth: 1 }];
+    renderWithProviders(<ClassicFilterRow state={state} />);
+    expect(optionLabels('GroupId')).toEqual(['Outside', '\u00a0\u00a0\u00a0Yard']);
+  });
+
+  it('lists the monitors the hook narrowed to, not every monitor', () => {
+    const state = makeState();
+    state.monitorOptions = [monitors[1]];
+    renderWithProviders(<ClassicFilterRow state={state} />);
+    expect(optionLabels('Monitor')).toEqual(['2 Driveway East']);
   });
 
   it('hides Server and Storage until the box has more than one', () => {
@@ -199,8 +215,9 @@ describe('ClassicFilterRow', () => {
 
   it('offers nothing to pick when there are no groups or monitors', () => {
     const state = makeState();
-    state.groups = [];
-    renderWithProviders(<ClassicFilterRow monitors={[]} state={state} />);
+    state.groupOptions = [];
+    state.monitorOptions = [];
+    renderWithProviders(<ClassicFilterRow state={state} />);
     expect(within(screen.getByRole('listbox', { name: 'GroupId' })).queryAllByRole('option')).toHaveLength(0);
     expect(within(screen.getByRole('listbox', { name: 'Monitor' })).queryAllByRole('option')).toHaveLength(0);
   });

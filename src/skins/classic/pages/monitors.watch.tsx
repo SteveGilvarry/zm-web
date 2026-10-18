@@ -126,7 +126,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
         {/* Legacy `#mfbpanel`: the shared monitor filter bar, hidden behind
             the chevron until asked for. */}
         {showFilters && (
-          <ClassicFilterRow monitors={page.siblings} state={filter} className="mb-2" />
+          <ClassicFilterRow state={filter} className="mb-2" />
         )}
 
         {/* Action row */}

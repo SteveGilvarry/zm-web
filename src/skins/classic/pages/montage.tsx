@@ -54,7 +54,7 @@ export default function ClassicMontagePage() {
   return (
     <AppShell title={t('Montage')}>
       <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2 text-white">
-        <ClassicFilterRow monitors={page.monitors} state={filter} tone="dark" />
+        <ClassicFilterRow state={filter} tone="dark" />
         <div className="flex flex-wrap items-center justify-center gap-3">
           <ClassicSelect
             label={t('Monitor status position')}

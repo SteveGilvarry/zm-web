@@ -12,6 +12,7 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useMontageStore } from '@/stores/montage';
 import { serialisePositions } from '@/features/montage/layoutFormat';
 import { gridLayout } from '@/features/montage/mosaic';
@@ -65,6 +66,7 @@ afterEach(() => {
   streamProps.length = 0;
   useToastStore.getState().clear();
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useMontageStore.setState({
     protocol: 'webrtc', statusPosition: 'inside', showZones: false,
     montageRatio: 'auto', montageRatioById: {},
