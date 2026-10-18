@@ -226,14 +226,25 @@ function ReportChart({ filterId }: { filterId: number | null }) {
         className="py-12 text-center text-fg-dim text-sm"
         data-testid="report-chart-no-data"
       >
-        {t('No matching events in the most recent 500.')}
+        {chart.mode === 'server'
+          ? t('No events match this filter.')
+          : t('No matching events in the most recent 500.')}
       </div>
     );
   }
 
   return (
-    <div dir="ltr">
-      <EventsPerHourChart buckets={chart.buckets} />
+    <div className="space-y-1">
+      <div dir="ltr">
+        <EventsPerHourChart buckets={chart.buckets} />
+      </div>
+      {chart.mode === 'client' ? (
+        <p className="text-xs text-fg-dim">{t('This filter is evaluated in the browser, over the most recent 500 events.')}</p>
+      ) : chart.charted < chart.matched && (
+        <p className="text-xs text-fg-dim">
+          {t('Charted the first {{charted}} of {{matched}} matching events.', { charted: chart.charted, matched: chart.matched })}
+        </p>
+      )}
     </div>
   );
 }

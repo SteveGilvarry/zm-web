@@ -74,9 +74,12 @@ const EVENTS = [
 ];
 
 let sent: Array<{ method: string; path: string; body: Record<string, unknown> | null }> = [];
+/** Query strings of the chart's `/filters/preview` calls. */
+let previews: string[] = [];
 
 function seed(over: unknown[] = []) {
   sent = [];
+  previews = [];
   server.use(
     ...(over as never[]),
     http.get('/api/v3/reports/:id', ({ params }) =>
@@ -89,6 +92,10 @@ function seed(over: unknown[] = []) {
         : HttpResponse.json({ kind: 'NOT_FOUND', error_message: 'no such filter' }, { status: 404 });
     }),
     http.get('/api/v3/events', () => HttpResponse.json(paged(EVENTS, { per_page: 500 }))),
+    http.post('/api/v3/filters/preview', async ({ request }) => {
+      previews.push(new URL(request.url).search);
+      return HttpResponse.json(paged(EVENTS, { per_page: 1000 }));
+    }),
     http.patch('/api/v3/reports/:id', async ({ request, params }) => {
       const body = await request.json() as Record<string, unknown>;
       sent.push({ method: 'PATCH', path: `/reports/${params.id}`, body });
@@ -207,17 +214,50 @@ describe('ClassicReportDetailPage', () => {
 
     await screen.findByLabelText('Name');
     await waitFor(() => expect(screen.getByText('Events per hour')).toBeInTheDocument());
-    // Two events matched by an empty term list → one dated series, no empty state.
-    await waitFor(() => expect(screen.queryByTestId('report-chart-no-data')).toBeNull());
+    // The filter runs on the backend over every match, not over a window.
+    const chart = await screen.findByTestId('events-per-hour-chart');
+    expect(chart.querySelectorAll('circle')).toHaveLength(2);
+    expect(previews).toEqual(['?page=1&page_size=1000']);
+    expect(screen.queryByTestId('report-chart-no-data')).toBeNull();
     expect(screen.queryByTestId('report-chart-empty')).toBeNull();
+  });
+
+  it('pages through every match, and says so when it stops at the cap', async () => {
+    signIn();
+    seed([
+      http.post('/api/v3/filters/preview', ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page'));
+        previews.push(String(page));
+        return HttpResponse.json(paged([{ ...EVENTS[0], id: 1000 + page }], {
+          total: 50_000, per_page: 1000, current_page: page, last_page: 50,
+        }));
+      }),
+    ]);
+    await mount();
+
+    expect(await screen.findByText('Charted the first 20 of 50000 matching events.')).toBeInTheDocument();
+    expect(previews).toHaveLength(20);
+  });
+
+  it('falls back to the browser for terms the preview cannot carry, and says so', async () => {
+    signIn();
+    seed([
+      http.get('/api/v3/reports/:id', () => HttpResponse.json({ ...REPORT, filter_id: 6 })),
+      http.get('/api/v3/filters/6', () => HttpResponse.json({
+        id: 6, name: 'Regex', query_json: JSON.stringify({ terms: [{ attr: 'Name', op: '=~', val: '^Event' }] }),
+      })),
+    ]);
+    await mount();
+
+    expect(await screen.findByText('This filter is evaluated in the browser, over the most recent 500 events.')).toBeInTheDocument();
+    expect(previews).toEqual([]);
   });
 
   it('says so when the filter matches nothing', async () => {
     signIn();
-    seed([http.get('/api/v3/events', () => HttpResponse.json(paged([], { per_page: 500 })))]);
+    seed([http.post('/api/v3/filters/preview', () => HttpResponse.json(paged([], { per_page: 1000 })))]);
     await mount();
-    expect(await screen.findByTestId('report-chart-no-data')).toHaveTextContent(
-      'No matching events in the most recent 500.');
+    expect(await screen.findByTestId('report-chart-no-data')).toHaveTextContent('No events match this filter.');
   });
 
   it('prompts for a filter when the report has none', async () => {

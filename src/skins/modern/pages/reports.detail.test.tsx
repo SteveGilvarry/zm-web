@@ -142,6 +142,11 @@ function stubAll() {
         last_page: 1,
       }),
     ),
+    // MaxScore > 50 maps to the preview AST, so the backend filters.
+    http.post('/api/v3/filters/preview', () => {
+      const items = sampleEvents.filter((e) => e.max_score > 50);
+      return HttpResponse.json({ items, total: items.length, per_page: 1000, current_page: 1, last_page: 1 });
+    }),
   );
 }
 
