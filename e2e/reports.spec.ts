@@ -3,9 +3,9 @@ import { SEED } from './seed/seed-data';
 
 /**
  * Reports list and detail (`/reports`, `/reports/$id`) in both skins. The
- * seed ships report 9001 `e2e-Weekly motion` pointing at filter 9002, with a
- * 10080-minute interval — a week — which is also the shape that exposed the
- * "interval is seconds, not minutes" ambiguity upstream.
+ * seed ships report 9001 `e2e-Weekly motion` pointing at filter 9002, with
+ * an interval of 10080. The API stores seconds, so that is 2 h 48 min, not
+ * the week a minutes reading would make it.
  */
 test.describe('Reports', () => {
   test.skip(seededOnly.condition, seededOnly.reason);
@@ -19,8 +19,14 @@ test.describe('Reports', () => {
       const link = page.locator(`a[href="/reports/${SEED.report}"]`).first();
       await expect(link).toBeVisible();
       await expect(link).toContainText('e2e-Weekly motion');
-      // The row names the filter it runs, not just an id.
-      await expect(page.getByText('e2e-Motion only').first()).toBeVisible();
+      if (skin === 'modern') {
+        // The row names the filter it runs, not just an id.
+        await expect(page.getByText('e2e-Motion only').first()).toBeVisible();
+        await expect(page.getByText('168 min').first()).toBeVisible();
+      } else {
+        // reports.php: Id, Name, Starting, Ending, Interval as stored (seconds).
+        await expect(page.getByRole('row', { name: /e2e-Weekly motion/ })).toContainText('10080');
+      }
     });
 
     test(`${skin}: opening a report loads its saved settings @route:reports.detail`, async ({
@@ -50,7 +56,7 @@ test.describe('Reports', () => {
       await gotoSkin(page, '/reports', skin);
       await expect(page.getByText('e2e-Weekly motion').first()).toBeVisible();
 
-      await page.getByRole('button', { name: /^(new report|\+ new)$/i }).first().click();
+      await page.getByRole('button', { name: /^(new report|add new report)$/i }).first().click();
       const nameField = page.getByPlaceholder(/weekly motion report/i);
       await nameField.fill(name);
 

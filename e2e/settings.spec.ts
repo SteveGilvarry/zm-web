@@ -20,10 +20,17 @@ test.describe('Settings — options', () => {
     }) => {
       await gotoSkin(page, '/settings', skin);
 
-      // Appearance (the skin chooser) is on this page in both skins.
-      await expect(page.getByRole('heading', { name: /appearance/i })).toBeVisible();
-      await expect(page.getByRole('button', { name: /^Modern/ })).toBeVisible();
-      await expect(page.getByRole('button', { name: /classic zoneminder/i })).toBeVisible();
+      if (skin === 'modern') {
+        // Appearance (the skin chooser) is on this page.
+        await expect(page.getByRole('heading', { name: /appearance/i })).toBeVisible();
+        await expect(page.getByRole('button', { name: /^Modern/ })).toBeVisible();
+        await expect(page.getByRole('button', { name: /classic zoneminder/i })).toBeVisible();
+      } else {
+        // Classic opens on System, as legacy does; the skin is on This Session.
+        await expect(page.getByRole('form', { name: 'Options' })).toBeVisible();
+        await page.getByRole('button', { name: 'This Session', exact: true }).click();
+        await expect(page.getByLabel('Skin', { exact: true })).toHaveValue('classic');
+      }
 
       // The seeded ZM_E2E_* config rows are reachable from the category rail.
       await page
@@ -31,7 +38,12 @@ test.describe('Settings — options', () => {
         .or(page.getByRole('link', { name: /^paths$/i }))
         .first()
         .click();
-      await expect(page.getByText('ZM_E2E_DIR_EVENTS').first()).toBeVisible();
+      if (skin === 'modern') {
+        await expect(page.getByText('ZM_E2E_DIR_EVENTS').first()).toBeVisible();
+      } else {
+        // Legacy labels each option by its name without ZM_, input in place.
+        await expect(page.getByLabel('E2E_DIR_EVENTS', { exact: true })).toBeVisible();
+      }
     });
   }
 
@@ -101,7 +113,11 @@ test.describe('Settings — servers', () => {
       const row = page.getByRole('row', { name: /e2e-server-1/ });
       await expect(row).toBeVisible();
       await expect(row).toContainText('zm-e2e.example.test');
-      await expect(page.getByRole('button', { name: /^edit e2e-server-1$/i })).toBeVisible();
+      await expect(
+        skin === 'classic'
+          ? page.getByRole('button', { name: 'e2e-server-1', exact: true })
+          : page.getByRole('button', { name: /^edit e2e-server-1$/i }),
+      ).toBeVisible();
     });
 
     test(`${skin}: register and delete a server round-trips @route:settings.servers`, async ({
@@ -114,17 +130,21 @@ test.describe('Settings — servers', () => {
       // the controlled inputs get reset under us and Register stays disabled.
       await expect(page.getByRole('row', { name: /e2e-server-1/ })).toBeVisible();
 
-      const nameField = page.getByLabel('Name', { exact: true });
+      // Classic opens legacy's server modal from Add New Server; modern's
+      // register form sits under the table.
+      const form = skin === 'classic' ? page.getByRole('dialog', { name: 'New Server' }) : page;
+      if (skin === 'classic') await page.getByRole('button', { name: 'Add New Server' }).click();
+      const nameField = form.getByLabel('Name', { exact: true });
       await nameField.fill(name);
       await expect(nameField).toHaveValue(name);
       // Modern labels the field Host, classic (legacy wording) Hostname.
-      await page.getByLabel(/^host(name)?$/i).first().fill('probe.example.test');
+      await form.getByLabel(/^host(name)?$/i).first().fill('probe.example.test');
 
       const created = page.waitForResponse(
         (r) => r.url().endsWith('/api/v3/servers') && r.request().method() === 'POST',
         { timeout: 15_000 },
       );
-      await page.getByRole('button', { name: /^register$/i }).click();
+      await form.getByRole('button', { name: skin === 'classic' ? /^save$/i : /^register$/i }).click();
       const resp = await created;
       expect(resp.status()).toBe(201);
       const id = (await resp.json()).id as number;
@@ -137,7 +157,13 @@ test.describe('Settings — servers', () => {
           (r) => r.url().endsWith(`/api/v3/servers/${id}`) && r.request().method() === 'DELETE',
           { timeout: 15_000 },
         );
-        await page.getByRole('button', { name: `Delete ${name}` }).click();
+        if (skin === 'classic') {
+          // Legacy: mark the row, then the toolbar's Delete.
+          await page.getByRole('checkbox', { name: `Mark ${name}` }).check();
+          await page.getByRole('button', { name: 'Delete', exact: true }).click();
+        } else {
+          await page.getByRole('button', { name: `Delete ${name}` }).click();
+        }
         // Destructive actions go through the in-app ConfirmDialog, not
         // window.confirm — so the second click is on the modal's button.
         const confirm = page.getByRole('dialog', { name: /delete server/i });
@@ -233,8 +259,10 @@ test.describe('Settings — PTZ control profiles', () => {
       await page.getByRole('searchbox').first().fill('e2e-PTZ');
       const row = page.getByRole('row', { name: /e2e-PTZ Dome \(Pelco-D\)/ });
       await expect(row).toBeVisible();
-      // The stock Pelco-D copy is an Ffmpeg profile that can move.
-      await expect(row).toContainText('Ffmpeg');
+      // The stock Pelco-D copy drives the PelcoD protocol. (No Type column:
+      // ZoneMinder 1.39.39 dropped it.)
+      await expect(row).toContainText('PelcoD');
+      await expect(row).not.toContainText('Ffmpeg');
       // Everything else is filtered out.
       await expect(page.getByRole('row', { name: /^HikVision/ })).toHaveCount(0);
     });
