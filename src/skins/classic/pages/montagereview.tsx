@@ -1,6 +1,6 @@
-import { useCallback, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, Filter, FilterX, History, X } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { StreamCell } from '@/components/common/StreamCell';
@@ -8,7 +8,9 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
 import { averageArea, reviewCanvasWidth } from '@/features/montagereview/reviewScale';
-import { REVIEW_SPEEDS, reviewSpeedIndex, useMontageReviewPage, useReviewNotesOptions } from '@/features/montagereview/useMontageReviewPage';
+import {
+  REVIEW_SPEEDS, reviewSpeedIndex, toLocalInputValue, useMontageReviewPage, useReviewNotesOptions,
+} from '@/features/montagereview/useMontageReviewPage';
 import { REVIEW_ANY_TAG, REVIEW_NO_TAG } from '@/features/montagereview/useReviewEvents';
 import { displayDimensions } from '@/features/monitors/orientation';
 import { maxFit } from '@/features/montage/maxfit';
@@ -16,19 +18,11 @@ import { useAvailableHeight, useMeasuredBox } from '@/features/monitors/useStage
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
+import { useMontageStore } from '@/stores/montage';
 import { ClassicButton, ClassicFilterRow, ClassicPage, classicInputClass } from '@/skins/classic/components';
 import type { Monitor } from '@/types';
 
 const selectClass = 'rounded-sm border border-zinc-400 bg-white px-1.5 py-0.5 text-sm text-zinc-900';
-
-/**
- * `Date` → value for `<input type="datetime-local" step="1">` (local wall
- * clock, to the second like legacy's datetimepicker).
- */
-function toLocalInput(d: Date): string {
-  const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
-}
 
 /**
  * One legacy filter term: the attribute label over its operator, then the
@@ -116,6 +110,14 @@ export default function ClassicMontageReviewPage() {
   const filter = useMonitorFilterRow(page.allMonitors, runtimeById);
   useDocumentTitle(t('Montage Review'));
   const { clock, isLive, preset } = page;
+  // Legacy's three flips (skin.js): the whole panel and the timeline keep
+  // their state in cookies; Monitor Filters always opens collapsed
+  // (`data-initial-state-icon="hidden"`).
+  const panelOpen = useMontageStore((st) => st.reviewPanelOpen);
+  const setPanelOpen = useMontageStore((st) => st.setReviewPanelOpen);
+  const timelineOpen = useMontageStore((st) => st.reviewTimelineOpen);
+  const setTimelineOpen = useMontageStore((st) => st.setReviewTimelineOpen);
+  const [monitorFiltersOpen, setMonitorFiltersOpen] = useState(false);
   // Legacy prints the playback multiplier, two decimal places, then " x".
   const speedLabel = t('{{speed}} x', { speed: clock.speed.toFixed(2) });
 
@@ -157,10 +159,44 @@ export default function ClassicMontageReviewPage() {
   return (
     <AppShell title={t('Montage Review')}>
       <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2 text-white">
-        <ClassicFilterRow monitors={page.allMonitors} state={filter} tone="dark" />
-        {/* Legacy's event terms, in its order: Archive Status, Date Time
-            >= and <=, Tags, Notes (`montagereview.php`, `simple_widget`). */}
+        {/* Legacy `#mfbflip`: folds away everything above the wall. */}
+        <button
+          type="button"
+          onClick={() => setPanelOpen(!panelOpen)}
+          aria-expanded={panelOpen}
+          aria-controls="review-panel"
+          aria-label={t('Toggle filters and controls')}
+          title={t('Toggle filters and controls')}
+          className="self-start text-white/90 hover:text-white"
+        >
+          {panelOpen ? <FilterX size={18} aria-hidden /> : <Filter size={18} aria-hidden />}
+        </button>
+        {panelOpen && (
+        <div id="review-panel" className="flex flex-col gap-2">
+        <button
+          type="button"
+          onClick={() => setMonitorFiltersOpen((o) => !o)}
+          aria-expanded={monitorFiltersOpen}
+          className="self-start flex items-center gap-1 text-sm text-white/90 hover:text-white"
+        >
+          {monitorFiltersOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+          {t('Monitor Filters')}
+        </button>
+        {monitorFiltersOpen && (
+          <ClassicFilterRow monitors={page.allMonitors} state={filter} tone="dark" />
+        )}
+        {/* Legacy's event terms, in its order: the Monitor select spliced in
+            first, then Archive Status, Date Time >= and <=, Tags, Notes
+            (`montagereview.php:318-327`, `simple_widget`). */}
         <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm">
+          <Term label={t('Monitor')} op="">
+            <MultiSelect
+              label={t('Monitor')}
+              value={filter.valuesMulti.monitorId}
+              options={page.allMonitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
+              onChange={(next) => filter.setMulti('monitorId', next)}
+            />
+          </Term>
           <Term label={t('Archive Status')} op="=">
             <select
               aria-label={t('Archive Status')}
@@ -178,7 +214,7 @@ export default function ClassicMontageReviewPage() {
               type="datetime-local"
               step={1}
               aria-label={t('Date Time >=')}
-              value={toLocalInput(clock.rangeStart)}
+              value={toLocalInputValue(clock.rangeStart)}
               onChange={(e) => page.setRangeBound('start', new Date(e.target.value))}
               className={classicInputClass}
             />
@@ -188,7 +224,7 @@ export default function ClassicMontageReviewPage() {
               type="datetime-local"
               step={1}
               aria-label={t('Date Time <=')}
-              value={toLocalInput(clock.rangeEnd)}
+              value={toLocalInputValue(clock.rangeEnd)}
               onChange={(e) => page.setRangeBound('end', new Date(e.target.value))}
               className={classicInputClass}
             />
@@ -228,6 +264,7 @@ export default function ClassicMontageReviewPage() {
               <span className="tabular-nums w-14">{t('{{scale}} x', { scale: page.scale.toFixed(2) })}</span>
             </label>
           )}
+          {!isLive && (
           <label className="flex items-center gap-2">
             <span className="font-semibold">{t('Speed')}</span>
             {/* Legacy is a 13-step slider over REVIEW_SPEEDS, 0 = paused. */}
@@ -248,11 +285,17 @@ export default function ClassicMontageReviewPage() {
               {speedLabel}
             </span>
           </label>
+          )}
         </div>
         <div className="flex flex-wrap items-center justify-center gap-1.5" role="toolbar" aria-label={t('Review range')}>
-          <ClassicButton onClick={() => page.pan(-0.5)} disabled={isLive}>&lt; {t('Pan')}</ClassicButton>
-          <ClassicButton onClick={() => page.zoom(0.5)} disabled={isLive}>{t('In')} +</ClassicButton>
-          <ClassicButton onClick={() => page.zoom(2)} disabled={isLive}>{t('Out')} -</ClassicButton>
+          {/* Live view hides what only history uses (`redrawScreen`). */}
+          {!isLive && (
+            <>
+              <ClassicButton onClick={() => page.pan(-0.5)}>&lt; {t('Pan')}</ClassicButton>
+              <ClassicButton onClick={() => page.zoom(0.5)}>{t('In')} +</ClassicButton>
+              <ClassicButton onClick={() => page.zoom(2)}>{t('Out')} -</ClassicButton>
+            </>
+          )}
           {presetBtn('24h', t('24 Hour'))}
           {presetBtn('8h', t('8 Hour'))}
           {presetBtn('1h', t('1 Hour'))}
@@ -262,7 +305,9 @@ export default function ClassicMontageReviewPage() {
           >
             {t('All Events')}
           </ClassicButton>
-          {presetBtn('live', t('Live'))}
+          <ClassicButton onClick={page.toggleLive}>
+            {isLive ? t('History') : t('Live')}
+          </ClassicButton>
           <ClassicButton
             tone={page.fit ? 'primary' : 'default'}
             aria-pressed={page.fit}
@@ -270,11 +315,22 @@ export default function ClassicMontageReviewPage() {
           >
             {page.fit ? t('Scale') : t('Fit')}
           </ClassicButton>
-          <ClassicButton onClick={() => page.pan(0.5)} disabled={isLive}>{t('Pan')} &gt;</ClassicButton>
+          {!isLive && <ClassicButton onClick={() => page.pan(0.5)}>{t('Pan')} &gt;</ClassicButton>}
+          {/* Legacy `#collapse`: the timeline's own toggle, last in the row. */}
+          <ClassicButton
+            onClick={() => setTimelineOpen(!timelineOpen)}
+            aria-expanded={timelineOpen}
+            aria-label={t('Toggle timeline visibility')}
+            title={t('Toggle timeline visibility')}
+          >
+            {timelineOpen ? <History size={14} aria-hidden /> : <Clock size={14} aria-hidden />}
+          </ClassicButton>
           {page.fitEventsEmpty && (
             <span role="status" className="text-xs text-red-700">{t('No events to fit')}</span>
           )}
         </div>
+        </div>
+        )}
       </div>
 
       <ClassicPage>
@@ -286,9 +342,10 @@ export default function ClassicMontageReviewPage() {
           empty={monitors.length === 0}
           emptyMessage={t('Select one or more monitors to review.')}
         >
-          {!isLive && (
+          {!isLive && panelOpen && timelineOpen && (
             <div dir="ltr" className="mb-3">
               <MontageReviewTimeline
+                collapsible={false}
                 monitors={monitors}
                 rangeStart={clock.rangeStart}
                 rangeEnd={clock.rangeEnd}

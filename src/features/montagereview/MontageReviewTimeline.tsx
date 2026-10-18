@@ -13,6 +13,11 @@ interface MontageReviewTimelineProps {
   onSeek: (t: Date) => void;
   /** Archived / Tags / Notes filters from the toolbar. */
   filters?: ReviewEventFilters;
+  /**
+   * Offer the collapse chevron in the header (default). The classic page
+   * turns it off: legacy's `#collapse` sits in the button row instead.
+   */
+  collapsible?: boolean;
 }
 
 /**
@@ -46,6 +51,7 @@ export function MontageReviewTimeline({
   currentTime,
   onSeek,
   filters = DEFAULT_REVIEW_FILTERS,
+  collapsible = true,
 }: MontageReviewTimelineProps) {
   const { t } = useTranslation();
   // The time axis: the body minus the name column, the same box the bars
@@ -89,16 +95,18 @@ export function MontageReviewTimeline({
           <span className="text-xs font-mono tabular-nums text-fg" data-testid="review-timeline-current">
             {currentTime.toLocaleTimeString([], { hour12: false })}
           </span>
-          <button
-            type="button"
-            onClick={() => setCollapsed((c) => !c)}
-            aria-expanded={!collapsed}
-            aria-label={t('Toggle timeline visibility')}
-            title={t('Toggle timeline visibility')}
-            className="text-fg-dim hover:text-fg"
-          >
-            {collapsed ? <ChevronDown size={14} aria-hidden /> : <ChevronUp size={14} aria-hidden />}
-          </button>
+          {collapsible && (
+            <button
+              type="button"
+              onClick={() => setCollapsed((c) => !c)}
+              aria-expanded={!collapsed}
+              aria-label={t('Toggle timeline visibility')}
+              title={t('Toggle timeline visibility')}
+              className="text-fg-dim hover:text-fg"
+            >
+              {collapsed ? <ChevronDown size={14} aria-hidden /> : <ChevronUp size={14} aria-hidden />}
+            </button>
+          )}
         </div>
       </div>
 

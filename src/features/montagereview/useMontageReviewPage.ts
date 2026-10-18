@@ -105,6 +105,15 @@ export function parseLegacyTime(value: string | undefined): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+/**
+ * `Date` → value for `<input type="datetime-local" step="1">`: local wall
+ * clock, to the second like legacy's datetimepicker.
+ */
+export function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
 /** A stored window, if it is still a usable one. */
 export function parseStoredRange(range: StoredReviewRange | null): { start: Date; end: Date } | null {
   if (!range) return null;
@@ -193,6 +202,11 @@ export interface MontageReviewPageState {
   /** Set when Fit found nothing to fit; cleared on the next range change. */
   fitEventsEmpty: boolean;
   isLive: boolean;
+  /**
+   * Legacy's Live / History button: into live view, or back out of it onto
+   * the window last reviewed (else the last hour).
+   */
+  toggleLive: () => void;
   clock: ReviewClock;
   /** Legacy scale slider 0.1–1.0 (cell size relative to the camera). */
   scale: number;
@@ -330,6 +344,21 @@ export function useMontageReviewPage(): MontageReviewPageState {
     if (next === 'live') clock.pause();
   };
 
+  const toggleLive = () => {
+    if (!isLive) {
+      setPreset('live');
+      return;
+    }
+    // The stored window is the last one reviewed: live never writes it.
+    const back = parseStoredRange(useReviewRangeStore.getState().range);
+    if (!back) {
+      setPreset('1h');
+      return;
+    }
+    setPresetState('custom');
+    applyRange(back.start, back.end);
+  };
+
   const setCustomRange = (start: Date, end: Date) => {
     if (!(end > start)) return;
     setPresetState('custom');
@@ -457,6 +486,7 @@ export function useMontageReviewPage(): MontageReviewPageState {
     isFittingEvents,
     fitEventsEmpty,
     isLive,
+    toggleLive,
     clock,
     scale,
     setScale,

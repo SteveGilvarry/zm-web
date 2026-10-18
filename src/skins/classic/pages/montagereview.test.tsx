@@ -69,7 +69,9 @@ beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
 // each test opts into fit explicitly.
 beforeEach(() => {
   signIn();
-  useMontageStore.setState({ reviewFit: false, reviewFilters: DEFAULT_REVIEW_FILTERS });
+  useMontageStore.setState({
+    reviewFit: false, reviewFilters: DEFAULT_REVIEW_FILTERS, reviewPanelOpen: true, reviewTimelineOpen: true,
+  });
   useReviewRangeStore.setState({ range: null });
 });
 afterEach(() => {
@@ -321,11 +323,87 @@ describe('ClassicMontageReviewPage', () => {
     expect(await screen.findByTestId('live-1')).toBeInTheDocument();
     expect(screen.getByTestId('live-1').getAttribute('data-protocol')).toBe('hls');
     expect(screen.queryByText('Timeline')).toBeNull();
-    // Panning a live window makes no sense.
-    expect(within(bar).getByRole('button', { name: '< Pan' })).toBeDisabled();
-    expect(within(bar).getByRole('button', { name: 'In +' })).toBeDisabled();
-    // …and there is nothing to play back.
+    // Legacy `redrawScreen` hides what live view has no use for…
+    for (const name of ['< Pan', 'In +', 'Out -', 'Pan >']) {
+      expect(within(bar).queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('slider', { name: 'Speed' })).toBeNull();
+    // …and the button now reads History.
+    expect(within(bar).queryByRole('button', { name: 'Live' })).toBeNull();
     expect(within(bar).queryByRole('button', { name: 'Play' })).toBeNull();
+  });
+
+  it('History leaves live view for the window reviewed before it', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+
+    const bar = await screen.findByRole('toolbar', { name: 'Review range' });
+    await user.click(within(bar).getByRole('button', { name: '8 Hour' }));
+    const startBefore = (screen.getByLabelText('Date Time >=') as HTMLInputElement).value;
+    await user.click(within(bar).getByRole('button', { name: 'Live' }));
+    await user.click(await within(bar).findByRole('button', { name: 'History' }));
+
+    expect(await screen.findByText('Timeline')).toBeInTheDocument();
+    expect((screen.getByLabelText('Date Time >=') as HTMLInputElement).value).toBe(startBefore);
+    expect(within(bar).getByRole('button', { name: '< Pan' })).toBeInTheDocument();
+  });
+
+  it('the header flip folds the whole panel, timeline included, and remembers it', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByText('Timeline');
+
+    const flip = screen.getByRole('button', { name: 'Toggle filters and controls' });
+    expect(flip).toHaveAttribute('aria-expanded', 'true');
+    await user.click(flip);
+    expect(screen.queryByRole('toolbar', { name: 'Review range' })).toBeNull();
+    expect(screen.queryByLabelText('Archive Status')).toBeNull();
+    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.getByTestId('review-classic-grid')).toBeInTheDocument();
+    expect(useMontageStore.getState().reviewPanelOpen).toBe(false);
+
+    await user.click(flip);
+    expect(await screen.findByRole('toolbar', { name: 'Review range' })).toBeInTheDocument();
+  });
+
+  it('Monitor Filters opens collapsed; the Monitor select sits with the event terms', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByTitle('1 Cam 1');
+
+    const toggle = screen.getByRole('button', { name: 'Monitor Filters' });
+    expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.queryByRole('group', { name: 'Monitor filter bar' })).toBeNull();
+
+    // The Monitor term narrows the wall on its own.
+    const monitor = screen.getByRole('listbox', { name: 'Monitor' });
+    expect(monitor.compareDocumentPosition(screen.getByLabelText('Archive Status')) & Node.DOCUMENT_POSITION_FOLLOWING)
+      .toBeTruthy();
+    await user.selectOptions(monitor, '2');
+    await waitFor(() => expect(screen.queryByTitle('1 Cam 1')).toBeNull());
+    expect(screen.getByTitle('2 Cam 2')).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(screen.getByRole('group', { name: 'Monitor filter bar' })).toBeInTheDocument();
+  });
+
+  it('the timeline toggle sits in the button row and is remembered', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    const bar = await screen.findByRole('toolbar', { name: 'Review range' });
+    await screen.findByText('Timeline');
+
+    await user.click(within(bar).getByRole('button', { name: 'Toggle timeline visibility' }));
+    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(useMontageStore.getState().reviewTimelineOpen).toBe(false);
+    // The timeline carries no second toggle of its own here.
+    await user.click(within(bar).getByRole('button', { name: 'Toggle timeline visibility' }));
+    expect(await screen.findByText('Timeline')).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Toggle timeline visibility' })).toHaveLength(1);
   });
 
   it('the speed slider is legacy\'s 13 steps, 0 = paused', async () => {
@@ -399,6 +477,7 @@ describe('ClassicMontageReviewPage', () => {
     await mount();
 
     await screen.findByTitle('1 Cam 1');
+    await user.click(screen.getByRole('button', { name: 'Monitor Filters' }));
     await user.selectOptions(screen.getByRole('listbox', { name: 'GroupId' }), '5');
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'nothing-matches-this');
 

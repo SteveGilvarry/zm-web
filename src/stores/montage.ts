@@ -45,6 +45,10 @@ interface MontageState {
   montageRatioById: Record<number, string>;
   /** Montage Review event filters, legacy `Archived` / `eventsTags` / `eventsNotes`. */
   reviewFilters: ReviewEventFilters;
+  /** Classic Review header flip (`#mfbflip`), legacy cookie `zmFilterBarFlip#mfbpanel`. */
+  reviewPanelOpen: boolean;
+  /** Classic Review timeline toggle (`#collapse`), legacy cookie `zmFilterBarFlip#timelinediv`. */
+  reviewTimelineOpen: boolean;
 
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   setProtocol: (protocol: StreamProtocol) => void;
@@ -61,6 +65,8 @@ interface MontageState {
   /** Replace every per-tile override (loading a saved layout). */
   setMontageRatios: (ratios: Record<number, string>) => void;
   setReviewFilters: (filters: ReviewEventFilters) => void;
+  setReviewPanelOpen: (open: boolean) => void;
+  setReviewTimelineOpen: (open: boolean) => void;
 }
 
 export const useMontageStore = create<MontageState>()(
@@ -81,6 +87,9 @@ export const useMontageStore = create<MontageState>()(
       montageRatio: DEFAULT_MONTAGE_RATIO,
       montageRatioById: {},
       reviewFilters: DEFAULT_REVIEW_FILTERS,
+      // skin.js: a flip with no cookie starts open.
+      reviewPanelOpen: true,
+      reviewTimelineOpen: true,
 
       setTree: (next) =>
         set({ tree: typeof next === 'function' ? next(get().tree) : next }),
@@ -97,6 +106,8 @@ export const useMontageStore = create<MontageState>()(
         set({ montageRatioById: { ...get().montageRatioById, [monitorId]: ratio } }),
       setMontageRatios: (montageRatioById) => set({ montageRatioById }),
       setReviewFilters: (reviewFilters) => set({ reviewFilters }),
+      setReviewPanelOpen: (reviewPanelOpen) => set({ reviewPanelOpen }),
+      setReviewTimelineOpen: (reviewTimelineOpen) => set({ reviewTimelineOpen }),
     }),
     {
       name: 'zm-montage',
@@ -113,6 +124,8 @@ export const useMontageStore = create<MontageState>()(
         montageRatio: state.montageRatio,
         montageRatioById: state.montageRatioById,
         reviewFilters: state.reviewFilters,
+        reviewPanelOpen: state.reviewPanelOpen,
+        reviewTimelineOpen: state.reviewTimelineOpen,
       }),
       // Earlier versions held no review filters, or Notes as one string.
       merge: (persisted, current) => {
