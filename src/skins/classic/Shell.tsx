@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { ClassicTopNav } from './shell/TopNav';
 import { ClassicStatBar } from './shell/StatBar';
+import { ClassicConsoleBanner } from './shell/ConsoleBanner';
 import { BackendBanner } from '@/components/common/BackendBanner';
 import { ToastViewport } from '@/components/common/ToastViewport';
 
@@ -19,6 +20,7 @@ export function ClassicShell({ children }: ClassicShellProps) {
     <div className="skin-classic classic-theme min-h-screen bg-bg-sunken text-fg">
       <ClassicTopNav />
       <ClassicStatBar />
+      <ClassicConsoleBanner />
       <BackendBanner />
       {children}
       <ToastViewport />
