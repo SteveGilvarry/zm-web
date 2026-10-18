@@ -61,6 +61,21 @@ describe('mapLegacyUrl', () => {
     expect(map('?view=cycle')).toEqual({ to: '/cycle', search: {} });
   });
 
+  it('maps the timeline with its filter and window', () => {
+    expect(map('?view=timeline')).toEqual({ to: '/timeline', search: {} });
+    expect(
+      map('?view=timeline&filter[Query][terms][0][attr]=MonitorId&filter[Query][terms][0][op]=%3D&filter[Query][terms][0][val]=3'
+        + '&midTime=2026-08-21%2014:00:00&range=7200'),
+    ).toEqual({
+      to: '/timeline',
+      search: { monitor_id: 3, mid_time: '2026-08-21 14:00:00', range: 7200 },
+    });
+    expect(map('?view=timeline&minTime=2026-08-21%2000:00:00&maxTime=2026-08-21%2023:59:59')).toEqual({
+      to: '/timeline',
+      search: { min_time: '2026-08-21 00:00:00', max_time: '2026-08-21 23:59:59' },
+    });
+  });
+
   it('maps options tabs to settings sub-pages', () => {
     expect(map('?view=options')).toEqual({ to: '/settings', search: {} });
     expect(map('?view=options&tab=users')).toEqual({ to: '/settings/users', search: {} });
