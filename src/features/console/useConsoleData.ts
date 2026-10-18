@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getMonitors, getLiveSessions } from '@/api/monitors';
+import { getAllMonitors, getLiveSessions } from '@/api/monitors';
 import {
   getEvents,
   getEventCounts,
@@ -74,9 +74,12 @@ export function useConsoleData(): ConsoleData {
   const tableRefresh = (fallbackMs: number) =>
     consoleRefreshInterval(zmConfig?.[CONSOLE_REFRESH_CONFIG], fallbackMs);
 
+  // Every page of monitors: one page of 100 dropped rows on a bigger
+  // install. Its own key, because other `['monitors']` queries cache a
+  // single paginated response; invalidating `['monitors']` still reaches it.
   const monitorsQ = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: tableRefresh(30_000),
   });
@@ -146,7 +149,7 @@ export function useConsoleData(): ConsoleData {
   );
 
   return {
-    monitors: monitorsQ.data?.items ?? [],
+    monitors: monitorsQ.data ?? EMPTY_MONITORS,
     liveSessions: liveSessionsQ.data ?? [],
     events: eventsQ.data?.items ?? [],
     eventCount24h: counts24Q.data?.total ?? 0,
@@ -165,6 +168,8 @@ export function useConsoleData(): ConsoleData {
     refetch: () => { void monitorsQ.refetch(); },
   };
 }
+
+const EMPTY_MONITORS: Monitor[] = [];
 
 /** Empty-summary placeholder so callers can rely on a row always existing. */
 const EMPTY_SUMMARY: EventSummary = {

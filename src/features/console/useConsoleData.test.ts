@@ -183,6 +183,23 @@ describe('useConsoleData', () => {
     expect(result.current.loading.events).toBe(true);
   });
 
+  it('walks every page of monitors instead of stopping at 100', async () => {
+    happyPath();
+    const fleet = Array.from({ length: 501 }, (_, i) => ({ ...MONITORS[0], id: i + 1, name: `Cam ${i + 1}` }));
+    server.use(http.get('/api/v3/monitors', ({ request }) => {
+      const q = new URL(request.url).searchParams;
+      const page = Number(q.get('page'));
+      const size = Number(q.get('page_size'));
+      return HttpResponse.json({
+        items: fleet.slice((page - 1) * size, page * size),
+        total: fleet.length, per_page: size, current_page: page, last_page: Math.ceil(fleet.length / size),
+      });
+    }));
+    const { result } = renderHook(() => useConsoleData(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.monitors).toHaveLength(501));
+    expect(result.current.monitors.at(-1)?.name).toBe('Cam 501');
+  });
+
   it('flags isError only for the monitors query', async () => {
     happyPath();
     server.use(
