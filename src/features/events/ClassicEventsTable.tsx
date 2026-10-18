@@ -58,6 +58,10 @@ interface ClassicEventsTableProps {
    * page walk this list in this order (legacy `filterQuery` + `sortQuery`).
    */
   detailSearch?: EventNavSearch;
+  /** The totals row under Duration and DiskSpace (the watch table has none). */
+  showFooter?: boolean;
+  /** watch.js: rows still named "New Event" get the `recent` highlight. */
+  highlightNew?: boolean;
 }
 
 const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
@@ -76,7 +80,7 @@ const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
 export function ClassicEventsTable({
   events, monitorLookup, storageName, selectedIds, onToggleSelected, onSetSelected, token,
   sortField, sortDir = 'asc', onSort, showThumbs = false, thumbWidth = 48, columns, thumbsAtEnd = false, onDeleteRow,
-  detailSearch,
+  detailSearch, showFooter = true, highlightNew = false,
 }: ClassicEventsTableProps) {
   const { t } = useTranslation();
   const labels = useEventsColumnLabels();
@@ -234,7 +238,9 @@ export function ClassicEventsTable({
               if ((ev.target as HTMLElement).closest('a, button, input, select, textarea, label')) return;
               onToggleSelected(e.id);
             }}
-            className={selectedIds.has(e.id) ? '!bg-[#dbeafe]' : undefined}
+            className={selectedIds.has(e.id)
+              ? '!bg-[#dbeafe]'
+              : highlightNew && e.name === 'New Event' ? 'recent !bg-[#B0E0E6]' : undefined}
           >
             {onDeleteRow ? (
               <ClassicTd center>
@@ -268,7 +274,7 @@ export function ClassicEventsTable({
           </tr>
         ))}
       </ClassicTbody>
-      {events.length > 0 && (visible.includes('duration') || visible.includes('disk_space')) && (
+      {showFooter && events.length > 0 && (visible.includes('duration') || visible.includes('disk_space')) && (
         <tfoot className="bg-[#f8f9fa] text-zinc-800" data-testid="events-table-footer">
           <tr>
             <ClassicTd />

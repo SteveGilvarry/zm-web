@@ -458,6 +458,8 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                 showThumbs={events.showThumbs}
                 thumbsAtEnd
                 thumbWidth={events.thumbWidth}
+                showFooter={false}
+                highlightNew
               />
             </div>
           </QueryState>
@@ -470,6 +472,15 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
       <Modal isOpen={page.idle.prompted} onClose={page.idle.resume} title={t('Are you still watching?')}>
         <p className="text-sm mb-3">{t('Video paused. Continue watching?')}</p>
         <ClassicButton tone="primary" onClick={page.idle.resume}>{t('Yes')}</ClassicButton>
+      </Modal>
+
+      {/* `delconfirm`: legacy's delete-confirmation modal for the trash icon. */}
+      <Modal isOpen={events.pendingDeleteId != null} onClose={events.cancelDelete} title={t('Delete Confirmation')}>
+        <p className="text-sm mb-3">{t('Are you sure you wish to delete the selected events?')}</p>
+        <div className="flex justify-end gap-2">
+          <ClassicButton onClick={events.cancelDelete}>{t('Cancel')}</ClassicButton>
+          <ClassicButton tone="danger" onClick={events.confirmDelete}>{t('Delete')}</ClassicButton>
+        </div>
       </Modal>
 
       {page.editorOpen && <MonitorEditor monitor={monitor} onClose={page.closeEditor} />}

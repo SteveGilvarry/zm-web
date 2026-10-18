@@ -27,10 +27,15 @@ export interface MonitorEventsState {
   /** Confirms, then deletes every selected event. */
   deleteSelected: () => void;
   /**
-   * The per-row trash icon. Confirms first; `skipConfirm` is legacy's
-   * shift+click, which deletes straight away.
+   * The per-row trash icon. Asks first through `pendingDeleteId` (legacy's
+   * `delconfirm` modal); `skipConfirm` is legacy's shift+click, which
+   * deletes straight away.
    */
   deleteOne: (id: number, skipConfirm?: boolean) => void;
+  /** The event the delete-confirmation modal is asking about, or null. */
+  pendingDeleteId: number | null;
+  confirmDelete: () => void;
+  cancelDelete: () => void;
   busy: boolean;
   showThumbs: boolean;
   thumbWidth: number;
@@ -108,10 +113,15 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
     }
   };
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const deleteOne = (id: number, skipConfirm = false) => {
-    if (skipConfirm || window.confirm(t('Delete {{count}} event? This cannot be undone.', { count: 1 }))) {
-      deleteMutation.mutate([id]);
-    }
+    if (skipConfirm) deleteMutation.mutate([id]);
+    else setPendingDeleteId(id);
+  };
+  const confirmDelete = () => {
+    if (pendingDeleteId == null) return;
+    deleteMutation.mutate([pendingDeleteId]);
+    setPendingDeleteId(null);
   };
 
   return {
@@ -138,6 +148,9 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
     clearSelection: () => setSelectedIds(new Set()),
     deleteSelected,
     deleteOne,
+    pendingDeleteId,
+    confirmDelete,
+    cancelDelete: () => setPendingDeleteId(null),
     busy: deleteMutation.isPending,
     showThumbs,
     thumbWidth,

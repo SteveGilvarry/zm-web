@@ -438,8 +438,7 @@ describe('ClassicMonitorWatchPage', () => {
   });
 
   it('lists this monitor events in the legacy watch shape and deletes from the row icon', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    stubOk({ events: [{ ...EVENT, notes: 'Motion: Zone 1' }] });
+    stubOk({ events: [{ ...EVENT, notes: 'Motion: Zone 1' }, { ...EVENT, id: 901, name: 'New Event' }] });
     const user = userEvent.setup();
     await mount();
 
@@ -456,8 +455,25 @@ describe('ClassicMonitorWatchPage', () => {
     expect(screen.queryByRole('checkbox', { name: 'Select event 900' })).toBeNull();
     expect(screen.queryByRole('button', { name: /sort/i })).toBeNull();
 
+    // Legacy watch has no totals row, and a still-open event is highlighted.
+    expect(screen.queryByTestId('events-table-footer')).toBeNull();
+    expect(screen.getByRole('link', { name: '901' }).closest('tr')).toHaveClass('recent');
+    expect(screen.getByRole('link', { name: '900' }).closest('tr')).not.toHaveClass('recent');
+
+    // The trash icon asks through legacy's delconfirm modal; Cancel keeps it.
     await user.click(screen.getByRole('button', { name: 'Delete event 900' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Confirmation' });
+    expect(dialog).toHaveTextContent('Are you sure you wish to delete the selected events?');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(deletedEvents).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Delete event 900' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Delete Confirmation' })).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(deletedEvents).toEqual(['900']));
+
+    // Shift+click deletes straight away.
+    fireEvent.click(screen.getByRole('button', { name: 'Delete event 901' }), { shiftKey: true });
+    await waitFor(() => expect(deletedEvents).toEqual(['900', '901']));
   });
 
   it('hides the events table from a user without events:View', async () => {
