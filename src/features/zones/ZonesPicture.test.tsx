@@ -65,6 +65,32 @@ describe('ZonesPicture', () => {
     expect(onZoneClick).toHaveBeenCalledWith(4);
   });
 
+  it('pan-zooms as legacy\'s zmPanZoom: Shift+Click in, Ctrl+Click out, Ctrl+Shift+Click all the way', () => {
+    const onZoneClick = vi.fn();
+    render(
+      <ZonesPicture monitor={makeMonitor({ id: 1 })} frame={frame} zones={[makeZone({ id: 4 })]} onZoneClick={onZoneClick} />,
+    );
+    const zoom = screen.getByTestId('zones-picture-zoom');
+    const polygon = screen.getByTestId('zone-polygon-4');
+
+    fireEvent.click(polygon, { shiftKey: true });
+    expect(zoom.style.transform).toContain('scale(1.3)');
+    // A modifier click zooms; it does not open the zone under it.
+    expect(onZoneClick).not.toHaveBeenCalled();
+    expect(screen.getByRole('button', { name: 'Zoom OUT' })).toBeInTheDocument();
+
+    fireEvent.click(polygon, { shiftKey: true });
+    fireEvent.click(polygon, { ctrlKey: true });
+    expect(zoom.style.transform).toContain('scale(1.3)');
+
+    fireEvent.click(polygon, { shiftKey: true, ctrlKey: true });
+    expect(zoom.style.transform).toBe('');
+    expect(screen.queryByRole('button', { name: 'Zoom OUT' })).toBeNull();
+
+    fireEvent.click(polygon);
+    expect(onZoneClick).toHaveBeenCalledWith(4);
+  });
+
   it('hides Edit monitor from someone who cannot edit it', () => {
     render(<ZonesPicture monitor={makeMonitor({ id: 1 })} frame={frame} zones={[]} onZoneClick={() => {}} canEditMonitor={false} />);
     expect(screen.queryByRole('link', { name: 'Edit monitor' })).toBeNull();
