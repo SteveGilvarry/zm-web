@@ -504,6 +504,25 @@ describe('ClassicMontagePage', () => {
   });
 });
 
+describe('ClassicMontagePage — viewing timeout', () => {
+  it('stops every stream after ZM_WEB_VIEWING_TIMEOUT and asks, then starts them again', async () => {
+    const user = userEvent.setup();
+    stub();
+    server.use(http.get('/api/v3/configs', () => HttpResponse.json(paged([
+      { id: 1, name: 'ZM_WEB_VIEWING_TIMEOUT', value: '1' },
+    ]))));
+    await mount();
+    await screen.findByTestId('stream-1');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 3000 });
+    expect(screen.queryByTestId('stream-1')).toBeNull();
+    expect(screen.getByTestId('montage-classic-stopped-1')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Yes' }));
+    await waitFor(() => expect(screen.getByTestId('stream-1')).toBeInTheDocument());
+  });
+});
+
 describe('ClassicMontagePage — header flip and URL params', () => {
   afterEach(() => { useMontageStore.setState({ montagePanelOpen: true }); });
 

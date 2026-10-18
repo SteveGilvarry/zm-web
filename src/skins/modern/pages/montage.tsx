@@ -12,6 +12,9 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
+import { Button } from '@/components/common/Button';
+import { Modal } from '@/components/common/Modal';
+import { useMontageIdle } from '@/features/montage/useMontageIdle';
 import { WebsiteTile } from '@/features/montage/WebsiteTile';
 import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
 import { RequirePerm } from '@/features/auth/RequirePerm';
@@ -81,6 +84,7 @@ export default function MontagePage() {
     showZones, setShowZones,
   } = page;
   const { can } = usePerms();
+  const idle = useMontageIdle(page.isAuthenticated && page.cellsOnScreen > 0);
   const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated && statusPosition !== 'hidden');
 
   // The filter bar lives behind a disclosure, so the wall applies the shared
@@ -288,6 +292,10 @@ export default function MontagePage() {
                   </div>
                 );
               }
+              // Viewing timeout: no live cells until the operator answers.
+              if (idle.prompted) {
+                return <div className="absolute inset-0 bg-bg-sunken" data-testid={`montage-stopped-${m.id}`} />;
+              }
               const runtime = runtimeById[m.id];
               const zones = showZones ? (
                 <ZonesOverlay
@@ -349,6 +357,12 @@ export default function MontagePage() {
             onCancel={page.cancelPick}
           />
         )}
+
+        {/* `ZM_WEB_VIEWING_TIMEOUT`: every stream is stopped until answered. */}
+        <Modal isOpen={idle.prompted} onClose={idle.resume} title={t('Are you still watching?')}>
+          <p className="text-sm text-fg-muted mb-4">{t('Video paused. Continue watching?')}</p>
+          <Button variant="primary" onClick={idle.resume}>{t('Yes')}</Button>
+        </Modal>
       </main>
     </AppShell>
   );

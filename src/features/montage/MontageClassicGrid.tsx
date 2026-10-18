@@ -47,6 +47,8 @@ export interface MontageClassicGridProps {
   ratioFor?: (monitorId: number) => string;
   /** Change one tile's Ratio; the select shows while the tile is hovered. */
   onRatioChange?: (monitorId: number, ratio: string) => void;
+  /** Viewing timeout: every stream is stopped until the operator answers. */
+  streamsStopped?: boolean;
 }
 
 /**
@@ -60,7 +62,7 @@ export interface MontageClassicGridProps {
  */
 export function MontageClassicGrid({
   monitors, columns, protocol, statusPosition = 'outside', editMode = false, onReorder, cellStyle,
-  showZones = false, fitHeight, ratioFor, onRatioChange, items, onResize, gridRef,
+  showZones = false, fitHeight, ratioFor, onRatioChange, items, onResize, gridRef, streamsStopped = false,
 }: MontageClassicGridProps) {
   const { t } = useTranslation();
   const { byId: runtimeById } = useMonitorStatuses(monitors.length > 0 && statusPosition !== 'hidden');
@@ -109,6 +111,7 @@ export function MontageClassicGrid({
           fitted={fitHeight != null}
           ratio={ratioFor?.(m.id)}
           onRatioChange={onRatioChange}
+          streamsStopped={streamsStopped}
           isDragging={draggingId === m.id}
           onDragStart={() => setDraggingId(m.id)}
           onDragEnd={() => setDraggingId(null)}
@@ -125,7 +128,7 @@ export function MontageClassicGrid({
 
 function ClassicCell({
   monitor, protocol, runtime, statusPosition, style, showZones, editMode, fitted = false, isDragging, onDragStart, onDragEnd, onDrop,
-  ratio, onRatioChange, item, onResize,
+  ratio, onRatioChange, item, onResize, streamsStopped,
 }: {
   monitor: Monitor;
   protocol: StreamProtocol;
@@ -145,6 +148,7 @@ function ClassicCell({
   onDrop: () => void;
   ratio?: string;
   onRatioChange?: (monitorId: number, ratio: string) => void;
+  streamsStopped: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const frameRef = useRef<HTMLDivElement>(null);
@@ -219,6 +223,9 @@ function ClassicCell({
               `Monitor::getStreamHTML` embeds it instead of a stream). */}
           {isWebsiteMonitor(monitor) ? (
             <WebsiteTile monitor={monitor} />
+          ) : streamsStopped ? (
+            // Viewing timeout: the stream is torn down until the prompt is answered.
+            <div className="absolute inset-0" data-testid={`montage-classic-stopped-${monitor.id}`} />
           ) : (
             <StreamCell
               protocol={protocol}

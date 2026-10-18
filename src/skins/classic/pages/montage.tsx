@@ -11,6 +11,7 @@ import { MontageClassicGrid } from '@/features/montage/MontageClassicGrid';
 import { MONTAGE_RATIOS, ratioOptionLabel } from '@/features/montage/ratio';
 import { useClassicMontage } from '@/features/montage/useClassicMontage';
 import { useMontageUrlParams } from '@/features/montage/useMontageUrlParams';
+import { useMontageIdle } from '@/features/montage/useMontageIdle';
 import { useMontageWallPage } from '@/features/montage/useMontagePage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
@@ -37,6 +38,7 @@ export default function ClassicMontagePage() {
   const url = useMontageUrlParams();
   const montage = useClassicMontage(visible, { urlLayoutId: url.layoutId });
   const { can } = usePerms();
+  const idle = useMontageIdle(page.isAuthenticated && montage.monitors.length > 0);
   // The wall element the Fullscreen button expands. Owned here rather than by
   // the hook: a ref reached through the hook's result would make every read of
   // that object a ref read (react-hooks/refs).
@@ -189,6 +191,7 @@ export default function ClassicMontagePage() {
                 showZones={montage.showZones}
                 ratioFor={montage.ratioFor}
                 onRatioChange={montage.setRatioFor}
+                streamsStopped={idle.prompted}
               />
             </QueryState>
           </RequirePerm>
@@ -205,6 +208,11 @@ export default function ClassicMontagePage() {
         confirmText={t('Delete')}
         isLoading={montage.busy}
       />
+      {/* `ZM_WEB_VIEWING_TIMEOUT` — legacy's `areyoustillwatching` modal. */}
+      <Modal isOpen={idle.prompted} onClose={idle.resume} title={t('Are you still watching?')}>
+        <p className="text-sm mb-3">{t('Video paused. Continue watching?')}</p>
+        <ClassicButton tone="primary" onClick={idle.resume}>{t('Yes')}</ClassicButton>
+      </Modal>
       {/* Legacy `enoperm()`. */}
       <Modal isOpen={montage.noPermOpen} onClose={montage.closeNoPerm} title={t('ZoneMinder Error')}>
         <p className="text-sm mb-1">{t('You do not have permissions to access this resource.')}</p>

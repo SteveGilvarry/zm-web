@@ -17,6 +17,7 @@ import { http, HttpResponse } from 'msw';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
+import { configListHandler } from '@/test/msw/handlers';
 import { makeMontageLayout } from '@/test/fixtures';
 import { leaf, split, type LayoutNode } from '@/features/montage/mosaic';
 import { serialisePositions } from '@/features/montage/layoutFormat';
@@ -324,6 +325,18 @@ describe('MontagePage (modern) — toolbar', () => {
     await waitFor(() => {
       expect(useMonitorFilterStore.getState().groupIds).toEqual([1]);
     });
+  });
+
+  it('stops the wall after ZM_WEB_VIEWING_TIMEOUT and asks before starting it again', async () => {
+    const user = userEvent.setup();
+    server.use(configListHandler({ ZM_WEB_VIEWING_TIMEOUT: '1' }));
+    renderRoute('/montage');
+    await findWall();
+
+    const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 3000 });
+    expect(screen.getByTestId('montage-stopped-1')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Yes' }));
+    await waitFor(() => expect(screen.queryByTestId('montage-stopped-1')).toBeNull());
   });
 
   it('?header=0 drops the control line (legacy kiosk)', async () => {
