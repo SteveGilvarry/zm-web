@@ -15,14 +15,14 @@ const t = ((key: string) => key) as unknown as TFunction;
 describe('optionsTabLabel — every legacy caption', () => {
   it('maps each known key to its legacy caption', () => {
     const expected: Record<string, string> = {
-      [DISPLAY_TAB]: 'Display',
+      [DISPLAY_TAB]: 'This Session',
       system: 'System',
-      auth: 'Auth',
+      auth: 'Authentication',
       config: 'Config',
       api: 'API',
       servers: 'Servers',
       storage: 'Storage',
-      web: 'Web',
+      web: 'Display',
       images: 'Images',
       logging: 'Logging',
       network: 'Network',
@@ -77,7 +77,7 @@ describe('buildOptionsTabs — edges', () => {
     const tabs = buildOptionsTabs([], false);
     expect(tabs.every((tab) => tab.kind === 'page')).toBe(true);
     expect(tabs.map((tab) => tab.key)).toEqual([
-      'display', 'api', 'servers', 'storage', 'control', 'users', 'groups',
+      'display', 'api', 'servers', 'storage', 'users', 'groups', 'control',
       'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
@@ -87,7 +87,7 @@ describe('buildOptionsTabs — edges', () => {
     // extras land at index 0 — ahead of every page tab.
     const tabs = buildOptionsTabs([{ name: 'onvif', count: 1 }, { name: 'ai', count: 2 }], false);
     expect(tabs.map((tab) => tab.key)).toEqual([
-      'onvif', 'ai', 'display', 'api', 'servers', 'storage', 'control', 'users', 'groups',
+      'onvif', 'ai', 'display', 'api', 'servers', 'storage', 'users', 'groups', 'control',
       'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
     expect(tabs[0]).toEqual({ kind: 'category', key: 'onvif', category: 'onvif' });
