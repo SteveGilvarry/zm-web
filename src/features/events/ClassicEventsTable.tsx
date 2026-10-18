@@ -58,6 +58,11 @@ interface ClassicEventsTableProps {
    * page walk this list in this order (legacy `filterQuery` + `sortQuery`).
    */
   detailSearch?: EventNavSearch;
+  /**
+   * Footer sums when the caller has them for the whole result (legacy
+   * `footerData`, ajax/events.php:403); without them the footer sums the rows.
+   */
+  totals?: { duration: number; disk: number };
 }
 
 const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
@@ -76,7 +81,7 @@ const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
 export function ClassicEventsTable({
   events, monitorLookup, storageName, selectedIds, onToggleSelected, onSetSelected, token,
   sortField, sortDir = 'asc', onSort, showThumbs = false, thumbWidth = 48, columns, thumbsAtEnd = false, onDeleteRow,
-  detailSearch,
+  detailSearch, totals,
 }: ClassicEventsTableProps) {
   const { t } = useTranslation();
   const labels = useEventsColumnLabels();
@@ -97,8 +102,8 @@ export function ClassicEventsTable({
     else ids.filter((id) => allSelected || !selectedIds.has(id)).forEach(onToggleSelected);
   };
 
-  const totalDurationSec = sumEventDurations(events);
-  const totalDiskSpace = sumEventDiskSpace(events);
+  const totalDurationSec = totals?.duration ?? sumEventDurations(events);
+  const totalDiskSpace = totals?.disk ?? sumEventDiskSpace(events);
 
   const cell = (e: ZmEvent, key: EventsColumnKey) => {
     const eventLink = { to: '/events/$eventId' as const, params: { eventId: String(e.id) }, search: detailSearch };

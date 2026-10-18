@@ -375,6 +375,93 @@ describe('ClassicEventsListPage — filters', () => {
     await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5'));
   });
 
+  it('lists No Tag and Any Tag first in a multi-select Tags box, as legacy does', async () => {
+    const user = userEvent.setup();
+    stub({ tags: [{ id: 5, name: 'person' }, { id: 6, name: 'car' }] });
+    await mountAndSettle();
+
+    const box = screen.getByLabelText(/^Tags/) as HTMLSelectElement;
+    expect(box.multiple).toBe(true);
+    expect(Array.from(box.options, (o) => o.textContent)).toEqual(['No Tag', 'Any Tag', 'person', 'car']);
+
+    await user.selectOptions(box, ['5', '6']);
+    await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5,6'));
+    // A sentinel only means something on its own (FilterTerm.php:468).
+    await user.selectOptions(box, 'none');
+    await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('none'));
+    expect(Array.from(box.selectedOptions, (o) => o.value)).toEqual(['none']);
+  });
+
+  it('takes several groups in a multi-select Group box', async () => {
+    const user = userEvent.setup();
+    stub({ groups: [{ id: 3, name: 'Front Yard' }, { id: 4, name: 'Back Yard' }] });
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged(
+        [{ id: 1, group_id: 3, monitor_id: 1 }, { id: 2, group_id: 4, monitor_id: 2 }], { per_page: 1000 }))),
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(paged([event(9)], { total: 1 }));
+      }),
+    );
+    await mountAndSettle();
+
+    const box = screen.getByLabelText(/^Group/) as HTMLSelectElement;
+    expect(box.multiple).toBe(true);
+    await user.selectOptions(box, ['3', '4']);
+    await waitFor(() => expect(JSON.stringify(previewBody)).toContain('"value":[1,2]'));
+  });
+
+  it('totals Duration and DiskSpace over the whole result, not the page', async () => {
+    stub();
+    server.use(http.get('/api/v3/events', ({ request }) => {
+      eventRequests.push(new URL(request.url).searchParams);
+      return HttpResponse.json(paged([event(1)], {
+        total: 400, last_page: 16, total_length_seconds: 3725, total_disk_space: 3 * 1024 ** 3,
+      }));
+    }));
+    await mountAndSettle();
+    expect(eventRequests.at(-1)?.get('totals')).toBe('true');
+    expect(screen.getByTestId('events-total-duration')).toHaveTextContent('01:02:05');
+    expect(screen.getByTestId('events-total-disk-space')).toHaveTextContent('3.00GB');
+  });
+
+  it('links the Timeline button to /timeline with the filters', async () => {
+    initialSearch = { monitor_id: 2, archived: true, page: 2 };
+    stub();
+    await mountAndSettle();
+    const link = screen.getByRole('link', { name: 'Show Timeline' });
+    const url = new URL(link.getAttribute('href')!, 'http://x');
+    expect(url.pathname).toBe('/timeline');
+    expect(url.searchParams.get('monitor_id')).toBe('2');
+    expect(url.searchParams.get('archived')).toBe('true');
+    expect(url.searchParams.has('page')).toBe(false);
+  });
+
+  it('shows a term list from the filter editor in place of the strip', async () => {
+    const user = userEvent.setup();
+    initialSearch = { terms: JSON.stringify([{ attr: 'MonitorId', op: '=', val: '2' }]) };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      previewBody = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json(paged([event(9)], { total: 1 }));
+    }));
+    await mount();
+    expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
+    expect(JSON.stringify(previewBody)).toContain('"field":"monitor_id","op":"eq","value":2');
+
+    const banner = screen.getByTestId('events-terms-banner');
+    expect(banner).toHaveTextContent('Monitor Id equal to 2');
+    expect(screen.getByTestId('events-filter-bar')).toHaveClass('hidden');
+    // No last-hour seed: the operator asked for the filter's matches.
+    expect(screen.queryByTestId('default-hour-hint')).toBeNull();
+
+    await user.click(within(banner).getByRole('button', { name: /Back to the filter bar/ }));
+    await waitFor(() => expect(screen.queryByTestId('events-terms-banner')).toBeNull());
+    expect(screen.getByTestId('events-filter-bar')).not.toHaveClass('hidden');
+  });
+
   it('bounds the window with the two Start Date/Time fields', async () => {
     stub();
     await mountAndSettle();

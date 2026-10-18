@@ -209,7 +209,7 @@ describe('EventsListPage — modern skin', () => {
     await openFilters(userEvent.setup());
     // An <input list=…> is a combobox, not a textbox.
     expect(screen.getByRole('combobox', { name: 'Cause' })).toHaveValue('Forced Web');
-    expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('1');
+    expect(screen.getByRole('button', { name: 'Group filter, 1 selected' })).toBeInTheDocument();
     expect(screen.getByRole('textbox', { name: 'Name contains' })).toHaveValue('Event');
     expect(screen.getByRole('button', { name: 'Id, sorted descending' })).toHaveAttribute(
       'aria-pressed',
@@ -256,11 +256,34 @@ describe('EventsListPage — modern skin', () => {
     renderRoute('/events?tag=1');
     await rows();
 
-    await openFilters(userEvent.setup());
-    expect(screen.getByRole('combobox', { name: 'Tag' })).toHaveValue('1');
+    const user = userEvent.setup();
+    await openFilters(user);
     await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('1'));
+    await user.click(screen.getByRole('button', { name: 'Tag filter, 1 selected' }));
     // Tag counts ride along in the option label.
-    expect(screen.getByRole('option', { name: 'Important (3)' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Important (3)' })).toBeChecked();
+    // A second tag ORs in, as legacy's multi-select does.
+    await user.click(screen.getByRole('checkbox', { name: /^Review/ }));
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('1,2'));
+  });
+
+  it('offers No Tag and Any Tag, each on its own', async () => {
+    db.tags = [makeTag({ id: 1, name: 'Important' })];
+    const urls = recordEventQueries();
+    const { router } = renderRoute('/events?tag=1');
+    await rows();
+
+    const user = userEvent.setup();
+    await openFilters(user);
+    await user.click(screen.getByRole('button', { name: 'Tag filter, 1 selected' }));
+    await user.click(screen.getByRole('checkbox', { name: 'No Tag' }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ tag: 'none' }));
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('none'));
+    expect(screen.getByRole('checkbox', { name: /^Important/ })).not.toBeChecked();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Any Tag' }));
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('any'));
+    expect(screen.getByRole('checkbox', { name: 'No Tag' })).not.toBeChecked();
   });
 
   it('runs a group filter through /filters/preview with the group monitors', async () => {
@@ -352,18 +375,21 @@ describe('EventsListPage — modern skin', () => {
       { timeout: 3000 },
     );
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), '1');
+    await user.click(screen.getByRole('button', { name: 'Tag filter' }));
+    await user.click(screen.getByRole('checkbox', { name: /^Important/ }));
     await waitFor(() =>
       expect(router.state.location.search).toMatchObject({ tag: 1 }),
     );
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), '1');
+    await user.click(screen.getByRole('button', { name: 'Group filter' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Outdoor' }));
     await waitFor(() => expect(router.state.location.search).toMatchObject({ group: 1 }));
 
-    // "All" on each select (and an empty Cause box) removes the param again.
+    // Unticking each chip (and an empty Cause box) removes the param again.
+    await user.click(screen.getByRole('checkbox', { name: 'Outdoor' }));
+    await user.click(screen.getByRole('button', { name: 'Tag filter, 1 selected' }));
+    await user.click(screen.getByRole('checkbox', { name: /^Important/ }));
     await user.clear(screen.getByRole('combobox', { name: 'Cause' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), 'all');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), 'all');
     await user.keyboard('{Escape}');
     await pickMonitors(user, 'Driveway');
     await waitFor(() => expect(router.state.location.search).toEqual({}), { timeout: 3000 });
