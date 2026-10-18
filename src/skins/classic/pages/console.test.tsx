@@ -461,9 +461,15 @@ describe('ClassicConsolePage — Name cell', () => {
   });
 
   it('suffixes a soft-deleted monitor and drops its links', async () => {
-    stub({ monitors: [{ ...MONITORS[0], deleted: 1 }] });
+    stub({ monitors: [{ ...MONITORS[0], deleted: 1 }, MONITORS[1]] });
+    const user = userEvent.setup();
     const view = await mount();
+    // Hidden like legacy until the Status select holds Deleted.
+    await screen.findByTestId('console-row-2');
+    expect(screen.queryByTestId('console-row-1')).toBeNull();
+    await user.selectOptions(screen.getByRole('listbox', { name: 'Status' }), 'Deleted');
     const row1 = await screen.findByTestId('console-row-1');
+    expect(screen.queryByTestId('console-row-2')).toBeNull();
     await waitFor(() => expect(within(row1).getByText('(deleted)')).toBeInTheDocument());
     expect(within(row1).queryByRole('link', { name: 'Front Door' })).toBeNull();
     expect(within(row1).queryByRole('link', { name: '1' })).toBeNull();
