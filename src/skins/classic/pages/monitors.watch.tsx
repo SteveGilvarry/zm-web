@@ -277,9 +277,19 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                 className="group relative bg-black mx-auto overflow-hidden"
                 style={stage.style}
               >
+                {page.isWebSite && (
+                  <iframe
+                    key={page.webSiteReloadKey}
+                    src={monitor.path ?? undefined}
+                    title={monitor.name}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full bg-white border-0"
+                  />
+                )}
                 {/* Pinch, trackpad-pinch, shift + wheel, or drag once zoomed;
                     double-click fullscreens the picture. */}
-                <div ref={zoomRef} style={zoomStyle} className="absolute inset-0" data-testid="watch-zoom">
+                <div ref={zoomRef} style={zoomStyle} className={clsx('absolute inset-0', page.isWebSite && 'hidden')} data-testid="watch-zoom">
                   <video
                     ref={videoRef}
                     className={clsx(stageVideoClass(monitor, page.isFullscreen), !isActive && 'hidden')}

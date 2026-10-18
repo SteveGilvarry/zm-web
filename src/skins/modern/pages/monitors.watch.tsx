@@ -173,6 +173,17 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         />
       </div>
 
+      {page.isWebSite && (
+        <iframe
+          key={page.webSiteReloadKey}
+          src={monitor.path ?? undefined}
+          title={monitor.name}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 z-30 w-full h-full bg-surface border-0"
+        />
+      )}
+
       {stills && isEnabled && (
         <MonitorPreview
           monitorId={monitor.id}
@@ -547,7 +558,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     </Panel>
   );
 
-  const eventsPanel = (
+  const eventsPanel = page.isWebSite ? null : (
     <Panel
       title={t('Recent Events')}
       icon={<Video size={16} />}
@@ -604,7 +615,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   // Only mount the PTZ panel when the backend reports real capabilities;
   // non-PTZ monitors get no empty panel at all. Viewing the panel needs
   // Control View, as legacy's `canView('Control')` does.
-  const ptzPanel = ptzState.status === 'ready' ? (
+  const ptzPanel = ptzState.status === 'ready' && !page.isWebSite ? (
     <RequirePerm feature="control" level="View">
       <Panel
         title={t('Camera control')}

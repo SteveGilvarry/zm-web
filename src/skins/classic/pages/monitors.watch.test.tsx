@@ -753,6 +753,22 @@ describe('ClassicMonitorWatchPage — cycle sidebar', () => {
   });
 });
 
+describe('ClassicMonitorWatchPage — WebSite monitor', () => {
+  it('frames the site, reloads it on the Refresh period, and starts no stream or events table', async () => {
+    stubOk({ monitor: { ...MONITOR, type: 'WebSite', path: 'https://example.test/status', refresh: 1 } });
+    await mount();
+    await ready();
+    const frame = screen.getByTitle('Driveway');
+    expect(frame.tagName).toBe('IFRAME');
+    expect(frame).toHaveAttribute('src', 'https://example.test/status');
+    expect(screen.queryByRole('heading', { name: 'Events' })).toBeNull();
+
+    // `reloadWebSite` every Refresh seconds: a fresh frame replaces the old.
+    await waitFor(() => expect(screen.getByTitle('Driveway')).not.toBe(frame), { timeout: 2_500 });
+    expect(streamCalls).not.toContain('webrtc:start');
+  });
+});
+
 describe('ClassicMonitorWatchPage — idle timeout and hidden tab', () => {
   it('stops the stream and asks whether anyone is watching after ZM_WEB_VIEWING_TIMEOUT', async () => {
     const user = userEvent.setup();

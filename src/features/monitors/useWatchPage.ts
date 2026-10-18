@@ -151,6 +151,13 @@ export interface WatchPageState {
   idle: ViewingTimeoutState;
   /** Legacy `cycle=true`: open the cycle sidebar with the rotation running. */
   cycleRequested: boolean;
+  /**
+   * A `WebSite` monitor: no stream, the page frames `monitor.path` instead
+   * and reloads it every `monitor.refresh` seconds (watch.js `reloadWebSite`).
+   */
+  isWebSite: boolean;
+  /** Bumped on each reload tick; use it as the iframe's `key`. */
+  webSiteReloadKey: number;
 }
 
 const EMPTY_MONITORS: Monitor[] = [];
@@ -275,8 +282,10 @@ export function useWatchPage(monitorId: number): WatchPageState {
   // Auto-start the stream once monitor data confirms it's capturing. Re-arms
   // when the protocol changes so a switch after auto-start plays too.
   const autoStarted = useRef<StreamProtocol | null>(null);
+  const isWebSite = monitor?.type === 'WebSite';
   useEffect(() => {
     if (!monitor || autoStarted.current === protocol || viewMode !== 'stream') return;
+    if (monitor.type === 'WebSite') return;
     const isCapturing = monitor.capturing !== 'None';
     if (isCapturing) {
       // Always call start() so this view registers as a stream consumer —
@@ -421,6 +430,14 @@ export function useWatchPage(monitorId: number): WatchPageState {
     const muted = flipMuted(activeStream.videoRef.current);
     if (muted !== null) setIsMuted(muted);
   };
+
+  const [webSiteReloadKey, setWebSiteReloadKey] = useState(0);
+  const webSiteRefreshS = isWebSite ? Number(monitor?.refresh ?? 0) : 0;
+  useEffect(() => {
+    if (!(webSiteRefreshS > 0)) return;
+    const timer = window.setInterval(() => setWebSiteReloadKey((k) => k + 1), webSiteRefreshS * 1000);
+    return () => window.clearInterval(timer);
+  }, [webSiteRefreshS]);
 
   // Legacy stops playback and puts up the "are you still watching" modal
   // after `ZM_WEB_VIEWING_TIMEOUT` seconds of no input.
@@ -587,5 +604,7 @@ export function useWatchPage(monitorId: number): WatchPageState {
     nextMonitorId: neighbour(1),
     idle,
     cycleRequested: searchFlag(search, 'cycle'),
+    isWebSite,
+    webSiteReloadKey,
   };
 }
