@@ -260,6 +260,8 @@ export interface ZoneEditorState {
   reset: () => void;
   /** Bumped by every reset, so tools holding their own state can drop it. */
   resetCount: number;
+  /** Legacy's Refresh reloads the page: drop the edits and fetch the zone again. */
+  refresh: () => void;
   enabled: ZoneFieldEnabled | null;
   /** The draft polygon's area in square pixels (legacy's `areaPixels`). */
   zonePx: number;
@@ -481,6 +483,10 @@ export function useZoneEditor({
     dirty,
     reset,
     resetCount,
+    refresh: () => {
+      reset();
+      void zonesQ.refetch();
+    },
     enabled,
     zonePx,
     zonePct,

@@ -293,7 +293,7 @@ function ClassicZoneView({ monitor, frame, zoneId, runtime, canEdit, canGoBack, 
     <>
       <ClassicHeader
         backDisabled={!canGoBack}
-        onRefresh={() => { editor.reset(); }}
+        onRefresh={editor.refresh}
         end={end}
       />
       <h2 className="text-base font-bold text-zinc-900 mb-2">

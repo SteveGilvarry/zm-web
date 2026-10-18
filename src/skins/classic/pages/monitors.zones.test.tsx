@@ -447,6 +447,22 @@ describe('ClassicMonitorZonesPage — legacy\'s zone page', () => {
     expect(reset).toBeDisabled();
   });
 
+  it('Refresh drops the edits and fetches the zone again, as legacy\'s reload does', async () => {
+    stubOk();
+    let fetches = 0;
+    server.use(http.get('/api/v3/monitors/:id/zones', () => {
+      fetches += 1;
+      return HttpResponse.json(paged(ZONES));
+    }));
+    const user = userEvent.setup();
+    const settings = await openZone(user, 'Porch');
+    const before = fetches;
+    await user.type(within(settings).getByLabelText('Name'), ' 2');
+    await user.click(screen.getByRole('button', { name: 'Refresh' }));
+    expect(within(settings).getByLabelText('Name')).toHaveValue('Porch');
+    await waitFor(() => expect(fetches).toBeGreaterThan(before));
+  });
+
   it('Cancel goes back to the zones list without saving', async () => {
     stubOk();
     const sent = captureSave();
