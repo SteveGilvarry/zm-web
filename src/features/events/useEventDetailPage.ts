@@ -132,6 +132,9 @@ export interface EventDetailPageState {
   playbackError: ReturnType<typeof useEventVideo>['error'];
   isPlaying: boolean;
   isMuted: boolean;
+  /** 0–1, video.js's volume slider. */
+  volume: number;
+  setVolume: (v: number) => void;
   currentTime: number;
   duration: number;
   setCurrentTime: (t: number) => void;
@@ -282,6 +285,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolumeState] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
   // Precise duration from the <video> loadedmetadata event; 0 until it fires.
   const [metaDuration, setMetaDuration] = useState(0);
@@ -967,6 +971,17 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     playbackError,
     isPlaying,
     isMuted,
+    volume,
+    setVolume: (v: number) => {
+      const next = Math.min(1, Math.max(0, v));
+      setVolumeState(next);
+      const el = videoRef.current;
+      if (el) {
+        el.volume = next;
+        // Dragging the slider up unmutes, as video.js's does.
+        if (next > 0 && el.muted) { el.muted = false; setIsMuted(false); }
+      }
+    },
     currentTime,
     duration,
     setCurrentTime,

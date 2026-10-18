@@ -791,6 +791,17 @@ describe('ClassicEventDetailPage — the picture and its overlay', () => {
     expect(within(overlay).queryByRole('link', { name: 'Edit monitor' })).toBeNull();
   });
 
+  it('sets the volume from the slider beside Mute, unmuting on the way up', async () => {
+    stub();
+    await mountAndSettle();
+    const { fireEvent } = await import('@testing-library/react');
+    const video = document.querySelector('video')!;
+    video.muted = true;
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '0.4' } });
+    expect(video.volume).toBeCloseTo(0.4);
+    expect(video.muted).toBe(false);
+  });
+
   it('reads Mode from the transport, not from the replay-mode select', async () => {
     stub();
     await mountAndSettle();

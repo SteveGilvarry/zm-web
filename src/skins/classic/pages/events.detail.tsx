@@ -363,6 +363,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     <button type="button" onClick={s.stepForward} disabled={!s.canStep} className={dvrBtn} title={t('Step Forward')} aria-label={t('Step Forward')}><ChevronsRight size={18} /></button>
                     <button type="button" onClick={s.scanForward} disabled={!s.canScan} className={dvrBtn} title={t('Fast Forward')} aria-label={t('Fast Forward')}><FastForward size={18} /></button>
                     <button type="button" onClick={s.handleToggleMute} className={dvrBtn} aria-label={s.isMuted ? t('Unmute') : t('Mute')}>{s.isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
+                    <input type="range" min={0} max={1} step={0.05} value={s.isMuted ? 0 : s.volume} onChange={(e) => s.setVolume(Number(e.target.value))} aria-label={t('Volume')} className="w-16 accent-[#337ab7]" />
                     <button type="button" onClick={s.handleToggleFullscreen} className={dvrBtn} title={t('Fullscreen')} aria-label={t('Fullscreen')}><Maximize2 size={18} /></button>
                     <button type="button" onClick={s.navNext} className={dvrBtn} title={t('Next')} aria-label={t('Next event')}><SkipForward size={18} /></button>
                   </div>

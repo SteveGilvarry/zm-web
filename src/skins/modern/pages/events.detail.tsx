@@ -500,6 +500,16 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                         >
                           {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                         </button>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={isMuted ? 0 : s.volume}
+                          onChange={(e) => s.setVolume(Number(e.target.value))}
+                          aria-label={t('Volume')}
+                          className="w-20 accent-white/80"
+                        />
 
                         {/* Fullscreen */}
                         <button
