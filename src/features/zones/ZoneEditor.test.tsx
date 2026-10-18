@@ -85,8 +85,24 @@ describe('ZoneEditor — zone list', () => {
   });
 });
 
+/** Fills the minimums `validateForm` wants for a Blobs zone. */
+async function fillMinimums(user: ReturnType<typeof userEvent.setup>) {
+  const set = async (label: string, value: string) => {
+    const box = screen.getByLabelText(label);
+    await user.clear(box);
+    await user.type(box, value);
+  };
+  await set('Min/Max Pixel Threshold (min)', '25');
+  await set('Filter width', '3');
+  await set('Filter height', '3');
+  await set('Min/Max Alarmed Area (min) (px)', '400');
+  await set('Min/Max Filtered Area (min) (px)', '300');
+  await set('Min/Max Blob Area (min) (px)', '200');
+  await set('Min/Max Blobs (min)', '1');
+}
+
 describe('ZoneEditor — New zone', () => {
-  it('seeds the draft with a 4-vertex rectangle in the middle of the frame', async () => {
+  it('seeds the draft as legacy does: the whole frame, named "New"', async () => {
     const user = userEvent.setup();
     server.use(http.get('/api/v3/monitors/1/zones', () =>
       HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
@@ -97,9 +113,11 @@ describe('ZoneEditor — New zone', () => {
     await user.click(screen.getByRole('button', { name: /new/i }));
     expect(screen.getByText(/new zone/i)).toBeInTheDocument();
     expect(screen.getByText(/4 vertices/i)).toBeInTheDocument();
+    expect(screen.getByDisplayValue('New')).toBeInTheDocument();
+    expect(screen.getByTestId('zone-area-readout')).toHaveTextContent('Zone Area 99.86% · 2,070,601 px');
   });
 
-  it('POSTs /monitors/{id}/zones with serialised coords on Save', async () => {
+  it('POSTs /monitors/{id}/zones with pixel coords and Units fixed at Percent', async () => {
     const user = userEvent.setup();
     let body: Record<string, unknown> = {};
 
@@ -117,14 +135,31 @@ describe('ZoneEditor — New zone', () => {
     await waitFor(() => screen.getByText(/no zones yet/i));
 
     await user.click(screen.getByRole('button', { name: /new/i }));
+    await fillMinimums(user);
     await user.click(screen.getByRole('button', { name: /save/i }));
 
-    await waitFor(() => expect(body.name).toBe('New zone'));
-    expect(body.units).toBe('Pixels');
+    await waitFor(() => expect(body.name).toBe('New'));
+    // Legacy's hidden `newZone[Units]` is always Percent (zone.php:278).
+    expect(body.units).toBe('Percent');
     expect(body.num_coords).toBe(4);
-    expect(typeof body.coords).toBe('string');
-    // 4 "x,y" pairs separated by spaces — 3 spaces between them.
-    expect((body.coords as string).split(' ')).toHaveLength(4);
+    // Coords stay integer pixels (plan F-3), so the daemon reads the
+    // thresholds as pixel counts.
+    expect(body.coords).toBe('0,0 1919,0 1919,1079 0,1079');
+    expect(body.min_alarm_pixels).toBe(400);
+    expect(body.min_blob_pixels).toBe(200);
+  });
+
+  it('offers no Units control, as legacy hides it', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v3/monitors/1/zones', () =>
+      HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+    ));
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    expect(screen.queryByRole('button', { name: 'Pixels' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Percent' })).toBeNull();
+    expect(screen.queryByText('Units')).toBeNull();
   });
 });
 
@@ -138,9 +173,54 @@ describe('ZoneEditor — Save validation', () => {
     await waitFor(() => screen.getByText(/no zones yet/i));
 
     await user.click(screen.getByRole('button', { name: /new/i }));
-    const nameInput = screen.getByDisplayValue('New zone');
+    const nameInput = screen.getByDisplayValue('New');
     await user.clear(nameInput);
     expect(screen.getByRole('button', { name: /save/i })).toBeDisabled();
+  });
+
+  it('refuses a blank new zone with legacy\'s messages, and sends nothing', async () => {
+    const user = userEvent.setup();
+    const posted = vi.fn();
+    server.use(
+      http.get('/api/v3/monitors/1/zones', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+      ),
+      http.post('/api/v3/monitors/1/zones', () => { posted(); return HttpResponse.json({ id: 99 }); }),
+    );
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    await user.click(screen.getByRole('button', { name: /save/i }));
+
+    const list = screen.getByRole('alert', { name: 'Cannot save the zone' });
+    expect(list).toHaveTextContent('You must specify a minimum pixel threshold');
+    expect(list).toHaveTextContent('You must specify a filter width and height');
+    expect(list).toHaveTextContent('You must specify the minimum alarm pixel count');
+    expect(list).toHaveTextContent('You must specify the minimum blob count');
+    expect(posted).not.toHaveBeenCalled();
+    // The draft stays open for the fix.
+    expect(screen.getByDisplayValue('New')).toBeInTheDocument();
+  });
+
+  it('saves an Inactive zone with nothing filled, as legacy checks nothing there', async () => {
+    const user = userEvent.setup();
+    let body: Record<string, unknown> = {};
+    server.use(
+      http.get('/api/v3/monitors/1/zones', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+      ),
+      http.post('/api/v3/monitors/1/zones', async ({ request }) => {
+        body = await request.json() as Record<string, unknown>;
+        return HttpResponse.json({ id: 99 });
+      }),
+    );
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    await user.selectOptions(screen.getByLabelText('Type'), 'Inactive');
+    await user.click(screen.getByRole('button', { name: /save/i }));
+    await waitFor(() => expect(body.type).toBe('Inactive'));
   });
 });
 
@@ -250,80 +330,6 @@ describe('ZoneEditor — polygon midpoint insertion', () => {
   });
 });
 
-describe('ZoneEditor — units toggle', () => {
-  it('starts a new zone in Pixels and switches to Percent on toggle', async () => {
-    const user = userEvent.setup();
-    server.use(http.get('/api/v3/monitors/1/zones', () =>
-      HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
-    ));
-    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
-    await waitFor(() => screen.getByText(/no zones yet/i));
-
-    await user.click(screen.getByRole('button', { name: /new/i }));
-
-    // Pixels is active by default. Asserted on `aria-pressed` rather than on
-    // the class string — which one is selected is a fact about the control,
-    // not about the palette it happens to be painted in.
-    const pixelsBtn = screen.getByRole('button', { name: 'Pixels' });
-    const percentBtn = screen.getByRole('button', { name: 'Percent' });
-    expect(pixelsBtn).toHaveAttribute('aria-pressed', 'true');
-    expect(percentBtn).toHaveAttribute('aria-pressed', 'false');
-
-    await user.click(percentBtn);
-    expect(percentBtn).toHaveAttribute('aria-pressed', 'true');
-    expect(pixelsBtn).toHaveAttribute('aria-pressed', 'false');
-  });
-
-  it('serialises Percent units in the create POST body without rescaling the coords', async () => {
-    const user = userEvent.setup();
-    let body: Record<string, unknown> = {};
-    server.use(
-      http.get('/api/v3/monitors/1/zones', () =>
-        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
-      ),
-      http.post('/api/v3/monitors/1/zones', async ({ request }) => {
-        body = await request.json() as Record<string, unknown>;
-        return HttpResponse.json({ id: 99 });
-      }),
-    );
-    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
-    await waitFor(() => screen.getByText(/no zones yet/i));
-
-    await user.click(screen.getByRole('button', { name: /new/i }));
-    await user.click(screen.getByRole('button', { name: 'Percent' }));
-    await user.click(screen.getByRole('button', { name: /save/i }));
-
-    await waitFor(() => expect(body.units).toBe('Percent'));
-    // ZoneMinder stores Coords in pixels whatever the Units; the default
-    // rectangle (middle 60% of 1920x1080) must reach the API untouched.
-    expect(body.coords).toBe('384,216 1536,216 1536,864 384,864');
-  });
-
-  it('switching Pixels -> Percent -> Pixels leaves the polygon unchanged', async () => {
-    const user = userEvent.setup();
-    let body: Record<string, unknown> = {};
-    server.use(
-      http.get('/api/v3/monitors/1/zones', () =>
-        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
-      ),
-      http.post('/api/v3/monitors/1/zones', async ({ request }) => {
-        body = await request.json() as Record<string, unknown>;
-        return HttpResponse.json({ id: 99 });
-      }),
-    );
-    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
-    await waitFor(() => screen.getByText(/no zones yet/i));
-
-    await user.click(screen.getByRole('button', { name: /new/i }));
-    await user.click(screen.getByRole('button', { name: 'Percent' }));
-    await user.click(screen.getByRole('button', { name: 'Pixels' }));
-    await user.click(screen.getByRole('button', { name: /save/i }));
-
-    await waitFor(() => expect(body.units).toBe('Pixels'));
-    expect(body.coords).toBe('384,216 1536,216 1536,864 384,864');
-  });
-});
-
 describe('ZoneEditor — type hint', () => {
   it('shows a hint matching the selected zone type', async () => {
     const user = userEvent.setup();
@@ -356,9 +362,8 @@ describe('ZoneEditor — zone presets', () => {
     expect(screen.queryByText(/apply preset/i)).toBeNull();
   });
 
-  it('applies a preset to the draft when selected from the dropdown', async () => {
+  it('applies the preset\'s check method and leaves the name and type alone, as legacy does', async () => {
     const user = userEvent.setup();
-    // Override the default empty-preset handler.
     server.use(
       http.get('/api/v3/zone-presets', () => HttpResponse.json({
         items: [
@@ -375,12 +380,62 @@ describe('ZoneEditor — zone presets', () => {
     await waitFor(() => screen.getByText(/no zones yet/i));
 
     await user.click(screen.getByRole('button', { name: /new/i }));
-    await waitFor(() => screen.getByText(/apply preset/i));
-
-    // Find the preset combobox by its placeholder option text.
-    const presetSelect = screen.getByText(/apply preset…/i).closest('select')!;
+    const presetSelect = await screen.findByLabelText('Preset');
+    expect(presetSelect).toHaveDisplayValue('Choose Preset');
     await user.selectOptions(presetSelect, '2');
-    // Type now reflects the preset's value.
-    expect(screen.getByDisplayValue('Privacy')).toBeInTheDocument();
+
+    expect(screen.getByLabelText('Check Method')).toHaveValue('AlarmedPixels');
+    expect(screen.getByLabelText('Type')).toHaveValue('Active');
+    expect(screen.getByLabelText('Name')).toHaveValue('New');
+    // Back to "Choose Preset", ready for another pick.
+    expect(presetSelect).toHaveDisplayValue('Choose Preset');
+  });
+
+  it('applies the thresholds too when the preset carries them, percent of the zone into pixels', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v3/zone-presets', () => HttpResponse.json({
+        items: [{
+          id: 3, name: 'Best, high sensitivity', type: 'Active', units: 'Percent', check_method: 'Blobs',
+          min_pixel_threshold: 20, max_pixel_threshold: null, filter_x: 3, filter_y: 3,
+          min_alarm_pixels: 5, max_alarm_pixels: null, min_filter_pixels: 3.5, max_filter_pixels: null,
+          min_blob_pixels: 3, max_blob_pixels: null, min_blobs: 1, max_blobs: null,
+          overload_frames: 0, extend_alarm_frames: 0,
+        }],
+        total: 1, per_page: 100, current_page: 1, last_page: 1,
+      })),
+      http.get('/api/v3/monitors/1/zones', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+      ),
+    );
+    // A 101×101 frame makes the new zone exactly 100×100 = 10,000 px.
+    renderWithProviders(<ZoneEditor monitorId={1} width={101} height={101} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    await user.selectOptions(await screen.findByLabelText('Preset'), '3');
+
+    expect(screen.getByLabelText('Min/Max Pixel Threshold (min)')).toHaveValue(20);
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (px)')).toHaveValue(500);
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (%)')).toHaveValue(5);
+    expect(screen.getByLabelText('Min/Max Filtered Area (min) (px)')).toHaveValue(350);
+    expect(screen.getByLabelText('Min/Max Blob Area (min) (px)')).toHaveValue(300);
+  });
+
+  it('disables the preset select for a zone that detects nothing', async () => {
+    const user = userEvent.setup();
+    server.use(
+      http.get('/api/v3/zone-presets', () => HttpResponse.json({
+        items: [{ id: 1, name: 'Front Path', type: 'Active', units: 'Pixels', check_method: 'Blobs' }],
+        total: 1, per_page: 100, current_page: 1, last_page: 1,
+      })),
+      http.get('/api/v3/monitors/1/zones', () =>
+        HttpResponse.json({ items: [], total: 0, per_page: 50, current_page: 1, last_page: 1 }),
+      ),
+    );
+    renderWithProviders(<ZoneEditor monitorId={1} width={1920} height={1080} />);
+    await waitFor(() => screen.getByText(/no zones yet/i));
+    await user.click(screen.getByRole('button', { name: /new/i }));
+    await user.selectOptions(screen.getByLabelText('Type'), 'Privacy');
+    expect(await screen.findByLabelText('Preset')).toBeDisabled();
   });
 });

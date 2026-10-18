@@ -1,351 +1,82 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
+import { useRef, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { Trans, useTranslation } from 'react-i18next';
-import type { TFunction } from 'i18next';
-import { Plus, Save, Trash2, X, Square } from 'lucide-react';
-import {
-  listZonesForMonitor, createZone, updateZone, deleteZone,
-  listZonePresets,
-  parseCoords, serializeCoords, insertMidpoint,
-  type Zone, type ZoneType, type Point, type ZoneSettingsPayload,
-} from '@/api/zones';
+import { Image as ImageIcon, Plus, RotateCcw, Save, Scan, Square, Trash2, Undo2, X } from 'lucide-react';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
-import { useToast } from '@/components/common/toastStore';
-import { useRefreshingSnapshot } from '@/hooks/useRefreshingSnapshot';
-import { zoneArea } from './zoneArea';
-import { isSelfIntersecting } from './selfIntersects';
+import { zoneCheckMethodLabel } from './zoneSettings';
 import {
-  alarmRgbToHex, hexToAlarmRgb, zoneCheckMethodLabel, zoneFieldEnabled,
-  type ZoneFieldEnabled, type ZoneSettingField,
-} from './zoneSettings';
+  CHECK_METHODS, alarmToHex, useZoneEditor,
+  type ZoneAreaField, type ZoneEditorState, type ZoneNumField, type ZoneSelection,
+} from './useZoneEditor';
+import { useObjectSizeTool, type ObjectSizeToolState } from './useObjectSizeTool';
+import { useZonePlayer, type ZonePlayer, type ZonePlayerState } from './useZonePlayer';
+import { ZoneCanvas } from './ZoneCanvas';
+import { ZONE_TYPE_COLORS, ZONE_TYPE_ORDER, zoneTypeHint, zoneTypeLabel } from './zoneTypes';
+import { ZoneLiveView } from './ZoneLiveView';
+import { AreaPair, FilterSizeInput, PointTable } from './ZoneFormParts';
+
+export type { ZoneSelection } from './useZoneEditor';
 
 interface ZoneEditorProps {
   monitorId: number;
   width: number;
   height: number;
   /**
-   * Zone the parent wants open — the classic list's row click, or `'new'`
-   * for its Add New Zone. Omit to leave the editor uncontrolled.
+   * Zone the parent wants open — a list row, or `'new'` for its Add New
+   * Zone. Omit to leave the editor uncontrolled.
    */
-  openZoneId?: number | 'new' | null;
+  openZoneId?: ZoneSelection;
   /** Fires when the selection changes, so the parent can mirror it. */
   onSelectionChange?: (id: ZoneSelection) => void;
-}
-
-/** The zone the editor has open: an id, a not-yet-created zone, or nothing. */
-export type ZoneSelection = number | 'new' | null;
-
-/** Every motion setting except the two that are not plain numbers. */
-type ZoneNumField = Exclude<ZoneSettingField, 'check_method' | 'alarm_rgb'>;
-
-const ZONE_NUM_FIELDS: readonly ZoneNumField[] = [
-  'min_pixel_threshold', 'max_pixel_threshold',
-  'min_alarm_pixels', 'max_alarm_pixels',
-  'filter_x', 'filter_y',
-  'min_filter_pixels', 'max_filter_pixels',
-  'min_blob_pixels', 'max_blob_pixels',
-  'min_blobs', 'max_blobs',
-  'overload_frames', 'extend_alarm_frames',
-];
-
-/** Form state, so a half-typed or deliberately empty box stays empty. */
-type ZoneNums = Record<ZoneNumField, string>;
-
-const CHECK_METHODS = ['AlarmedPixels', 'FilteredPixels', 'Blobs'] as const;
-
-/** ZoneMinder's default alarm colour for a new zone (`zone.php:75`). */
-const DEFAULT_ALARM_HEX = '#ff0000';
-
-interface ZoneDraft {
-  id: number | null;
-  name: string;
-  type: string;
-  units: 'Pixels' | 'Percent';
-  points: Point[];
-  checkMethod: string;
-  /** `#rrggbb`, or '' when the row has no colour stored. */
-  alarmHex: string;
-  nums: ZoneNums;
-}
-
-function numString(v: number | null | undefined): string {
-  return v == null || !Number.isFinite(v) ? '' : String(v);
-}
-
-function emptyNums(): ZoneNums {
-  return Object.fromEntries(ZONE_NUM_FIELDS.map((f) => [f, ''])) as ZoneNums;
-}
-
-function draftFromZone(z: Zone): ZoneDraft {
-  return {
-    id: z.id,
-    name: z.name,
-    type: z.type,
-    units: z.units === 'Percent' ? 'Percent' : 'Pixels',
-    points: parseCoords(z.coords),
-    checkMethod: z.check_method || 'AlarmedPixels',
-    alarmHex: alarmRgbToHex(z.alarm_rgb) ?? '',
-    nums: Object.fromEntries(
-      ZONE_NUM_FIELDS.map((f) => [f, numString(z[f])]),
-    ) as ZoneNums,
-  };
+  /** The monitor's Default Player, which the Player select's Auto follows. */
+  defaultPlayer?: string | null;
 }
 
 /**
- * A fresh zone starts as the middle 60% of the frame, like legacy's default.
- * Its settings start blank with `Blobs` selected and the red alarm colour,
- * which is what `zone.php` seeds a new zone with.
+ * The modern zone editor: picture with the polygon on the left, the zone
+ * list and the form beside it. State and verbs come from `useZoneEditor`,
+ * which the classic skin's legacy-layout page uses too.
  */
-function newZoneDraft(width: number, height: number, name: string): ZoneDraft {
-  const m = 0.2;
-  return {
-    id: null,
-    name,
-    type: 'Active',
-    units: 'Pixels',
-    points: [
-      { x: width * m,       y: height * m       },
-      { x: width * (1 - m), y: height * m       },
-      { x: width * (1 - m), y: height * (1 - m) },
-      { x: width * m,       y: height * (1 - m) },
-    ],
-    checkMethod: 'Blobs',
-    alarmHex: DEFAULT_ALARM_HEX,
-    nums: emptyNums(),
-  };
-}
-
-/**
- * The settings half of the save body. A field the current Type / Check Method
- * disables is left out entirely, so the column keeps its stored value — the
- * same thing legacy gets from not submitting a disabled input. A field that
- * is on but empty goes out as `null`, which clears it.
- */
-function settingsPayload(draft: ZoneDraft, enabled: ZoneFieldEnabled): ZoneSettingsPayload {
-  const out: ZoneSettingsPayload = {};
-  if (enabled.check_method) out.check_method = draft.checkMethod;
-  if (enabled.alarm_rgb) out.alarm_rgb = draft.alarmHex ? hexToAlarmRgb(draft.alarmHex) : null;
-  for (const field of ZONE_NUM_FIELDS) {
-    if (!enabled[field]) continue;
-    const raw = draft.nums[field].trim();
-    const n = Number(raw);
-    out[field] = raw !== '' && Number.isFinite(n) ? n : null;
-  }
-  return out;
-}
-
-const ZONE_TYPE_COLORS: Record<string, { stroke: string; fill: string }> = {
-  Active:     { stroke: '#00d4ff', fill: 'rgba(0,212,255,0.18)'  },
-  Inclusive:  { stroke: '#00ff9d', fill: 'rgba(0,255,157,0.18)'  },
-  Exclusive:  { stroke: '#ffb000', fill: 'rgba(255,176,0,0.18)'  },
-  Preclusive: { stroke: '#a855f7', fill: 'rgba(168,85,247,0.18)' },
-  Inactive:   { stroke: '#566b85', fill: 'rgba(86,107,133,0.15)' },
-  Privacy:    { stroke: '#ff3366', fill: 'rgba(255,51,102,0.22)' },
-};
-const ZONE_TYPE_ORDER: ZoneType[] = ['Active', 'Inclusive', 'Exclusive', 'Preclusive', 'Inactive', 'Privacy'];
-
-/** Display label for a zone type (wire value stays as-is). Unknown types echo back. */
-function zoneTypeLabel(type: string, t: TFunction): string {
-  switch (type) {
-    case 'Active':     return t('Active');
-    case 'Inclusive':  return t('Inclusive');
-    case 'Exclusive':  return t('Exclusive');
-    case 'Preclusive': return t('Preclusive');
-    case 'Inactive':   return t('Inactive');
-    case 'Privacy':    return t('Privacy');
-    default:           return type;
-  }
-}
-
-function zoneTypeHint(type: string, t: TFunction): string {
-  switch (type) {
-    case 'Active':     return t('Triggers alarms on motion inside this region.');
-    case 'Inclusive':  return t('Motion only counts if it also overlaps an Active zone.');
-    case 'Exclusive':  return t('Motion in this region is ignored.');
-    case 'Preclusive': return t('If motion fills this region, the whole frame is rejected (camera shake).');
-    case 'Inactive':   return t('Disabled — no detection here. Useful for parking it.');
-    case 'Privacy':    return t('Region is blacked out in recordings and live view.');
-    default:           return '';
-  }
-}
-
-/**
- * SVG-overlay polygon editor over a refreshing camera snapshot. Each vertex
- * is a draggable handle; click a midpoint dot to insert a new vertex; click
- * a vertex's ring while holding Alt (or right-click) to delete it. The
- * polygon coordinate system is the camera's native pixel space so the same
- * coords round-trip the backend's "x,y x,y …" format unchanged.
- *
- * Edits stay in local state until the operator clicks Save; the form on the
- * right edits name + type while the canvas edits geometry.
- */
-export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange }: ZoneEditorProps) {
+export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange, defaultPlayer }: ZoneEditorProps) {
   const { t } = useTranslation();
-  const qc = useQueryClient();
-  const toast = useToast();
-
-  const zonesQ = useQuery({
-    queryKey: ['zones', monitorId],
-    queryFn: () => listZonesForMonitor(monitorId, { page: 1, page_size: 50 }),
-  });
-  const zones: Zone[] = useMemo(() => zonesQ.data?.items ?? [], [zonesQ.data]);
-
-  // Drives the snapshot below the polygon — keeps the editor visually live.
-  const snapshotUrl = useRefreshingSnapshot(monitorId, true);
-
-  // Presets define reusable defaults (name/type/units/check_method) the
-  // operator can apply to a new draft to avoid retyping a standard zone.
-  const presetsQ = useQuery({
-    queryKey: ['zonePresets'],
-    queryFn: listZonePresets,
-    staleTime: 5 * 60_000,
-  });
-  const presets = presetsQ.data?.items ?? [];
-
-  // Selection is controlled when the parent passes `openZoneId` (both skins
-  // do, so their list rows and settings panel stay in step) and owned here
-  // otherwise. No effect syncs the two — that only ever fights the parent.
-  const controlled = openZoneId !== undefined;
-  const [internalId, setInternalId] = useState<ZoneSelection>(null);
-  const selectedId: ZoneSelection = controlled ? openZoneId : internalId;
-
-  const select = (id: ZoneSelection) => {
-    if (!controlled) setInternalId(id);
-    onSelectionChange?.(id);
-  };
-
-  // The draft the form starts from, rebuilt whenever the selection moves.
-  const baseDraft = useMemo<ZoneDraft | null>(() => {
-    if (selectedId == null) return null;
-    if (selectedId === 'new') return newZoneDraft(width, height, t('New zone'));
-    const z = zones.find((x) => x.id === selectedId);
-    return z ? draftFromZone(z) : null; // null while the list is still loading
-  }, [selectedId, zones, width, height, t]);
-
-  // Unsaved edits, tagged with the zone they belong to. A refetch of the
-  // list lands underneath without wiping what the operator typed, and
-  // selecting another zone shows that zone's stored values again — no effect
-  // resetting state, which is what the React Compiler rules forbid anyway.
-  const [edited, setEdited] = useState<{ for: number | 'new'; draft: ZoneDraft } | null>(null);
-  const draft = edited && edited.for === selectedId ? edited.draft : baseDraft;
-  const setDraft = (next: ZoneDraft) => {
-    if (selectedId != null) setEdited({ for: selectedId, draft: next });
-  };
-
-  const loadZone = (z: Zone) => select(z.id);
-  const startNewZone = () => select('new');
-  const clearSelection = () => {
-    setEdited(null);
-    select(null);
-  };
-
-  // Legacy blocks Save while the edges cross (`zone.js:16-20`), and says why.
-  const selfIntersecting = draft ? isSelfIntersecting(draft.points) : false;
-
-  // Live area of the polygon being dragged; a draft has no stored area yet.
-  const draftArea = draft
-    ? zoneArea(
-        { coords: serializeCoords(draft.points), units: draft.units },
-        { width, height },
-      )
-    : null;
-  // Units only change how ZoneMinder interprets the threshold fields
-  // (min/max area etc.). Coords are always stored in pixels, so switching
-  // units must leave the polygon alone.
-  const setUnits = (units: 'Pixels' | 'Percent') => {
-    if (!draft || draft.units === units) return;
-    setDraft({ ...draft, units });
-  };
-  // Apply a preset's name/type/units to the current draft (preserves
-  // whatever polygon the operator has drawn).
-  const applyPreset = (presetId: number) => {
-    const p = presets.find((x) => x.id === presetId);
-    if (!p || !draft) return;
-    setDraft({
-      ...draft,
-      name: p.name,
-      type: p.type,
-      units: (p.units === 'Percent' ? 'Percent' : 'Pixels') as 'Pixels' | 'Percent',
-      checkMethod: p.check_method || draft.checkMethod,
-    });
-  };
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ['zones', monitorId] });
-
-  const saveMutation = useMutation({
-    mutationFn: async () => {
-      if (!draft) throw new Error('no draft');
-      const coords = serializeCoords(draft.points);
-      const settings = settingsPayload(draft, zoneFieldEnabled(draft.type, draft.checkMethod));
-      if (draft.id == null) {
-        await createZone(monitorId, {
-          name: draft.name,
-          type: draft.type,
-          units: draft.units,
-          coords,
-          num_coords: draft.points.length,
-          ...settings,
-        });
-      } else {
-        await updateZone(draft.id, {
-          name: draft.name,
-          type: draft.type,
-          units: draft.units,
-          coords,
-          ...settings,
-        });
-      }
-      // Returned, not read off `draft`: by the time this settles the
-      // selection has moved on.
-      return draft.type;
-    },
-    onSuccess: (savedType) => {
-      // Legacy alerts on every Privacy-zone save (`zone.js:521`): the capture
-      // process has to restart before the blackout changes on the stream.
-      if (savedType === 'Privacy') {
-        toast.info(t('Capture process for this monitor will be restarted for the Privacy zone changes to take effect.'));
-      }
-      invalidate();
-      clearSelection();
-    },
-  });
-  const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteZone(id),
-    onSuccess: () => {
-      invalidate();
-      clearSelection();
-    },
-  });
+  const editor = useZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange });
+  const tool = useObjectSizeTool(editor);
+  const player = useZonePlayer(defaultPlayer);
+  const { zones, draft, selectedId } = editor;
 
   return (
     <div className="grid grid-cols-[1fr_18rem] gap-4">
-      {/* Canvas */}
-      <ZoneCanvas
-        monitorWidth={width}
-        monitorHeight={height}
-        snapshotUrl={snapshotUrl}
-        otherZones={zones.filter((z) => draft?.id !== z.id)}
-        draft={draft}
-        onDraftPointsChange={(points) => { if (draft) setDraft({ ...draft, points }); }}
-      />
+      <div className="space-y-2 min-w-0">
+        <ZoneCanvas
+          monitorWidth={width}
+          monitorHeight={height}
+          background={
+            <ZoneLiveView
+              monitorId={monitorId}
+              player={player.resolved}
+              stillUrl={tool.stillShown ? tool.stillUrl : null}
+            />
+          }
+          otherZones={zones.filter((z) => draft?.id !== z.id)}
+          draft={draft}
+          onDraftPointsChange={(points) => { if (draft) editor.setDraft({ ...draft, points }); }}
+          measure={tool}
+        />
+        <ZoneStreamControls tool={tool} player={player} hasDraft={!!draft} />
+        {draft && tool.showSettings && <ObjectSizeSettings tool={tool} />}
+      </div>
 
       {/* Sidebar — zone list + form */}
       <div className="space-y-3">
         <div className="rounded border border-border-subtle bg-surface overflow-hidden">
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
-            <span className="text-label text-fg-dim">
-              {t('Zones')}
-            </span>
-            <button
-              onClick={startNewZone}
-              className={buttonClasses('secondary', 'sm')}
-            >
+            <span className="text-label text-fg-dim">{t('Zones')}</span>
+            <button onClick={editor.startNewZone} className={buttonClasses('secondary', 'sm')}>
               <Plus size={10} />
               {t('New')}
             </button>
           </div>
-          {zonesQ.isLoading ? (
+          {editor.zonesLoading ? (
             <div className="p-4 text-center text-xs text-fg-dim">{t('Loading…')}</div>
           ) : zones.length === 0 ? (
             <div className="p-4 text-center text-xs text-fg-dim italic">
@@ -358,12 +89,10 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
                 return (
                   <li key={z.id}>
                     <button
-                      onClick={() => loadZone(z)}
+                      onClick={() => editor.select(z.id)}
                       className={clsx(
                         'w-full flex items-center gap-2 px-3 py-1.5 text-start text-xs border-s-2 transition-colors',
-                        selectedId === z.id
-                          ? 'bg-accent/10'
-                          : 'hover:bg-surface-2',
+                        selectedId === z.id ? 'bg-accent/10' : 'hover:bg-surface-2',
                       )}
                       style={{ borderInlineStartColor: c.stroke }}
                     >
@@ -378,281 +107,388 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
           )}
         </div>
 
-        {/* Editor form */}
-        {draft && (
-          <div className="rounded border border-border bg-surface p-3 space-y-2.5">
-            <div className="flex items-center justify-between">
-              <span className="text-label text-fg">
-                {draft.id == null ? t('New zone') : t('Editing #{{id}}', { id: draft.id })}
-              </span>
-              <button
-                onClick={clearSelection}
-                aria-label={t('Cancel edit')}
-                className="p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
-              >
-                <X size={11} />
-              </button>
-            </div>
-
-            <Field label={t('Name')}>
-              <input
-                aria-label={t('Name')}
-                value={draft.name}
-                onChange={(e) => setDraft({ ...draft, name: e.target.value })}
-                className={clsx('flex-1', fieldClasses('sm'))}
-              />
-            </Field>
-            <Field label={t('Type')}>
-              <select
-                aria-label={t('Type')}
-                value={draft.type}
-                onChange={(e) => setDraft({ ...draft, type: e.target.value })}
-                className={clsx('flex-1', fieldClasses('sm'))}
-              >
-                {ZONE_TYPE_ORDER.map((type) => (
-                  <option key={type} value={type}>{zoneTypeLabel(type, t)}</option>
-                ))}
-              </select>
-            </Field>
-            <div className="text-xs text-fg-dim italic px-1">
-              {zoneTypeHint(draft.type, t)}
-            </div>
-            <Field label={t('Units')}>
-              <div className="flex items-center gap-1 text-xs">
-                <UnitToggleBtn
-                  active={draft.units === 'Pixels'}
-                  onClick={() => setUnits('Pixels')}
-                  label={t('Pixels')}
-                />
-                <UnitToggleBtn
-                  active={draft.units === 'Percent'}
-                  onClick={() => setUnits('Percent')}
-                  label={t('Percent')}
-                />
-              </div>
-            </Field>
-            {presets.length > 0 && (
-              <Field label={t('Preset')}>
-                <select
-                  defaultValue=""
-                  onChange={(e) => {
-                    if (e.target.value) applyPreset(Number(e.target.value));
-                    e.target.value = '';
-                  }}
-                  className={clsx('flex-1', fieldClasses('sm'))}
-                >
-                  <option value="" disabled>{t('Apply preset…')}</option>
-                  {presets.map((p) => (
-                    <option key={p.id} value={p.id}>{p.name}</option>
-                  ))}
-                </select>
-              </Field>
-            )}
-            {draftArea && (
-              <div className="text-xs font-mono text-fg-dim">
-                {/* "Draft", not "Zone Area": the settings panel shows the
-                    stored Zones.Area, and the two disagree while you drag. */}
-                {t('Draft area {{px}} px ({{pct}}%)', {
-                  px: draftArea.px.toLocaleString(),
-                  pct: draftArea.pct.toFixed(2),
-                })}
-              </div>
-            )}
-            <div className="text-xs text-fg-dim">
-              {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}
-            </div>
-
-            <ZoneSettingsFields
-              draft={draft}
-              onChange={setDraft}
-            />
-
-            <PointTable
-              points={draft.points}
-              maxX={width}
-              maxY={height}
-              onChange={(points) => setDraft({ ...draft, points })}
-            />
-
-            {selfIntersecting && (
-              <p role="alert" className="text-xs text-danger">
-                {t('Polygon edges must not intersect')}
-              </p>
-            )}
-
-            <div className="flex items-center justify-end gap-2 pt-1">
-              {draft.id != null && (
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (confirm(t('Delete zone "{{name}}"?', { name: draft.name }))) deleteMutation.mutate(draft.id!);
-                  }}
-                  disabled={deleteMutation.isPending}
-                  className={clsx(buttonClasses('secondary', 'sm'), 'text-danger hover:text-danger hover:border-danger/50')}
-                >
-                  <Trash2 size={10} />
-                  {t('Delete')}
-                </button>
-              )}
-              <button
-                type="button"
-                onClick={() => saveMutation.mutate()}
-                disabled={saveMutation.isPending || draft.points.length < 3 || !draft.name.trim() || selfIntersecting}
-                className={buttonClasses('primary', 'sm')}
-              >
-                <Save size={10} />
-                {t('Save')}
-              </button>
-            </div>
-          </div>
-        )}
+        {draft && <ZoneForm editor={editor} tool={tool} />}
       </div>
     </div>
   );
 }
 
-/**
- * Legacy's zone settings table (`views/zone.php:288-340`), which rows enable
- * and disable exactly as `applyZoneType` / `applyCheckMethod` do: an Inactive
- * or Privacy zone detects nothing so everything is off, Preclusive drops the
- * alarm colour and is the only type with Extend Alarm Frames, and the check
- * method reveals the filter and then the blob rows in turn.
- *
- * A disabled field is not sent on save, so its column keeps whatever it has —
- * the same as legacy, where the browser skips disabled inputs.
- */
-function ZoneSettingsFields({ draft, onChange }: {
-  draft: ZoneDraft;
-  onChange: (next: ZoneDraft) => void;
+/** Measure, still image, undo, and the Player select under the picture. */
+function ZoneStreamControls({ tool, player, hasDraft }: {
+  tool: ObjectSizeToolState;
+  player: ZonePlayerState;
+  hasDraft: boolean;
 }) {
   const { t } = useTranslation();
-  const enabled = zoneFieldEnabled(draft.type, draft.checkMethod);
-  // The area thresholds are read in the zone's own units, which is how
-  // ZoneMinder's analyser reads them back (`zm_zone.cpp:1015-1034`).
-  const areaSuffix = draft.units === 'Percent' ? '%' : t('px');
-  const areaMax = draft.units === 'Percent' ? 100 : undefined;
-
-  const setNum = (field: ZoneNumField, value: string) =>
-    onChange({ ...draft, nums: { ...draft.nums, [field]: value } });
-
+  const fileRef = useRef<HTMLInputElement | null>(null);
   return (
-    <div className="space-y-2 pt-1 border-t border-border-subtle">
-      <span className="text-label text-fg-dim">{t('Motion settings')}</span>
-
-      <SettingRow label={t('Alarm Colour')}>
-        <input
-          type="color"
-          value={draft.alarmHex || DEFAULT_ALARM_HEX}
-          disabled={!enabled.alarm_rgb}
-          onChange={(e) => onChange({ ...draft, alarmHex: e.target.value })}
-          aria-label={t('Alarm Colour')}
-          className="h-6 w-10 rounded border border-border-subtle bg-surface disabled:opacity-40"
-        />
-      </SettingRow>
-
-      <SettingRow label={t('Check Method')}>
+    <div className="flex flex-wrap items-center gap-2">
+      {hasDraft && (
+        <>
+          <button
+            type="button"
+            aria-pressed={tool.armed}
+            onClick={tool.toggleArmed}
+            title={t('Drag a box around the smallest object that should trigger an alarm, or type its size below')}
+            className={buttonClasses(tool.armed ? 'primary' : 'secondary', 'sm')}
+          >
+            <Scan size={12} />
+            {t('Measure object')}
+          </button>
+          <button
+            type="button"
+            aria-pressed={tool.stillShown}
+            onClick={() => {
+              if (!tool.stillUrl) fileRef.current?.click();
+              else tool.setStillShown(!tool.stillShown);
+            }}
+            title={tool.stillShown ? t('Go back to the live view') : t('Measure against a still image instead of the live view')}
+            className={buttonClasses(tool.stillShown ? 'primary' : 'secondary', 'sm')}
+          >
+            <ImageIcon size={12} />
+            {tool.stillShown ? t('Live view') : t('Still image')}
+          </button>
+          {tool.stillShown && (
+            <button type="button" onClick={() => fileRef.current?.click()} className={buttonClasses('ghost', 'sm')}>
+              {t('Replace this image')}
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="image/*"
+            hidden
+            data-testid="zone-still-file"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = '';
+              if (file) tool.loadStill(file);
+            }}
+          />
+          {tool.canUndo && (
+            <button type="button" onClick={tool.undo} className={buttonClasses('ghost', 'sm')} title={t('Undo the last object measurement')}>
+              <Undo2 size={12} />
+              {t('Undo measurement')}
+            </button>
+          )}
+        </>
+      )}
+      <label className="ms-auto inline-flex items-center gap-1.5 text-xs text-fg-dim">
+        {t('Player')}
         <select
-          value={draft.checkMethod}
-          disabled={!enabled.check_method}
-          onChange={(e) => onChange({ ...draft, checkMethod: e.target.value })}
-          aria-label={t('Check Method')}
-          className={clsx('w-full', fieldClasses('sm'), 'disabled:opacity-40')}
+          value={player.player}
+          onChange={(e) => player.setPlayer(e.target.value as ZonePlayer)}
+          className={fieldClasses('sm')}
         >
-          {CHECK_METHODS.map((m) => (
-            <option key={m} value={m}>{zoneCheckMethodLabel(m, t)}</option>
-          ))}
+          {player.options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
-      </SettingRow>
-
-      <NumPair
-        label={t('Min/Max Pixel Threshold')}
-        min={0} max={255}
-        fields={['min_pixel_threshold', 'max_pixel_threshold']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
-      <NumPair
-        label={t('Filter Width/Height')}
-        min={0}
-        fields={['filter_x', 'filter_y']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
-      <NumPair
-        label={t('Min/Max Alarmed Area')}
-        min={0} max={areaMax} step="any" suffix={areaSuffix}
-        fields={['min_alarm_pixels', 'max_alarm_pixels']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
-      <NumPair
-        label={t('Min/Max Filtered Area')}
-        min={0} max={areaMax} step="any" suffix={areaSuffix}
-        fields={['min_filter_pixels', 'max_filter_pixels']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
-      <NumPair
-        label={t('Min/Max Blob Area')}
-        min={0} max={areaMax} step="any" suffix={areaSuffix}
-        fields={['min_blob_pixels', 'max_blob_pixels']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
-      <NumPair
-        label={t('Min/Max Blobs')}
-        min={0}
-        fields={['min_blobs', 'max_blobs']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
-      <NumPair
-        label={t('Overload Frame Ignore Count')}
-        min={0}
-        fields={['overload_frames']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
-      <NumPair
-        label={t('Extend Alarm Frame Count')}
-        min={0}
-        fields={['extend_alarm_frames']}
-        draft={draft} enabled={enabled} onNum={setNum}
-      />
+      </label>
+      {tool.message && (
+        <p role="alert" className="basis-full text-xs text-warn">{tool.message}</p>
+      )}
     </div>
   );
 }
 
-/** One settings row: its label and the one or two numbers legacy puts on it. */
-function NumPair({ label, fields, draft, enabled, onNum, min, max, step, suffix }: {
+/** Legacy's "Rectangle measurement" table (`zone.php:339-372`). */
+function ObjectSizeSettings({ tool }: { tool: ObjectSizeToolState }) {
+  const { t } = useTranslation();
+  const ratio = (key: 'fraction' | 'filter' | 'blob', label: string, hint: string) => (
+    <label className="flex items-center gap-2 text-xs">
+      <span className="w-28 text-fg-dim">{label}</span>
+      <input
+        type="number"
+        min={1}
+        max={100}
+        step={1}
+        defaultValue={tool.ratios[key]}
+        key={`${key}-${tool.ratios[key]}`}
+        aria-label={label}
+        onBlur={(e) => tool.setRatio(key, e.target.value)}
+        className={clsx('w-16', fieldClasses('sm'))}
+      />
+      %
+      <span className="text-fg-faint">{hint}</span>
+    </label>
+  );
+  return (
+    <section className="rounded border border-border-subtle bg-surface p-3 space-y-2" aria-label={t('Rectangle measurement')}>
+      <span className="text-label text-fg-dim">{t('Rectangle measurement')}</span>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <span className="w-28 text-fg-dim">{t('Object size')}</span>
+        <input
+          type="number" min={1} step={1}
+          value={tool.typedWidth}
+          onChange={(e) => tool.setTypedWidth(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tool.applyTypedSize(); } }}
+          aria-label={t('Object width in pixels')}
+          className={clsx('w-20', fieldClasses('sm'))}
+        />
+        ×
+        <input
+          type="number" min={1} step={1}
+          value={tool.typedHeight}
+          onChange={(e) => tool.setTypedHeight(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); tool.applyTypedSize(); } }}
+          aria-label={t('Object height in pixels')}
+          className={clsx('w-20', fieldClasses('sm'))}
+        />
+        {t('px')}
+        <button type="button" onClick={tool.applyTypedSize} className={buttonClasses('secondary', 'sm')} title={t('Derive the detection settings from this object size')}>
+          {t('Apply')}
+        </button>
+        <span className="text-fg-faint">{t('in capture pixels, if you would rather not draw')}</span>
+      </div>
+      {ratio('fraction', t('Alarmed area'), t('of the drawn rectangle'))}
+      {ratio('filter', t('Filtered area'), t('of alarmed area'))}
+      {ratio('blob', t('Blob area'), t('of filtered area'))}
+    </section>
+  );
+}
+
+function ZoneForm({ editor, tool }: { editor: ZoneEditorState; tool: ObjectSizeToolState }) {
+  const { t } = useTranslation();
+  const draft = editor.draft!;
+  const enabled = editor.enabled!;
+  const detects = draft.type !== 'Inactive' && draft.type !== 'Privacy';
+
+  return (
+    <div className="rounded border border-border bg-surface p-3 space-y-2.5">
+      <div className="flex items-center justify-between">
+        <span className="text-label text-fg">
+          {draft.id == null ? t('New zone') : t('Editing #{{id}}', { id: draft.id })}
+        </span>
+        <button
+          onClick={editor.cancel}
+          aria-label={t('Cancel edit')}
+          className="p-1 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
+        >
+          <X size={11} />
+        </button>
+      </div>
+
+      <Field label={t('Name')}>
+        <input
+          aria-label={t('Name')}
+          value={draft.name}
+          onChange={(e) => editor.setDraft({ ...draft, name: e.target.value })}
+          className={clsx('flex-1', fieldClasses('sm'))}
+        />
+      </Field>
+      <Field label={t('Type')}>
+        <select
+          aria-label={t('Type')}
+          value={draft.type}
+          onChange={(e) => editor.setDraft({ ...draft, type: e.target.value })}
+          className={clsx('flex-1', fieldClasses('sm'))}
+        >
+          {ZONE_TYPE_ORDER.map((type) => (
+            <option key={type} value={type}>{zoneTypeLabel(type, t)}</option>
+          ))}
+        </select>
+      </Field>
+      <div className="text-xs text-fg-dim italic px-1">{zoneTypeHint(draft.type, t)}</div>
+      {editor.presets.length > 0 && (
+        <Field label={t('Preset')}>
+          <select
+            aria-label={t('Preset')}
+            value=""
+            disabled={!detects}
+            onChange={(e) => { if (e.target.value) editor.applyPreset(Number(e.target.value)); }}
+            className={clsx('flex-1', fieldClasses('sm'), 'disabled:opacity-40')}
+          >
+            <option value="">{t('Choose Preset')}</option>
+            {editor.presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </Field>
+      )}
+
+      <div className="text-xs font-mono text-fg-dim" data-testid="zone-area-readout">
+        {t('Zone Area {{pct}}% · {{px}} px', {
+          pct: editor.zonePct.toFixed(2),
+          px: editor.zonePx.toLocaleString(),
+        })}
+      </div>
+      <div className="text-xs text-fg-dim">
+        {t('{{count}} vertex · click an edge dot to insert · Alt-click a vertex to remove', { count: draft.points.length })}
+      </div>
+
+      <div className="space-y-2 pt-1 border-t border-border-subtle">
+        <span className="text-label text-fg-dim">{t('Motion settings')}</span>
+
+        <SettingRow label={t('Alarm Colour')}>
+          <input
+            type="color"
+            value={alarmToHex(draft.alarm)}
+            disabled={!enabled.alarm_rgb}
+            onChange={(e) => editor.setAlarmHex(e.target.value)}
+            aria-label={t('Alarm Colour')}
+            className="h-6 w-10 rounded border border-border-subtle bg-surface disabled:opacity-40"
+          />
+          {(['r', 'g', 'b'] as const).map((ch) => (
+            <input
+              key={ch}
+              type="number"
+              min={0}
+              max={255}
+              value={draft.alarm[ch]}
+              disabled={!enabled.alarm_rgb}
+              onChange={(e) => editor.setAlarmChannel(ch, e.target.value)}
+              aria-label={ch === 'r' ? t('Red') : ch === 'g' ? t('Green') : t('Blue')}
+              className={clsx('w-full min-w-0 tabular-nums', fieldClasses('sm'), 'disabled:opacity-40')}
+            />
+          ))}
+        </SettingRow>
+
+        <SettingRow label={t('Check Method')}>
+          <select
+            value={draft.checkMethod}
+            disabled={!enabled.check_method}
+            onChange={(e) => editor.setDraft({ ...draft, checkMethod: e.target.value })}
+            aria-label={t('Check Method')}
+            className={clsx('w-full', fieldClasses('sm'), 'disabled:opacity-40', tool.changed.has('check_method') && 'ring-1 ring-ok')}
+          >
+            {CHECK_METHODS.map((m) => <option key={m} value={m}>{zoneCheckMethodLabel(m, t)}</option>)}
+          </select>
+        </SettingRow>
+
+        <NumPair label={t('Min/Max Pixel Threshold')} min={0} max={255}
+          fields={['min_pixel_threshold', 'max_pixel_threshold']} editor={editor} tool={tool} />
+
+        <SettingRow label={t('Filter Width/Height')}>
+          {(['filter_x', 'filter_y'] as const).map((f, i) => (
+            <FilterSizeInput
+              key={f}
+              editor={editor}
+              field={f}
+              label={i === 0 ? t('Filter width') : t('Filter height')}
+              changed={tool.changed.has(f)}
+              className={clsx('w-full min-w-0 tabular-nums', fieldClasses('sm'), 'disabled:opacity-40')}
+            />
+          ))}
+        </SettingRow>
+
+        <AreaRow label={t('Min/Max Alarmed Area')} fields={['min_alarm_pixels', 'max_alarm_pixels']} editor={editor} tool={tool} />
+        <AreaRow label={t('Min/Max Filtered Area')} fields={['min_filter_pixels', 'max_filter_pixels']} editor={editor} tool={tool} />
+        <AreaRow label={t('Min/Max Blob Area')} fields={['min_blob_pixels', 'max_blob_pixels']} editor={editor} tool={tool} />
+
+        <NumPair label={t('Min/Max Blobs')} min={0} fields={['min_blobs', 'max_blobs']} editor={editor} tool={tool} />
+        <NumPair label={t('Overload Frame Ignore Count')} min={0} fields={['overload_frames']} editor={editor} tool={tool} />
+        <NumPair label={t('Extend Alarm Frame Count')} min={0} fields={['extend_alarm_frames']} editor={editor} tool={tool} />
+      </div>
+
+      <PointTable
+        points={draft.points}
+        maxX={editor.frame.width}
+        maxY={editor.frame.height}
+        onChange={(points) => editor.setDraft({ ...draft, points })}
+        inputClassName={fieldClasses('sm')}
+      />
+
+      {editor.selfIntersecting && (
+        <p role="alert" className="text-xs text-danger">{t('Polygon edges must not intersect')}</p>
+      )}
+      {editor.errors.length > 0 && (
+        <ul role="alert" aria-label={t('Cannot save the zone')} className="text-xs text-danger list-disc ps-4 space-y-0.5">
+          {editor.errors.filter((e) => !editor.selfIntersecting || e !== t('Polygon edges must not intersect'))
+            .map((e) => <li key={e}>{e}</li>)}
+        </ul>
+      )}
+
+      <div className="flex items-center justify-end gap-2 pt-1">
+        {draft.id != null && (
+          <button
+            type="button"
+            onClick={editor.remove}
+            disabled={editor.removing}
+            className={clsx(buttonClasses('secondary', 'sm'), 'text-danger hover:text-danger hover:border-danger/50 me-auto')}
+          >
+            <Trash2 size={10} />
+            {t('Delete')}
+          </button>
+        )}
+        <button
+          type="button"
+          onClick={editor.reset}
+          disabled={!editor.dirty}
+          className={buttonClasses('secondary', 'sm')}
+        >
+          <RotateCcw size={10} />
+          {t('Reset')}
+        </button>
+        <button
+          type="button"
+          onClick={editor.save}
+          disabled={editor.saving || draft.points.length < 3 || !draft.name.trim() || editor.selfIntersecting}
+          className={buttonClasses('primary', 'sm')}
+        >
+          <Save size={10} />
+          {t('Save')}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/** A min/max area row: two mirrored % + px pairs. */
+function AreaRow({ label, fields, editor, tool }: {
   label: string;
-  fields: readonly ZoneNumField[];
-  draft: ZoneDraft;
-  enabled: ZoneFieldEnabled;
-  onNum: (field: ZoneNumField, value: string) => void;
-  min?: number;
-  max?: number;
-  step?: string;
-  suffix?: string;
+  fields: readonly [ZoneAreaField, ZoneAreaField];
+  editor: ZoneEditorState;
+  tool: ObjectSizeToolState;
 }) {
   const { t } = useTranslation();
-  // "Min/Max Blobs" → "Min Blobs" / "Max Blobs" for the two boxes' labels.
+  return (
+    <SettingRow label={label}>
+      <div className="flex flex-col gap-1 w-full">
+        {fields.map((f, i) => (
+          <AreaPair
+            key={f}
+            editor={editor}
+            field={f}
+            label={t('{{label}} ({{which}})', { label, which: i === 0 ? t('min') : t('max') })}
+            changed={tool.changed.has(f)}
+            inputClassName={clsx('w-20 tabular-nums', fieldClasses('sm'), 'disabled:opacity-40')}
+            suffixClassName="text-xs text-fg-dim"
+          />
+        ))}
+      </div>
+    </SettingRow>
+  );
+}
+
+/** One settings row: its label and the one or two numbers legacy puts on it. */
+function NumPair({ label, fields, editor, tool, min, max }: {
+  label: string;
+  fields: readonly ZoneNumField[];
+  editor: ZoneEditorState;
+  tool: ObjectSizeToolState;
+  min?: number;
+  max?: number;
+}) {
+  const { t } = useTranslation();
+  const draft = editor.draft!;
+  const enabled = editor.enabled!;
+  // "Min/Max Blobs" → "Min/Max Blobs (min)" / "(max)" for the two boxes' labels.
   const boxLabel = (i: number) =>
     fields.length === 1 ? label : t('{{label}} ({{which}})', { label, which: i === 0 ? t('min') : t('max') });
 
   return (
     <SettingRow label={label}>
-      <span className="flex flex-1 items-center gap-1">
-        {fields.map((field, i) => (
-          <input
-            key={field}
-            type="number"
-            inputMode="decimal"
-            min={min}
-            max={max}
-            step={step}
-            value={draft.nums[field]}
-            disabled={!enabled[field]}
-            aria-label={boxLabel(i)}
-            onChange={(e) => onNum(field, e.target.value)}
-            className={clsx('w-full min-w-0 tabular-nums', fieldClasses('sm'), 'disabled:opacity-40')}
-          />
-        ))}
-        {suffix && <span className="text-xs text-fg-dim">{suffix}</span>}
-      </span>
+      {fields.map((field, i) => (
+        <input
+          key={field}
+          type="number"
+          inputMode="decimal"
+          min={min}
+          max={max}
+          value={draft.nums[field]}
+          disabled={!enabled[field]}
+          aria-label={boxLabel(i)}
+          onChange={(e) => editor.setNum(field, e.target.value)}
+          className={clsx('w-full min-w-0 tabular-nums', fieldClasses('sm'), 'disabled:opacity-40', tool.changed.has(field) && 'ring-1 ring-ok')}
+        />
+      ))}
     </SettingRow>
   );
 }
@@ -662,7 +498,7 @@ function NumPair({ label, fields, draft, enabled, onNum, min, max, step, suffix 
  * three-column table, which does not fit an 18rem sidebar — "Overload Frame
  * Ignore Count" alone is wider than the label column would be.
  */
-function SettingRow({ label, children }: { label: string; children: React.ReactNode }) {
+function SettingRow({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="space-y-0.5">
       <span className="text-label text-fg-dim block">{label}</span>
@@ -671,319 +507,11 @@ function SettingRow({ label, children }: { label: string; children: React.ReactN
   );
 }
 
-/**
- * Legacy's point table (`zone.php:371-405`, built by `drawZonePoints`):
- * one row per vertex with X and Y as numbers, `+` inserting the midpoint
- * between this vertex and the next (wrapping at the end, `zone.js:399`) and
- * `−` deleting it. The canvas and this table edit the same array, so
- * dragging a handle moves the numbers and typing a number moves the handle.
- */
-function PointTable({ points, maxX, maxY, onChange }: {
-  points: Point[];
-  maxX: number;
-  maxY: number;
-  onChange: (points: Point[]) => void;
-}) {
-  const { t } = useTranslation();
-  const clamp = (v: number, hi: number) => Math.min(Math.max(v, 0), hi);
-  const setCoord = (i: number, axis: 'x' | 'y', raw: string) => {
-    const n = Number(raw);
-    if (!Number.isFinite(n)) return;
-    const next = points.slice();
-    next[i] = { ...next[i], [axis]: clamp(n, axis === 'x' ? maxX : maxY) };
-    onChange(next);
-  };
-
-  return (
-    <table className="w-full text-xs tabular-nums" aria-label={t('Points')}>
-      <thead>
-        <tr className="text-fg-dim">
-          <th scope="col" className="text-start font-normal w-6">{t('Point')}</th>
-          <th scope="col" className="text-start font-normal">{t('X')}</th>
-          <th scope="col" className="text-start font-normal">{t('Y')}</th>
-          <th scope="col" className="text-end font-normal w-12">{t('Action')}</th>
-        </tr>
-      </thead>
-      <tbody>
-        {points.map((pt, i) => (
-          <tr key={i}>
-            <td className="text-fg-dim">{i + 1}</td>
-            <td className="pe-1">
-              <input
-                type="number"
-                step="any"
-                min={0}
-                max={maxX}
-                value={Math.round(pt.x * 100) / 100}
-                aria-label={t('Point {{n}} X', { n: i + 1 })}
-                onChange={(e) => setCoord(i, 'x', e.target.value)}
-                className={clsx('w-full', fieldClasses('sm'))}
-              />
-            </td>
-            <td className="pe-1">
-              <input
-                type="number"
-                step="any"
-                min={0}
-                max={maxY}
-                value={Math.round(pt.y * 100) / 100}
-                aria-label={t('Point {{n}} Y', { n: i + 1 })}
-                onChange={(e) => setCoord(i, 'y', e.target.value)}
-                className={clsx('w-full', fieldClasses('sm'))}
-              />
-            </td>
-            <td className="text-end whitespace-nowrap">
-              <button
-                type="button"
-                aria-label={t('Add a point after point {{n}}', { n: i + 1 })}
-                onClick={() => onChange(insertMidpoint(points, i))}
-                className="px-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2"
-              >
-                +
-              </button>
-              <button
-                type="button"
-                aria-label={t('Remove point {{n}}', { n: i + 1 })}
-                disabled={points.length <= 3}
-                onClick={() => onChange(points.filter((_, j) => j !== i))}
-                className="px-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 disabled:opacity-40"
-              >
-                −
-              </button>
-            </td>
-          </tr>
-        ))}
-      </tbody>
-    </table>
-  );
-}
-
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="flex items-center gap-2">
-      <label className="text-label text-fg-dim w-14 flex-shrink-0">
-        {label}
-      </label>
+      <label className="text-label text-fg-dim w-14 flex-shrink-0">{label}</label>
       {children}
     </div>
-  );
-}
-
-function UnitToggleBtn({ active, onClick, label }: {
-  active: boolean; onClick: () => void; label: string;
-}) {
-  return (
-    <button
-      type="button"
-      aria-pressed={active}
-      onClick={onClick}
-      className={clsx(
-        'px-2 py-0.5 rounded border transition-colors',
-        active
-          ? 'border-accent/30 bg-accent/12 text-accent'
-          : 'border-border-subtle text-fg-dim hover:text-fg hover:bg-surface-2',
-      )}
-    >
-      {label}
-    </button>
-  );
-}
-
-interface ZoneCanvasProps {
-  monitorWidth: number;
-  monitorHeight: number;
-  snapshotUrl: string | null;
-  otherZones: Zone[];
-  draft: { id: number | null; name: string; type: string; points: Point[] } | null;
-  onDraftPointsChange: (points: Point[]) => void;
-}
-
-/**
- * The SVG overlay does its math in the monitor's native pixel space and
- * relies on viewBox to scale to whatever rendered size the parent gives it.
- * Pointer coordinates are translated through the bounding rect.
- */
-function ZoneCanvas({
-  monitorWidth, monitorHeight, snapshotUrl, otherZones, draft, onDraftPointsChange,
-}: ZoneCanvasProps) {
-  const { t } = useTranslation();
-  const svgRef = useRef<SVGSVGElement | null>(null);
-  const [dragIndex, setDragIndex] = useState<number | null>(null);
-
-  // Translate a pointer event into native-pixel coords.
-  const ptFromEvent = (e: ReactPointerEvent<Element>): Point => {
-    const svg = svgRef.current;
-    if (!svg) return { x: 0, y: 0 };
-    const rect = svg.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * monitorWidth;
-    const y = ((e.clientY - rect.top) / rect.height) * monitorHeight;
-    return {
-      x: Math.max(0, Math.min(monitorWidth, x)),
-      y: Math.max(0, Math.min(monitorHeight, y)),
-    };
-  };
-
-  // Pointer move while dragging a vertex.
-  useEffect(() => {
-    if (dragIndex == null) return;
-    const onMove = (e: PointerEvent) => {
-      if (!draft || !svgRef.current) return;
-      const rect = svgRef.current.getBoundingClientRect();
-      const x = ((e.clientX - rect.left) / rect.width) * monitorWidth;
-      const y = ((e.clientY - rect.top) / rect.height) * monitorHeight;
-      const next = draft.points.slice();
-      next[dragIndex] = {
-        x: Math.max(0, Math.min(monitorWidth, x)),
-        y: Math.max(0, Math.min(monitorHeight, y)),
-      };
-      onDraftPointsChange(next);
-    };
-    const onUp = () => setDragIndex(null);
-    window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', onUp);
-    return () => {
-      window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', onUp);
-    };
-  }, [dragIndex, draft, monitorWidth, monitorHeight, onDraftPointsChange]);
-
-  const draftColor = useMemo(
-    () => (draft ? ZONE_TYPE_COLORS[draft.type] ?? ZONE_TYPE_COLORS.Active : null),
-    [draft],
-  );
-
-  return (
-    <div dir="ltr" className="relative w-full rounded overflow-hidden border border-border-subtle bg-bg-sunken">
-      {/* Snapshot — sized via aspect-ratio to the camera resolution */}
-      <div className="relative" style={{ aspectRatio: `${monitorWidth} / ${monitorHeight}` }}>
-        {snapshotUrl && (
-          <img
-            src={snapshotUrl}
-            alt={t('Monitor snapshot')}
-            className="absolute inset-0 w-full h-full object-contain pointer-events-none"
-          />
-        )}
-
-        <svg
-          ref={svgRef}
-          viewBox={`0 0 ${monitorWidth} ${monitorHeight}`}
-          className="absolute inset-0 w-full h-full"
-          preserveAspectRatio="xMidYMid meet"
-          style={{ touchAction: 'none' }}
-        >
-          {/* Read-only other zones, drawn first so the editable one is on top */}
-          {otherZones.map((z) => {
-            const c = ZONE_TYPE_COLORS[z.type] ?? ZONE_TYPE_COLORS.Active;
-            const pts = parseCoords(z.coords).map((p) => `${p.x},${p.y}`).join(' ');
-            return (
-              <polygon
-                key={z.id}
-                points={pts}
-                fill={c.fill}
-                stroke={c.stroke}
-                strokeOpacity={0.4}
-                strokeWidth={Math.max(2, monitorWidth / 600)}
-                strokeDasharray="6 4"
-              />
-            );
-          })}
-
-          {/* Editable draft polygon + handles */}
-          {draft && draftColor && (
-            <PolygonEditable
-              points={draft.points}
-              color={draftColor}
-              monitorWidth={monitorWidth}
-              onVertexDown={(i, e) => {
-                if (e.altKey && draft.points.length > 3) {
-                  // Alt-click removes the vertex
-                  const next = draft.points.filter((_, idx) => idx !== i);
-                  onDraftPointsChange(next);
-                  return;
-                }
-                e.currentTarget.setPointerCapture(e.pointerId);
-                setDragIndex(i);
-              }}
-              onMidpointDown={(i) => {
-                const next = insertMidpoint(draft.points, i);
-                onDraftPointsChange(next);
-                // Start dragging the freshly-inserted vertex.
-                setDragIndex(i + 1);
-              }}
-              ptFromEvent={ptFromEvent}
-            />
-          )}
-        </svg>
-      </div>
-    </div>
-  );
-}
-
-interface PolygonEditableProps {
-  points: Point[];
-  color: { stroke: string; fill: string };
-  monitorWidth: number;
-  onVertexDown: (i: number, e: ReactPointerEvent<SVGCircleElement>) => void;
-  onMidpointDown: (i: number) => void;
-  ptFromEvent: (e: ReactPointerEvent<Element>) => Point;
-}
-
-function PolygonEditable({
-  points, color, monitorWidth, onVertexDown, onMidpointDown,
-}: PolygonEditableProps) {
-  const strokeWidth = Math.max(2, monitorWidth / 500);
-  const vertexR = Math.max(8, monitorWidth / 120);
-  const midR = vertexR * 0.55;
-
-  const pointsStr = points.map((p) => `${p.x},${p.y}`).join(' ');
-
-  return (
-    <>
-      <polygon
-        points={pointsStr}
-        fill={color.fill}
-        stroke={color.stroke}
-        strokeWidth={strokeWidth}
-      />
-
-      {/* Midpoint handles between consecutive vertices */}
-      {points.map((p, i) => {
-        const next = points[(i + 1) % points.length];
-        const mx = (p.x + next.x) / 2;
-        const my = (p.y + next.y) / 2;
-        return (
-          <circle
-            key={`mid-${i}`}
-            cx={mx}
-            cy={my}
-            r={midR}
-            fill="rgba(255,255,255,0.85)"
-            stroke={color.stroke}
-            strokeWidth={strokeWidth / 2}
-            style={{ cursor: 'crosshair' }}
-            onPointerDown={(e) => {
-              e.stopPropagation();
-              onMidpointDown(i);
-            }}
-          />
-        );
-      })}
-
-      {/* Vertex handles */}
-      {points.map((p, i) => (
-        <circle
-          key={`v-${i}`}
-          cx={p.x}
-          cy={p.y}
-          r={vertexR}
-          fill={color.stroke}
-          stroke="#fff"
-          strokeWidth={strokeWidth}
-          style={{ cursor: 'grab' }}
-          onPointerDown={(e) => onVertexDown(i, e)}
-          onContextMenu={(e) => e.preventDefault()}
-        />
-      ))}
-    </>
   );
 }

@@ -235,7 +235,8 @@ export function makeZone(overrides: Partial<Zone> = {}): Zone {
     filter_y: 3,
     min_filter_pixels: 3456,
     max_filter_pixels: 691200,
-    min_blob_pixels: 6912,
+    // ≤ min_filter_pixels, as legacy's validateForm insists.
+    min_blob_pixels: 1728,
     max_blob_pixels: null,
     min_blobs: 1,
     max_blobs: null,

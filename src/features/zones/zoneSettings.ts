@@ -1,5 +1,6 @@
 import type { TFunction } from 'i18next';
 import type { Zone } from '@/api/zones';
+import { coordsArePercent } from './zoneArea';
 
 /** What we print where the backend sent null — never "0", never "null". */
 const DASH = '—';
@@ -35,9 +36,11 @@ function num(value: number | null | undefined): string {
 }
 
 /**
- * The alarm / filter / blob thresholds are stored in the zone's own `Units`,
- * so a Percent zone reports "0.05%" where a Pixels zone reports "3,456" —
- * the same thing legacy does with its per-unit `step` attributes.
+ * The alarm / filter / blob thresholds are percentages of the zone when its
+ * coords are percentages, and pixel counts otherwise — that is how the
+ * daemon reads them back (`zm_zone.cpp:1060-1076`), whatever `Units` says.
+ * So a zone legacy 1.39.41 saved reports "0.05%" where an integer-coord
+ * zone reports "3,456".
  */
 function threshold(value: number | null | undefined, units: string): string {
   if (value == null || !Number.isFinite(value)) return DASH;
@@ -67,7 +70,7 @@ export interface ZoneSettingRow {
  * every field below and each row would read as an em dash.
  */
 export function zoneSettingRows(zone: Zone, t: TFunction): ZoneSettingRow[] {
-  const units = zone.units;
+  const units = coordsArePercent(zone.coords) ? 'Percent' : 'Pixels';
   const hex = alarmRgbToHex(zone.alarm_rgb);
 
   return [
