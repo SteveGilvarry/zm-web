@@ -29,7 +29,7 @@ async function reportsTable() {
 describe('ReportsListPage — modern skin', () => {
   it('renders every saved report with its filter, range and interval', async () => {
     db.reports = [
-      makeReport({ id: 1, name: 'Nightly', filter_id: 1, interval: 1440 }),
+      makeReport({ id: 1, name: 'Nightly', filter_id: 1, interval: 86400 }),
       makeReport({
         id: 2,
         name: null,
@@ -38,7 +38,7 @@ describe('ReportsListPage — modern skin', () => {
         start_date_time: null,
         end_date_time: null,
       }),
-      makeReport({ id: 3, name: 'Orphaned', filter_id: 99, interval: 15 }),
+      makeReport({ id: 3, name: 'Orphaned', filter_id: 99, interval: 900 }),
     ];
     db.filters = [makeFilter({ id: 1, name: 'Recent motion' })];
 
@@ -47,7 +47,7 @@ describe('ReportsListPage — modern skin', () => {
 
     expect(
       table.getAllByRole('columnheader').map((th) => th.textContent),
-    ).toEqual(['Name', 'Filter', 'Range', 'Interval', '']);
+    ).toEqual(['', 'Name', 'Filter', 'Range', 'Interval', '']);
 
     // Name links to the detail route.
     expect(table.getByRole('link', { name: 'Nightly' })).toHaveAttribute(
@@ -57,7 +57,9 @@ describe('ReportsListPage — modern skin', () => {
     // Report 1 resolves its filter id to the filter's name.
     const nightly = within(table.getByRole('link', { name: 'Nightly' }).closest('tr')!);
     expect(nightly.getByText('Recent motion')).toBeInTheDocument();
-    expect(nightly.getByText('1440 min')).toBeInTheDocument();
+    // The API stores seconds; 86400 reads as a day, 900 as a quarter hour.
+    expect(nightly.getByText(/^1 day/)).toBeInTheDocument();
+    expect(table.getByText('15 min')).toBeInTheDocument();
     // Rendered through `useDateTimeFormat()` — with no server patterns set
     // that is Intl's medium date + 24h time in the viewer's zone, not the
     // page's old `toLocaleString()`.
@@ -130,13 +132,13 @@ describe('ReportsListPage — modern skin', () => {
 
     await user.type(within(form).getByPlaceholderText('Weekly motion report'), 'Weekend sweep');
     await user.selectOptions(within(form).getByRole('combobox'), '1');
-    await user.type(within(form).getByPlaceholderText('minutes (blank = one-off)'), '30');
+    await user.type(within(form).getByPlaceholderText('seconds (blank = one-off)'), '3600');
     await user.click(screen.getByRole('button', { name: 'Create report' }));
 
     await waitFor(() => expect(body).toBeDefined());
     expect(body!.name).toBe('Weekend sweep');
     expect(body!.filter_id).toBe(1);
-    expect(body!.interval).toBe(30);
+    expect(body!.interval).toBe(3600);
     // Defaults are "the last seven days", sent as full ISO timestamps.
     const startMs = Date.parse(body!.start_date_time as string);
     const endMs = Date.parse(body!.end_date_time as string);
@@ -284,6 +286,37 @@ describe('ReportsListPage — modern skin', () => {
     await user.click(table.getAllByRole('button', { name: 'Delete report' })[0]);
 
     expect(await screen.findByText(/report is referenced/i)).toBeVisible();
+  });
+
+  it('deletes the marked reports in one go after confirming', async () => {
+    db.reports = [
+      makeReport({ id: 1, name: 'Nightly' }),
+      makeReport({ id: 2, name: 'Weekend sweep' }),
+      makeReport({ id: 3, name: 'Keep me' }),
+    ];
+    const user = userEvent.setup();
+    const deleted: string[] = [];
+    server.use(
+      http.delete('/api/v3/reports/:id', ({ params }) => {
+        deleted.push(String(params.id));
+        db.reports = db.reports.filter((r: Report) => r.id !== Number(params.id));
+        return HttpResponse.json({ message: 'deleted' });
+      }),
+    );
+
+    renderRoute('/reports');
+    const table = await reportsTable();
+    expect(screen.queryByRole('button', { name: /selected/ })).toBeNull();
+
+    await user.click(table.getByRole('checkbox', { name: 'Mark Nightly' }));
+    await user.click(table.getByRole('checkbox', { name: 'Mark Weekend sweep' }));
+    await user.click(screen.getByRole('button', { name: 'Delete 2 selected' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(deleted).toEqual(['1', '2']));
+    await waitFor(() => expect(screen.queryByRole('link', { name: 'Nightly' })).toBeNull());
+    expect(screen.getByRole('link', { name: 'Keep me' })).toBeVisible();
+    expect(screen.queryByRole('button', { name: /selected/ })).toBeNull();
   });
 
   it('lists every saved filter as a create-form option', async () => {

@@ -20,6 +20,13 @@ export interface ReportsListPageState {
   /** Called by the create form once the backend accepts the new report. */
   onCreated: () => void;
   remove: (id: number) => void;
+  /** Marked rows (legacy's checkbox column), for Delete on the toolbar. */
+  selectedIds: Set<number>;
+  toggleSelected: (id: number) => void;
+  toggleAll: () => void;
+  /** Delete every marked report, then clear the marks. */
+  removeSelected: () => void;
+  isDeleting: boolean;
 }
 
 /** Saved-report table + create toggle for the Reports list page. */
@@ -44,10 +51,26 @@ export function useReportsListPage(): ReportsListPageState {
 
   const [showCreate, setShowCreate] = useState(false);
 
+  const [selected, setSelected] = useState<Set<number>>(() => new Set());
+  // Marks on rows that are gone (deleted elsewhere, refetched) do not count.
+  const selectedIds = new Set(reports.filter((r) => selected.has(r.id)).map((r) => r.id));
+
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteReport(id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['reports'] }),
-    onError: toast.apiError,
+    mutationFn: async (ids: number[]) => {
+      for (const id of ids) await deleteReport(id);
+    },
+    onSuccess: (_d, ids) => {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        for (const id of ids) next.delete(id);
+        return next;
+      });
+      qc.invalidateQueries({ queryKey: ['reports'] });
+    },
+    onError: (err) => {
+      qc.invalidateQueries({ queryKey: ['reports'] });
+      toast.apiError(err);
+    },
   });
 
   return {
@@ -65,7 +88,21 @@ export function useReportsListPage(): ReportsListPageState {
       qc.invalidateQueries({ queryKey: ['reports'] });
       setShowCreate(false);
     },
-    remove: (id: number) => deleteMutation.mutate(id),
+    remove: (id: number) => deleteMutation.mutate([id]),
+    selectedIds,
+    toggleSelected: (id: number) => setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    }),
+    toggleAll: () => setSelected(
+      selectedIds.size === reports.length ? new Set() : new Set(reports.map((r) => r.id)),
+    ),
+    removeSelected: () => {
+      if (selectedIds.size > 0) deleteMutation.mutate([...selectedIds]);
+    },
+    isDeleting: deleteMutation.isPending,
   };
 }
 

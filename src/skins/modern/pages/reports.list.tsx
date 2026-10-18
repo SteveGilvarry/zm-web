@@ -1,12 +1,15 @@
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Plus, Trash2 } from 'lucide-react';
+import { Plus, RefreshCw, Trash2 } from 'lucide-react';
+import { useState } from 'react';
 
 import { AppShell } from '@/skins/AppShell';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { useDateRangeFormat } from '@/features/reports/datetime';
+import { formatInterval } from '@/features/reports/interval';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
 import {
   useCreateReportForm,
@@ -31,7 +34,8 @@ export default function ReportsListPage() {
   useDocumentTitle(t('Reports'));
   const s = useReportsListPage();
   const formatDateRange = useDateRangeFormat();
-  const { reports, filters, filterLookup, showCreate } = s;
+  const [confirming, setConfirming] = useState(false);
+  const { reports, filters, filterLookup, showCreate, selectedIds } = s;
 
   if (!s.isAuthenticated) return null;
 
@@ -41,7 +45,25 @@ export default function ReportsListPage() {
         <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
           <span className="text-sm text-fg-muted">{t('Saved reports')}</span>
           <span className="ms-auto" />
+          <button
+            onClick={s.refetch}
+            aria-label={t('Refresh')}
+            title={t('Refresh')}
+            className="inline-flex p-1 rounded text-fg-dim hover:text-fg transition-colors"
+          >
+            <RefreshCw size={12} aria-hidden />
+          </button>
           <RequirePerm feature="events" level="Edit">
+            {selectedIds.size > 0 && (
+              <button
+                onClick={() => setConfirming(true)}
+                disabled={s.isDeleting}
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-danger hover:bg-surface-2 transition-colors disabled:opacity-50"
+              >
+                <Trash2 size={12} aria-hidden />
+                {t('Delete {{count}} selected', { count: selectedIds.size })}
+              </button>
+            )}
             <button
               onClick={s.toggleCreate}
               aria-expanded={showCreate}
@@ -76,6 +98,15 @@ export default function ReportsListPage() {
               <table className="w-full text-sm">
                 <thead className="sticky top-0 z-10 bg-surface border-b border-border-subtle">
                   <tr>
+                    <th scope="col" className="w-8 px-3 py-2 text-start">
+                      <input
+                        type="checkbox"
+                        aria-label={t('Select all')}
+                        checked={reports.length > 0 && selectedIds.size === reports.length}
+                        onChange={s.toggleAll}
+                        className="accent-accent"
+                      />
+                    </th>
                     <th scope="col" className="px-3 py-2 text-start text-xs font-medium text-fg-dim">{t('Name')}</th>
                     <th scope="col" className="px-3 py-2 text-start text-xs font-medium text-fg-dim">{t('Filter')}</th>
                     <th scope="col" className="px-3 py-2 text-start text-xs font-medium text-fg-dim">{t('Range')}</th>
@@ -86,6 +117,15 @@ export default function ReportsListPage() {
                 <tbody>
                   {reports.map((r) => (
                     <tr key={r.id} className="border-b border-border-subtle last:border-0 hover:bg-surface-2 transition-colors">
+                      <td className="px-3 py-1">
+                        <input
+                          type="checkbox"
+                          aria-label={t('Mark {{name}}', { name: r.name || `#${r.id}` })}
+                          checked={selectedIds.has(r.id)}
+                          onChange={() => s.toggleSelected(r.id)}
+                          className="accent-accent"
+                        />
+                      </td>
                       <td className="px-3 py-1">
                         <Link
                           to="/reports/$reportId"
@@ -104,7 +144,7 @@ export default function ReportsListPage() {
                         {formatDateRange(r.start_date_time, r.end_date_time)}
                       </td>
                       <td className="px-3 py-1 font-mono tabular-nums text-fg-muted">
-                        {r.interval != null ? t('{{count}} min', { count: r.interval }) : t('one-off')}
+                        {formatInterval(t, r.interval)}
                       </td>
                       <td className="px-3 py-1 text-end">
                         <RequirePerm feature="events" level="Edit">
@@ -133,6 +173,20 @@ export default function ReportsListPage() {
           <span>{t('{{count}} report', { count: reports.length })}</span>
         </div>
       </main>
+
+      <ConfirmDialog
+        isOpen={confirming}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => {
+          s.removeSelected();
+          setConfirming(false);
+        }}
+        title={t('Delete reports')}
+        message={t('Are you sure you wish to delete the selected reports?')}
+        confirmText={t('Delete')}
+        variant="danger"
+        isLoading={s.isDeleting}
+      />
     </AppShell>
   );
 }
@@ -188,13 +242,13 @@ function CreateReportForm({
           className={field}
         />
       </Field>
-      <Field label={t('Interval')}>
+      <Field label={t('Interval (seconds)')}>
         <input
           type="number"
           min={0}
           value={f.interval}
           onChange={(e) => f.setInterval(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-          placeholder={t('minutes (blank = one-off)')}
+          placeholder={t('seconds (blank = one-off)')}
           className={clsx(field, 'w-48')}
         />
       </Field>

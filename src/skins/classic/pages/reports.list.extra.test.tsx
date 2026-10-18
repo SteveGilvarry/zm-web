@@ -99,14 +99,15 @@ describe('ClassicReportsListPage — extra paths', () => {
     await mount();
     await screen.findByText('Weekly motion');
 
-    await user.click(screen.getByRole('button', { name: '+ New' }));
+    await user.click(screen.getByRole('button', { name: 'Add New Report' }));
     const form = screen.getByTestId('report-create-form');
     await user.selectOptions(within(form).getByLabelText('Filter'), '7');
     await user.clear(within(form).getByLabelText('Start'));
     await user.type(within(form).getByLabelText('Start'), '2026-08-01T00:00');
     await user.clear(within(form).getByLabelText('End'));
     await user.type(within(form).getByLabelText('End'), '2026-08-08T00:00');
-    await user.type(within(form).getByLabelText('Interval'), '30');
+    // Seconds, as the API stores them: one day.
+    await user.type(within(form).getByLabelText('Interval'), '86400');
     await user.click(within(form).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(created).toHaveLength(1));
@@ -116,7 +117,7 @@ describe('ClassicReportsListPage — extra paths', () => {
       start_date_time: toApiDateTime(new Date('2026-08-01T00:00')),
       end_date_time: toApiDateTime(new Date('2026-08-08T00:00')),
       filter_id: 7,
-      interval: 30,
+      interval: 86400,
     });
     // A successful create closes the form again.
     await waitFor(() => expect(screen.queryByTestId('report-create-form')).toBeNull());
@@ -128,7 +129,7 @@ describe('ClassicReportsListPage — extra paths', () => {
     await mount();
     await screen.findByText('Weekly motion');
 
-    await user.click(screen.getByRole('button', { name: '+ New' }));
+    await user.click(screen.getByRole('button', { name: 'Add New Report' }));
     const form = screen.getByTestId('report-create-form');
     await user.type(within(form).getByLabelText('Name'), '  Nightly  ');
     await user.click(within(form).getByRole('button', { name: 'Save' }));
@@ -137,45 +138,50 @@ describe('ClassicReportsListPage — extra paths', () => {
     expect(created[0]).toMatchObject({ name: 'Nightly', filter_id: null, interval: null });
   });
 
-  it('deletes a report after confirming', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('deletes the marked reports after the legacy confirmation', async () => {
     stub();
     const user = userEvent.setup();
     await mount();
     await screen.findByText('Weekly motion');
 
-    const row = screen.getByTestId('report-row-1');
-    await user.click(within(row).getByRole('button', { name: 'Delete report' }));
+    const del = screen.getByRole('button', { name: 'Delete' });
+    expect(del).toBeDisabled();
+    await user.click(within(screen.getByTestId('report-row-1')).getByRole('checkbox'));
+    await user.click(within(screen.getByTestId('report-row-2')).getByRole('checkbox'));
+    expect(del).toBeEnabled();
+    await user.click(del);
 
-    expect(confirm).toHaveBeenCalledWith('Delete report "Weekly motion"?');
-    await waitFor(() => expect(deleted).toEqual(['1']));
+    expect(screen.getByText('Are you sure you wish to delete the selected reports?')).toBeInTheDocument();
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+    await waitFor(() => expect(deleted).toEqual(['1', '2']));
   });
 
-  it('leaves the report alone when the confirmation is dismissed', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('marks every row from the header box and leaves them alone when the dialog is cancelled', async () => {
     stub();
     const user = userEvent.setup();
     await mount();
     await screen.findByText('Weekly motion');
 
-    await user.click(within(screen.getByTestId('report-row-1')).getByRole('button', { name: 'Delete report' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }));
+    expect(within(screen.getByTestId('report-row-2')).getByRole('checkbox')).toBeChecked();
+    await user.click(screen.getByRole('button', { name: 'Delete' }));
+    await user.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Cancel' }));
     expect(deleted).toEqual([]);
   });
 
-  it('falls back to "untitled" and "#id" when the report has no name or an unknown filter', async () => {
+  it('falls back to "untitled" when the report has no name, and leaves blank cells blank', async () => {
     stub();
     await mount();
 
     const row = await screen.findByTestId('report-row-2');
     expect(within(row).getByText('untitled')).toBeInTheDocument();
-    expect(within(row).getByText('#99')).toBeInTheDocument();
-    expect(within(row).getAllByText('—')).toHaveLength(2);
+    expect(within(row).queryByText('—')).toBeNull();
   });
 
   it('shows the empty message when there are no saved reports', async () => {
     stub([]);
     await mount();
-    expect(await screen.findByText('No reports yet. Create one to start.')).toBeInTheDocument();
+    expect(await screen.findByText('No matching records found')).toBeInTheDocument();
     expect(screen.queryByTestId('reports-table')).toBeNull();
   });
 
@@ -185,7 +191,7 @@ describe('ClassicReportsListPage — extra paths', () => {
     await mount();
 
     await screen.findByText('Weekly motion');
-    expect(screen.queryByRole('button', { name: '+ New' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Add New Report' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete report' })).toBeNull();
   });
 
@@ -197,6 +203,6 @@ describe('ClassicReportsListPage — extra paths', () => {
     await mount();
 
     expect(await screen.findByText('Cannot reach the server.')).toBeInTheDocument();
-    expect(screen.queryByText('No reports yet. Create one to start.')).toBeNull();
+    expect(screen.queryByText('No matching records found')).toBeNull();
   });
 });
