@@ -21,6 +21,7 @@ import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
 import { makeMonitor, makePtzCapabilities } from '@/test/fixtures';
 import { useToastStore } from '@/components/common/toastStore';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import type { StreamConnectionState } from '@/types';
 
 const { streamCalls, stream } = vi.hoisted(() => ({
@@ -59,7 +60,10 @@ beforeEach(() => {
 
 // Toasts live in a module-level store the shell renders as role="alert",
 // so an error raised by one test would otherwise be found by the next.
-afterEach(() => useToastStore.getState().clear());
+afterEach(() => {
+  useToastStore.getState().clear();
+  useWatchPrefsStore.setState(useWatchPrefsStore.getInitialState());
+});
 
 /** The page is a lazy chunk; the header <h1> is the first thing it names. */
 async function findWatch(name: string) {
