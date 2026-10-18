@@ -54,13 +54,23 @@ describe('useConsoleColumnsStore', () => {
     expect(useConsoleColumnsStore.getState().hidden).toEqual([...DEFAULT_HIDDEN]);
   });
 
-  it('persists only the hidden list under the legacy storage key', () => {
+  it('persists the columns and the zmConsoleTable view state, nothing else', () => {
     useConsoleColumnsStore.getState().toggle('zones');
+    useConsoleColumnsStore.getState().setView({ sortKey: 'name', sortDir: 'desc', pageSize: 50, page: 2, search: 'door' });
     const raw = localStorage.getItem('zm-console-columns');
     expect(raw).not.toBeNull();
     const parsed = JSON.parse(raw!) as { state: Record<string, unknown> };
-    expect(Object.keys(parsed.state)).toEqual(['hidden']);
+    expect(Object.keys(parsed.state).sort()).toEqual(['hidden', 'page', 'pageSize', 'search', 'sortDir', 'sortKey']);
+    expect(parsed.state).toMatchObject({ sortKey: 'name', sortDir: 'desc', pageSize: 50, page: 2, search: 'door' });
     expect(parsed.state.hidden).toContain('zones');
+  });
+
+  it('resetColumns leaves the sort and search alone', () => {
+    useConsoleColumnsStore.getState().toggle('zones');
+    useConsoleColumnsStore.getState().setView({ sortKey: 'name', search: 'door' });
+    useConsoleColumnsStore.getState().resetColumns();
+    expect(useConsoleColumnsStore.getState().isVisible('zones')).toBe(true);
+    expect(useConsoleColumnsStore.getState()).toMatchObject({ sortKey: 'name', search: 'door' });
   });
 });
 

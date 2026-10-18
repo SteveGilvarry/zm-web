@@ -160,12 +160,10 @@ export function useClassicConsolePage(): ClassicConsolePageState {
   const showId = useZmConfig('ZM_WEB_ID_ON_CONSOLE', true);
   const configPageSize = useZmConfig('ZM_WEB_EVENTS_PER_PAGE', DEFAULT_PAGE_SIZE);
 
-  const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<ConsoleSortKey>('sequence');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Sort, page size, page and search survive a reload, as legacy's
+  // `zmConsoleTable` cookie keeps them.
+  const { search: query, sortKey, sortDir, page, pageSize: pageSizeOverride, setView } = columnsStore;
   const [sortMode, setSortMode] = useState(false);
-  const [page, setPageState] = useState(1);
-  const [pageSizeOverride, setPageSizeOverride] = useState<number | null>(null);
   const pageSize = pageSizeOverride ?? configPageSize;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // `?new=true` (legacy `?view=monitor` with no id) opens the Add dialog on load.
@@ -231,15 +229,15 @@ export function useClassicConsolePage(): ClassicConsolePageState {
   const hasRuntime = allRows.some((r) => r.runtime != null);
   const eventsScope = eventsScopeFor(allRows.map((r) => r.monitor.id), filter.activeCount > 0 || query.trim() !== '');
 
-  const setPage = (p: number) => setPageState(Math.max(1, p));
-  const setPageSize = (n: number) => { setPageSizeOverride(n); setPageState(1); };
-  const setSearch = (q: string) => { setQuery(q); setPageState(1); };
+  const setPage = (p: number) => setView({ page: Math.max(1, p) });
+  const setPageSize = (n: number) => setView({ pageSize: n, page: 1 });
+  const setSearch = (q: string) => setView({ search: q, page: 1 });
 
   const toggleSort = (key: ConsoleSortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(key); setSortDir('asc'); }
+    if (sortKey === key) setView({ sortDir: sortDir === 'asc' ? 'desc' : 'asc' });
+    else setView({ sortKey: key, sortDir: 'asc' });
   };
-  const resetSort = () => { setSortKey('sequence'); setSortDir('asc'); };
+  const resetSort = () => setView({ sortKey: 'sequence', sortDir: 'asc' });
   const toggleSortMode = () => {
     // Dragging only makes sense over the sequence order.
     if (!sortMode) resetSort();
@@ -330,7 +328,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     if (ids.length === 0) return;
     filter.set('monitorId', ids.join(','));
     clearSelection();
-    setPageState(1);
+    setPage(1);
   };
 
   const refresh = () => {
@@ -376,7 +374,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     toggleSelected,
     toggleAllOnPage,
     clearSelection,
-    columns: { isVisible: columnsStore.isVisible, toggle: columnsStore.toggle, reset: columnsStore.reset },
+    columns: { isVisible: columnsStore.isVisible, toggle: columnsStore.toggle, reset: columnsStore.resetColumns },
     showThumbs,
     showId,
     showServer: serverCount > 0,

@@ -167,6 +167,17 @@ describe('useClassicConsolePage', () => {
     expect(cloneName('Cam', ['Cam', 'Clone of Cam'])).toBe('Clone of Clone of Cam');
   });
 
+  it('keeps sort, page size and search across a remount, as the zmConsoleTable cookie does', async () => {
+    const first = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
+    act(() => first.result.current.toggleSort('name'));
+    act(() => first.result.current.toggleSort('name'));
+    act(() => first.result.current.setPageSize(50));
+    act(() => first.result.current.setSearch('cam'));
+    first.unmount();
+    const second = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
+    expect(second.result.current).toMatchObject({ sortKey: 'name', sortDir: 'desc', pageSize: 50, search: 'cam', page: 1 });
+  });
+
   it('reorder renumbers only the monitors whose sequence changed', async () => {
     const { result } = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
     act(() => result.current.reorder([2, 1, 3]));
