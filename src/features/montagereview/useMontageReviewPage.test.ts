@@ -1,10 +1,12 @@
-import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { useMontageStore, useReviewRangeStore } from '@/stores/montage';
+import { DEFAULT_REVIEW_FILTERS } from './useReviewEvents';
 import {
   presetToRange,
   reviewGridColumns,
@@ -24,6 +26,13 @@ beforeAll(() => {
   server.listen({ onUnhandledRequest: 'error' });
 });
 afterEach(() => server.resetHandlers());
+// The window and the event filters persist (legacy cookies); start each test
+// from nothing stored.
+beforeEach(() => {
+  useReviewRangeStore.setState({ range: null });
+  useMontageStore.setState({ reviewFilters: DEFAULT_REVIEW_FILTERS });
+});
+
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -71,14 +80,66 @@ describe('presetToRange / reviewGridColumns', () => {
 });
 
 describe('useMontageReviewPage', () => {
-  it('defaults to the last 24 hours, paused', () => {
+  it('with nothing stored, opens on the last hour, paused (montagereview.php:103-116)', () => {
     stubMonitors();
     const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
-    expect(result.current.preset).toBe('24h');
+    expect(result.current.preset).toBe('1h');
     expect(result.current.isLive).toBe(false);
     expect(result.current.clock.isPlaying).toBe(false);
     expect(result.current.clock.rangeEnd.getTime() - result.current.clock.rangeStart.getTime())
-      .toBe(24 * 60 * 60 * 1000);
+      .toBe(60 * 60 * 1000);
+  });
+
+  it('reopens on the window this session last used', () => {
+    stubMonitors();
+    const first = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    const start = new Date('2026-08-21T02:00:00Z');
+    const end = new Date('2026-08-21T05:00:00Z');
+    act(() => first.result.current.setCustomRange(start, end));
+    expect(useReviewRangeStore.getState().range)
+      .toEqual({ start: start.toISOString(), end: end.toISOString() });
+    first.unmount();
+
+    const second = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    expect(second.result.current.preset).toBe('custom');
+    expect(second.result.current.clock.rangeStart).toEqual(start);
+    expect(second.result.current.clock.rangeEnd).toEqual(end);
+  });
+
+  it('keeps the window in sessionStorage, as legacy scopes its date cookies to the session', () => {
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    act(() => result.current.setPreset('8h'));
+    const raw = JSON.parse(window.sessionStorage.getItem('zm-review-range') ?? '{}');
+    expect(new Date(raw.state.range.end).getTime() - new Date(raw.state.range.start).getTime())
+      .toBe(8 * 60 * 60 * 1000);
+  });
+
+  it('does not store a window while live', () => {
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    const stored = useReviewRangeStore.getState().range;
+    act(() => result.current.setPreset('live'));
+    expect(useReviewRangeStore.getState().range).toEqual(stored);
+  });
+
+  it('a stored window that does not parse falls back to the last hour', () => {
+    useReviewRangeStore.setState({ range: { start: 'nonsense', end: '2026-08-21T05:00:00Z' } });
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    expect(result.current.preset).toBe('1h');
+  });
+
+  it('keeps Archived / Tags / Notes across visits', () => {
+    stubMonitors();
+    const first = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    act(() => first.result.current.setFilters({ archived: 'archived', tagIds: [0, 3], notes: ['Motion'] }));
+    first.unmount();
+
+    const second = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    expect(second.result.current.filters).toEqual({ archived: 'archived', tagIds: [0, 3], notes: ['Motion'] });
+    const raw = JSON.parse(window.localStorage.getItem('zm-montage') ?? '{}');
+    expect(raw.state.reviewFilters).toEqual({ archived: 'archived', tagIds: [0, 3], notes: ['Motion'] });
   });
 
   it('selects every capturing monitor once the filter bar reports, and toggles chips', async () => {

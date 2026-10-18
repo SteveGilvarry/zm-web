@@ -1,16 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { getEvents } from '@/api/events';
 import { listTags, type Tag } from '@/api/tags';
 import { fitRange, type EventSpan } from './fitRange';
-import { eventEndMs, DEFAULT_REVIEW_FILTERS, type ReviewEventFilters } from './useReviewEvents';
+import { eventEndMs, type ReviewEventFilters } from './useReviewEvents';
 import { useRouteSearch, searchInt, searchString } from '@/features/monitors/useRouteSearch';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { applyMontageSort, useMontageSort } from './useMontageSort';
-import { useMontageStore } from '@/stores/montage';
+import { useMontageStore, useReviewRangeStore, type StoredReviewRange } from '@/stores/montage';
+import { useNoteTypeOptions, type NoteTypeOption } from '@/features/events/noteTypes';
 import { useReviewClock, type ReviewClock } from './useReviewClock';
 import type { Monitor } from '@/types';
 
@@ -48,41 +49,13 @@ export const REVIEW_RANGE_PRESETS: ReviewRangePresetOption[] = [
 ];
 
 /**
- * Legacy's Notes select (`includes/Filter.php`): the substrings ZoneMinder
- * offers for a LIKE match against an event's notes. Values are matched as
- * written; the label is what the operator reads.
+ * Legacy's Notes select (`Filter::simple_widget`): the event types ZoneMinder
+ * offers for a LIKE match against an event's notes. The same list as the
+ * events list's, labels included.
  */
-export function useReviewNotesOptions(): Array<{ value: string; label: string }> {
-  const { t } = useTranslation();
-  return useMemo(() => [
-    { value: 'Motion', label: t('Motion') },
-    { value: 'ONVIF', label: t('ONVIF') },
-    { value: 'Linked', label: t('Linked') },
-    { value: 'detected', label: t('Any Object') },
-    { value: 'aplr', label: t('Any license plate') },
-    { value: 'person', label: t('person') },
-    { value: 'boat', label: t('boat') },
-    { value: 'bus', label: t('bus') },
-    { value: 'car', label: t('car') },
-    { value: 'truck', label: t('truck') },
-    { value: 'vehicle', label: t('vehicle') },
-  ], [t]);
+export function useReviewNotesOptions(): NoteTypeOption[] {
+  return useNoteTypeOptions();
 }
-
-/** English-only snapshot of the Notes options, for callers that need the ids. */
-export const REVIEW_NOTES_OPTIONS: Array<{ value: string; label: string }> = [
-  { value: 'Motion', label: 'Motion' },
-  { value: 'ONVIF', label: 'ONVIF' },
-  { value: 'Linked', label: 'Linked' },
-  { value: 'detected', label: 'Any Object' },
-  { value: 'aplr', label: 'Any license plate' },
-  { value: 'person', label: 'person' },
-  { value: 'boat', label: 'boat' },
-  { value: 'bus', label: 'bus' },
-  { value: 'car', label: 'car' },
-  { value: 'truck', label: 'truck' },
-  { value: 'vehicle', label: 'vehicle' },
-];
 
 /**
  * Legacy's speed slider (`montagereview.php:254`): 13 steps, `0` meaning
@@ -133,6 +106,24 @@ export function parseLegacyTime(value: string | undefined): Date | null {
 }
 
 /**
+ * `Date` → value for `<input type="datetime-local" step="1">`: local wall
+ * clock, to the second like legacy's datetimepicker.
+ */
+export function toLocalInputValue(d: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/** A stored window, if it is still a usable one. */
+export function parseStoredRange(range: StoredReviewRange | null): { start: Date; end: Date } | null {
+  if (!range) return null;
+  const start = new Date(range.start);
+  const end = new Date(range.end);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime()) || !(end > start)) return null;
+  return { start, end };
+}
+
+/**
  * Legacy `&z<id>=1.4`: per-monitor zoom scales carried on the URL
  * (`montagereview.php`). Keys that are not `z<positive int>` are ignored.
  */
@@ -146,6 +137,32 @@ export function parseZoomParams(search: Record<string, unknown>): Record<number,
     out[Number(m[1])] = scale;
   }
   return out;
+}
+
+const HOUR_MS = 3600_000;
+const DAY_MS = 24 * HOUR_MS;
+
+/**
+ * Legacy `changeFilters` (`montagereview.js:1218-1290`): editing one of the
+ * Date Time bounds keeps the window ordered and at most 24 h wide, moving the
+ * other bound to fit. Legacy puts an inverted Start an hour before End and
+ * collapses an inverted End onto Start; a zero-width window shows nothing, so
+ * here End drags Start to an hour before it instead.
+ */
+export function editRangeBound(
+  which: 'start' | 'end', value: Date, start: Date, end: Date,
+): { start: Date; end: Date } {
+  const v = value.getTime();
+  if (which === 'start') {
+    const e = end.getTime();
+    if (v >= e) return { start: value, end: new Date(v + HOUR_MS) };
+    if (e - v > DAY_MS) return { start: value, end: new Date(v + DAY_MS) };
+    return { start: value, end };
+  }
+  const st = start.getTime();
+  if (st >= v) return { start: new Date(v - HOUR_MS), end: value };
+  if (v - st > DAY_MS) return { start: new Date(v - DAY_MS), end: value };
+  return { start, end: value };
 }
 
 /** Slide the window by `fraction` of its width (negative = earlier). */
@@ -175,6 +192,8 @@ export interface MontageReviewPageState {
   setPreset: (preset: ReviewRangePreset) => void;
   /** Legacy Date Time >= / <= inputs; switches the preset to `custom`. */
   setCustomRange: (start: Date, end: Date) => void;
+  /** One Date Time bound edited; the other follows legacy's 24 h cap. */
+  setRangeBound: (which: 'start' | 'end', value: Date) => void;
   pan: (fraction: number) => void;
   zoom: (factor: number) => void;
   /** Legacy "Fit": shrink the window onto the events that exist. */
@@ -183,6 +202,11 @@ export interface MontageReviewPageState {
   /** Set when Fit found nothing to fit; cleared on the next range change. */
   fitEventsEmpty: boolean;
   isLive: boolean;
+  /**
+   * Legacy's Live / History button: into live view, or back out of it onto
+   * the window last reviewed (else the last hour).
+   */
+  toggleLive: () => void;
   clock: ReviewClock;
   /** Legacy scale slider 0.1–1.0 (cell size relative to the camera). */
   scale: number;
@@ -225,9 +249,14 @@ export function useMontageReviewPage(): MontageReviewPageState {
   // the window — half an hour each side (`montagereview.php:97-101`).
   const urlCurrent = parseLegacyTime(searchString(search, 'current'));
   const urlLive = searchString(search, 'live');
+  // Legacy's shared date cookies: the window this session last looked at.
+  const setStoredRange = useReviewRangeStore((st) => st.setRange);
+  const [storedRange] = useState(() => parseStoredRange(useReviewRangeStore.getState().range));
 
   const [preset, setPresetState] = useState<ReviewRangePreset>(
-    urlLive != null && urlLive !== '0' ? 'live' : hasUrlRange || urlCurrent ? 'custom' : '24h',
+    urlLive != null && urlLive !== '0'
+      ? 'live'
+      : hasUrlRange || urlCurrent || storedRange ? 'custom' : '1h',
   );
   // A URL monitor preselects just that monitor; otherwise all once loaded.
   const [selectedIds, setSelectedIds] = useState<Set<number>>(
@@ -264,18 +293,22 @@ export function useMontageReviewPage(): MontageReviewPageState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const [filters, setFiltersState] = useState<ReviewEventFilters>(DEFAULT_REVIEW_FILTERS);
-  const setFilters = (patch: Partial<ReviewEventFilters>) =>
-    setFiltersState((prev) => ({ ...prev, ...patch }));
+  // Legacy keeps Archived / Tags / Notes in cookies across visits.
+  const filters = useMontageStore((st) => st.reviewFilters);
+  const setFilters = (patch: Partial<ReviewEventFilters>) => {
+    const { reviewFilters, setReviewFilters } = useMontageStore.getState();
+    setReviewFilters({ ...reviewFilters, ...patch });
+  };
   const isLive = preset === 'live';
 
-  // Initial range: the URL's, a window around `current`, else the last 24 h.
+  // Initial range, in legacy's order (`montagereview.php:97-116`): the URL's,
+  // a window around `current`, the stored one, else the last hour.
   const initialRange = useMemo(
     () => (hasUrlRange
       ? { start: urlMin!, end: urlMax! }
       : urlCurrent
         ? { start: new Date(urlCurrent.getTime() - 1800_000), end: new Date(urlCurrent.getTime() + 1800_000) }
-        : presetToRange('24h', new Date())),
+        : storedRange ?? presetToRange('1h', new Date())),
     // URL values are read once on mount.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -289,6 +322,16 @@ export function useMontageReviewPage(): MontageReviewPageState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // Legacy writes the window back to its date cookies on every load and
+  // navigation, so the next visit opens where this one left off. Live mode
+  // has no window to keep.
+  const rangeStartMs = clock.rangeStart.getTime();
+  const rangeEndMs = clock.rangeEnd.getTime();
+  useEffect(() => {
+    if (isLive) return;
+    setStoredRange({ start: new Date(rangeStartMs).toISOString(), end: new Date(rangeEndMs).toISOString() });
+  }, [isLive, rangeStartMs, rangeEndMs, setStoredRange]);
+
   // Both in one call: a separate `setCurrentTime` would clamp the playhead
   // against the range it is replacing.
   const applyRange = (start: Date, end: Date) => clock.setRange(start, end, start);
@@ -301,10 +344,31 @@ export function useMontageReviewPage(): MontageReviewPageState {
     if (next === 'live') clock.pause();
   };
 
+  const toggleLive = () => {
+    if (!isLive) {
+      setPreset('live');
+      return;
+    }
+    // The stored window is the last one reviewed: live never writes it.
+    const back = parseStoredRange(useReviewRangeStore.getState().range);
+    if (!back) {
+      setPreset('1h');
+      return;
+    }
+    setPresetState('custom');
+    applyRange(back.start, back.end);
+  };
+
   const setCustomRange = (start: Date, end: Date) => {
     if (!(end > start)) return;
     setPresetState('custom');
     applyRange(start, end);
+  };
+
+  const setRangeBound = (which: 'start' | 'end', value: Date) => {
+    if (Number.isNaN(value.getTime())) return;
+    const r = editRangeBound(which, value, clock.rangeStart, clock.rangeEnd);
+    setCustomRange(r.start, r.end);
   };
 
   const pan = (fraction: number) => {
@@ -360,11 +424,11 @@ export function useMontageReviewPage(): MontageReviewPageState {
 
   // Fetch monitors (only enabled / capturing ones make sense for review).
   const monitorsQ = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
   });
-  const allMonitors: Monitor[] = monitorsQ.data?.items ?? [];
+  const allMonitors: Monitor[] = monitorsQ.data ?? [];
 
   const tagsQ = useQuery({
     queryKey: ['tags'],
@@ -415,12 +479,14 @@ export function useMontageReviewPage(): MontageReviewPageState {
     preset,
     setPreset,
     setCustomRange,
+    setRangeBound,
     pan,
     zoom,
     fitToEvents,
     isFittingEvents,
     fitEventsEmpty,
     isLive,
+    toggleLive,
     clock,
     scale,
     setScale,

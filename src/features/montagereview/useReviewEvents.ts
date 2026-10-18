@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { getEvents, type EventQueryParams } from '@/api/events';
+import { getEvents, TAG_ANY, TAG_NONE, type EventQueryParams } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
 import type { ZmEvent } from '@/types';
 
@@ -12,25 +12,59 @@ export const REVIEW_MAX_PAGES = 40;
 export interface ReviewEventFilters {
   /** Legacy Archive Status select. */
   archived: 'all' | 'unarchived' | 'archived';
-  /** Any-of tag ids (`tag_id=1,2`). */
+  /**
+   * Legacy's Tags multi-select, values as legacy stores them: tag ids, plus
+   * `0` for No Tag and `-1` for Any Tag. Empty = every event.
+   */
   tagIds: number[];
-  /** Substring of the event notes (legacy's LIKE match). */
-  notes: string;
+  /** Legacy's Notes multi-select: event types, each a LIKE match, ORed. */
+  notes: string[];
 }
+
+/** Legacy's special Tags values. */
+export const REVIEW_NO_TAG = 0;
+export const REVIEW_ANY_TAG = -1;
 
 export const DEFAULT_REVIEW_FILTERS: ReviewEventFilters = {
   archived: 'all',
   tagIds: [],
-  notes: '',
+  notes: [],
 };
 
-/** The filter half of the events query — also the cache key's filter part. */
-function filterParams(filters: ReviewEventFilters): Partial<EventQueryParams> {
-  return {
-    ...(filters.archived === 'all' ? {} : { archived: filters.archived === 'archived' }),
-    ...(filters.tagIds.length > 0 ? { tag_id: filters.tagIds.join(',') } : {}),
-    ...(filters.notes.trim() ? { notes: filters.notes.trim() } : {}),
-  };
+/**
+ * The `tag_id` values legacy's Tags selection asks for, one request each
+ * (the union is the answer); `null` means no tag filter. zm-api takes `none`,
+ * `any` or an id list, never a mix, so No Tag plus some tags is two requests.
+ */
+export function reviewTagQueries(tagIds: number[]): Array<string | null> {
+  const none = tagIds.includes(REVIEW_NO_TAG);
+  const any = tagIds.includes(REVIEW_ANY_TAG);
+  const ids = tagIds.filter((id) => id > 0).join(',');
+  if (none && any) return [null]; // tagged or not: every event
+  if (any) return [TAG_ANY]; // any listed tag is already "any tag"
+  if (none) return ids ? [TAG_NONE, ids] : [TAG_NONE];
+  return ids ? [ids] : [null];
+}
+
+/**
+ * The filter half of the events query, as the list of requests whose union
+ * is the answer: one per Notes pick (legacy ORs them; `/events` takes one
+ * `notes` substring) times one per tag query. Also the cache key's filter part.
+ */
+export function reviewFilterQueries(filters: ReviewEventFilters): Array<Partial<EventQueryParams>> {
+  const archived = filters.archived === 'all' ? {} : { archived: filters.archived === 'archived' };
+  const notes = filters.notes.map((n) => n.trim()).filter(Boolean);
+  const out: Array<Partial<EventQueryParams>> = [];
+  for (const note of notes.length > 0 ? notes : [null]) {
+    for (const tag of reviewTagQueries(filters.tagIds)) {
+      out.push({
+        ...archived,
+        ...(tag ? { tag_id: tag, tag_op: 'in' as const } : {}),
+        ...(note ? { notes: note } : {}),
+      });
+    }
+  }
+  return out;
 }
 
 /**
@@ -47,22 +81,30 @@ export async function fetchReviewEvents(
   endISO: string,
   filters: ReviewEventFilters = DEFAULT_REVIEW_FILTERS,
 ): Promise<ZmEvent[]> {
-  const out: ZmEvent[] = [];
-  for (let page = 1; page <= REVIEW_MAX_PAGES; page++) {
-    const res = await getEvents({
-      monitor_id: monitorId,
-      start_time: startISO,
-      end_time: endISO,
-      page,
-      page_size: REVIEW_PAGE_SIZE,
-      // `start_time` is the backend's sort key name (its docs list start_time,
-      // end_time, alarm_frames, max_score, avg_score, tot_score, length, id).
-      sort: 'start_time',
-      direction: 'asc',
-      ...filterParams(filters),
-    } as EventQueryParams);
-    out.push(...res.items);
-    if (res.items.length === 0 || res.current_page >= res.last_page) break;
+  const queries = reviewFilterQueries(filters);
+  const byId = new Map<number, ZmEvent>();
+  for (const query of queries) {
+    for (let page = 1; page <= REVIEW_MAX_PAGES; page++) {
+      const res = await getEvents({
+        monitor_id: monitorId,
+        start_time: startISO,
+        end_time: endISO,
+        page,
+        page_size: REVIEW_PAGE_SIZE,
+        // `start_time` is the backend's sort key name (its docs list start_time,
+        // end_time, alarm_frames, max_score, avg_score, tot_score, length, id).
+        sort: 'start_time',
+        direction: 'asc',
+        ...query,
+      });
+      for (const event of res.items) byId.set(event.id, event);
+      if (res.items.length === 0 || res.current_page >= res.last_page) break;
+    }
+  }
+  const out = [...byId.values()];
+  // One request comes back sorted; a union has to be put back in order.
+  if (queries.length > 1) {
+    out.sort((a, b) => Date.parse(a.start_date_time ?? '') - Date.parse(b.start_date_time ?? '') || a.id - b.id);
   }
   return out;
 }
@@ -83,7 +125,7 @@ export function useReviewEvents(
   const endISO = rangeEnd.toISOString();
 
   const q = useQuery({
-    queryKey: ['reviewEvents', monitorId, startISO, endISO, filterParams(filters)],
+    queryKey: ['reviewEvents', monitorId, startISO, endISO, reviewFilterQueries(filters)],
     queryFn: () => fetchReviewEvents(monitorId, startISO, endISO, filters),
     enabled: isAuthenticated && !isNaN(monitorId),
     staleTime: 30_000,

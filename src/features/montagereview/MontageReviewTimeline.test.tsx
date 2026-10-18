@@ -167,6 +167,73 @@ describe('MontageReviewTimeline — tracks and bars', () => {
   });
 });
 
+/**
+ * The layout the browser check measured (2026-10-18): the timeline body at
+ * x=12, 1257 px wide; every track's bar region inset by the 128 px name
+ * column, so x=124, 1145 px wide. Any box carrying the inset class gets the
+ * inset rect, everything else the body's.
+ */
+function stubMeasuredLayout() {
+  const rect = (left: number, width: number) => ({
+    width, height: 32, left, right: left + width, top: 0, bottom: 32, x: left, y: 0,
+    toJSON: () => ({}),
+  } as DOMRect);
+  return vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('start-32') ? rect(124, 1145) : rect(12, 1257);
+    });
+}
+
+/** Where an element positioned by `left: N%` lands on screen, in px. */
+function screenX(el: HTMLElement): number {
+  const pct = parseFloat(el.style.left) / 100;
+  const box = el.parentElement!.getBoundingClientRect();
+  return box.left + pct * box.width;
+}
+
+describe('MontageReviewTimeline — one time axis for bars, playhead and seek', () => {
+  it('draws the playhead on the same x as a bar starting at the same instant', async () => {
+    stubEvents([ev(701, 1, '2026-08-21T06:00:00Z', '2026-08-21T06:30:00Z')]);
+    const spy = stubMeasuredLayout();
+    try {
+      renderTimeline({ currentTime: new Date('2026-08-21T06:00:00Z') });
+      const bar = await screen.findByTestId('review-event-bar-701');
+      const playhead = screen.getByTestId('review-timeline-playhead');
+      const label = screen.getByTestId('review-timeline-playhead-label');
+      // Half way through the bars' 1145 px from x=124.
+      expect(screenX(bar)).toBeCloseTo(124 + 1145 / 2);
+      expect(screenX(playhead)).toBeCloseTo(screenX(bar));
+      expect(screenX(label)).toBeCloseTo(screenX(bar));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a press at the bars\' left edge seeks to the window start, and a quarter in to a quarter in', async () => {
+    stubEvents([]);
+    const spy = stubMeasuredLayout();
+    try {
+      const { onSeek, container } = renderTimeline();
+      await screen.findByText('Front Door');
+      const body = container.querySelector('[style*="touch-action"]') as HTMLElement;
+      body.setPointerCapture = vi.fn();
+
+      fireEvent.pointerDown(body, { pointerId: 1, clientX: 124, buttons: 1 });
+      expect(onSeek).toHaveBeenLastCalledWith(RANGE_START);
+
+      fireEvent.pointerMove(body, { pointerId: 1, clientX: 124 + 1145 / 4, buttons: 1 });
+      expect(onSeek).toHaveBeenLastCalledWith(new Date('2026-08-21T03:00:00Z'));
+
+      // On the name column: clamped to the start, not a time before it.
+      fireEvent.pointerDown(body, { pointerId: 1, clientX: 40, buttons: 1 });
+      expect(onSeek).toHaveBeenLastCalledWith(RANGE_START);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+});
+
 describe('MontageReviewTimeline — playhead and scrubbing', () => {
   it('positions the playhead at the current time as a percentage of the range', async () => {
     stubEvents([]);

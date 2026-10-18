@@ -114,6 +114,10 @@ export function MontageReviewCell({
     void navigate(target);
   };
 
+  // With corner zoom on, legacy draws `+` / `-` in those corners
+  // (`imagedone`), so the name and event badges move to the bottom edge.
+  const overlayEdge = onZoom ? 'bottom-1.5' : 'top-1.5';
+
   const token = getAuthToken();
   const downloadHref = currentEvent
     ? getEventVideoUrl(currentEvent.id, token ?? undefined)
@@ -126,8 +130,28 @@ export function MontageReviewCell({
       onClick={handleClick}
       data-testid={`review-cell-${monitor.id}`}
     >
+      {onZoom && (
+        <>
+          {/* White, inverted against the picture, as legacy's canvas draws them. */}
+          <span
+            aria-hidden
+            data-testid={`review-zoom-in-${monitor.id}`}
+            className="absolute top-0.5 start-1.5 z-10 text-2xl font-semibold leading-none text-white mix-blend-difference pointer-events-none select-none"
+          >
+            +
+          </span>
+          <span
+            aria-hidden
+            data-testid={`review-zoom-out-${monitor.id}`}
+            className="absolute top-0.5 end-1.5 z-10 text-2xl font-semibold leading-none text-white mix-blend-difference pointer-events-none select-none"
+          >
+            -
+          </span>
+        </>
+      )}
+
       {/* Monitor name overlay */}
-      <div className="absolute top-1.5 start-1.5 z-10 px-1.5 py-0.5 rounded bg-black/60">
+      <div className={`absolute ${overlayEdge} start-1.5 z-10 px-1.5 py-0.5 rounded bg-black/60`}>
         <span className="text-xs font-medium text-white">{monitor.name}</span>
       </div>
 
@@ -144,7 +168,7 @@ export function MontageReviewCell({
             preload="auto"
           />
           {/* Download + event info */}
-          <div className="absolute top-1.5 end-1.5 z-10 flex items-center gap-1">
+          <div className={`absolute ${overlayEdge} end-1.5 z-10 flex items-center gap-1`}>
             <Link
               to="/events/$eventId"
               params={{ eventId: String(currentEvent.id) }}
