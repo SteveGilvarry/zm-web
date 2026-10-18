@@ -162,6 +162,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                       cardView={s.cardView}
                       labels={labels}
                       colSpan={s.visibleColumns.length + 1}
+                      animate={s.animateThumbs}
                     />
                     {s.isExpanded(f.frame_id) && (
                       <tr data-testid={`frame-detail-${f.frame_id}`}>
@@ -210,7 +211,7 @@ function FrameStatsDetail({ event, eventId, frameId }: { event: ZmEvent | undefi
 
 function FrameRow({
   frame: f, maxScore, isVisible, showThumbs, thumbWidth, token, expanded, onToggle, onOpen, onStats,
-  cardView, labels, colSpan,
+  cardView, labels, colSpan, animate,
 }: {
   frame: Frame;
   maxScore: number;
@@ -227,6 +228,7 @@ function FrameRow({
   cardView: boolean;
   labels: Record<FramesColumnKey, string>;
   colSpan: number;
+  animate: boolean;
 }) {
   const { t } = useTranslation();
   const { formatDateTime } = useDateTimeFormat();
@@ -252,7 +254,7 @@ function FrameRow({
       </span>
     ),
     thumbnail: showThumbs ? (
-      <FrameThumbnail frameId={f.id} frameNumber={f.frame_id} token={token} width={thumbWidth} />
+      <FrameThumbnail frameId={f.id} frameNumber={f.frame_id} token={token} width={thumbWidth} animate={animate} />
     ) : null,
   };
   const keys = FRAMES_COLUMNS.map((c) => c.key).filter(isVisible);

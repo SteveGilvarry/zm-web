@@ -1,8 +1,8 @@
 /**
  * The frames list's thumbnail cell (legacy `ajax/frames.php:188`).
  */
-import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, beforeAll, afterAll, vi } from 'vitest';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { useAuthStore } from '@/stores/auth';
 import { FrameThumbnail } from './FrameThumbnail';
 
@@ -34,5 +34,31 @@ describe('FrameThumbnail', () => {
   it('omits the token from the URL when there is none', () => {
     render(<FrameThumbnail frameId={5} frameNumber={1} token={null} width={48} />);
     expect(screen.getByTestId('frame-thumb-5')).toHaveAttribute('src', '/api/v3/frames/5/image');
+  });
+});
+
+describe('FrameThumbnail — hover (ZM_WEB_ANIMATE_THUMBS)', () => {
+  it('shows the frame full size after a quarter-second hover, and hides it on leave', () => {
+    vi.useFakeTimers();
+    try {
+      render(<FrameThumbnail frameId={7} frameNumber={3} token="t" width={48} animate />);
+      const thumb = screen.getByTestId('frame-thumb-7');
+      fireEvent.mouseEnter(thumb.parentElement!);
+      expect(screen.queryByTestId('frame-thumb-zoom-7')).toBeNull();
+      act(() => { vi.advanceTimersByTime(250); });
+      const zoom = screen.getByTestId('frame-thumb-zoom-7');
+      expect(zoom).toHaveAttribute('src', thumb.getAttribute('src'));
+      expect(zoom.style.width).toBe('384px');
+
+      fireEvent.mouseLeave(thumb.parentElement!);
+      expect(screen.queryByTestId('frame-thumb-zoom-7')).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('stays a plain image when animation is off', () => {
+    render(<FrameThumbnail frameId={7} frameNumber={3} width={48} />);
+    expect(screen.getByTestId('frame-thumb-7').parentElement?.tagName).not.toBe('SPAN');
   });
 });

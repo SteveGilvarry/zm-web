@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { getFrameImageUrl } from '@/api/frames';
@@ -11,17 +11,34 @@ import { getFrameImageUrl } from '@/api/frames';
  * event on an install that records video only. Legacy leaves a broken image
  * there; here the cell falls back to an em dash, so a table of them does not
  * read as a column of failures.
+ *
+ * With `animate` (`ZM_WEB_ANIMATE_THUMBS`), resting the pointer on it for a
+ * quarter of a second shows the frame at full size over the table, as
+ * legacy's `thumbnail_onmouseover` does for a still (`skin.js:1391`).
  */
-export function FrameThumbnail({ frameId, frameNumber, token, width, className }: {
+
+/** Legacy waits a quarter of a second before the overlay (skin.js:1401). */
+const HOVER_DELAY_MS = 250;
+/** The overlay's width: the frame at most this wide, the thumbnail at least four times over. */
+const OVERLAY_MAX_PX = 640;
+export function FrameThumbnail({ frameId, frameNumber, token, width, className, animate = false }: {
   frameId: number;
   /** The frame's number within its event, for the alt text. */
   frameNumber: number;
   token?: string | null;
   width: number;
   className?: string;
+  animate?: boolean;
 }) {
   const { t } = useTranslation();
   const [failed, setFailed] = useState(false);
+  const [zoomed, setZoomed] = useState(false);
+  const timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const cancel = () => {
+    if (timer.current) clearTimeout(timer.current);
+    timer.current = null;
+  };
+  useEffect(() => cancel, []);
 
   if (failed) {
     return (
@@ -29,9 +46,10 @@ export function FrameThumbnail({ frameId, frameNumber, token, width, className }
     );
   }
 
-  return (
+  const src = getFrameImageUrl(frameId, token);
+  const thumb = (
     <img
-      src={getFrameImageUrl(frameId, token)}
+      src={src}
       alt={t('Frame {{n}}', { n: frameNumber })}
       width={width}
       style={{ width }}
@@ -40,5 +58,26 @@ export function FrameThumbnail({ frameId, frameNumber, token, width, className }
       onError={() => setFailed(true)}
       className={clsx('inline-block h-auto max-w-none', className)}
     />
+  );
+  if (!animate) return thumb;
+
+  return (
+    <span
+      className="relative inline-block"
+      onMouseEnter={() => { cancel(); timer.current = setTimeout(() => setZoomed(true), HOVER_DELAY_MS); }}
+      onMouseLeave={() => { cancel(); setZoomed(false); }}
+    >
+      {thumb}
+      {zoomed && (
+        <img
+          src={src}
+          alt=""
+          aria-hidden
+          data-testid={`frame-thumb-zoom-${frameId}`}
+          style={{ width: Math.max(width * 4, Math.min(OVERLAY_MAX_PX, width * 8)) }}
+          className="absolute top-0 end-full z-20 me-2 h-auto max-w-none border border-black/40 shadow-lg pointer-events-none"
+        />
+      )}
+    </span>
   );
 }

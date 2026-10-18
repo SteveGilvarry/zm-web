@@ -184,6 +184,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                         onToggle={() => s.toggleExpanded(f.frame_id)}
                         onOpen={() => s.openFrame(f.frame_id)}
                         onStats={() => s.openStats(f.frame_id)}
+                        animate={s.animateThumbs}
                       />
                       {s.isExpanded(f.frame_id) && (
                         <tr data-testid={`frame-detail-${f.frame_id}`} className="border-b border-border-subtle bg-bg-sunken">
@@ -305,9 +306,10 @@ function FrameStatsDetail({ event, frameId }: { event: ZmEvent | undefined; fram
 }
 
 function FrameRow({
-  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token, expanded, onToggle, onOpen, onStats,
+  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token, expanded, onToggle, onOpen, onStats, animate,
 }: {
   frame: Frame;
+  animate: boolean;
   maxScore: number;
   isVisible: (key: FramesColumnKey) => boolean;
   showThumbs: boolean;
@@ -391,6 +393,7 @@ function FrameRow({
               frameNumber={f.frame_id}
               token={token}
               width={thumbWidth}
+              animate={animate}
               className="rounded-sm"
             />
           )}

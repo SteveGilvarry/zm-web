@@ -57,6 +57,8 @@ export interface EventFramesPageState {
   showThumbs: boolean;
   /** `ZM_WEB_LIST_THUMB_WIDTH`. */
   thumbWidth: number;
+  /** `ZM_WEB_ANIMATE_THUMBS` — hovering a thumbnail shows the frame full size. */
+  animateThumbs: boolean;
   /** Access token for the `<img>` URLs, which cannot send a header. */
   token: string | null;
 
@@ -90,6 +92,7 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
   const showThumbs = useZmConfig('ZM_WEB_LIST_THUMBS', true);
   const configThumbWidth = useZmConfig('ZM_WEB_LIST_THUMB_WIDTH', 48);
   const thumbWidth = configThumbWidth > 0 ? configThumbWidth : 48;
+  const animateThumbs = useZmConfig('ZM_WEB_ANIMATE_THUMBS', true);
 
   const page = search.page ?? 1;
   const pageSize = search.page_size ?? defaultPageSize;
@@ -190,6 +193,7 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
     exportCsv: () => downloadCsv(`event-${eventId}-frames.csv`, framesToCsv(frames, visibleColumns)),
     showThumbs,
     thumbWidth,
+    animateThumbs,
     token: accessToken,
 
     isExpanded: (fid) => expanded.has(fid),
