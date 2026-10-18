@@ -3,7 +3,7 @@ import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { useState } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Eye, X, Loader2, Archive, ArchiveRestore, Trash2, ChevronLeft, ChevronRight, Download, LayoutGrid } from 'lucide-react';
+import { Eye, X, Loader2, Archive, ArchiveRestore, Trash2, ChevronLeft, ChevronRight, Download, LayoutGrid, List } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 
 import { updateEvent, deleteEvent } from '@/api/events';
@@ -14,6 +14,7 @@ import { downloadCsv } from '@/features/logs/csv';
 import type { Monitor } from '@/types';
 import { matchesToCsv } from './matchesCsv';
 import type { ReviewSearch } from './reviewLink';
+import { eventsSearchFromQuery } from './eventsLink';
 import { useFilterPreview, CLIENT_PREVIEW_WINDOW } from './useFilterPreview';
 
 interface MatchesPreviewProps {
@@ -28,8 +29,10 @@ interface MatchesPreviewProps {
 }
 
 /**
- * "List matches" + "Execute now", the legacy filter page's two preview
- * controls. Matching is delegated to `useFilterPreview`, which uses the
+ * The legacy filter page's match buttons: List Matches (the events list on
+ * these terms), View Matches (Montage Review), Export Matches and Execute.
+ * "Preview matches" lists them inline as well, which is what Execute and
+ * Export act on until the backend can run a filter (zm-api#30, #31). Matching is delegated to `useFilterPreview`, which uses the
  * backend preview endpoint when it can and says so when it cannot.
  *
  * Execute applies delete / archive / unarchive to the events currently
@@ -106,13 +109,20 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2 flex-wrap">
+        {/* Legacy's List Matches (filter.js:161) opens the events list on
+            the form's terms, unsaved edits included. */}
+        <Link to="/events" search={eventsSearchFromQuery(query)} className={btn(false)} title={t('Open the events list on these conditions')}>
+          <List size={11} />
+          {t('List matches')}
+        </Link>
+
         <button
           type="button"
           onClick={() => setOpen((v) => !v)}
           className={btn(open)}
         >
           {open ? <X size={11} /> : <Eye size={11} />}
-          {open ? t('Hide matches') : t('List matches')}
+          {open ? t('Hide matches') : t('Preview matches')}
         </button>
 
         {reviewSearch && (
@@ -126,7 +136,7 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
           type="button"
           onClick={() => { if (!open) setOpen(true); else exportMatches(); }}
           disabled={open && listed.length === 0}
-          title={open ? t('Download the listed matches as CSV') : t('List matches first, then export the page')}
+          title={open ? t('Download the listed matches as CSV') : t('Preview matches first, then export the page')}
           className={btn(false)}
         >
           <Download size={11} />

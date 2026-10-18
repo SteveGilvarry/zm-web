@@ -105,7 +105,7 @@ describe('MatchesPreview — export', () => {
     }));
     renderWithProviders(<MatchesPreview query={query} monitors={monitors} actions={noActions} />);
 
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event on page 1')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /previous page/i })).toBeDisabled();
 
@@ -122,7 +122,7 @@ describe('MatchesPreview — export', () => {
     stubPreview([]);
     renderWithProviders(<MatchesPreview query={query} monitors={monitors} actions={noActions} />);
 
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText(/no events match/i)).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /export matches/i })).toBeDisabled();
   });
@@ -150,7 +150,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -179,7 +179,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: false, unarchive: true, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -202,7 +202,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
     expect(patchHits).toBe(0);
@@ -222,7 +222,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -242,7 +242,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /execute/i })).toBeNull();
 

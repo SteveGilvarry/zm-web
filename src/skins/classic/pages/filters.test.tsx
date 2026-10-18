@@ -572,7 +572,7 @@ describe('ClassicFiltersPage', () => {
 
     // `Update DiskSpace` maps cleanly onto the backend AST.
     await user.selectOptions(await chooser(), '2');
-    await user.click(screen.getByRole('button', { name: 'List matches' }));
+    await user.click(screen.getByRole('button', { name: 'Preview matches' }));
 
     expect(await screen.findByText('Event-5150')).toBeInTheDocument();
     expect(screen.getByText('1 match (server preview)')).toBeInTheDocument();
