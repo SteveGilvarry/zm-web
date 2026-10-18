@@ -185,7 +185,6 @@ export default function EventsListPage() {
                 <input
                   type="datetime-local"
                   aria-label={t('Events starting before')}
-                  title={t('The API bounds the end time, so an event still running at this instant is left out.')}
                   value={endInputValue}
                   onChange={(e) => setEndInput(e.target.value)}
                   className={clsx(field, 'px-2 py-1 text-sm')}

@@ -160,9 +160,10 @@ export function ClassicEventsTable({
       case 'max_score':
         return <Link {...framesLink} className={classicLink}>{e.max_score ?? 0}</Link>;
       case 'storage':
-        return storageName ? storageName(e.storage_id) : String(e.storage_id);
+        // Legacy links Storage and DiskSpace to the event too (events.js:110-111).
+        return <Link {...eventLink} className={classicLink}>{storageName ? storageName(e.storage_id) : String(e.storage_id)}</Link>;
       case 'disk_space':
-        return e.disk_space != null ? humanFilesize(e.disk_space) : '—';
+        return e.disk_space != null ? <Link {...eventLink} className={classicLink}>{humanFilesize(e.disk_space)}</Link> : '—';
       case 'notes':
         return <EventNotesCell event={e} />;
     }

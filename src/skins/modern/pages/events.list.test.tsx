@@ -179,7 +179,7 @@ describe('EventsListPage — modern skin', () => {
     );
     renderRoute(
       '/events?monitor_id=2&archived=true&sort=max_score&dir=desc' +
-        '&page=2&page_size=5&start=2026-08-01T00:00&end=2026-08-02T12:30',
+        '&page=2&page_size=5&start=2026-08-01T00:00',
     );
     await screen.findByRole('link', { name: 'Download video for event 102' });
 
@@ -193,7 +193,21 @@ describe('EventsListPage — modern skin', () => {
     expect(q.get('page_size')).toBe('5');
     // Local wall-clock in the URL, full ISO on the wire.
     expect(q.get('start_time')).toBe(new Date('2026-08-01T00:00').toISOString().replace(/\.\d{3}Z$/, 'Z'));
-    expect(q.get('end_time')).toBe(new Date('2026-08-02T12:30').toISOString().replace(/\.\d{3}Z$/, 'Z'));
+  });
+
+  it('bounds the start time from above, as legacy\'s Start Date/Time <= does', async () => {
+    let body: unknown = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      body = await request.json();
+      return HttpResponse.json(paginated([makeEvent({ id: 101 })]));
+    }));
+    renderRoute('/events?monitor_id=1&end=2026-08-02T12:30');
+    await rows();
+    // `/events` can only bound the end time, which drops events still
+    // recording; preview says `start_time <=`.
+    expect(JSON.stringify(body)).toContain(JSON.stringify({
+      field: 'start_time', op: 'lte', value: new Date('2026-08-02T12:30').toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    }));
   });
 
   it('reflects the URL in every filter control', async () => {

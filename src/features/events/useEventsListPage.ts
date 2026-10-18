@@ -257,7 +257,8 @@ export function groupEventsAst(opts: {
   monitorIds?: number[];
   archived?: boolean;
   startTime?: string;
-  endTime?: string;
+  /** Upper bound on the *start* time — legacy's `StartDateTime <=` term. */
+  startBefore?: string;
   name?: string;
   cause?: string;
   /** One substring, or several ORed together (legacy's Notes multi-select). */
@@ -275,7 +276,7 @@ export function groupEventsAst(opts: {
   }
   if (opts.archived !== undefined) rules.push({ field: 'archived', op: 'eq', value: opts.archived ? 1 : 0 });
   if (opts.startTime) rules.push({ field: 'start_time', op: 'gte', value: opts.startTime });
-  if (opts.endTime) rules.push({ field: 'end_time', op: 'lte', value: opts.endTime });
+  if (opts.startBefore) rules.push({ field: 'start_time', op: 'lte', value: opts.startBefore });
   if (opts.name) rules.push({ field: 'name', op: 'like', value: `%${opts.name}%` });
   if (opts.cause) rules.push({ field: 'cause', op: 'like', value: `%${opts.cause}%` });
   const notes = typeof opts.notes === 'string' ? [opts.notes] : opts.notes ?? [];
@@ -487,7 +488,10 @@ export function useEventsListPage(): EventsListPageState {
     && (monitorScope.length !== 1 || monitorFilter.length === 0);
   // `/events` takes one `notes` substring; several event types have to be
   // ORed, which only `/filters/preview` can do (legacy's Notes multi-select).
-  const usePreviewPath = monitorNeedsPreview || notesFilter.length > 1;
+  // Legacy's second date box is `StartDateTime <=`; `/events` only bounds the
+  // *end* time (which drops events still recording), so a start bound goes
+  // through preview, which can say `start_time <=`.
+  const usePreviewPath = monitorNeedsPreview || notesFilter.length > 1 || endFilter !== '';
   const groupReady = !needGroupMonitors || groupMonitorsData !== undefined;
   const termsReady = !termsMode || (!termsMode.loading && termsMode.reasons.length === 0);
   const termsKey = termsMode ? JSON.stringify(termsMode.terms) : '';
@@ -517,7 +521,7 @@ export function useEventsListPage(): EventsListPageState {
         if (noIds && 'op' in tagRule && tagRule.op === 'in') return empty;
         const ast = groupEventsAst({
           monitorIds: monitorScope ?? undefined, archived,
-          startTime: dateFilter || undefined, endTime: endFilter || undefined,
+          startTime: dateFilter || undefined, startBefore: endFilter || undefined,
           name: searchQuery || undefined,
           cause: causeQuery || undefined,
           notes: notesFilter,
@@ -534,9 +538,6 @@ export function useEventsListPage(): EventsListPageState {
         archived,
         storage_id: storageFilter,
         start_time: dateFilter || undefined,
-        // Legacy "Start Date/Time <=" — the API bounds end_date_time instead,
-        // so an event still running at this instant is left out.
-        end_time: endFilter || undefined,
         name: searchQuery || undefined,
         cause: causeQuery || undefined,
         notes: notesFilter[0],
@@ -548,7 +549,11 @@ export function useEventsListPage(): EventsListPageState {
       });
     },
     enabled: isAuthenticated && groupReady && termsReady,
-    refetchInterval: 30000,
+    // No polling: legacy reloads the table on demand and when the page is
+    // shown again (`pageshow`, events.js:540) — Refresh, and a fresh fetch
+    // whenever the list mounts (coming back from an event, say). A poll
+    // would move rows under a pending selection.
+    refetchOnMount: 'always',
   });
 
   const events = useMemo(() => eventsData?.items || [], [eventsData]);

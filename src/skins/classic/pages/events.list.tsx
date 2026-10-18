@@ -156,7 +156,10 @@ export default function ClassicEventsListPage() {
                   onChange={(e) => s.setMonitorFilter(Array.from(e.target.selectedOptions, (o) => Number(o.value)))}
                   className={clsx(classicSelect, 'w-40')}
                 >
-                  {s.monitors.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  {/* Legacy: `Id Name`, sorted by lower(Name) (Filter.php:1332-1334). */}
+                  {[...s.monitors].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())).map((m) => (
+                    <option key={m.id} value={m.id}>{`${m.id} ${m.name}`}</option>
+                  ))}
                 </select>
                 <TermClearButton label={t('Monitor')} onClear={() => s.setMonitorFilter([])} disabled={s.monitorFilter.length === 0} />
               </div>
@@ -165,7 +168,7 @@ export default function ClassicEventsListPage() {
               <ClassicClearableInput id="ev-start" type="datetime-local" value={s.dateInputValue} onChange={s.setDateInput} ariaLabel={t('Events starting after')} className="w-48" />
             </ClassicFilterField>
             <ClassicFilterField label={<>{t('Start Date/Time')} <span className="text-zinc-500">&lt;=</span></>} htmlFor="ev-end">
-              <div title={t('The API bounds the end time, so an event still running at this instant is left out.')}>
+              <div>
                 <ClassicClearableInput id="ev-end" type="datetime-local" value={s.endInputValue} onChange={s.setEndInput} ariaLabel={t('Events starting before')} className="w-48" />
               </div>
             </ClassicFilterField>

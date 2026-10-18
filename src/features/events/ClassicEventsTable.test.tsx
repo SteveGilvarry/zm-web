@@ -157,6 +157,23 @@ describe('ClassicEventsTable — header', () => {
     expect(screen.getByTestId('events-total-duration').textContent).toBe('00:01:10');
     // ZoneMinder's `human_filesize()`: two decimals, no space, lowercase k.
     expect(screen.getByTestId('events-total-disk-space').textContent).toBe('3.00kB');
+    // Legacy links both cells to the event (events.js:110-111).
+    expect(screen.getByRole('link', { name: 'Store 3' }).getAttribute('href')).toBe('/events/$eventId');
+    expect(screen.getByRole('link', { name: '2.00kB' }).getAttribute('href')).toBe('/events/$eventId');
+  });
+
+  it('footers the totals it is given for the whole result instead of the rows', () => {
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 1, length: 65, disk_space: 2048 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        totals={{ duration: 3600, disk: 1024 ** 2 }}
+      />,
+    );
+    expect(screen.getByTestId('events-total-duration').textContent).toBe('01:00:00');
+    expect(screen.getByTestId('events-total-disk-space').textContent).toBe('1.00MB');
   });
 });
 
@@ -176,7 +193,7 @@ describe('ClassicEventsTable — rows', () => {
     expect(screen.getByText('Front Door')).toBeInTheDocument();
     expect(screen.getByText('Driveway')).toBeInTheDocument();
     // Each event row links via its id
-    expect(screen.getByRole('link', { name: '1' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: '1' })[0]).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '2' })).toBeInTheDocument();
     // Unique scores from row 2
     expect(screen.getByText('555')).toBeInTheDocument();

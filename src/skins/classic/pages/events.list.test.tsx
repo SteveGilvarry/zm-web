@@ -211,7 +211,7 @@ describe('ClassicEventsListPage — rendering', () => {
     await mountAndSettle();
 
     expect(within(screen.getByLabelText(/^Group/)).getByRole('option', { name: 'Front Yard' })).toBeInTheDocument();
-    expect(within(screen.getByLabelText(/^Monitor =/)).getByRole('option', { name: 'Driveway' })).toBeInTheDocument();
+    expect(within(screen.getByLabelText(/^Monitor =/)).getByRole('option', { name: '2 Driveway' })).toBeInTheDocument();
     expect(within(screen.getByLabelText(/^Tags/)).getByRole('option', { name: 'person' })).toBeInTheDocument();
     const archived = screen.getByLabelText(/Archive Status/);
     expect(within(archived).getByRole('option', { name: 'Unarchived Only' })).toBeInTheDocument();
@@ -344,7 +344,7 @@ describe('ClassicEventsListPage — filters', () => {
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(previewBody).toMatchObject({
       where: { rules: expect.arrayContaining([
-        { field: 'monitor_id', op: 'in', value: [1, 2] },
+        { field: 'monitor_id', op: 'in', value: [2, 1] }, // in option order: Driveway sorts first
       ]) },
     });
     expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
@@ -464,6 +464,11 @@ describe('ClassicEventsListPage — filters', () => {
 
   it('bounds the window with the two Start Date/Time fields', async () => {
     stub();
+    let previewBody: unknown = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      previewBody = await request.json();
+      return HttpResponse.json(paged([event(9)], { total: 1 }));
+    }));
     await mountAndSettle();
 
     // `user.type` cannot drive a datetime-local field segment by segment in
@@ -471,9 +476,12 @@ describe('ClassicEventsListPage — filters', () => {
     fireEvent.change(screen.getByLabelText('Events starting after'), { target: { value: '2026-08-21T10:00' } });
     await waitFor(() =>
       expect(eventRequests.at(-1)?.get('start_time')).toBe(new Date('2026-08-21T10:00').toISOString().replace(/\.\d{3}Z$/, 'Z')));
+    // Start <= bounds the *start*, so it goes through preview (`/events`
+    // only bounds the end time).
     fireEvent.change(screen.getByLabelText('Events starting before'), { target: { value: '2026-08-21T11:00' } });
-    await waitFor(() =>
-      expect(eventRequests.at(-1)?.get('end_time')).toBe(new Date('2026-08-21T11:00').toISOString().replace(/\.\d{3}Z$/, 'Z')));
+    await waitFor(() => expect(JSON.stringify(previewBody)).toContain(JSON.stringify({
+      field: 'start_time', op: 'lte', value: new Date('2026-08-21T11:00').toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    })));
   });
 
   it('refetches from the filter-row refresh button', async () => {
