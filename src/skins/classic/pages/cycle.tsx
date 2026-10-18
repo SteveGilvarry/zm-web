@@ -13,7 +13,11 @@ import { TileControls } from '@/features/montage/TileControls';
 import { WebsiteTile } from '@/features/montage/WebsiteTile';
 import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
 import { useTileZoom } from '@/features/montage/tileZoom';
+import { useAvailableHeight } from '@/features/monitors/useStageFit';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
+
+/** The transport row and the page padding under the stage. */
+const TRANSPORT_ROW_PX = 64;
 import { ClassicButton, ClassicFilterRow, ClassicPage } from '@/skins/classic/components';
 import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
 
@@ -29,9 +33,13 @@ export default function ClassicCyclePage() {
   const { allMonitors } = useCycleMonitors();
   const { byId: runtimeById } = useMonitorStatuses();
   const filter = useMonitorFilterRow(allMonitors, runtimeById);
-  // The filter row's survivors are the rotation source.
-  const cycle = useCyclePage({ monitors: filter.filtered });
-  useDocumentTitle(cycle.current ? t('{{name}} - Cycle', { name: cycle.current.name }) : t('Cycle'));
+  // What is left of the window under the stage's top edge, less the
+  // transport row: legacy `scaleToFit(…, $j('#buttons'))`.
+  const [stageAreaRef, availableHeight] = useAvailableHeight<HTMLDivElement>(TRANSPORT_ROW_PX);
+  // The filter row's survivors are the rotation source. Every legacy move
+  // is a page load, so a move resumes a paused cycle.
+  const cycle = useCyclePage({ monitors: filter.filtered, reloadOnMove: true, availableHeightPx: availableHeight });
+  useDocumentTitle(t('Cycle Watch'));
 
   if (!cycle.isAuthenticated) return null;
   const { current, index, monitors } = cycle;
@@ -85,7 +93,7 @@ export default function ClassicCyclePage() {
               </ul>
             </nav>
 
-            <div className="flex-1 min-w-0 flex flex-col items-center gap-3">
+            <div ref={stageAreaRef} className="flex-1 min-w-0 flex flex-col items-center gap-3">
               {current && (
                 <RequirePerm feature="stream" level="View" fallback="message">
                   <div
@@ -123,15 +131,12 @@ export default function ClassicCyclePage() {
                 </RequirePerm>
               )}
               <div className="flex items-center gap-2" role="group" aria-label={t('Cycle controls')}>
-                <ClassicButton tone="primary" onClick={cycle.prev} aria-label={t('Previous monitor')} title={t('Previous monitor')}>&lt;&lt;</ClassicButton>
-                <ClassicButton tone="primary" onClick={cycle.togglePause} disabled={cycle.isPaused} aria-label={t('Pause cycling')} title={t('Pause cycling')}>||</ClassicButton>
-                <ClassicButton tone="primary" onClick={cycle.togglePause} disabled={!cycle.isPaused} aria-label={t('Resume cycling')} title={t('Resume cycling')}>|&gt;</ClassicButton>
-                <ClassicButton tone="primary" onClick={cycle.next} aria-label={t('Next monitor')} title={t('Next monitor')}>&gt;&gt;</ClassicButton>
-                {!cycle.isPaused && monitors.length > 1 && (
-                  <span className="text-xs text-zinc-600 tabular-nums ms-2" aria-live="off">
-                    {t('{{count}}s', { count: cycle.countdown })}
-                  </span>
-                )}
+                {/* Legacy `#buttons`: titles PreviousMonitor, PauseCycle,
+                    PlayCycle, NextMonitor; no countdown. */}
+                <ClassicButton tone="primary" onClick={cycle.prev} aria-label={t('Previous Monitor')} title={t('Previous Monitor')}>&lt;&lt;</ClassicButton>
+                <ClassicButton tone="primary" onClick={cycle.togglePause} disabled={cycle.isPaused} aria-label={t('Pause Cycle')} title={t('Pause Cycle')}>||</ClassicButton>
+                <ClassicButton tone="primary" onClick={cycle.togglePause} disabled={!cycle.isPaused} aria-label={t('Play Cycle')} title={t('Play Cycle')}>|&gt;</ClassicButton>
+                <ClassicButton tone="primary" onClick={cycle.next} aria-label={t('Next Monitor')} title={t('Next Monitor')}>&gt;&gt;</ClassicButton>
               </div>
             </div>
           </div>

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useRouteSearch, searchInt } from '@/features/monitors/useRouteSearch';
 import { displayDimensions } from '@/features/monitors/orientation';
@@ -40,6 +40,14 @@ export interface CycleRotationOptions {
    * it is a *default*: an operator override outlives it.
    */
   defaultIntervalS?: number;
+  /**
+   * Behave like legacy cycle.js, where every move is a page load
+   * (`window.location.replace`): Prev, Next and a nav-pill resume a paused
+   * cycle, and a filter change starts again from the first monitor.
+   * Without it a pause survives a manual step and the monitor on stage
+   * stays put while it survives the filter.
+   */
+  reloadOnMove?: boolean;
 }
 
 /**
@@ -47,6 +55,7 @@ export interface CycleRotationOptions {
  * the Watch page can host a cycle sidebar over its own monitor list.
  */
 export function useCycleRotation(monitors: Monitor[], options: CycleRotationOptions = {}): CycleRotationState {
+  const reloadOnMove = options.reloadOnMove ?? false;
   const [index, setIndex] = useState(0);
   const [isPaused, setIsPaused] = useState(false);
   const defaultIntervalS = options.defaultIntervalS ?? CYCLE_DEFAULT_INTERVAL_S;
@@ -66,6 +75,29 @@ export function useCycleRotation(monitors: Monitor[], options: CycleRotationOpti
 
   const len = monitors.length;
   const startIdx = pendingStart != null ? monitors.findIndex((m) => m.id === pendingStart) : -1;
+
+  // The rotation list changed (the filter row, a monitor added or gone).
+  // Index arithmetic alone would put an arbitrary camera on stage, so follow
+  // the one that was showing, or start over from the first. Adjusted during
+  // render from the previous list kept in state (no corrective effect).
+  const ids = monitors.map((m) => m.id);
+  const idsKey = ids.join(',');
+  const [prevIds, setPrevIds] = useState<number[]>(ids);
+  if (prevIds.join(',') !== idsKey) {
+    setPrevIds(ids);
+    const startSurvives = pendingStart != null && ids.includes(pendingStart);
+    // An emptied list (the Watch sidebar closing) keeps its place for when
+    // the monitors come back.
+    if (prevIds.length > 0 && ids.length > 0 && !startSurvives) {
+      const prevStart = pendingStart != null ? prevIds.indexOf(pendingStart) : -1;
+      const shownId = prevIds[prevStart >= 0 ? prevStart : index % prevIds.length];
+      const kept = reloadOnMove ? -1 : ids.indexOf(shownId);
+      setPendingStart(undefined);
+      setIndex(kept >= 0 ? kept : 0);
+      if (kept < 0) setCountdown(intervalS);
+      if (reloadOnMove) setIsPaused(false);
+    }
+  }
   // Clamp during render so a shrinking list never needs a corrective effect.
   const safeIndex = len === 0 ? 0 : startIdx >= 0 ? startIdx : index % len;
   // The timer reads the live position through a ref so it never advances
@@ -95,6 +127,7 @@ export function useCycleRotation(monitors: Monitor[], options: CycleRotationOpti
     setPendingStart(undefined);
     setIndex(((to % len) + len) % len);
     setCountdown(intervalS);
+    if (reloadOnMove) setIsPaused(false);
   };
 
   return {
@@ -123,18 +156,26 @@ export interface CyclePageOptions {
    * list, or every monitor.
    */
   monitors?: Monitor[];
+  /** See `CycleRotationOptions.reloadOnMove` (the classic skin). */
+  reloadOnMove?: boolean;
+  /**
+   * Height left for the stage, measured by the page. With Width, Height and
+   * Scale all on auto the stage then fits the window as legacy
+   * `scaleToFit` does, instead of only the column's width.
+   */
+  availableHeightPx?: number;
 }
 
 /** The monitor list the Cycle page rotates over, shared by both skins. */
 export function useCycleMonitors() {
   const { isAuthenticated } = useAuthStore();
   const q = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: 60_000,
   });
-  const allMonitors = useMemo(() => q.data?.items ?? [], [q.data?.items]);
+  const allMonitors = useMemo(() => q.data ?? [], [q.data]);
   return {
     allMonitors,
     isLoading: q.isLoading,
@@ -169,6 +210,30 @@ export interface CyclePageState extends CycleRotationState {
 }
 
 /**
+ * The stage box. Everything on auto with a measured height is legacy
+ * `scaleToFit`: as tall as the window allows, unless that is wider than the
+ * column, then as wide as the column. Any explicit choice is `stageStyle`'s.
+ */
+export function cycleStageStyle(
+  size: StageSize,
+  dims: { width: number; height: number },
+  availableHeightPx?: number,
+): CSSProperties {
+  const fitWindow = size.width === 'auto' && size.height === 'auto' && size.scale === '0';
+  if (!fitWindow || !availableHeightPx || availableHeightPx <= 0 || dims.width <= 0 || dims.height <= 0) {
+    return stageStyle(size, dims, availableHeightPx);
+  }
+  // The width the height allows; `max-width` clamps it to the column and the
+  // aspect ratio derives the height from whichever width wins.
+  const byHeight = Math.floor((availableHeightPx * dims.width) / dims.height);
+  return {
+    aspectRatio: `${dims.width} / ${dims.height}`,
+    width: `${byHeight}px`,
+    maxWidth: '100%',
+  };
+}
+
+/**
  * Data + rotation state for the Cycle page. Skin-agnostic: both skins render
  * from this one hook and only differ in layout and in what they put on stage
  * (live stream vs refreshing snapshot). Honours `?monitor_id=`.
@@ -189,7 +254,9 @@ export function useCyclePage(options: CyclePageOptions = {}): CyclePageState {
 
   // Legacy `ZM_WEB_REFRESH_CYCLE` — seconds each monitor holds the stage.
   const configIntervalS = useZmConfig('ZM_WEB_REFRESH_CYCLE', CYCLE_DEFAULT_INTERVAL_S);
-  const rotation = useCycleRotation(monitors, { startMonitorId, defaultIntervalS: configIntervalS });
+  const rotation = useCycleRotation(monitors, {
+    startMonitorId, defaultIntervalS: configIntervalS, reloadOnMove: options.reloadOnMove,
+  });
   const [viewMode, setViewMode] = useState<CycleViewMode>('stream');
   const size = useMontageStore((s) => s.cycleStage);
   const setSize = useMontageStore((s) => s.setCycleStage);
@@ -208,12 +275,18 @@ export function useCyclePage(options: CyclePageOptions = {}): CyclePageState {
     setViewMode,
     stage: {
       size,
-      // Read the live store, not this render's `size`, so two setters fired
-      // in one batch do not clobber each other.
-      setWidth: (width) => setSize({ ...useMontageStore.getState().cycleStage, width }),
-      setHeight: (height) => setSize({ ...useMontageStore.getState().cycleStage, height }),
-      setScale: (scale) => setSize({ ...useMontageStore.getState().cycleStage, scale }),
-      style: stageStyle(size, rotation.current ? displayDimensions(rotation.current) : { width: 16, height: 9 }),
+      // Legacy cycle.js: `changeSize` puts Scale back to Auto, `changeScale`
+      // puts Width and Height back to auto. Reads the live store, not this
+      // render's `size`, so two setters fired in one batch do not clobber
+      // each other.
+      setWidth: (width) => setSize({ ...useMontageStore.getState().cycleStage, width, scale: '0' }),
+      setHeight: (height) => setSize({ ...useMontageStore.getState().cycleStage, height, scale: '0' }),
+      setScale: (scale) => setSize({ width: 'auto', height: 'auto', scale }),
+      style: cycleStageStyle(
+        size,
+        rotation.current ? displayDimensions(rotation.current) : { width: 16, height: 9 },
+        options.availableHeightPx,
+      ),
     },
   };
 }
