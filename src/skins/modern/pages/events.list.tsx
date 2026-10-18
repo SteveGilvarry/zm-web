@@ -325,6 +325,7 @@ export default function EventsListPage() {
             <EventsTable
               events={events}
               monitorName={(id) => monitorLookup[id] || t('Monitor {{id}}', { id })}
+              storageName={state.storageName}
               token={accessToken ?? undefined}
               selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
