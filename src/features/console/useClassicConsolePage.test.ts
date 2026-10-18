@@ -159,10 +159,11 @@ describe('useClassicConsolePage', () => {
     expect(result.current.cloneSeed).toBeNull();
   });
 
-  it('footer scope: one visible row → monitor_id, a lone group filter → group, otherwise everything', () => {
-    expect(eventsScopeFor([4], { values: { groupId: '' } as never, activeCount: 0 })).toEqual({ monitor_id: 4 });
-    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 1 })).toEqual({ group: 9 });
-    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 2 })).toEqual({});
+  it('footer scope: the visible ids once the table is narrowed, nothing when it is not', () => {
+    expect(eventsScopeFor([4], false)).toEqual({ monitor_id: 4 });
+    expect(eventsScopeFor([1, 2], true)).toEqual({ monitor_id: [1, 2] });
+    expect(eventsScopeFor([1, 2, 3], false)).toEqual({});
+    expect(eventsScopeFor([], true)).toEqual({});
     expect(cloneName('Cam', ['Cam', 'Clone of Cam'])).toBe('Clone of Clone of Cam');
   });
 

@@ -245,6 +245,9 @@ export default function ClassicConsolePage() {
                 {sortTh('week', t('Week'), true)}
                 {sortTh('month', t('Month'), true)}
                 {sortTh('archived', t('Archived'), true)}
+                {/* Legacy's Zones header links `?view=zones` (every monitor's
+                    zones). zm-web has no all-zones page, so the header only
+                    sorts; each row's count links to that monitor's zones. */}
                 {sortTh('zones', t('Zones'), true)}
                 {sortTh('sequence', t('Sequence'), true)}
               </tr>

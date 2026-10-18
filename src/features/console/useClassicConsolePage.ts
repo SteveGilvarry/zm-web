@@ -16,6 +16,7 @@ import { useMonitorFilterRow, type MonitorFilterRowState } from '@/features/moni
 import { useRouteSearch, searchFlag } from '@/features/monitors/useRouteSearch';
 import { summarizeRuntime, type RuntimeTotals } from '@/features/monitors/useMonitorStatuses';
 import type { Monitor } from '@/types';
+import { monitorIdsToSearch } from '@/features/events/eventsSearch';
 import { useConsoleData, lookupSummary, type ConsoleData } from './useConsoleData';
 import { useConsoleColumnsStore, type ConsoleColumnKey } from './consoleColumns';
 import {
@@ -56,16 +57,18 @@ export function cloneName(source: string, taken: Iterable<string>): string {
 }
 
 /**
- * Monitor scope for the footer's events-list links. The events page takes one
- * `monitor_id` or one `group`; it has no `monitor_ids`, so any other subset
- * falls back to "every monitor" (legacy sends `Monitor IN (…)`).
+ * Monitor scope for the footer's events-list links. Legacy adds
+ * `Monitor IN (visible ids)` (ajax/console.php); `/events` takes the same
+ * list as `monitor_id`. An unnarrowed table sends nothing, which selects
+ * the same events without putting every monitor id in the URL; an empty
+ * table sends nothing too, as legacy skips the term when no id is left.
  */
-export type EventsScope = { monitor_id: number } | { group: number } | Record<string, never>;
+export type EventsScope = { monitor_id?: number | number[] };
 
-export function eventsScopeFor(visibleIds: number[], filter: Pick<MonitorFilterRowState, 'values' | 'activeCount'>): EventsScope {
-  if (visibleIds.length === 1) return { monitor_id: visibleIds[0] };
-  if (filter.activeCount === 1 && filter.values.groupId) return { group: Number(filter.values.groupId) };
-  return {};
+export function eventsScopeFor(visibleIds: number[], narrowed: boolean): EventsScope {
+  if (!narrowed && visibleIds.length !== 1) return {};
+  const ids = monitorIdsToSearch(visibleIds);
+  return ids === undefined ? {} : { monitor_id: ids };
 }
 
 export interface ClassicConsolePageState {
@@ -226,7 +229,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     [data.runtimeById, allRows],
   );
   const hasRuntime = allRows.some((r) => r.runtime != null);
-  const eventsScope = eventsScopeFor(allRows.map((r) => r.monitor.id), filter);
+  const eventsScope = eventsScopeFor(allRows.map((r) => r.monitor.id), filter.activeCount > 0 || query.trim() !== '');
 
   const setPage = (p: number) => setPageState(Math.max(1, p));
   const setPageSize = (n: number) => { setPageSizeOverride(n); setPageState(1); };

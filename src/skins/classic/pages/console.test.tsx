@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useConsoleColumnsStore } from '@/features/console/consoleColumns';
+import { parseEventsSearch } from '@/features/events/eventsSearch';
 import { useToastStore } from '@/components/common/toastStore';
 import { useUiStore } from '@/stores/ui';
 
@@ -312,6 +313,17 @@ describe('ClassicConsolePage — table', () => {
     // Runtime totals cell: aggregate bandwidth and fps.
     // Summed fps prints as PHP would: trailing zeros dropped, so 5 not 5.00.
     expect(within(foot).getByTestId('console-runtime-totals')).toHaveTextContent('2.00kB/s 10 fps / 5 fps');
+  });
+
+  it('scopes the footer links to the visible monitors once the table is narrowed', async () => {
+    stub();
+    useMonitorFilterStore.getState().setMonitorIds([1, 2]);
+    await mount();
+    await screen.findByTestId('console-row-2');
+    const foot = screen.getByTestId('console-classic-table').querySelector('tfoot')!;
+    expect(within(foot).getByText('Total: 2')).toBeInTheDocument();
+    const href = within(foot).getByRole('link', { name: '34' }).getAttribute('href') ?? '';
+    expect(parseEventsSearch(Object.fromEntries(new URLSearchParams(href.split('?')[1]))).monitor_id).toEqual([1, 2]);
   });
 
   it('sorts by a column header and flips direction on a second click', async () => {
