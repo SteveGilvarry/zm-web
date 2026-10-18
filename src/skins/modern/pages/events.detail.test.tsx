@@ -342,7 +342,8 @@ describe('EventDetailPage — time-bounded neighbours', () => {
   });
 
   it('walks every monitor when the list was unfiltered', async () => {
-    useEventPlaybackStore.setState({ navScope: { monitorId: null } });
+    // The list's position, with no monitor filter.
+    mockSearch = { page: 1, page_size: 25, sort: 'start_time', dir: 'asc' };
     const queries: URLSearchParams[] = [];
     stubBase();
     server.use(
@@ -354,6 +355,21 @@ describe('EventDetailPage — time-bounded neighbours', () => {
     await mount();
     await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
     expect(queries.every((q) => !q.has('monitor_id'))).toBe(true);
+  });
+
+  it('stays on the event\'s own monitor without a list in the URL, whatever list was last open', async () => {
+    useEventPlaybackStore.setState({ navScope: { monitorId: null } });
+    const queries: URLSearchParams[] = [];
+    stubBase();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        queries.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [], total: 0, per_page: 10, current_page: 1, last_page: 1 });
+      }),
+    );
+    await mount();
+    await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
+    expect(queries.every((q) => q.get('monitor_id') === '1')).toBe(true);
     useEventPlaybackStore.setState({ navScope: null });
   });
 });

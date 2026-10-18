@@ -511,16 +511,18 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const listPrev = listReversed ? rowAfter : rowBefore;
   const listNext = listReversed ? rowBefore : rowAfter;
 
-  // Scope for the time-based fallback: the monitor this URL is filtered to,
-  // the one the events list was filtered to, every monitor when it was
-  // unfiltered, or — before the list has been visited — the event's own
-  // monitor. The timestamp goes back to the backend verbatim, so the dev
-  // box's server-local-stamped-Z values and the fixed build's true UTC both
-  // stay self-consistent.
+  // Scope for the time-based fallback, as legacy's `getNearEvents` builds
+  // it from the URL: the monitor this URL is filtered to; every monitor when
+  // the URL carries an unfiltered list (or several monitors, which `/events`
+  // cannot narrow to); and with no list context at all — arriving from the
+  // console, a montage or a link — the event's own monitor (event.php:167,
+  // the `MonitorId = <this event's>` default term). The timestamp goes back
+  // to the backend verbatim, so the dev box's server-local-stamped-Z values
+  // and the fixed build's true UTC both stay self-consistent.
   const navMonitorId: number | null = urlMonitorIds.length === 1
     ? urlMonitorIds[0]
-    : listCtx || navScope !== null
-      ? (navScope?.monitorId ?? null)
+    : listCtx || urlMonitorIds.length > 1
+      ? null
       : (event?.monitor_id ?? null);
   const scopeMonitor = navMonitorId ?? undefined;
   const startAt = event?.start_date_time ?? null;
