@@ -21,6 +21,13 @@ import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
 import { makeLog, makeServer, paginated } from '@/test/fixtures';
 
+// The sidebar's Log mark counts /logs by level on every page; these tests
+// count /logs requests the page itself makes, so keep the sidebar quiet.
+vi.mock('@/features/logs/useLogState', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('@/features/logs/useLogState')>()),
+  useLogState: () => 'ok',
+}));
+
 setupMockServer();
 
 beforeEach(() => {
