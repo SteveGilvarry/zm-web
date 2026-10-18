@@ -234,6 +234,11 @@ export interface UseZoneEditorArgs {
   openZoneId?: ZoneSelection;
   /** Fires when the selection changes, so the parent can mirror it. */
   onSelectionChange?: (id: ZoneSelection) => void;
+  /**
+   * How to tell the operator the capture process restarts after a Privacy
+   * zone save. Legacy uses `alert()` (`zone.js:522`); a toast by default.
+   */
+  notifyPrivacyRestart?: (message: string) => void;
 }
 
 export interface ZoneEditorState {
@@ -287,7 +292,7 @@ export interface ZoneEditorState {
  * pixels, so the thresholds go out as pixel counts.
  */
 export function useZoneEditor({
-  monitorId, width, height, openZoneId, onSelectionChange,
+  monitorId, width, height, openZoneId, onSelectionChange, notifyPrivacyRestart,
 }: UseZoneEditorArgs): ZoneEditorState {
   const { t } = useTranslation();
   const qc = useQueryClient();
@@ -429,7 +434,8 @@ export function useZoneEditor({
       // Legacy alerts on every Privacy-zone save (`zone.js:521`): the capture
       // process has to restart before the blackout changes on the stream.
       if (savedType === 'Privacy') {
-        toast.info(t('Capture process for this monitor will be restarted for the Privacy zone changes to take effect.'));
+        const message = t('Capture process for this monitor will be restarted for the Privacy zone changes to take effect.');
+        if (notifyPrivacyRestart) notifyPrivacyRestart(message); else toast.info(message);
       }
       invalidate();
       // 1.39.41 returns to the zones list after a save (`actions/zone.php:84-91`).

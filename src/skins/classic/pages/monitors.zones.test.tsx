@@ -509,6 +509,20 @@ describe('ClassicMonitorZonesPage — legacy\'s zone page', () => {
     });
   });
 
+  it('alerts that capture restarts after saving a Privacy zone, as legacy does', async () => {
+    stubOk();
+    const sent = captureSave();
+    const alert = vi.spyOn(window, 'alert').mockImplementation(() => {});
+    const user = userEvent.setup();
+    await openZone(user, 'Porch');
+    await user.selectOptions(screen.getByLabelText('Type'), 'Privacy');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    await waitFor(() => expect(alert).toHaveBeenCalledWith(
+      'Capture process for this monitor will be restarted for the Privacy zone changes to take effect.',
+    ));
+  });
+
   it('greys Save for a monitors:View user', async () => {
     useAuthStore.setState({ user: VIEWER });
     stubOk();

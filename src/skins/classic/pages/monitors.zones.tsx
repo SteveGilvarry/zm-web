@@ -237,6 +237,8 @@ function ClassicZoneView({ monitor, frame, zoneId, runtime, canEdit, canGoBack, 
     height: frame.height,
     openZoneId: zoneId,
     onSelectionChange: (id) => (id == null ? onClose() : onSelect(id)),
+    // Legacy alerts (`zone.js:522`).
+    notifyPrivacyRestart: (message) => window.alert(message),
   });
   const tool = useObjectSizeTool(editor);
   const player = useZonePlayer(monitor.default_player);
