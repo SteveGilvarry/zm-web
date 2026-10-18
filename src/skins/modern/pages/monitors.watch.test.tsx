@@ -854,3 +854,40 @@ describe('modern Watch page — stage controls, pause and idle', () => {
   });
 });
 
+describe('modern Watch page — cycle and PTZ toggles', () => {
+  it('opens the cycle cluster paused, and plays it on demand', async () => {
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    const toggle = await screen.findByRole('button', { name: 'Cycle through monitors' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('combobox', { name: 'Cycle period' })).toBeNull();
+
+    await user.click(toggle);
+    expect(screen.getByRole('combobox', { name: 'Cycle period' })).toBeInTheDocument();
+    // Showing the cycle does not start it: legacy only does with cycle=true.
+    expect(screen.queryByTestId('seconds-to-cycle')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Play Cycle' }));
+    expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeInTheDocument();
+    expect(screen.getByTestId('seconds-to-cycle')).toHaveTextContent(/\d+/);
+  });
+
+  it('starts the rotation on cycle=true', async () => {
+    renderRoute('/monitors/1?cycle=true');
+    await findWatch('Front Door');
+    expect(await screen.findByRole('button', { name: 'Pause Cycle' })).toBeInTheDocument();
+  });
+
+  it('folds the PTZ panel away from its toggle, remembered', async () => {
+    const user = userEvent.setup();
+    renderRoute('/monitors/2');
+    await findWatch('Driveway');
+    await screen.findByRole('heading', { name: 'Camera control' });
+
+    await user.click(screen.getByRole('button', { name: 'Toggle PTZ Controls' }));
+    expect(screen.queryByRole('heading', { name: 'Camera control' })).toBeNull();
+    expect(useWatchPrefsStore.getState().ptzShow).toBe(false);
+  });
+});
+

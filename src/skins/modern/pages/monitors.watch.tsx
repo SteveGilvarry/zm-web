@@ -1,4 +1,4 @@
-import { useRef, type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +28,10 @@ import {
   Pencil,
   Camera,
   Image as ImageIcon,
-  Search, ChevronLeft, Plus, Minus} from 'lucide-react';
+  Search, ChevronLeft, Plus, Minus, Repeat} from 'lucide-react';
+import { useWatchCycle } from '@/features/cycle/useWatchCycle';
+import { usePerms } from '@/features/auth/usePerms';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import { Modal } from '@/components/common/Modal';
 import { Button } from '@/components/common/Button';
 import { AppShell } from '@/skins/AppShell';
@@ -96,7 +99,23 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     toggleMute, retry, viewMode, setViewMode, stage, downloadImage, isDownloading, contentRef, idle,
   } = page;
   const id = monitorId;
+  const { can } = usePerms();
   const [stageRef, box] = useMeasuredBox<HTMLDivElement>();
+  // Rotation through the capturing cameras — legacy's cycle sidebar, here a
+  // cluster in the control line. Opens running only with `?cycle=true`.
+  const [cycleOn, setCycleOn] = useState(page.cycleRequested);
+  const cycle = useWatchCycle(
+    monitorId,
+    siblings.filter((m) => m.capturing !== 'None'),
+    cycleOn,
+    {
+      autoStart: page.cycleRequested,
+      playing: isStreaming && !isPaused,
+      failed: activeStream.state === 'failed',
+    },
+  );
+  const ptzShow = useWatchPrefsStore((s) => s.ptzShow);
+  const togglePtzShow = useWatchPrefsStore((s) => s.togglePtzShow);
   // Display labels for the capture/analysis/recording wire values. The
   // values themselves are sent to the API untranslated.
   const modeLabel = (mode: string): string => {
@@ -615,7 +634,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   // Only mount the PTZ panel when the backend reports real capabilities;
   // non-PTZ monitors get no empty panel at all. Viewing the panel needs
   // Control View, as legacy's `canView('Control')` does.
-  const ptzPanel = ptzState.status === 'ready' && !page.isWebSite ? (
+  const ptzAvailable = ptzState.status === 'ready' && !page.isWebSite && can('control', 'View');
+  const ptzPanel = ptzState.status === 'ready' && !page.isWebSite && ptzShow ? (
     <RequirePerm feature="control" level="View">
       <Panel
         title={t('Camera control')}
@@ -677,7 +697,66 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             </div>
           )}
 
+          {prevMonitorId !== null && (
+            <div className="flex items-center gap-1 shrink-0" role="group" aria-label={t('Cycle')}>
+              <button
+                type="button"
+                onClick={() => setCycleOn((v) => !v)}
+                aria-pressed={cycleOn}
+                aria-label={t('Cycle through monitors')}
+                title={t('Cycle through monitors')}
+                className={clsx(toolBtn, cycleOn && 'text-accent')}
+              >
+                <Repeat size={14} aria-hidden />
+              </button>
+              {cycleOn && (
+                <>
+                  <select
+                    aria-label={t('Cycle period')}
+                    value={String(cycle.intervalS)}
+                    onChange={(e) => cycle.setInterval(Number(e.target.value))}
+                    className="px-1.5 py-1 rounded border border-border-subtle bg-surface text-fg text-xs cursor-pointer focus:outline-none focus:border-accent"
+                  >
+                    {cycle.periods.map((secs) => (
+                      <option key={secs} value={secs}>
+                        {secs < 60 || secs % 60 !== 0
+                          ? t('{{count}} s', { count: secs })
+                          : t('{{count}} min', { count: secs / 60 })}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={cycle.togglePause}
+                    aria-label={cycle.isPaused ? t('Play Cycle') : t('Pause Cycle')}
+                    title={cycle.isPaused ? t('Play Cycle') : t('Pause Cycle')}
+                    className={toolBtn}
+                  >
+                    {cycle.isPaused ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />}
+                  </button>
+                  {!cycle.isPaused && (
+                    <span className="w-6 text-xs font-mono tabular-nums text-fg-dim" data-testid="seconds-to-cycle">
+                      {cycle.countdown}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <div className="ms-auto flex items-center gap-2 shrink-0">
+            {ptzAvailable && (
+              <button
+                type="button"
+                onClick={togglePtzShow}
+                aria-pressed={ptzShow}
+                aria-label={t('Toggle PTZ Controls')}
+                title={t('Toggle PTZ Controls')}
+                className={clsx(toolBtn, ptzShow && 'text-accent')}
+              >
+                <Joystick size={16} aria-hidden />
+              </button>
+            )}
             <div
               role="group"
               aria-label={t('View mode')}
