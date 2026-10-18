@@ -5,9 +5,9 @@ import { useTranslation } from 'react-i18next';
 import { ArrowLeft, RefreshCw } from 'lucide-react';
 
 /** White page body under the classic nav; no panels, no glow. */
-export function ClassicPage({ className, children }: { className?: string; children: ReactNode }) {
+export function ClassicPage({ className, hidden, children }: { className?: string; hidden?: boolean; children: ReactNode }) {
   return (
-    <main className={clsx('flex-1 min-w-0 px-3 py-3 bg-white text-zinc-900', className)}>
+    <main hidden={hidden} className={clsx('flex-1 min-w-0 px-3 py-3 bg-white text-zinc-900', className)}>
       {children}
     </main>
   );
@@ -20,6 +20,8 @@ interface ClassicHeaderProps {
   backTo?: string;
   /** Grey out the `history.back()` arrow (legacy: no referrer to go back to). */
   backDisabled?: boolean;
+  /** Back does this instead of `history.back()` (a page drawn over another, like the monitor editor). */
+  onBack?: () => void;
   onRefresh?: () => void;
   /** Controls at the inline end. */
   end?: ReactNode;
@@ -27,7 +29,7 @@ interface ClassicHeaderProps {
 }
 
 /** Legacy `#header`: back + refresh squares, centred title, end cluster. */
-export function ClassicHeader({ title, backTo, backDisabled = false, onRefresh, end, children }: ClassicHeaderProps) {
+export function ClassicHeader({ title, backTo, backDisabled = false, onBack, onRefresh, end, children }: ClassicHeaderProps) {
   const { t } = useTranslation();
   const square = 'inline-flex items-center justify-center w-9 h-8 rounded-sm border text-white transition-colors';
   return (
@@ -38,7 +40,7 @@ export function ClassicHeader({ title, backTo, backDisabled = false, onRefresh, 
             <ArrowLeft size={16} className="rtl:-scale-x-100" aria-hidden />
           </Link>
         ) : (
-          <button type="button" onClick={() => window.history.back()} disabled={backDisabled} aria-label={t('Back')} title={t('Back')} className={clsx(square, 'bg-[#8a9299] border-[#7b838a] hover:bg-[#6f777e] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#8a9299]')}>
+          <button type="button" onClick={onBack ?? (() => window.history.back())} disabled={backDisabled} aria-label={t('Back')} title={t('Back')} className={clsx(square, 'bg-[#8a9299] border-[#7b838a] hover:bg-[#6f777e] disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-[#8a9299]')}>
             <ArrowLeft size={16} className="rtl:-scale-x-100" aria-hidden />
           </button>
         )}

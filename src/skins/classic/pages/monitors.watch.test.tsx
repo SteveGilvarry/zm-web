@@ -565,8 +565,17 @@ describe('ClassicMonitorWatchPage', () => {
     await mount();
 
     await user.click(await screen.findByRole('button', { name: 'Edit' }));
-    // The editor is a full-screen overlay, not a dialog role — assert its heading.
-    expect(await screen.findByRole('heading', { name: 'Edit · Driveway' })).toBeInTheDocument();
+    // Legacy's own monitor page under the nav: the watch body is hidden behind it.
+    const editor = await screen.findByTestId('monitor-editor');
+    expect(within(editor).getByRole('heading', { name: 'Monitor - 3 - Driveway' })).toBeInTheDocument();
+    expect(screen.getAllByRole('heading', { name: 'Monitor - 3 - Driveway' })).toHaveLength(1);
+    // monitor.php's tab order.
+    const rail = within(screen.getByRole('navigation', { name: 'Monitor tabs' }));
+    expect(rail.getAllByRole('button').map((b) => b.textContent)).toEqual([
+      'General', 'Source', 'Analysis', 'Recording', 'Viewing', 'ONVIF', 'Timestamp', 'Buffers', 'Control', 'Misc', 'Zones', 'MQTT',
+    ]);
+    await user.click(within(editor).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('monitor-editor')).toBeNull();
   });
 
   it('shows the filter bar open by default and folds it behind the flip icon', async () => {

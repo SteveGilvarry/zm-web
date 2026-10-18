@@ -8,11 +8,21 @@ import { useToast } from '@/components/common/toastStore';
 import { usePerms } from '@/features/auth/usePerms';
 import type { Monitor } from '@/types';
 import {
-  validateDraft, fieldErrorsFromDetails, tabForField, lockedKeys,
+  validateDraft, fieldErrorsFromDetails, tabForField, lockedKeys, visibleTabs, columnFields,
   type TabDef, type FieldValue, type FieldErrors,
 } from './fields';
 import { useGroupMembership } from './useGroupMembership';
 import { extractEditableFields, sameValue, sameIdSet, isUnsetSecret } from './editorState';
+
+/**
+ * Draft values in the shape the request wants. The draft keeps every value
+ * as a string or number; `deleted` is a boolean on the wire.
+ */
+function toWire(values: Record<string, FieldValue>): Record<string, unknown> {
+  const out: Record<string, unknown> = { ...values };
+  if ('deleted' in out && out.deleted != null) out.deleted = Number(out.deleted) !== 0;
+  return out;
+}
 
 /**
  * What a new monitor starts with: legacy `?view=monitor` (Add) or
@@ -102,7 +112,7 @@ export function useMonitorEditor({
   const tabDiffCount = useMemo(() => {
     const counts: Record<string, number> = {};
     for (const tab of tabs) {
-      const keys = new Set(tab.fields.filter((f) => f.kind !== 'group' && f.key in diff).map((f) => f.key));
+      const keys = new Set(columnFields([tab]).filter((f) => f.key in diff).map((f) => f.key));
       counts[tab.id] = keys.size + (tab.id === 'general' && groupsDirty ? 1 : 0);
     }
     return counts;
@@ -157,9 +167,9 @@ export function useMonitorEditor({
   };
 
   const saveMutation = useMutation({
-    mutationFn: async ({ closeAfter }: { closeAfter: boolean }) => {
+    mutationFn: async ({ closeAfter }: { closeAfter: boolean; after?: () => void }) => {
       if (!monitor) throw new Error('save called without a monitor');
-      if (Object.keys(diff).length > 0) await patchMonitor(monitor.id, diff);
+      if (Object.keys(diff).length > 0) await patchMonitor(monitor.id, toWire(diff));
       if (groupsDirty && groupsDraft) {
         const want = new Set(groupsDraft);
         const have = new Set(groupsBaseline);
@@ -168,7 +178,7 @@ export function useMonitorEditor({
       }
       return closeAfter;
     },
-    onSuccess: (closeAfter) => {
+    onSuccess: (closeAfter, { after }) => {
       setSaveError(null);
       setFieldErrors({});
       // Promote the saved draft to the baseline so the counter zeroes now.
@@ -178,6 +188,7 @@ export function useMonitorEditor({
       invalidate();
       toast.success(t('Monitor saved.'));
       if (closeAfter) onClose();
+      after?.();
     },
     onError: showApiError,
   });
@@ -185,8 +196,8 @@ export function useMonitorEditor({
   const createMutation = useMutation({
     mutationFn: async () => {
       const body: Record<string, unknown> = { ...seed!.values };
-      for (const [k, v] of Object.entries(draft)) {
-        if (!isUnsetSecret(k, v)) body[k] = v;
+      for (const [k, v] of Object.entries(toWire(draft))) {
+        if (!isUnsetSecret(k, v as FieldValue)) body[k] = v;
       }
       body.deleted = false;
       const created = await postMonitor(body as MonitorCreatePayload);
@@ -214,8 +225,11 @@ export function useMonitorEditor({
     onError: toast.apiError,
   });
 
-  /** Validate, then PATCH (edit) or POST (create). Create always closes. */
-  const save = (closeAfter: boolean) => {
+  /**
+   * Validate, then PATCH (edit) or POST (create). Create always closes.
+   * `after` runs once an edit is saved (the Zones guard's "Save").
+   */
+  const save = (closeAfter: boolean, after?: () => void) => {
     const errors = validateDraft(tabs, draft, t);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
@@ -225,7 +239,7 @@ export function useMonitorEditor({
     }
     setSaveError(null);
     if (isNew) createMutation.mutate();
-    else saveMutation.mutate({ closeAfter });
+    else saveMutation.mutate({ closeAfter, after });
   };
 
   /** Close, asking first when there are unsaved edits. */
@@ -266,14 +280,19 @@ export function useMonitorEditor({
       return next;
     });
 
+  // Legacy builds the tab list from Type, DeviceClass and the Control
+  // permission; a tab that disappears under the operator falls back to the first.
+  const shownTabs = visibleTabs(tabs, draft, can);
+  const formTabs = shownTabs.filter((tab) => !tab.navigatesTo);
+
   return {
     isNew,
     monitorId: monitor?.id ?? null,
     clonedFrom: seed?.clonedFrom,
-    tabs,
+    tabs: shownTabs,
     activeTab,
     setActiveTab,
-    activeTabDef: tabs.find((tab) => tab.id === activeTab) ?? tabs[0],
+    activeTabDef: formTabs.find((tab) => tab.id === activeTab) ?? formTabs[0],
     draft,
     baseline,
     diff,

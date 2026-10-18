@@ -45,6 +45,20 @@ export type FieldKind =
   | 'return-location-select'
   /** Multi-select of the other monitors, stored as a comma-separated id list. */
   | 'linked-monitors'
+  /** Dropdown of users from /api/v3/users (legacy "User for RTSP Server Auth"), null = None. */
+  | 'user-select'
+  /** Legacy checkbox, 0/1. */
+  | 'checkbox'
+  /** Legacy radio group over `options`. */
+  | 'radio'
+  /** "Monitor is Deleted, Undelete?": shown on a deleted monitor; checking it writes `deleted: false`. */
+  | 'undelete'
+  /** Virtual: group membership (not a monitor column; saved through /groups-monitors). */
+  | 'groups'
+  /** Virtual: the Triggers checkboxes; X10 is the only trigger and is not built, so "None available". */
+  | 'triggers'
+  /** Virtual: legacy "Estimated Ram Use", computed from the buffers and the capture size. */
+  | 'ram-estimate'
   | 'group';
 
 export type FieldValue = string | number | null;
@@ -94,6 +108,28 @@ export interface FieldDef {
   /** A link rendered beside the label (legacy "LIST" button next to Control type). */
   link?: { to: string; label: string };
   /**
+   * Shown only when this returns true, on top of `show`. Gets the draft
+   * and the stored values (legacy hides the secondary-source selects until
+   * a second path exists, the Janus extras until Janus is on, …).
+   */
+  visibleIf?: (draft: Record<string, FieldValue>, stored: Record<string, FieldValue>) => boolean;
+  /** Option values greyed out for the current draft (legacy filters Encoder by Output Codec). */
+  disabledOption?: (value: string | number, draft: Record<string, FieldValue>) => boolean;
+  /** Unit text after the input (legacy "seconds", "frames"). */
+  suffix?: string;
+  /** A second control on the same row (legacy Section length + "Warn if exceeded"). */
+  companion?: FieldDef;
+  /** Small muted text after the input (legacy "(Deprecated - …)" on Target colorspace). */
+  note?: string;
+  /** Red text shown beside the input while it has a value (legacy Max FPS "CAUTION"). */
+  cautionWhenSet?: string;
+  /** Legacy `makeHelpLink`: a "(?)" after the label that reveals `help`. */
+  helpLink?: boolean;
+  /** For 'storage-select': label of an option that writes 0 (legacy "Unspecified"). */
+  zeroOption?: string;
+  /** Not a monitor column (group membership, computed readouts): never extracted, diffed or sent. */
+  virtual?: boolean;
+  /**
    * Permission needed to change the field. Without it the field renders
    * read-only with `reason` as its tooltip, and the editor never sends it.
    */
@@ -105,6 +141,14 @@ export interface TabDef {
   label: string;
   description?: string;
   fields: FieldDef[];
+  /**
+   * Whether the tab is offered for this monitor (legacy `monitor.php`
+   * builds the tab list from Type and DeviceClass, and Control from the
+   * user's Control permission).
+   */
+  visibleIf?: (draft: Record<string, FieldValue>, can: (feature: PermFeature, level: PermLevel) => boolean) => boolean;
+  /** The tab is a link to another page rather than a form (legacy Zones). */
+  navigatesTo?: 'zones';
 }
 
 /** Minimal shape of `t` the builder needs — keeps this module usable without React. */
@@ -444,6 +488,14 @@ export function buildTabs(t: Translate): TabDef[] {
   const LOCAL: FieldVisibility = { types: ['Local'] };
   const NOT_WEBSITE: FieldVisibility = { notTypes: ['WebSite'] };
   const IMAGE_ADJUST_HELP = t('-1 = camera default.');
+  // Legacy `monitor.php` offers only General and Source to a Web Site
+  // monitor, no Timestamp to a Speaker, and Control only to Control viewers.
+  const notWebSite = (d: Record<string, FieldValue>) => d.type !== 'WebSite';
+  // monitor.js: the secondary sources wait for a second path, codec and
+  // encoder for Encode, the Janus extras for Janus.
+  const hasSecondPath = (d: Record<string, FieldValue>) => isSet(d.second_path);
+  const encodes = (d: Record<string, FieldValue>) => Number(d.video_writer) === 1;
+  const janusOn = (d: Record<string, FieldValue>) => Number(d.janus_enabled) === 1;
   const PORT_PATTERN = /^(|\d{1,5})$/;
   const PORT_HELP = t('Port must be a number between 0 and 65535.');
   // zmc runs the event commands as shell commands, so only System editors may
@@ -567,11 +619,13 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'analysis',
+      visibleIf: notWebSite,
       label: t('Analysis'),
       description: t('Motion-detection tuning.'),
       fields: [
         { kind: 'select', key: 'analysing',           label: t('Analysing'),           options: RUN_MODE_ANALYSING },
-        { kind: 'select', key: 'analysis_source',     label: t('Analysis source'),     options: ANALYSIS_SOURCE_OPTIONS },
+        { kind: 'select', key: 'analysis_source',     label: t('Analysis source'),     options: ANALYSIS_SOURCE_OPTIONS,
+          visibleIf: hasSecondPath },
         { kind: 'select', key: 'analysis_image',      label: t('Analysis image'),      options: ANALYSIS_IMAGE_OPTIONS },
         { kind: 'number', key: 'analysis_fps_limit',  label: t('Analysis FPS limit'), min: 0,
           help: t('0 = match capture FPS. Lower values reduce CPU at the cost of slower motion detection.') },
@@ -594,19 +648,23 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'recording',
+      visibleIf: notWebSite,
       label: t('Recording'),
       description: t('When and how events are written to disk.'),
       fields: [
         { kind: 'select', key: 'recording',          label: t('Recording'),         options: RUN_MODE_RECORDING },
-        { kind: 'select', key: 'recording_source',   label: t('Recording source'),  options: RECORDING_SOURCE_OPTIONS },
+        { kind: 'select', key: 'recording_source',   label: t('Recording source'),  options: RECORDING_SOURCE_OPTIONS,
+          visibleIf: hasSecondPath },
         { kind: 'storage-select', key: 'storage_id', label: t('Storage area') },
         { kind: 'select', key: 'video_writer',       label: t('Video writer'), options: VIDEO_WRITER_OPTIONS,
           help: t('Camera passthrough copies the camera’s H.264/H.265 without re-encoding — FFmpeg sources only.') },
         { kind: 'select', key: 'save_jpe_gs',        label: t('Save JPEGs'), options: SAVE_JPEGS_OPTIONS,
           help: t('Stores per-frame JPEGs in addition to the video — large disk cost; needed for some legacy tooling.') },
         { kind: 'toggle', key: 'record_audio',       label: t('Record audio') },
-        { kind: 'select', key: 'output_codec',       label: t('Output codec'), options: OUTPUT_CODEC_OPTIONS },
-        { kind: 'select', key: 'encoder',            label: t('Encoder'), options: ENCODER_OPTIONS, nullOption: t('Default') },
+        { kind: 'select', key: 'output_codec',       label: t('Output codec'), options: OUTPUT_CODEC_OPTIONS, visibleIf: encodes },
+        { kind: 'select', key: 'encoder',            label: t('Encoder'), options: ENCODER_OPTIONS, nullOption: t('Default'),
+          visibleIf: encodes, disabledOption: (v, d) => !encoderFitsCodec(v, d.output_codec),
+          help: t('Only the encoders that produce the chosen output codec can be picked.') },
         { kind: 'select', key: 'output_container',   label: t('Output container'),  options: OUTPUT_CONTAINER_OPTIONS },
         { kind: 'textarea', key: 'encoder_parameters', label: t('Encoder parameters'), span: 2,
           placeholder: 'crf=23\npreset=veryfast' },
@@ -624,6 +682,7 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'buffers',
+      visibleIf: notWebSite,
       label: t('Buffers'),
       description: t('Frame buffer sizing — read-most-do-not-touch territory.'),
       fields: [
@@ -638,23 +697,26 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'viewing',
+      visibleIf: notWebSite,
       label: t('Viewing'),
       description: t('Player + streaming-server toggles for the live view.'),
       fields: [
         { kind: 'toggle', key: 'rtsp_server',         label: t('RTSP server') },
         { kind: 'text',   key: 'rtsp_stream_name',    label: t('RTSP stream name') },
         { kind: 'toggle', key: 'janus_enabled',       label: t('Janus WebRTC') },
-        { kind: 'toggle', key: 'janus_audio_enabled', label: t('Janus audio') },
+        { kind: 'toggle', key: 'janus_audio_enabled', label: t('Janus audio'), visibleIf: janusOn },
         { kind: 'toggle', key: 'restream',            label: t('Janus RTSP restream'),
           help: t('Janus pulls from ZoneMinder’s RTSP server instead of opening a second connection to the camera.') },
         { kind: 'toggle', key: 'rtsp2_web_enabled',   label: t('RTSP-to-Web') },
         { kind: 'select', key: 'rtsp2_web_type',      label: t('RTSP-to-Web type'), options: RTSP2WEB_TYPE_OPTIONS },
-        { kind: 'text',   key: 'janus_profile_override', label: t('Janus profile-ID override'),
+        { kind: 'text',   key: 'janus_profile_override', label: t('Janus profile-ID override'), visibleIf: janusOn,
           placeholder: '42e01f',
           help: t('H.264 profile-level-id Janus advertises. Safari needs a baseline/main profile here when the camera sends something exotic.') },
-        { kind: 'number', key: 'janus_rtsp_session_timeout', label: t('Janus RTSP session timeout (s)'), min: 0, integer: true },
-        { kind: 'number', key: 'rtsp_user',           label: t('Janus RTSP user id'), min: 0, integer: true,
-          help: t('ZoneMinder user id Janus authenticates to the RTSP server as.') },
+        { kind: 'number', key: 'janus_rtsp_session_timeout', label: t('Janus RTSP session timeout (s)'), min: 0, integer: true,
+          visibleIf: janusOn },
+        { kind: 'user-select', key: 'rtsp_user',      label: t('RTSP server auth user'),
+          visibleIf: (d) => Number(d.restream) === 1,
+          help: t('The ZoneMinder user the streaming services authenticate to the RTSP restream as.') },
         { kind: 'select', key: 'default_rate',        label: t('Default rate'), options: DEFAULT_RATE_OPTIONS },
         { kind: 'select', key: 'default_scale',       label: t('Default scale'), options: DEFAULT_SCALE_OPTIONS },
         { kind: 'select', key: 'default_codec',       label: t('Default event view'), options: DEFAULT_CODEC_OPTIONS },
@@ -662,6 +724,7 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'timestamp',
+      visibleIf: (d) => notWebSite(d) && d.device_class !== 'Speaker',
       label: t('Timestamp'),
       description: t('On-image timestamp label format and position.'),
       fields: [
@@ -679,6 +742,7 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'onvif',
+      visibleIf: notWebSite,
       label: t('ONVIF'),
       description: t('ONVIF camera-side endpoint + credentials. Used for events + PTZ on supported devices.'),
       fields: [
@@ -703,6 +767,7 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'control',
+      visibleIf: (d, can) => notWebSite(d) && can('control', 'View'),
       label: t('Control'),
       description: t('PTZ driver selection, addressing, and motion-tracking behaviour.'),
       fields: [
@@ -733,6 +798,7 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'mqtt',
+      visibleIf: notWebSite,
       label: t('MQTT'),
       description: t('Per-monitor MQTT subscriptions. Broker connection settings live in Settings → Config (MQTT).'),
       fields: [
@@ -745,6 +811,7 @@ export function buildTabs(t: Translate): TabDef[] {
     },
     {
       id: 'misc',
+      visibleIf: notWebSite,
       label: t('Misc'),
       description: t('Branding, signal checks, motion frame skipping, geolocation, and other low-traffic settings.'),
       fields: [
@@ -785,15 +852,51 @@ export const TABS: TabDef[] = buildTabs((key) => key);
 /*  Visibility + validation                                                 */
 /* ------------------------------------------------------------------------ */
 
-/** Whether a field is shown for the draft's current `type` / `protocol`. */
-export function isFieldVisible(f: FieldDef, draft: Record<string, FieldValue>): boolean {
+/** Whether a field is shown for the draft's current `type` / `protocol` (and its `visibleIf`). */
+export function isFieldVisible(
+  f: FieldDef,
+  draft: Record<string, FieldValue>,
+  stored: Record<string, FieldValue> = draft,
+): boolean {
   const s = f.show;
+  if (f.visibleIf && !f.visibleIf(draft, stored)) return false;
   if (!s) return true;
   const type = String(draft.type ?? '');
   if (s.types && !s.types.includes(type)) return false;
   if (s.notTypes && s.notTypes.includes(type)) return false;
   if (s.protocols && !s.protocols.includes(String(draft.protocol ?? ''))) return false;
   return true;
+}
+
+/**
+ * `monitor.js` greys out the encoders that cannot produce the chosen Output
+ * Codec (an FFmpeg `AVCodecID`: 27 h264, 173 hevc, 167 vp9, 226 av1).
+ * Auto is always allowed.
+ */
+export function encoderFitsCodec(encoder: string | number, codec: FieldValue | undefined): boolean {
+  const e = String(encoder);
+  if (e === 'auto') return true;
+  switch (Number(codec)) {
+    case 27: return e.includes('264');
+    case 167: return e.includes('vp9');
+    case 173: return e.includes('hevc') || e.includes('265');
+    case 226: return e.includes('av1');
+    default: return true;
+  }
+}
+
+/** The tabs offered for this draft and user. */
+export function visibleTabs(
+  tabs: TabDef[],
+  draft: Record<string, FieldValue>,
+  can: (feature: PermFeature, level: PermLevel) => boolean,
+): TabDef[] {
+  return tabs.filter((tab) => !tab.visibleIf || tab.visibleIf(draft, can));
+}
+
+/** True for a non-empty value: a second path is set, a toggle is on. */
+export function isSet(v: FieldValue | undefined): boolean {
+  return v != null && String(v).trim() !== '' && String(v) !== '0';
 }
 
 /** True when the signed-in user may not change `f` (see {@link FieldDef.requires}). */
@@ -809,25 +912,37 @@ export function lockedKeys(
   tabs: TabDef[],
   can: (feature: PermFeature, level: PermLevel) => boolean,
 ): Set<string> {
-  return new Set(tabs.flatMap((tab) => tab.fields.filter((f) => isFieldLocked(f, can)).map((f) => f.key)));
+  return new Set(columnFields(tabs).filter((f) => isFieldLocked(f, can)).map((f) => f.key));
 }
 
 /** Only the fields of `tab` that apply to the draft (groups whose every field is hidden are dropped too). */
-export function visibleFields(tab: TabDef, draft: Record<string, FieldValue>): FieldDef[] {
+export function visibleFields(
+  tab: TabDef,
+  draft: Record<string, FieldValue>,
+  stored: Record<string, FieldValue> = draft,
+): FieldDef[] {
   const out: FieldDef[] = [];
   for (let i = 0; i < tab.fields.length; i++) {
     const f = tab.fields[i];
     if (f.kind === 'group') {
       let hasVisible = false;
       for (let j = i + 1; j < tab.fields.length && tab.fields[j].kind !== 'group'; j++) {
-        if (isFieldVisible(tab.fields[j], draft)) { hasVisible = true; break; }
+        if (isFieldVisible(tab.fields[j], draft, stored)) { hasVisible = true; break; }
       }
       if (hasVisible) out.push(f);
-    } else if (isFieldVisible(f, draft)) {
+    } else if (isFieldVisible(f, draft, stored)) {
       out.push(f);
     }
   }
   return out;
+}
+
+/** Every real (non-heading, non-virtual) field of `tabs`, companions included. */
+export function columnFields(tabs: TabDef[]): FieldDef[] {
+  return tabs
+    .flatMap((tab) => tab.fields)
+    .flatMap((f) => (f.companion ? [f, f.companion] : [f]))
+    .filter((f) => f.kind !== 'group' && !f.virtual);
 }
 
 export type FieldErrors = Record<string, string>;
@@ -848,7 +963,7 @@ export function validateDraft(
     s.replace(/\{\{(\w+)\}\}/g, (_, k: string) => String(vars[k] ?? ''));
   for (const tab of tabs) {
     for (const f of visibleFields(tab, draft)) {
-      if (f.kind === 'group' || errors[f.key]) continue;
+      if (f.kind === 'group' || f.virtual || errors[f.key]) continue;
       const v = draft[f.key];
       const empty = v == null || String(v).trim() === '';
       if (f.required && empty) {
@@ -902,5 +1017,5 @@ export function fieldErrorsFromDetails(details: unknown): FieldErrors {
 
 /** The tab a field lives on (first match), for jumping to a backend error. */
 export function tabForField(tabs: TabDef[], key: string): string | undefined {
-  return tabs.find((tab) => tab.fields.some((f) => f.key === key))?.id;
+  return tabs.find((tab) => tab.fields.some((f) => f.key === key || f.companion?.key === key))?.id;
 }

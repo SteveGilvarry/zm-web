@@ -6,7 +6,11 @@
  */
 import { canonicalEnum } from '@/api/monitors';
 import type { Monitor } from '@/types';
-import { TABS, type FieldValue, type FieldDef } from './fields';
+import { TABS, columnFields, type FieldValue, type FieldDef } from './fields';
+import { CLASSIC_TABS } from './classicFields';
+
+/** Every column either skin's editor can change, once per key. */
+const EDITOR_FIELDS: FieldDef[] = [...columnFields(TABS), ...columnFields(CLASSIC_TABS)];
 
 
 /**
@@ -32,14 +36,13 @@ function canonicalSelectValue(field: FieldDef, raw: FieldValue): FieldValue {
 export function extractEditableFields(monitor: Monitor): Record<string, FieldValue> {
   const out: Record<string, FieldValue> = {};
   const m = monitor as unknown as Record<string, unknown>;
-  for (const tab of TABS) {
-    for (const f of tab.fields) {
-      if (f.kind === 'group') continue;
-      const raw = m[f.key];
-      if (raw == null) out[f.key] = null;
-      else if (typeof raw === 'object') out[f.key] = String(raw);
-      else out[f.key] = canonicalSelectValue(f, raw as FieldValue);
-    }
+  for (const f of EDITOR_FIELDS) {
+    if (f.key in out && out[f.key] != null) continue;
+    const raw = m[f.key];
+    if (raw == null) out[f.key] = null;
+    else if (typeof raw === 'boolean') out[f.key] = raw ? 1 : 0;
+    else if (typeof raw === 'object') out[f.key] = String(raw);
+    else out[f.key] = canonicalSelectValue(f, raw as FieldValue);
   }
   return out;
 }
@@ -56,7 +59,7 @@ export function extractEditableFields(monitor: Monitor): Record<string, FieldVal
  * field is covered the day it is added.
  */
 export const WRITE_ONLY_KEYS: ReadonlySet<string> = new Set(
-  TABS.flatMap((tab) => tab.fields.filter((f) => f.kind === 'password').map((f) => f.key)),
+  EDITOR_FIELDS.filter((f) => f.kind === 'password').map((f) => f.key),
 );
 
 /** True for a write-only field the operator has not typed into. */

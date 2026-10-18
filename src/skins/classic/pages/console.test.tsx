@@ -621,11 +621,11 @@ describe('ClassicConsolePage — verbs', () => {
     await user.click(screen.getByRole('button', { name: 'Clone' }));
 
     const editor = await screen.findByTestId('monitor-editor');
-    expect(within(editor).getByText('Configuration cloned from Monitor: Front Door')).toBeInTheDocument();
+    expect(within(editor).getByRole('status')).toHaveTextContent('Configuration cloned from Monitor: Front Door');
     expect(within(editor).getByDisplayValue('Clone of Front Door')).toBeInTheDocument();
     expect(calls.some((c) => c.method === 'POST')).toBe(false);
 
-    await user.click(within(editor).getByRole('button', { name: /^create monitor$/i }));
+    await user.click(within(editor).getByRole('button', { name: 'Save and close' }));
     await waitFor(() => expect(calls.some((c) => c.method === 'POST')).toBe(true));
     const post = calls.find((c) => c.method === 'POST')!;
     expect((post.body as { name: string; path: string }).name).toBe('Clone of Front Door');
@@ -700,19 +700,26 @@ describe('ClassicConsolePage — verbs', () => {
     );
   });
 
-  it('opens the Add dialog from the toolbar and from ?new=true', async () => {
+  it('Add opens the full monitor editor in place of the console', async () => {
     const user = userEvent.setup();
     // Legacy needs Create, not Edit, to actually add a monitor.
     signIn({ iat: 0, exp: 0, user: 'admin', perms: { ...ALL_EDIT.perms, monitors: 'Create' } });
     stub();
     await mountAndSettle();
-    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(screen.queryByTestId('monitor-editor')).toBeNull();
     await user.click(screen.getByRole('button', { name: 'Add' }));
-    expect(await screen.findByRole('dialog')).toBeInTheDocument();
-
-    // Same dialog, opened by the legacy deep link.
-    screen.getByRole('dialog');
-    mockSearch = { new: true };
+    // The full legacy monitor page, not a short form: a fresh Monitor-N, every tab.
+    const editor = await screen.findByTestId('monitor-editor');
+    expect(within(editor).getByRole('heading', { name: /^Monitor - Monitor-\d+$/ })).toBeInTheDocument();
+    expect(within(editor).getByRole('button', { name: 'Buffers' })).toBeInTheDocument();
+    // Legacy disables Save on a new monitor; Save and close creates it.
+    expect(within(editor).getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(within(editor).getByRole('button', { name: 'Save and close' })).toBeEnabled();
+    // The console underneath is hidden, not gone.
+    expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
+    await user.click(within(editor).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByTestId('monitor-editor')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add' })).toBeInTheDocument();
   });
 
   it('refreshes the monitor list', async () => {

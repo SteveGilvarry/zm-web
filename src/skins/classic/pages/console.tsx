@@ -10,7 +10,7 @@ import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
-import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
+import { ClassicMonitorEditor } from '@/skins/classic/components/monitor/ClassicMonitorEditor';
 import { ScanNetworkButton } from '@/features/console/ScanNetworkButton';
 import { useClassicConsolePage, type ClassicConsolePageState, type EventsScope } from '@/features/console/useClassicConsolePage';
 import { CONSOLE_COLUMNS, consoleColumnLabel, type ConsoleColumnKey } from '@/features/console/consoleColumns';
@@ -114,7 +114,8 @@ export default function ClassicConsolePage() {
 
   return (
     <AppShell title={t('Console')}>
-      <ClassicPage>
+      {/* Add / Clone is legacy's own monitor page; the console stays mounted, hidden, underneath. */}
+      <ClassicPage hidden={!!page.editorSeed}>
         {showFilters && (
           <ClassicFilterRow state={page.filter} className="mb-2" />
         )}
@@ -306,7 +307,7 @@ export default function ClassicConsolePage() {
         />
       </ClassicPage>
 
-      {page.editorSeed && <MonitorEditor seed={page.editorSeed} onClose={page.closeAdd} />}
+      {page.editorSeed && <ClassicMonitorEditor seed={page.editorSeed} onClose={page.closeAdd} />}
     </AppShell>
   );
 }

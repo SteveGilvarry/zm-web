@@ -94,7 +94,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, volume, setVolume,
     siblings, siblingIndex, prevMonitorId, nextMonitorId,
     isFullscreen, isWide,
-    editorOpen, openEditor, closeEditor, updateModes, isUpdating,
+    editorOpen, openEditor, closeEditor, editorTab, setEditorTab, updateModes, isUpdating,
     startStream, stopStream, pauseStream, isPaused, viewingFps, changeProtocol, toggleFullscreen,
     toggleMute, retry, viewMode, setViewMode, stage, downloadImage, isDownloading, contentRef, idle,
   } = page;
@@ -919,6 +919,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         <MonitorEditor
           monitor={monitor}
           onClose={closeEditor}
+          initialTab={editorTab}
+          onTabChange={setEditorTab}
         />
       )}
     </AppShell>

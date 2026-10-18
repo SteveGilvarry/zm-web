@@ -7,7 +7,7 @@ import { listControls } from '@/api/controls';
 import { fieldClasses } from '@/components/common/styles';
 import { RESOLUTION_PRESETS, type FieldDef, type FieldValue } from './fields';
 import {
-  ManufacturerSelect, ModelSelect, StorageSelect, ServerSelect, ReturnLocationSelect, LinkedMonitorsSelect,
+  ManufacturerSelect, ModelSelect, StorageSelect, ServerSelect, ReturnLocationSelect, LinkedMonitorsSelect, UserSelect,
 } from './RelationSelects';
 import { randomHexColour, HEX_COLOUR, storedOnly } from './editorState';
 
@@ -122,6 +122,56 @@ export function FieldInput({
     );
   }
 
+  if (field.kind === 'checkbox') {
+    return (
+      <input
+        type="checkbox"
+        checked={Number(value) === 1}
+        onChange={(e) => onChange(e.target.checked ? 1 : 0)}
+        aria-label={field.label}
+        className="accent-accent h-4 w-4 cursor-pointer"
+      />
+    );
+  }
+
+  if (field.kind === 'undelete') {
+    // Checked = bring it back. Unchecked restores whatever was stored.
+    return (
+      <input
+        type="checkbox"
+        checked={stored != null && Number(value) === 0 && Number(stored) !== 0}
+        onChange={(e) => onChange(e.target.checked ? 0 : stored ?? 1)}
+        aria-label={field.label}
+        className="accent-accent h-4 w-4 cursor-pointer"
+      />
+    );
+  }
+
+  if (field.kind === 'radio' && field.options) {
+    const current = value == null ? '' : String(value);
+    const choices = [
+      ...field.options.map((o) => ({ value: String(o.value), label: o.label, raw: o.value as FieldValue })),
+      ...(field.nullOption ? [{ value: '', label: field.nullOption, raw: null as FieldValue }] : []),
+    ];
+    return (
+      <div role="radiogroup" aria-label={field.label} className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+        {choices.map((c) => (
+          <label key={c.value} className="inline-flex items-center gap-1 text-sm cursor-pointer select-none">
+            <input
+              type="radio"
+              name={`radio-${field.key}`}
+              value={c.value}
+              checked={current === c.value}
+              onChange={() => onChange(c.raw)}
+              className="accent-accent"
+            />
+            {c.label}
+          </label>
+        ))}
+      </div>
+    );
+  }
+
   if (field.kind === 'select' && field.options) {
     // Coerce back to number when the option values are numeric — keeps the
     // PATCH body's types matching the backend schema (e.g. label_size:int,
@@ -146,7 +196,13 @@ export function FieldInput({
           <option value="">{field.nullOption ?? t('Not set')}</option>
         )}
         {options.map((o) => (
-          <option key={String(o.value)} value={String(o.value)}>{o.label}</option>
+          <option
+            key={String(o.value)}
+            value={String(o.value)}
+            disabled={field.disabledOption?.(o.value, draft) && String(o.value) !== current}
+          >
+            {o.label}
+          </option>
         ))}
         {/* A stored value outside the legacy list stays selectable instead of snapping to the first option. */}
         {!known && current !== '' && <option value={current}>{current}</option>}
@@ -174,7 +230,7 @@ export function FieldInput({
     return <ControlSelect value={value} onChange={onChange} className={baseInput} />;
   }
   if (field.kind === 'storage-select') {
-    return <StorageSelect value={value} onChange={onChange} className={baseInput} />;
+    return <StorageSelect value={value} onChange={onChange} className={baseInput} zeroOption={field.zeroOption} />;
   }
   if (field.kind === 'server-select') {
     return <ServerSelect value={value} onChange={onChange} className={baseInput} />;
@@ -188,6 +244,9 @@ export function FieldInput({
   }
   if (field.kind === 'return-location-select') {
     return <ReturnLocationSelect monitorId={monitorId} value={value} onChange={onChange} className={baseInput} />;
+  }
+  if (field.kind === 'user-select') {
+    return <UserSelect value={value} onChange={onChange} className={baseInput} />;
   }
   if (field.kind === 'linked-monitors') {
     return <LinkedMonitorsSelect selfId={monitorId} value={value} onChange={onChange} className={baseInput} />;

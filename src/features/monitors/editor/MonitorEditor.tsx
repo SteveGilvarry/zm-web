@@ -28,6 +28,9 @@ interface MonitorEditorProps {
   /** After a create, with the new row. */
   onCreated?: (monitor: Monitor) => void;
   onClose: () => void;
+  /** Legacy `?tab=`: the tab to open on, and where to report a tab change. */
+  initialTab?: string;
+  onTabChange?: (tab: string) => void;
   /**
    * Called after the monitor has been deleted. Defaults to `onClose`; the
    * watch page should navigate away instead, since the monitor is gone.
@@ -63,10 +66,10 @@ export function MonitorEditor(props: MonitorEditorProps) {
   return <MonitorEditorBody key={props.monitor?.id ?? 'new'} {...props} />;
 }
 
-function MonitorEditorBody({ monitor, seed, onCreated, onClose, onDeleted }: MonitorEditorProps) {
+function MonitorEditorBody({ monitor, seed, onCreated, onClose, onDeleted, initialTab, onTabChange }: MonitorEditorProps) {
   const { t } = useTranslation();
   const tabs = useMonitorTabs();
-  const ed = useMonitorEditor({ tabs, monitor, seed, onClose, onDeleted, onCreated });
+  const ed = useMonitorEditor({ tabs, monitor, seed, onClose, onDeleted, onCreated, initialTab });
   const { activeTabDef, diffCount, busy, isNew } = ed;
   const monitorId = String(monitor?.id ?? '');
 
@@ -160,7 +163,7 @@ function MonitorEditorBody({ monitor, seed, onCreated, onClose, onDeleted }: Mon
           className="w-56 flex-shrink-0 border-e border-border-subtle bg-surface overflow-y-auto"
         >
           <ul className="py-2">
-            {tabs.map((tab) => {
+            {ed.tabs.map((tab) => {
               const isActive = tab.id === activeTabDef.id;
               const count = ed.tabDiffCount[tab.id] ?? 0;
               const errors = ed.tabErrorCount[tab.id] ?? 0;
@@ -168,7 +171,7 @@ function MonitorEditorBody({ monitor, seed, onCreated, onClose, onDeleted }: Mon
                 <li key={tab.id}>
                   <button
                     type="button"
-                    onClick={() => ed.setActiveTab(tab.id)}
+                    onClick={() => { ed.setActiveTab(tab.id); onTabChange?.(tab.id); }}
                     className={clsx(
                       'group w-full flex items-center gap-2 px-4 py-1.5 text-start text-sm transition-colors',
                       'border-s-2',

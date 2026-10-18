@@ -71,6 +71,31 @@ describe('Source tab visibility follows the legacy per-type form', () => {
   });
 });
 
+describe('rows that follow other values (monitor.js)', () => {
+  const keysOf = (tabId: string, draft: Record<string, FieldValue>) =>
+    visibleFields(TABS.find((t) => t.id === tabId)!, draft).map((f) => f.key);
+
+  it('the secondary sources wait for a second path', () => {
+    expect(keysOf('analysis', { type: 'Ffmpeg' })).not.toContain('analysis_source');
+    expect(keysOf('analysis', { type: 'Ffmpeg', second_path: 'rtsp://cam/sub' })).toContain('analysis_source');
+    expect(keysOf('recording', { type: 'Ffmpeg', second_path: 'rtsp://cam/sub' })).toContain('recording_source');
+  });
+
+  it('codec and encoder wait for Encode, and the encoder list follows the codec', () => {
+    expect(keysOf('recording', { video_writer: 2 })).not.toContain('encoder');
+    expect(keysOf('recording', { video_writer: 1 })).toEqual(expect.arrayContaining(['output_codec', 'encoder']));
+    const encoder = TABS.flatMap((t) => t.fields).find((f) => f.key === 'encoder')!;
+    expect(encoder.disabledOption!('hevc_nvenc', { output_codec: 27 })).toBe(true);
+    expect(encoder.disabledOption!('h264_nvenc', { output_codec: 27 })).toBe(false);
+  });
+
+  it('the Janus extras wait for Janus; the RTSP auth user for restream', () => {
+    expect(keysOf('viewing', { janus_enabled: 0 })).not.toContain('janus_audio_enabled');
+    expect(keysOf('viewing', { janus_enabled: 1 })).toEqual(expect.arrayContaining(['janus_audio_enabled', 'janus_profile_override', 'janus_rtsp_session_timeout']));
+    expect(keysOf('viewing', { restream: 1 })).toContain('rtsp_user');
+  });
+});
+
 describe('validateDraft', () => {
   const base: Record<string, FieldValue> = { type: 'Ffmpeg', name: 'Cam', width: 1920, height: 1080 };
 
