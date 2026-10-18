@@ -217,6 +217,7 @@ function ClassicCell({
         ref={frameRef}
         className={clsx('relative w-full overflow-hidden bg-zinc-900', fitted && 'flex-1 min-h-0')}
         style={fitted ? undefined : { aspectRatio: style?.aspectRatio ?? '16 / 9' }}
+        {...(editMode ? {} : zoom.gestures)}
       >
         <div className="absolute inset-0" style={zoom.style}>
           {/* A WebSite monitor is a page, not a camera (legacy

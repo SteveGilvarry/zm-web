@@ -102,6 +102,7 @@ export default function ClassicCyclePage() {
                     className="group relative bg-black mx-auto overflow-hidden"
                     style={cycle.stage.style}
                     data-testid="cycle-stage"
+                    {...zoom.gestures}
                   >
                     <div className="absolute inset-0" style={zoom.style}>
                       {isWebsiteMonitor(current) ? (

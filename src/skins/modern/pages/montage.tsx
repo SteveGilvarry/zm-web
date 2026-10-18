@@ -379,7 +379,7 @@ function TileFrame({ monitorId, children }: { monitorId: number; children: React
   const frameRef = useRef<HTMLDivElement>(null);
   const zoom = useTileZoom();
   return (
-    <div ref={frameRef} className="group absolute inset-0 overflow-hidden">
+    <div ref={frameRef} className="group absolute inset-0 overflow-hidden" {...zoom.gestures}>
       <div className="absolute inset-0" style={zoom.style}>{children}</div>
       <TileControls monitorId={monitorId} targetRef={frameRef} zoom={zoom} />
     </div>

@@ -207,6 +207,7 @@ export function CycleLayout({
                     data-testid="cycle-stage"
                     className={clsx('group relative overflow-hidden shrink-0', sized && 'm-auto')}
                     style={frameStyle}
+                    {...zoom.gestures}
                   >
                     <div className="absolute inset-0" style={zoom.style}>
                       {renderStage(current, viewMode)}
