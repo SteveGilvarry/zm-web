@@ -1,16 +1,21 @@
+import { useRef } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   ChevronLeft, ChevronRight, AlertOctagon, AlertTriangle,
   ArrowDown, ArrowUp, Info, Bug, RefreshCw, RefreshCwOff, Download, Columns3, Search, Skull, Trash2,
-  SlidersHorizontal,
+  SlidersHorizontal, Maximize2,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { Checkbox } from '@/components/common/Checkbox';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { LOG_LEVEL, levelLabel, type LogEntry } from '@/api/logs';
+import { usePerms } from '@/features/auth/usePerms';
+import { LOG_LEVEL, levelLabel, type LogEntry, type LogSortField } from '@/api/logs';
+import { LOG_LEVEL_CODES, type LogLevelCode } from '@/features/logs/levels';
+import { useLogState, type LogState } from '@/features/logs/useLogState';
 import { type LogColumnKey } from '@/features/logs/csv';
 import { ColumnPicker } from '@/features/logs/ColumnPicker';
 import { SummaryStrip } from '@/features/logs/SummaryStrip';
@@ -80,6 +85,19 @@ function LevelIcon({ level }: { level: number }) {
   return <Bug size={11} />;
 }
 
+/** The `sort_by` each column header sends. */
+const SORT_FIELD: Record<LogColumnKey, LogSortField> = {
+  timestamp: 'time', level: 'level', component: 'component', server: 'server_id',
+  pid: 'pid', file: 'file', line: 'line', message: 'message',
+};
+
+/** `logState()` as a state mark: ok is quiet, alert warns, alarm is danger. */
+const STATE_TONE: Record<LogState, string> = {
+  ok: 'bg-ok',
+  alert: 'bg-warn',
+  alarm: 'bg-danger',
+};
+
 /** Chip labels by chip code (kept literal for the extractor). */
 function useChipLabel(): (code: string) => string {
   const { t } = useTranslation();
@@ -112,11 +130,16 @@ export default function LogsPage() {
   const chipLabel = useChipLabel();
   useDocumentTitle(t('Log'));
   const formatLogTime = useLogTimeFormat();
+  const { can } = usePerms();
+  const canEdit = can('system', 'Edit');
+  const logState = useLogState(s.isAuthenticated);
+  const tableRef = useRef<HTMLDivElement>(null);
   const {
-    logs, total, summary, page, pageSize, totalPages,
+    logs, total, totalUnfiltered, summary, page, pageSize, totalPages,
     pageSizeOptions, setPageSize,
-    componentFilter, minLevel, serverFilter, startInput, endInput, messageQuery,
-    sort, toggleSort, searchDraft, setSearchDraft, setSearch,
+    componentFilter, minLevel, setMinLevel, levels, setLevels,
+    serverFilter, startInput, endInput, messageQuery,
+    sort, sortBy, toggleSort, searchDraft, setSearchDraft, setSearch,
     allComponents, servers, showServerFilter, serverLookup,
     showColumns, visibleColumns, setVisibleColumns,
     isLoading, isFetching, isError, error,
@@ -126,8 +149,17 @@ export default function LogsPage() {
 
   // What is narrowing the list from behind the disclosure.
   const activeFilters = [
-    startInput !== '', endInput !== '', serverFilter != null,
+    startInput !== '', endInput !== '', serverFilter != null, levels.length > 0,
   ].filter(Boolean).length;
+
+  const toggleLevel = (code: LogLevelCode) =>
+    setLevels(levels.includes(code) ? levels.filter((c) => c !== code) : [...levels, code]);
+  const stateLabel = logState === 'alarm' ? t('alarm') : logState === 'alert' ? t('alert') : t('ok');
+  const selectedCount = s.selectedIds.length;
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen?.();
+    else void tableRef.current?.requestFullscreen?.();
+  };
 
   return (
     <AppShell title={t('Log')}>
@@ -143,11 +175,11 @@ export default function LogsPage() {
             {LEVEL_CHIPS.map((chip) => (
               <button
                 key={chip.code}
-                onClick={() => setSearch({ min_level: chip.value, page: undefined })}
-                aria-pressed={minLevel === chip.value}
+                onClick={() => setMinLevel(chip.value)}
+                aria-pressed={minLevel === chip.value && (chip.value !== undefined || levels.length === 0)}
                 className={clsx(
                   'px-2 py-0.5 rounded text-xs transition-colors',
-                  minLevel === chip.value
+                  minLevel === chip.value && (chip.value !== undefined || levels.length === 0)
                     ? 'bg-accent/15 text-accent'
                     : 'text-fg-dim hover:text-fg',
                 )}
@@ -213,6 +245,22 @@ export default function LogsPage() {
                   className={clsx(field, 'px-2 py-1 text-sm')}
                 />
               </label>
+
+              {/* Legacy's exact-level multi-select; picking any replaces the threshold chips. */}
+              <fieldset className="col-span-2 flex flex-col gap-1">
+                <legend className="text-xs text-fg-dim mb-1">{t('Exact levels')}</legend>
+                <div className="flex flex-wrap gap-x-3 gap-y-1">
+                  {LOG_LEVEL_CODES.map((code) => (
+                    <Checkbox
+                      key={code}
+                      label={<span className="font-mono text-xs">{code}</span>}
+                      aria-label={t('Level {{code}}', { code })}
+                      checked={levels.includes(code)}
+                      onChange={() => toggleLevel(code)}
+                    />
+                  ))}
+                </div>
+              </fieldset>
 
               {showServerFilter && (
                 <label className="flex flex-col gap-1 text-xs text-fg-dim">
@@ -297,11 +345,22 @@ export default function LogsPage() {
             aria-pressed={s.autoRefresh}
             className={clsx(toolBtn, s.autoRefresh && 'text-fg')}
             aria-label={t('Auto refresh')}
-            title={s.autoRefresh
-              ? t('Auto refresh every {{count}} second', { count: s.refreshSeconds })
-              : t('Auto refresh off')}
+            title={s.autoRefresh && s.refreshPaused
+              ? t('Auto refresh paused while rows are selected')
+              : s.autoRefresh
+                ? t('Auto refresh every {{count}} second', { count: s.refreshSeconds })
+                : t('Auto refresh off')}
           >
             {s.autoRefresh ? <RefreshCw size={16} /> : <RefreshCwOff size={16} />}
+          </button>
+
+          <button
+            onClick={toggleFullscreen}
+            className={toolBtn}
+            aria-label={t('Toggle fullscreen')}
+            title={t('Toggle fullscreen')}
+          >
+            <Maximize2 size={16} />
           </button>
 
           <RequirePerm feature="system" level="Edit">
@@ -311,7 +370,9 @@ export default function LogsPage() {
               className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-danger hover:bg-danger/10 transition-colors disabled:opacity-50"
             >
               <Trash2 size={14} />
-              {t('Clear Logs')}
+              {selectedCount > 0
+                ? t('Clear {{count}} selected', { count: selectedCount })
+                : t('Clear Logs')}
             </button>
           </RequirePerm>
         </div>
@@ -331,9 +392,11 @@ export default function LogsPage() {
         <ConfirmDialog
           isOpen={s.confirmingClear}
           title={t('Clear Logs')}
-          message={s.clearIsFiltered
-            ? t('Delete every log row matching the filters on screen? This cannot be undone.')
-            : t('Delete every row in the log table? This cannot be undone.')}
+          message={s.clearTarget === 'selected'
+            ? t('Delete the {{count}} selected log row? This cannot be undone.', { count: selectedCount })
+            : s.clearTarget === 'filtered'
+              ? t('Delete every log row matching the filters on screen? This cannot be undone.')
+              : t('Delete every row in the log table? This cannot be undone.')}
           confirmText={t('Clear Logs')}
           isLoading={s.clearing}
           onConfirm={s.confirmClear}
@@ -342,7 +405,7 @@ export default function LogsPage() {
 
         {/* The table is the page: it owns the remaining height and scrolls
             inside itself, so the query line and the pager stay put. */}
-        <div className="flex-1 min-h-0 overflow-auto p-3">
+        <div ref={tableRef} className="flex-1 min-h-0 overflow-auto p-3 bg-bg">
           <QueryState
             isLoading={isLoading}
             isError={isError}
@@ -356,13 +419,22 @@ export default function LogsPage() {
                 {/* The scroll container is the page area, so the header pins to it. */}
                 <thead className="sticky top-0 z-10 bg-surface border-b border-border-subtle">
                   <tr>
+                    {canEdit && (
+                      <th scope="col" className="ps-3 pe-1 py-2 w-6">
+                        <Checkbox
+                          aria-label={t('Select all')}
+                          checked={s.allSelected}
+                          onChange={(e) => s.setAllSelected(e.target.checked)}
+                        />
+                      </th>
+                    )}
                     {visibleColumns.map((c) => (
                       <Th
                         key={c}
                         className={c === 'message' ? 'w-[55%]' : undefined}
-                        sort={c === 'timestamp' ? sort : undefined}
-                        onSort={c === 'timestamp' ? toggleSort : undefined}
-                        sortLabel={t('Sort by timestamp')}
+                        sort={SORT_FIELD[c] === sortBy ? sort : undefined}
+                        onSort={() => toggleSort(SORT_FIELD[c])}
+                        sortLabel={t('Sort by {{column}}', { column: columnLabels[c].toLocaleLowerCase() })}
                       >
                         {columnLabels[c]}
                       </Th>
@@ -374,6 +446,9 @@ export default function LogsPage() {
                     <LogRow
                       key={l.id}
                       log={l}
+                      selectable={canEdit}
+                      selected={s.isSelected(l.id)}
+                      onToggle={() => s.toggleSelected(l.id)}
                       columns={visibleColumns}
                       serverLookup={serverLookup}
                       formatLogTime={formatLogTime}
@@ -387,17 +462,22 @@ export default function LogsPage() {
 
         {/* Status bar: what this page is showing, and how to leave it. */}
         <div className="flex items-center gap-3 px-3 py-2 shrink-0 border-t border-border-subtle bg-surface text-xs text-fg-dim">
+          <span className="shrink-0 inline-flex items-center gap-1.5" data-testid="log-state">
+            <span aria-hidden className={clsx('w-2 h-2 rounded-full', STATE_TONE[logState])} />
+            {t('State: {{state}}', { state: stateLabel })}
+          </span>
           <div className="flex-1 min-w-0">
             <SummaryStrip
               summary={summary}
               total={total}
+              available={totalUnfiltered}
               shownCount={logs.length}
               page={page}
               pageSize={pageSize}
-              onPickErrors={() => setSearch({ min_level: minLevel === 'error' ? undefined : 'error', page: undefined })}
-              onPickWarnings={() => setSearch({ min_level: minLevel === 'warning' ? undefined : 'warning', page: undefined })}
-              onPickInfo={() => setSearch({ min_level: minLevel === 'info' ? undefined : 'info', page: undefined })}
-              onPickDebug={() => setSearch({ min_level: minLevel === 'debug' ? undefined : 'debug', page: undefined })}
+              onPickErrors={() => setMinLevel(minLevel === 'error' ? undefined : 'error')}
+              onPickWarnings={() => setMinLevel(minLevel === 'warning' ? undefined : 'warning')}
+              onPickInfo={() => setMinLevel(minLevel === 'info' ? undefined : 'info')}
+              onPickDebug={() => setMinLevel(minLevel === 'debug' ? undefined : 'debug')}
               activeLevel={minLevel}
             />
           </div>
@@ -442,7 +522,7 @@ function Th({
   return (
     <th
       scope="col"
-      aria-sort={sort ? (sort === 'asc' ? 'ascending' : 'descending') : undefined}
+      aria-sort={sort ? (sort === 'asc' ? 'ascending' : 'descending') : onSort ? 'none' : undefined}
       className={clsx(
         'px-3 py-2 text-start text-xs font-medium text-fg-dim whitespace-nowrap',
         className,
@@ -456,7 +536,9 @@ function Th({
           className="inline-flex items-center gap-1 rounded-sm hover:text-fg transition-colors"
         >
           {children}
-          {sort === 'asc' ? <ArrowUp size={12} aria-hidden /> : <ArrowDown size={12} aria-hidden />}
+          {sort === 'asc'
+            ? <ArrowUp size={12} aria-hidden />
+            : <ArrowDown size={12} aria-hidden className={sort ? undefined : 'opacity-0'} />}
         </button>
       ) : children}
     </th>
@@ -487,18 +569,34 @@ function PagerBtn({
 }
 
 function LogRow({
-  log, columns, serverLookup, formatLogTime,
+  log, selectable, selected, onToggle, columns, serverLookup, formatLogTime,
 }: {
   log: LogEntry;
+  selectable: boolean;
+  selected: boolean;
+  onToggle: () => void;
   columns: LogColumnKey[];
   serverLookup: Record<number, string>;
   formatLogTime: (timeKey: string) => string;
 }) {
+  const { t } = useTranslation();
   return (
     <tr
-      className="border-b border-border-subtle last:border-0 hover:bg-surface-2 transition-colors"
+      className={clsx(
+        'border-b border-border-subtle last:border-0 hover:bg-surface-2 transition-colors',
+        selected && 'bg-accent/10',
+      )}
       data-level={log.level}
     >
+      {selectable && (
+        <td className="ps-3 pe-1 py-1">
+          <Checkbox
+            aria-label={t('Select log {{id}}', { id: log.id })}
+            checked={selected}
+            onChange={onToggle}
+          />
+        </td>
+      )}
       {columns.map((c) => (
         <LogCell key={c} column={c} log={log} serverLookup={serverLookup} formatLogTime={formatLogTime} />
       ))}

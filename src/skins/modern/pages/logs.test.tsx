@@ -34,6 +34,14 @@ async function findTable(): Promise<HTMLElement> {
   return screen.findByRole('table');
 }
 
+/**
+ * The State readout's per-severity counts (`useLogState`) also read
+ * `/logs`, one row each; tests that count the table's requests skip them.
+ */
+function isStateCount(q: URLSearchParams): boolean {
+  return q.get('page_size') === '1';
+}
+
 /** The severity-threshold chip row ("this level or worse"). */
 function levelChips(): HTMLElement {
   return screen.getByRole('group', { name: 'Minimum level' });
@@ -57,7 +65,7 @@ describe('LogsPage (modern) — rendering', () => {
     const table = await findTable();
     expect(
       within(table).getAllByRole('columnheader').map((th) => th.textContent),
-    ).toEqual(['Timestamp', 'Level', 'Component', 'PID', 'Message']);
+    ).toEqual(['', 'Timestamp', 'Level', 'Component', 'PID', 'Message']);
 
     expect(within(table).getByText('Starting capture')).toBeInTheDocument();
     expect(within(table).getByText('Shared data size conflict')).toBeInTheDocument();
@@ -77,7 +85,8 @@ describe('LogsPage (modern) — rendering', () => {
     expect(within(strip).getByRole('button', { name: 'Errors: 1' })).toBeInTheDocument();
     expect(within(strip).getByRole('button', { name: 'Warnings: 0' })).toBeInTheDocument();
     expect(within(strip).getByRole('button', { name: 'Info: 1' })).toBeInTheDocument();
-    expect(within(strip).getByText('Total: 2 · Displaying: 1–2')).toBeInTheDocument();
+    // Available is the whole table (`unfiltered_total`), here the same two rows.
+    expect(within(strip).getByText('Total: 2 · Available: 2 · Displaying: 1–2')).toBeInTheDocument();
   });
 
   it('shows the empty message when the server has no log rows', async () => {
@@ -210,7 +219,8 @@ describe('LogsPage (modern) — level chips', () => {
     const seen: Array<string | null> = [];
     server.use(
       http.get('/api/v3/logs', ({ request }) => {
-        seen.push(new URL(request.url).searchParams.get('min_level'));
+        const q = new URL(request.url).searchParams;
+        if (!isStateCount(q)) seen.push(q.get('min_level'));
         return HttpResponse.json(paginated(db.logs, { total: db.logs.length }));
       }),
     );
@@ -610,8 +620,8 @@ describe('LogsPage (modern) — toolbar actions', () => {
   it('refetches on Refresh', async () => {
     let calls = 0;
     server.use(
-      http.get('/api/v3/logs', () => {
-        calls += 1;
+      http.get('/api/v3/logs', ({ request }) => {
+        if (!isStateCount(new URL(request.url).searchParams)) calls += 1;
         return HttpResponse.json(paginated(db.logs, { total: db.logs.length }));
       }),
     );
@@ -656,5 +666,132 @@ describe('LogsPage (modern) — toolbar actions', () => {
     renderRoute('/logs');
     await screen.findByText('No log entries match the current filters.');
     expect(screen.getByRole('button', { name: 'Download CSV' })).toBeDisabled();
+  });
+});
+
+describe('LogsPage (modern) — zm-api#142', () => {
+  it('filters on exact levels from the Filters disclosure, replacing the threshold', async () => {
+    const seen: URLSearchParams[] = [];
+    server.use(
+      http.get('/api/v3/logs', ({ request }) => {
+        const q = new URL(request.url).searchParams;
+        if (!isStateCount(q)) seen.push(q);
+        const levels = q.get('level')?.split(',').map(Number);
+        const rows = levels ? db.logs.filter((l) => levels.includes(l.level)) : db.logs;
+        return HttpResponse.json(paginated(rows, { total: rows.length }));
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderRoute('/logs?min_level=warning');
+    await findTable();
+
+    await openFilters(user);
+    await user.click(screen.getByRole('checkbox', { name: 'Level ERR' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ level: 'ERR' }));
+    await waitFor(() => expect(seen.at(-1)?.get('level')).toBe('-2'));
+    expect(seen.at(-1)?.get('min_level')).toBeNull();
+    await waitFor(() => expect(screen.queryByText('Starting capture')).not.toBeInTheDocument());
+    // No threshold chip claims to be applied while exact levels are.
+    for (const chip of within(levelChips()).getAllByRole('button')) {
+      expect(chip).toHaveAttribute('aria-pressed', 'false');
+    }
+    expect(screen.getByRole('button', { name: /^Filters/ })).toHaveTextContent('1');
+
+    // A threshold chip takes over again and drops the exact pick.
+    await user.click(within(levelChips()).getByRole('button', { name: 'Error' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ min_level: 'error' }));
+  });
+
+  it('sorts on any column through sort_by and keeps it in the URL', async () => {
+    const seen: URLSearchParams[] = [];
+    server.use(
+      http.get('/api/v3/logs', ({ request }) => {
+        const q = new URL(request.url).searchParams;
+        if (!isStateCount(q)) seen.push(q);
+        return HttpResponse.json(paginated(db.logs, { total: db.logs.length }));
+      }),
+    );
+    const user = userEvent.setup();
+    const { router } = renderRoute('/logs');
+    const table = await findTable();
+
+    await user.click(within(table).getByRole('button', { name: 'Sort by component' }));
+    await waitFor(() => expect(router.state.location.search).toEqual({ sort_by: 'component', sort: 'asc' }));
+    await waitFor(() => expect(seen.at(-1)?.get('sort_by')).toBe('component'));
+    expect(seen.at(-1)?.get('sort')).toBe('asc');
+    const header = within(screen.getByRole('table')).getByRole('columnheader', { name: /Component/ });
+    expect(header).toHaveAttribute('aria-sort', 'ascending');
+    expect(within(screen.getByRole('table')).getByRole('columnheader', { name: /Timestamp/ }))
+      .toHaveAttribute('aria-sort', 'none');
+
+    // Level sorts on the numeric level here, not the code.
+    await user.click(within(screen.getByRole('table')).getByRole('button', { name: 'Sort by level' }));
+    await waitFor(() => expect(seen.at(-1)?.get('sort_by')).toBe('level'));
+  });
+
+  it('clears ticked rows by id behind a confirmation that counts them', async () => {
+    let deleted: URLSearchParams | null = null;
+    server.use(
+      http.delete('/api/v3/logs', ({ request }) => {
+        deleted = new URL(request.url).searchParams;
+        return HttpResponse.json({ message: 'Deleted 1 log entries' });
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/logs?component=zmc_m1');
+    await findTable();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select log 1' }));
+    expect(screen.getByRole('button', { name: 'Auto refresh' }))
+      .toHaveAttribute('title', 'Auto refresh paused while rows are selected');
+    await user.click(screen.getByRole('button', { name: 'Clear 1 selected' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Delete the 1 selected log row? This cannot be undone.')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Clear Logs' }));
+    expect(await screen.findByText('Deleted 1 log entries')).toBeInTheDocument();
+    // The ids alone: the component filter on screen does not ride along.
+    expect([...deleted!.entries()]).toEqual([['ids', '1']]);
+    expect(screen.getByRole('button', { name: 'Clear Logs' })).toBeInTheDocument();
+  });
+
+  it('ticks the page from the header box', async () => {
+    const user = userEvent.setup();
+    renderRoute('/logs');
+    await findTable();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }));
+    expect(screen.getByRole('checkbox', { name: 'Select log 1' })).toBeChecked();
+    expect(screen.getByRole('checkbox', { name: 'Select log 2' })).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Clear 2 selected' })).toBeInTheDocument();
+  });
+
+  it('lists components from GET /logs/components, not just the page', async () => {
+    server.use(
+      http.get('/api/v3/logs/components', () => HttpResponse.json(['web_php', 'zma_m1', 'zmc_m1', 'zmpkg'])),
+    );
+    renderRoute('/logs');
+    await findTable();
+    const select = screen.getByLabelText('Component filter') as HTMLSelectElement;
+    await waitFor(() => expect(Array.from(select.options, (o) => o.value))
+      .toEqual(['', 'web_php', 'zma_m1', 'zmc_m1', 'zmpkg']));
+  });
+
+  it('shows the log state in the status bar', async () => {
+    renderRoute('/logs');
+    await findTable();
+    // The seed has one ERR row; ZoneMinder's default alert count for errors is 1.
+    await waitFor(() => expect(screen.getByTestId('log-state')).toHaveTextContent(/^State: (ok|alert)$/));
+  });
+
+  it('puts the table into fullscreen', async () => {
+    const requestFullscreen = vi.fn(() => Promise.resolve());
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { value: requestFullscreen, configurable: true });
+    const user = userEvent.setup();
+    renderRoute('/logs');
+    await findTable();
+
+    await user.click(screen.getByRole('button', { name: 'Toggle fullscreen' }));
+    expect(requestFullscreen).toHaveBeenCalledTimes(1);
   });
 });

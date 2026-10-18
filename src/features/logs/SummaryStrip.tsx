@@ -19,6 +19,8 @@ export interface LogsSummary {
 export interface SummaryStripProps {
   summary: LogsSummary;
   total: number;
+  /** Rows in the whole table, filters aside (legacy's "Available"); null hides it. */
+  available?: number | null;
   shownCount: number;
   page: number;
   pageSize: number;
@@ -31,7 +33,7 @@ export interface SummaryStripProps {
 }
 
 export function SummaryStrip({
-  summary, total, shownCount, page, pageSize,
+  summary, total, available, shownCount, page, pageSize,
   activeLevel, onPickErrors, onPickWarnings, onPickInfo, onPickDebug,
 }: SummaryStripProps) {
   const { t } = useTranslation();
@@ -74,7 +76,11 @@ export function SummaryStrip({
         />
       )}
       <span className="ms-auto font-mono tabular-nums text-xs text-fg-dim">
-        {t('Total: {{total}} · Displaying: {{first}}–{{last}}', { total, first, last })}
+        {available != null
+          ? t('Total: {{total}} · Available: {{available}} · Displaying: {{first}}–{{last}}', {
+            total: total.toLocaleString(), available: available.toLocaleString(), first, last,
+          })
+          : t('Total: {{total}} · Displaying: {{first}}–{{last}}', { total, first, last })}
       </span>
     </div>
   );
