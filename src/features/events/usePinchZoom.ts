@@ -67,14 +67,25 @@ function clamp(v: number, lo: number, hi: number): number {
  *
  *  - two pointers (touch or pen): pinch, tracking the midpoint
  *  - trackpad pinch, which arrives as a ctrl-key wheel event
+ *  - shift + wheel, one zoom step per notch (legacy panzoom's binding)
  *  - one pointer drags once zoomed in
- *  - double-click / double-tap resets
+ *  - double-click / double-tap resets, unless the caller takes the gesture
+ *    (`onDoubleClick`: the watch page toggles fullscreen with it)
  *
  * The listeners are non-passive because a pinch must not also scroll the
  * page behind it. It stays attached in fullscreen, since fullscreen only
  * moves the element, it does not remount it.
  */
-export function usePinchZoom<T extends HTMLElement>(enabled = true, clickToZoom = false) {
+export interface PinchZoomOptions {
+  /** Replaces the double-click reset. */
+  onDoubleClick?: () => void;
+}
+
+export function usePinchZoom<T extends HTMLElement>(enabled = true, clickToZoom = false, options: PinchZoomOptions = {}) {
+  const onDoubleClickRef = useRef(options.onDoubleClick);
+  useEffect(() => {
+    onDoubleClickRef.current = options.onDoubleClick;
+  });
   // A callback ref, not a RefObject: the element it attaches to is rendered
   // conditionally (the player only exists once the event has loaded), and an
   // effect keyed on a RefObject would have run once against a null and never
@@ -152,15 +163,27 @@ export function usePinchZoom<T extends HTMLElement>(enabled = true, clickToZoom 
     };
 
     const onWheel = (e: WheelEvent) => {
-      // A trackpad pinch is a wheel event with ctrlKey set. A plain wheel is
-      // a scroll and is left alone.
-      if (!e.ctrlKey) return;
+      // A trackpad pinch is a wheel event with ctrlKey set; shift + wheel is
+      // legacy panzoom's mouse binding. A plain wheel is a scroll and is left
+      // alone.
+      if (!e.ctrlKey && !e.shiftKey) return;
       e.preventDefault();
       const { cx, cy } = localCentre([{ x: e.clientX, y: e.clientY }]);
-      apply(zoomAt(stateRef.current, stateRef.current.scale * Math.exp(-e.deltaY / 200), cx, cy));
+      if (e.ctrlKey) {
+        apply(zoomAt(stateRef.current, stateRef.current.scale * Math.exp(-e.deltaY / 200), cx, cy));
+        return;
+      }
+      // Some browsers turn a shifted wheel into a horizontal one.
+      const delta = e.deltaY || e.deltaX;
+      if (delta === 0) return;
+      const factor = delta < 0 ? PINCH_STEP : 1 / PINCH_STEP;
+      apply(zoomAt(stateRef.current, stateRef.current.scale * factor, cx, cy));
     };
 
-    const onDoubleClick = () => setState(IDENTITY);
+    const onDoubleClick = () => {
+      if (onDoubleClickRef.current) onDoubleClickRef.current();
+      else setState(IDENTITY);
+    };
 
     // The event player zooms in on a plain click on the stream, towards the
     // point clicked (legacy `handleClick`). A double click fires this twice,
