@@ -497,7 +497,7 @@ export interface components {
             description?: string | null;
             /** Format: int32 */
             enabled?: number | null;
-            framework?: null | components["schemas"]["Framework"];
+            framework?: components["schemas"]["Framework"] | null;
             /** @description Filesystem path to the model weights. */
             model_path?: string | null;
             name: string;
@@ -805,7 +805,7 @@ export interface components {
             email_to?: string | null;
             /** Format: int32 */
             execute_interval?: number | null;
-            filter?: null | components["schemas"]["FilterQuery"];
+            filter?: components["schemas"]["FilterQuery"] | null;
             /** Format: int32 */
             lock_rows?: number | null;
             name: string;
@@ -996,7 +996,7 @@ export interface components {
             deinterlacing: number;
             deleted: boolean;
             device: string;
-            device_class?: null | components["schemas"]["DeviceClass"];
+            device_class?: components["schemas"]["DeviceClass"] | null;
             /**
              * Format: int32
              * @description Whether the monitor is enabled (ZoneMinder's `Monitors.Enabled`).
@@ -1075,7 +1075,7 @@ export interface components {
             orientation: components["schemas"]["Orientation"];
             /** Format: int32 */
             output_codec?: number | null;
-            output_container?: null | components["schemas"]["OutputContainer"];
+            output_container?: components["schemas"]["OutputContainer"] | null;
             /** Format: int32 */
             palette: number;
             pass?: string | null;
@@ -1106,7 +1106,10 @@ export interface components {
             /** Format: int32 */
             rtsp2_web_enabled: number;
             rtsp2_web_type: components["schemas"]["Rtsp2WebType"];
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Accepted and ignored: ZoneMinder 1.39.37 removed `RTSPDescribe`.
+             */
             rtsp_describe?: number | null;
             /** Format: int32 */
             rtsp_server: number;
@@ -1564,7 +1567,7 @@ export interface components {
         EventCreateRequest: {
             /** @example Motion in zone 1 */
             cause?: string | null;
-            end_date_time?: null | components["schemas"]["DateTimeWrapper"];
+            end_date_time?: components["schemas"]["DateTimeWrapper"] | null;
             /**
              * Format: int32
              * @example 1080
@@ -1586,7 +1589,7 @@ export interface components {
              * @example null
              */
             secondary_storage_id?: number | null;
-            start_date_time?: null | components["schemas"]["DateTimeWrapper"];
+            start_date_time?: components["schemas"]["DateTimeWrapper"] | null;
             /**
              * Format: int32
              * @example 1
@@ -1627,8 +1630,8 @@ export interface components {
              * @example Motion
              */
             cause?: string | null;
-            direction?: null | components["schemas"]["SortDirection"];
-            end_time?: null | components["schemas"]["DateTimeWrapper"];
+            direction?: components["schemas"]["SortDirection"] | null;
+            end_time?: components["schemas"]["DateTimeWrapper"] | null;
             /**
              * Format: int32
              * @example 1
@@ -1651,8 +1654,8 @@ export interface components {
              * @example 20
              */
             page_size?: number | null;
-            sort?: null | components["schemas"]["EventSortField"];
-            start_time?: null | components["schemas"]["DateTimeWrapper"];
+            sort?: components["schemas"]["EventSortField"] | null;
+            start_time?: components["schemas"]["DateTimeWrapper"] | null;
             /**
              * Format: int32
              * @description Filter by the storage the event's media lives on.
@@ -1662,10 +1665,18 @@ export interface components {
             /**
              * @description Filter to events carrying any of these tag ids (comma-separated, e.g.
              *     `tag_id=1,4,5`). Standard query strings can't repeat a key into a list,
-             *     so a comma-separated value is used.
+             *     so a comma-separated value is used. `none` keeps events with no tag and
+             *     `any` keeps events with at least one; legacy's `0` and `-1` mean the same.
              * @example 1,4
              */
             tag_id?: string | null;
+            tag_op?: components["schemas"]["TagOp"] | null;
+            /**
+             * @description Also return `total_length_seconds` and `total_disk_space` summed over
+             *     the whole result, not the page. Off by default: it is a second
+             *     aggregate query.
+             */
+            totals?: boolean;
         };
         EventResponse: {
             /**
@@ -1697,7 +1708,7 @@ export interface components {
              * @example 0
              */
             emailed: number;
-            end_date_time?: null | components["schemas"]["DateTimeWrapper"];
+            end_date_time?: components["schemas"]["DateTimeWrapper"] | null;
             /**
              * Format: int32
              * @example 0
@@ -1718,14 +1729,14 @@ export interface components {
              * @example 1
              */
             id: number;
-            latitude?: null | components["schemas"]["DecimalWrapper"];
+            latitude?: components["schemas"]["DecimalWrapper"] | null;
             length: components["schemas"]["DecimalWrapper"];
             /**
              * Format: int32
              * @example 0
              */
             locked: number;
-            longitude?: null | components["schemas"]["DecimalWrapper"];
+            longitude?: components["schemas"]["DecimalWrapper"] | null;
             /**
              * Format: int32
              * @example 100
@@ -1757,7 +1768,7 @@ export interface components {
              * @example null
              */
             secondary_storage_id?: number | null;
-            start_date_time?: null | components["schemas"]["DateTimeWrapper"];
+            start_date_time?: components["schemas"]["DateTimeWrapper"] | null;
             /**
              * Format: int32
              * @example 1
@@ -1795,7 +1806,7 @@ export interface components {
          * @description Field to sort events by
          * @enum {string}
          */
-        EventSortField: "start_time" | "end_time" | "alarm_frames" | "max_score" | "avg_score" | "tot_score" | "length" | "id" | "name" | "cause" | "monitor_id" | "notes" | "frames";
+        EventSortField: "start_time" | "end_time" | "alarm_frames" | "max_score" | "avg_score" | "tot_score" | "length" | "id" | "name" | "cause" | "monitor_id" | "notes" | "frames" | "archived" | "emailed" | "disk_space";
         /** @description Lightweight event summary for embedding in TagDetailResponse */
         EventSummary: {
             /**
@@ -1810,7 +1821,7 @@ export interface components {
             monitor_id: number;
             /** @example Motion Detection */
             name: string;
-            start_date_time?: null | components["schemas"]["DateTimeWrapper"];
+            start_date_time?: components["schemas"]["DateTimeWrapper"] | null;
         };
         /** @description Event counts and disk space summary for a monitor */
         EventSummaryResponse: {
@@ -1944,7 +1955,7 @@ export interface components {
             name?: string | null;
             /** @example Important security event */
             notes?: string | null;
-            orientation?: null | components["schemas"]["Orientation"];
+            orientation?: components["schemas"]["Orientation"] | null;
             /**
              * @description Mark event as having been uploaded to external storage
              * @example false
@@ -2020,7 +2031,7 @@ export interface components {
              * @description Optional row limit applied by the downstream executor.
              */
             limit?: number | null;
-            sort?: null | components["schemas"]["FilterSort"];
+            sort?: components["schemas"]["FilterSort"] | null;
             /** @description Root predicate. Usually a [`FilterExpr::Group`]. */
             where: components["schemas"]["FilterExpr"];
         };
@@ -2067,7 +2078,7 @@ export interface components {
             email_to?: string | null;
             /** Format: int32 */
             execute_interval: number;
-            filter?: null | components["schemas"]["FilterQuery"];
+            filter?: components["schemas"]["FilterQuery"] | null;
             /** Format: int32 */
             id: number;
             /** Format: int32 */
@@ -2242,7 +2253,7 @@ export interface components {
             status: string;
             /** Format: double */
             uptime_seconds: number;
-            webrtc_startup?: null | components["schemas"]["WebRtcStartupView"];
+            webrtc_startup?: components["schemas"]["WebRtcStartupView"] | null;
         };
         /**
          * @description Server locale: the effective timezone + ZoneMinder's date/time format
@@ -2298,14 +2309,20 @@ export interface components {
              */
             end?: number | null;
             /**
-             * Format: int32
-             * @description Exact `Logs.Level` value match (ZoneMinder's inverted numeric scale:
-             *     0=Info, -1=Warning, -2=Error, -3=Fatal, positive=debug). For "this
-             *     severe or worse", use `min_level` instead.
+             * @description Only these log ids, as a comma list. On `DELETE` this clears the rows
+             *     an operator selected.
+             * @example 101,102
+             */
+            ids?: string | null;
+            /**
+             * @description Exact `Logs.Level` match, one value or a comma list (`-1,-5`), on
+             *     ZoneMinder's inverted numeric scale: 0=Info, -1=Warning, -2=Error,
+             *     -3=Fatal, -4=Panic, -5=Audit, positive=debug. For "this severe or
+             *     worse", use `min_level` instead.
              * @example -2
              */
-            level?: number | null;
-            min_level?: null | components["schemas"]["LogLevel"];
+            level?: string | null;
+            min_level?: components["schemas"]["LogLevel"] | null;
             /**
              * Format: int64
              * @description Page number (1-indexed)
@@ -2329,13 +2346,19 @@ export interface components {
              * @example 1
              */
             server_id?: number | null;
-            sort?: null | components["schemas"]["LogSort"];
+            sort?: components["schemas"]["LogSort"] | null;
+            sort_by?: components["schemas"]["LogSortField"] | null;
             /**
              * Format: double
              * @description Only logs at or after this Unix time (seconds; `TimeKey`).
              * @example 1714300000
              */
             start?: number | null;
+            /**
+             * @description Also return `total_unfiltered`, the row count of the whole table. Off
+             *     by default: it is a second `COUNT(*)` over `Logs` on every request.
+             */
+            unfiltered_total?: boolean;
         };
         LogResponse: {
             /**
@@ -2395,10 +2418,15 @@ export interface components {
             time_key: string;
         };
         /**
-         * @description Sort direction for the log time (`TimeKey`).
+         * @description Sort direction.
          * @enum {string}
          */
         LogSort: "asc" | "desc";
+        /**
+         * @description Column the log list is ordered by.
+         * @enum {string}
+         */
+        LogSortField: "time" | "id" | "component" | "server_id" | "pid" | "level" | "code" | "message" | "file" | "line";
         LoginRequest: {
             password: string;
             username: string;
@@ -2707,7 +2735,10 @@ export interface components {
             /** Format: int32 */
             rtsp2_web_enabled: number;
             rtsp2_web_type: string;
-            /** Format: int32 */
+            /**
+             * Format: int32
+             * @description Always `null`: ZoneMinder 1.39.37 removed `RTSPDescribe`.
+             */
             rtsp_describe?: number | null;
             /** Format: int32 */
             rtsp_server: number;
@@ -2944,6 +2975,18 @@ export interface components {
             per_page: number;
             /** Format: int64 */
             total: number;
+            /**
+             * Format: int64
+             * @description Summed `disk_space` of every matching event, in bytes. Only with
+             *     `totals=true`.
+             */
+            total_disk_space?: number | null;
+            /**
+             * Format: double
+             * @description Summed `length` of every matching event, in seconds. Only present when
+             *     the request asked for it with `totals=true`.
+             */
+            total_length_seconds?: number | null;
         };
         /** @description Paginated response for event-tag associations */
         PaginatedEventsTagsResponse: {
@@ -3041,6 +3084,12 @@ export interface components {
              * @description Total number of matching logs
              */
             total: number;
+            /**
+             * Format: int64
+             * @description Row count of the whole table, ignoring every filter. Only present when
+             *     the request asked for it with `unfiltered_total=true`.
+             */
+            total_unfiltered?: number | null;
         };
         /** @description Paginated response for manufacturers */
         PaginatedManufacturersResponse: {
@@ -3595,7 +3644,7 @@ export interface components {
              * @description Monitor ID
              */
             monitor_id: number;
-            position?: null | components["schemas"]["PtzPositionResponse"];
+            position?: components["schemas"]["PtzPositionResponse"] | null;
             /** @description Protocol name */
             protocol?: string | null;
         };
@@ -4031,7 +4080,7 @@ export interface components {
             daemons: components["schemas"]["DaemonStatusResponse"][];
             /** @description Whether the daemon controller is running */
             running: boolean;
-            stats?: null | components["schemas"]["SystemStatsResponse"];
+            stats?: components["schemas"]["SystemStatsResponse"] | null;
         };
         /** @description Tag detail response with paginated events */
         TagDetailResponse: {
@@ -4066,6 +4115,11 @@ export interface components {
              */
             total_events: number;
         };
+        /**
+         * @description How `tag_id` is applied.
+         * @enum {string}
+         */
+        TagOp: "in" | "not_in";
         TagResponse: {
             /** @example 2025-01-15T10:30:00Z */
             create_date?: string | null;
@@ -4136,7 +4190,7 @@ export interface components {
             description?: string | null;
             /** Format: int32 */
             enabled?: number | null;
-            framework?: null | components["schemas"]["Framework"];
+            framework?: components["schemas"]["Framework"] | null;
             model_path?: string | null;
             name?: string | null;
             version?: string | null;
@@ -4350,12 +4404,12 @@ export interface components {
             turbo_pan_speed?: number | null;
             /** Format: int32 */
             turbo_tilt_speed?: number | null;
-            type?: null | components["schemas"]["MonitorType"];
+            type?: components["schemas"]["MonitorType"] | null;
         };
         UpdateDeviceRequest: {
             key_string?: string | null;
             name?: string | null;
-            type?: null | components["schemas"]["DeviceType"];
+            type?: components["schemas"]["DeviceType"] | null;
         };
         UpdateEventDataRequest: {
             /** @example {"detections": []} */
@@ -4403,7 +4457,7 @@ export interface components {
             email_to?: string | null;
             /** Format: int32 */
             execute_interval?: number | null;
-            filter?: null | components["schemas"]["FilterQuery"];
+            filter?: components["schemas"]["FilterQuery"] | null;
             /** Format: int32 */
             lock_rows?: number | null;
             name?: string | null;
@@ -4477,7 +4531,7 @@ export interface components {
             port?: string | null;
             protocol?: string | null;
             sub_path?: string | null;
-            type?: null | components["schemas"]["MonitorType"];
+            type?: components["schemas"]["MonitorType"] | null;
             /** Format: int32 */
             width?: number | null;
         };
@@ -4488,16 +4542,16 @@ export interface components {
             alarm_max_fps?: number | null;
             /** Format: int32 */
             alarm_ref_blend_perc?: number | null;
-            analysing?: null | components["schemas"]["Analysing"];
+            analysing?: components["schemas"]["Analysing"] | null;
             /** Format: double */
             analysis_fps_limit?: number | null;
-            analysis_image?: null | components["schemas"]["AnalysisImage"];
+            analysis_image?: components["schemas"]["AnalysisImage"] | null;
             /**
              * Format: int32
              * @description Alpha applied when compositing the analysis image over the frame.
              */
             analysis_image_opacity?: number | null;
-            analysis_source?: null | components["schemas"]["AnalysisSource"];
+            analysis_source?: components["schemas"]["AnalysisSource"] | null;
             /** Format: int32 */
             analysis_update_delay?: number | null;
             /** Format: int32 */
@@ -4510,7 +4564,7 @@ export interface components {
             auto_stop_timeout?: number | null;
             /** Format: int32 */
             brightness?: number | null;
-            capturing?: null | components["schemas"]["Capturing"];
+            capturing?: components["schemas"]["Capturing"] | null;
             /** Format: int32 */
             channel?: number | null;
             /** Format: int32 */
@@ -4528,10 +4582,10 @@ export interface components {
             decoder?: string | null;
             decoder_hw_accel_device?: string | null;
             decoder_hw_accel_name?: string | null;
-            decoding?: null | components["schemas"]["Decoding"];
+            decoding?: components["schemas"]["Decoding"] | null;
             /** Format: int32 */
             decoding_enabled?: number | null;
-            default_codec?: null | components["schemas"]["DefaultCodec"];
+            default_codec?: components["schemas"]["DefaultCodec"] | null;
             /** Format: int32 */
             default_rate?: number | null;
             default_scale?: string | null;
@@ -4539,7 +4593,7 @@ export interface components {
             deinterlacing?: number | null;
             deleted?: boolean | null;
             device?: string | null;
-            device_class?: null | components["schemas"]["DeviceClass"];
+            device_class?: components["schemas"]["DeviceClass"] | null;
             /**
              * Format: int32
              * @description Enable/disable the monitor (ZoneMinder's `Monitors.Enabled`).
@@ -4547,7 +4601,7 @@ export interface components {
             enabled?: number | null;
             encoder?: string | null;
             encoder_parameters?: string | null;
-            event_close_mode?: null | components["schemas"]["EventCloseMode"];
+            event_close_mode?: components["schemas"]["EventCloseMode"] | null;
             event_end_command?: string | null;
             event_prefix?: string | null;
             event_start_command?: string | null;
@@ -4557,7 +4611,7 @@ export interface components {
             format?: number | null;
             /** Format: int32 */
             fps_report_interval?: number | null;
-            function?: null | components["schemas"]["Function"];
+            function?: components["schemas"]["Function"] | null;
             /** Format: int32 */
             height?: number | null;
             host?: string | null;
@@ -4565,7 +4619,7 @@ export interface components {
             hue?: number | null;
             /** Format: int32 */
             image_buffer_count?: number | null;
-            importance?: null | components["schemas"]["Importance"];
+            importance?: components["schemas"]["Importance"] | null;
             /** Format: int32 */
             janus_audio_enabled?: number | null;
             /** Format: int32 */
@@ -4628,10 +4682,10 @@ export interface components {
             onvif_url?: string | null;
             onvif_username?: string | null;
             options?: string | null;
-            orientation?: null | components["schemas"]["Orientation"];
+            orientation?: components["schemas"]["Orientation"] | null;
             /** Format: int32 */
             output_codec?: number | null;
-            output_container?: null | components["schemas"]["OutputContainer"];
+            output_container?: components["schemas"]["OutputContainer"] | null;
             /** Format: int32 */
             palette?: number | null;
             pass?: string | null;
@@ -4647,8 +4701,8 @@ export interface components {
              * @description Boolean. The old `min = -1` accepted a value the column has no meaning for.
              */
             record_audio?: number | null;
-            recording?: null | components["schemas"]["Recording"];
-            recording_source?: null | components["schemas"]["RecordingSource"];
+            recording?: components["schemas"]["Recording"] | null;
+            recording_source?: components["schemas"]["RecordingSource"] | null;
             /** Format: int32 */
             ref_blend_perc?: number | null;
             /** Format: int32 */
@@ -4661,8 +4715,11 @@ export interface components {
             return_location?: number | null;
             /** Format: int32 */
             rtsp2_web_enabled?: number | null;
-            rtsp2_web_type?: null | components["schemas"]["Rtsp2WebType"];
-            /** Format: int32 */
+            rtsp2_web_type?: components["schemas"]["Rtsp2WebType"] | null;
+            /**
+             * Format: int32
+             * @description Accepted and ignored: ZoneMinder 1.39.37 removed `RTSPDescribe`.
+             */
             rtsp_describe?: number | null;
             /** Format: int32 */
             rtsp_server?: number | null;
@@ -4702,7 +4759,7 @@ export interface components {
             /** Format: int32 */
             track_motion?: number | null;
             triggers?: string | null;
-            type?: null | components["schemas"]["MonitorType"];
+            type?: components["schemas"]["MonitorType"] | null;
             /** Format: int32 */
             use_amcrest_api?: number | null;
             user?: string | null;
@@ -5130,14 +5187,14 @@ export interface components {
         };
         /** @description A monitor's zm-next worker, as the daemon manager sees it. */
         ZmNextWorkerStatusResponse: {
-            live?: null | components["schemas"]["WorkerStatus"];
+            live?: components["schemas"]["WorkerStatus"] | null;
             /** Format: int32 */
             monitor_id: number;
             /** @description zm-api supervises daemons on this server (not passive mode). */
             supervised: boolean;
             /** @description `UseZmNext` is set and `[zmnext].enabled` is on. */
             use_zmnext: boolean;
-            worker?: null | components["schemas"]["DaemonStatusResponse"];
+            worker?: components["schemas"]["DaemonStatusResponse"] | null;
         };
         ZonePresetResponse: {
             check_method: string;
