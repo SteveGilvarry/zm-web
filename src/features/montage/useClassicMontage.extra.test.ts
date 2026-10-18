@@ -107,12 +107,41 @@ async function mounted(list = monitors) {
 }
 
 describe('useClassicMontage — saved layout list', () => {
-  it('sorts saved layouts by name and drops rows whose positions will not parse', async () => {
-    stubLayouts();
+  it('sorts saved layouts by name, old-format rows included, preset rows left to the presets', async () => {
+    stubLayouts([
+      { id: 12, name: 'Zulu wall', user_id: 1, positions: savedPositions },
+      { id: 13, name: 'alpha wall', user_id: 1, positions: savedPositions },
+      { id: 14, name: 'Corrupt', user_id: 1, positions: 'not-json' },
+      { id: 2, name: '4 Wide', user_id: 0, positions: '{ "default":{"float":"left"} }' },
+      { id: 1, name: 'Freeform', user_id: 0, positions: '{ "default":{"float":"left"} }' },
+    ]);
     const { result } = await mounted();
     const savedOpts = result.current.layoutOptions.filter((o) => o.value.startsWith('saved:'));
-    expect(savedOpts.map((o) => o.label)).toEqual(['alpha wall', 'Zulu wall']);
-    expect(savedOpts.some((o) => o.label === 'Corrupt')).toBe(false);
+    expect(savedOpts.map((o) => o.label)).toEqual(['alpha wall', 'Corrupt', 'Zulu wall']);
+  });
+
+  it('an old-format row opens "Error reading Layout", walls four across, and saves in place', async () => {
+    stubLayouts([
+      { id: 12, name: 'Zulu wall', user_id: 1, positions: savedPositions },
+      { id: 14, name: 'Pre-2024', user_id: 7, positions: '{ "mId1":{"width":"50%"} }' },
+    ]);
+    const { result } = await mounted();
+    expect(result.current.layoutErrorOpen).toBe(false);
+
+    act(() => result.current.setLayoutId('saved:14'));
+    expect(result.current.layoutId).toBe('saved:14');
+    expect(result.current.layoutErrorOpen).toBe(true);
+    expect(result.current.columns).toBe(4);
+    expect(result.current.isSavedLayout).toBe(true);
+    act(() => result.current.closeLayoutError());
+    expect(result.current.layoutErrorOpen).toBe(false);
+
+    // Legacy's advice is to place the monitors again and resave: an empty
+    // Name writes the new gridStack over the old row.
+    act(() => result.current.beginEdit());
+    await act(async () => { result.current.save(); });
+    await waitFor(() => expect(patched.map((p) => p.id)).toEqual(['14']));
+    expect(JSON.parse((patched[0].body as { positions: string }).positions)).toHaveProperty('gridStack');
   });
 
   it('survives the backend being unreachable — presets still work', async () => {

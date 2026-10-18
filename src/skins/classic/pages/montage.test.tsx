@@ -504,6 +504,26 @@ describe('ClassicMontagePage', () => {
   });
 });
 
+describe('ClassicMontagePage — old-format layouts', () => {
+  it('lists a pre-2024 layout and opens Error reading Layout when it is chosen', async () => {
+    const user = userEvent.setup();
+    stub({ layouts: [
+      { id: 12, name: 'Night wall', user_id: 7, positions: SAVED_POSITIONS },
+      { id: 15, name: 'Old wall', user_id: 7, positions: '{ "mId1":{"width":"50%"} }' },
+    ] });
+    await mount();
+
+    const select = await screen.findByRole('combobox', { name: 'Layout' });
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Old wall' })).toBeInTheDocument());
+    await user.selectOptions(select, 'saved:15');
+    const dialog = await screen.findByRole('dialog', { name: 'Error reading Layout' });
+    expect(dialog).toHaveTextContent('It is necessary to place monitors again and resave the Layout.');
+    await user.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByTestId('montage-classic-grid')).toHaveAttribute('data-columns', '4');
+  });
+});
+
 describe('ClassicMontagePage — viewing timeout', () => {
   it('stops every stream after ZM_WEB_VIEWING_TIMEOUT and asks, then starts them again', async () => {
     const user = userEvent.setup();

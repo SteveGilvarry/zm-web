@@ -213,6 +213,12 @@ export default function ClassicMontagePage() {
         <p className="text-sm mb-3">{t('Video paused. Continue watching?')}</p>
         <ClassicButton tone="primary" onClick={idle.resume}>{t('Yes')}</ClassicButton>
       </Modal>
+      {/* Legacy `#messageModal`, for a layout saved before May 2024. */}
+      <Modal isOpen={montage.layoutErrorOpen} onClose={montage.closeLayoutError} title={t('Error reading Layout')}>
+        <p className="text-sm">{t('This Layout was saved in previous version of ZoneMinder!')}</p>
+        <p className="text-sm mb-3">{t('It is necessary to place monitors again and resave the Layout.')}</p>
+        <ClassicButton onClick={montage.closeLayoutError}>{t('Close')}</ClassicButton>
+      </Modal>
       {/* Legacy `enoperm()`. */}
       <Modal isOpen={montage.noPermOpen} onClose={montage.closeNoPerm} title={t('ZoneMinder Error')}>
         <p className="text-sm mb-1">{t('You do not have permissions to access this resource.')}</p>
