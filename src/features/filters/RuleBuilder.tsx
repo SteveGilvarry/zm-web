@@ -29,7 +29,15 @@ interface RuleBuilderProps {
   onChange: (q: FilterQuery) => void;
 }
 
-const BRACKET_CHOICES = [0, 1, 2, 3];
+/**
+ * Legacy's bracket menus (Filter.php:1015-1021): only shown once there are
+ * more than two terms, offering 0…n−2 brackets. A count already saved above
+ * that stays on offer, so loading a filter never rewrites it.
+ */
+function bracketChoices(termCount: number, current: number): number[] {
+  const max = Math.max(termCount - 2, current, 0);
+  return Array.from({ length: max + 1 }, (_, n) => n);
+}
 
 /**
  * Rule-row builder on ZoneMinder terms:
@@ -54,6 +62,7 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
   const addTerm = () => setTerms([...query.terms, newTerm(monitors)]);
 
   const select = 'px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors';
+  const showBrackets = query.terms.length > 2;
 
   return (
     <div className="space-y-2">
@@ -87,16 +96,18 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               </select>
             )}
 
-            <select
-              aria-label={t('Open brackets')}
-              value={bracketCount(term.obr)}
-              onChange={(e) => updateTerm(i, { obr: e.target.value })}
-              className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
-            >
-              {BRACKET_CHOICES.map((n) => (
-                <option key={n} value={n}>{n === 0 ? '(' : '('.repeat(n)}</option>
-              ))}
-            </select>
+            {showBrackets ? (
+              <select
+                aria-label={t('Open brackets')}
+                value={bracketCount(term.obr)}
+                onChange={(e) => updateTerm(i, { obr: e.target.value })}
+                className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
+              >
+                {bracketChoices(query.terms.length, bracketCount(term.obr)).map((n) => (
+                  <option key={n} value={n}>{'('.repeat(n)}</option>
+                ))}
+              </select>
+            ) : <span className="w-10" aria-hidden />}
 
             <select
               aria-label={t('Attribute')}
@@ -105,11 +116,10 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
                 const attr = e.target.value as FilterAttr;
                 const nextKind = attrMeta(attr)?.kind ?? 'string';
                 const allowed = OPS_BY_KIND[nextKind];
-                updateTerm(i, {
-                  attr,
-                  op: allowed.includes(term.op) ? term.op : allowed[0],
-                  val: '',
-                });
+                updateTerm(i, attr === 'Archived'
+                  // Legacy's Archived term is always "equal to" one of its two states.
+                  ? { attr, op: '=', val: '0' }
+                  : { attr, op: allowed.includes(term.op) ? term.op : allowed[0], val: '' });
               }}
               className={select}
             >
@@ -126,16 +136,22 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               </optgroup>
             </select>
 
-            <select
-              aria-label={t('Operator')}
-              value={term.op}
-              onChange={(e) => updateTerm(i, { op: e.target.value as FilterOp })}
-              className={clsx(select, 'font-mono')}
-            >
-              {(opChoices.includes(term.op) ? opChoices : [term.op, ...opChoices]).map((op) => (
-                <option key={op} value={op} title={opLabels[op]}>{op}</option>
-              ))}
-            </select>
+            {/* Archived reads "equal to" with no operator menu (Filter.php:1085). */}
+            {term.attr === 'Archived' && term.op === '=' ? (
+              <span className="px-2 py-1 text-xs text-fg-muted" data-testid="fixed-operator">{opLabels['=']}</span>
+            ) : (
+              <select
+                aria-label={t('Operator')}
+                value={term.op}
+                onChange={(e) => updateTerm(i, { op: e.target.value as FilterOp })}
+                className={select}
+              >
+                {/* Legacy's operator menu names them in words (Filter::opTypes). */}
+                {(opChoices.includes(term.op) ? opChoices : [term.op, ...opChoices]).map((op) => (
+                  <option key={op} value={op} title={op}>{opLabels[op] ?? op}</option>
+                ))}
+              </select>
+            )}
 
             <ValueInput
               term={term}
@@ -145,16 +161,18 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               onChange={(val) => updateTerm(i, { val })}
             />
 
-            <select
-              aria-label={t('Close brackets')}
-              value={bracketCount(term.cbr)}
-              onChange={(e) => updateTerm(i, { cbr: e.target.value })}
-              className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
-            >
-              {BRACKET_CHOICES.map((n) => (
-                <option key={n} value={n}>{n === 0 ? ')' : ')'.repeat(n)}</option>
-              ))}
-            </select>
+            {showBrackets ? (
+              <select
+                aria-label={t('Close brackets')}
+                value={bracketCount(term.cbr)}
+                onChange={(e) => updateTerm(i, { cbr: e.target.value })}
+                className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
+              >
+                {bracketChoices(query.terms.length, bracketCount(term.cbr)).map((n) => (
+                  <option key={n} value={n}>{')'.repeat(n)}</option>
+                ))}
+              </select>
+            ) : <span className="w-10" aria-hidden />}
 
             <button
               type="button"
@@ -255,6 +273,15 @@ function ValueInput({
         {storage.map((s) => (
           <option key={s.id} value={String(s.id)}>{s.name}</option>
         ))}
+      </select>
+    );
+  }
+  if (kind === 'bool' && term.attr === 'Archived') {
+    // Legacy's `$archiveTypes`: Unarchived / Archived, nothing else.
+    return (
+      <select aria-label={label} value={value === '1' ? '1' : '0'} onChange={(e) => onChange(e.target.value)} className={cls}>
+        <option value="0">{t('Unarchived')}</option>
+        <option value="1">{t('Archived')}</option>
       </select>
     );
   }
