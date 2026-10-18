@@ -109,27 +109,29 @@ describe('ClassicSettingsUsersPage', () => {
     await mount();
 
     const row = (await screen.findByRole('button', { name: 'admin' })).closest('tr')!;
-    expect(within(row).getByText('Site Admin')).toBeInTheDocument();
+    // users.php has no Name column.
+    expect(within(row).queryByText('Site Admin')).toBeNull();
     expect(within(row).getByText('admin@example.com')).toBeInTheDocument();
     // The permission columns are the raw level strings.
     expect(within(row).getAllByText('Edit')).toHaveLength(2);   // monitors + system
     // Signed-in row: starred, and its mark checkbox is disabled.
     expect(within(row).getByTitle('You')).toHaveTextContent('*');
     expect(within(row).getByRole('checkbox', { name: 'Mark admin' })).toBeDisabled();
-    // Own enable toggle is not offered — the cell falls back to Yes/No.
+    // Enabled is Yes/No text, as legacy prints it, not a toggle.
     expect(within(row).queryByRole('checkbox', { name: /able admin/ })).toBeNull();
     // Legacy column order: … Email, Language, Enabled, …perms…, API Enabled.
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
     expect(headers.slice(1)).toEqual([
-      'Username', 'Name', 'Email', 'Language', 'Enabled',
+      'Username', 'Email', 'Language', 'Enabled',
       'Stream', 'Events', 'Control', 'Monitors', 'Groups', 'Snapshots', 'System', 'Devices', 'API Enabled',
     ]);
     const cells = within(row).getAllByRole('cell').map((c) => c.textContent);
-    expect(cells[4]).toBe('de_de');        // Language
-    expect(cells[5]).toBe('Yes');          // Enabled, own row
+    expect(cells[3]).toBe('de_de');        // Language
+    expect(cells[4]).toBe('Yes');          // Enabled, own row
     expect(cells.at(-1)).toBe('No');       // API Enabled
-    const ops = screen.getByText('Ops Team').closest('tr')!;
-    expect(within(ops).getAllByRole('cell').map((c) => c.textContent)[4]).toBe('default');
+    const ops = screen.getByRole('button', { name: 'ops' }).closest('tr')!;
+    expect(within(ops).getAllByRole('cell').map((c) => c.textContent)[3]).toBe('default');
+    expect(within(ops).getAllByRole('cell').map((c) => c.textContent)[4]).toBe('No');
     expect(within(ops).getAllByRole('cell').map((c) => c.textContent).at(-1)).toBe('Yes');
 
     // Sorted by username: guest, then admin/ops around it.
@@ -158,18 +160,6 @@ describe('ClassicSettingsUsersPage', () => {
     await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'zzz');
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveAttribute('data-state', 'empty'));
-  });
-
-  it('the enable toggle PUTs a 0/1 int', async () => {
-    signIn();
-    seed();
-    const user = userEvent.setup();
-    await mount();
-
-    await user.click(await screen.findByRole('checkbox', { name: 'Enable ops' }));
-    await waitFor(() => expect(sent).toEqual([
-      { method: 'PUT', path: '/users/2', body: { enabled: 1 } },
-    ]));
   });
 
   it('select-all marks everyone but the signed-in user, and Delete confirms then DELETEs', async () => {
@@ -297,7 +287,7 @@ describe('ClassicSettingsUsersPage', () => {
     seed();
     await mount();
 
-    await waitFor(() => expect(screen.getByText('Site Admin')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('admin@example.com')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Add New User' })).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     // Export stays available to a viewer.
