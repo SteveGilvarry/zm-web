@@ -15,6 +15,13 @@ interface MontageReviewTimelineProps {
   filters?: ReviewEventFilters;
 }
 
+/**
+ * Width of the monitor-name column on the start side of every track. The
+ * bars, the playhead, its time label and the pointer seek all live in the
+ * region after it, so one instant maps to one x everywhere.
+ */
+const NAME_COLUMN = 'start-32';
+
 /** Legacy's fallback when a monitor has no `WebColour` (`drawEventOnGraph`). */
 export const DEFAULT_MONITOR_COLOUR = '#43bcf2';
 
@@ -41,7 +48,9 @@ export function MontageReviewTimeline({
   filters = DEFAULT_REVIEW_FILTERS,
 }: MontageReviewTimelineProps) {
   const { t } = useTranslation();
-  const bodyRef = useRef<HTMLDivElement | null>(null);
+  // The time axis: the body minus the name column, the same box the bars
+  // are laid out in. Seeking measures this, never the whole body.
+  const laneRef = useRef<HTMLDivElement | null>(null);
   const [collapsed, setCollapsed] = useState(false);
   const durationMs = rangeEnd.getTime() - rangeStart.getTime();
 
@@ -52,7 +61,7 @@ export function MontageReviewTimeline({
   }, [currentTime, rangeStart, durationMs]);
 
   const seekFromPointer = (e: ReactPointerEvent<HTMLDivElement>) => {
-    const el = bodyRef.current;
+    const el = laneRef.current;
     if (!el || durationMs <= 0) return;
     const rect = el.getBoundingClientRect();
     const x = e.clientX - rect.left;
@@ -96,24 +105,26 @@ export function MontageReviewTimeline({
       {!collapsed && (
         <>
           {/* Window edges + the playhead's own label, as legacy draws them. */}
-          <div className="relative h-5 px-3 border-b border-border-subtle/50">
-            <span className="absolute start-3 top-1 text-xs font-mono text-fg-faint tabular-nums" data-testid="review-timeline-min">
-              {formatEdge(rangeStart, durationMs)}
-            </span>
-            <span className="absolute end-3 top-1 text-xs font-mono text-fg-faint tabular-nums" data-testid="review-timeline-max">
-              {formatEdge(rangeEnd, durationMs)}
-            </span>
-            <span
-              className="absolute top-1 text-xs font-mono text-fg tabular-nums -translate-x-1/2"
-              style={{ left: `${playheadPct}%` }}
-            >
-              {formatEdge(currentTime, durationMs)}
-            </span>
+          <div className="relative h-5 border-b border-border-subtle/50">
+            <div className={`absolute ${NAME_COLUMN} end-0 top-0 bottom-0`} data-testid="review-timeline-label-lane">
+              <span className="absolute start-1 top-1 text-xs font-mono text-fg-faint tabular-nums" data-testid="review-timeline-min">
+                {formatEdge(rangeStart, durationMs)}
+              </span>
+              <span className="absolute end-3 top-1 text-xs font-mono text-fg-faint tabular-nums" data-testid="review-timeline-max">
+                {formatEdge(rangeEnd, durationMs)}
+              </span>
+              <span
+                className="absolute top-1 text-xs font-mono text-fg tabular-nums -translate-x-1/2"
+                style={{ left: `${playheadPct}%` }}
+                data-testid="review-timeline-playhead-label"
+              >
+                {formatEdge(currentTime, durationMs)}
+              </span>
+            </div>
           </div>
 
           {/* Tracks + playhead */}
           <div
-            ref={bodyRef}
             className="relative cursor-crosshair"
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
@@ -129,13 +140,21 @@ export function MontageReviewTimeline({
               />
             ))}
 
-            {/* Playhead — spans every track */}
+            {/* Playhead — spans every track, on the bars' own axis. Above the
+                name column (z-10) so its marker is never covered. */}
             <div
-              className="absolute top-0 bottom-0 pointer-events-none"
-              style={{ left: `${playheadPct}%` }}
+              ref={laneRef}
+              className={`absolute ${NAME_COLUMN} end-0 top-0 bottom-0 pointer-events-none z-20`}
+              data-testid="review-timeline-lane"
             >
-              <div className="w-px h-full bg-accent" />
-              <div className="absolute -top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-accent" />
+              <div
+                className="absolute top-0 bottom-0"
+                style={{ left: `${playheadPct}%` }}
+                data-testid="review-timeline-playhead"
+              >
+                <div className="w-px h-full bg-accent" />
+                <div className="absolute -top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-accent" />
+              </div>
             </div>
           </div>
         </>
@@ -164,7 +183,7 @@ function Track({ monitor, rangeStart, rangeEnd, filters }: TrackProps) {
           {monitor.name}
         </span>
       </div>
-      <div className="absolute start-32 end-0 top-0 bottom-0">
+      <div className={`absolute ${NAME_COLUMN} end-0 top-0 bottom-0`} data-testid="review-track-bars">
         {events.map((event) => (
           <EventBar
             key={event.id}
