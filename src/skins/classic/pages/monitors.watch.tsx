@@ -418,7 +418,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
               `ptzShow` decides whether it is open. */}
           {ptzOpen && (
             <aside className="w-full lg:w-80 shrink-0 bg-white border border-zinc-300 rounded-sm p-3" aria-label={t('Camera control')}>
-              <PtzControls monitorId={monitor.id} capabilities={ptzState.capabilities} />
+              <PtzControls monitorId={monitor.id} capabilities={ptzState.capabilities} variant="classic" />
             </aside>
           )}
         </div>

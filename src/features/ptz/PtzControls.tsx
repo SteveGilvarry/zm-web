@@ -1,4 +1,4 @@
-import { useEffect, useState, type ButtonHTMLAttributes, type PointerEvent, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useState, type ButtonHTMLAttributes, type PointerEvent, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
@@ -9,11 +9,19 @@ import {
 } from 'lucide-react';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { ptz, type PtzCapabilities, type PtzDirection, type PtzPowerAction } from '@/api/ptz';
+import { usePerms } from '@/features/auth/usePerms';
 import { useControlPresets } from './useControlPresets';
 
 interface PtzControlsProps {
   monitorId: number;
   capabilities: PtzCapabilities;
+  /**
+   * `classic` follows control_functions.php more literally: arrows the
+   * camera cannot drive are invisible rather than greyed, preset labels are
+   * tooltips on the number buttons, and Home sits with the preset buttons
+   * instead of in the pad's centre.
+   */
+  variant?: 'modern' | 'classic';
 }
 
 /** How long a failed command stays on screen before clearing itself. */
@@ -38,8 +46,10 @@ const ERROR_TTL_MS = 6_000;
  * The d-pad and the zoom/focus rockers are physical controls — "left" means
  * the camera pans left — so they sit in `dir="ltr"` and never mirror.
  */
-export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps) {
+export function PtzControls({ monitorId, capabilities: caps, variant = 'modern' }: PtzControlsProps) {
   const { t } = useTranslation();
+  const { can } = usePerms();
+  const classic = variant === 'classic';
   const [speed, setSpeed] = useState(50);
   const [presetSlot, setPresetSlot] = useState(1);
   const [presetName, setPresetName] = useState('');
@@ -66,7 +76,12 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
   const pt = caps.pan_tilt;
   const power = caps.power;
   const hasPower = power.can_wake || power.can_sleep || power.can_reset || power.can_reboot;
-  const presetSlots = Math.min(caps.presets.num_presets ?? 0, 16);
+  // Every slot the control advertises (`NumPresets`), as legacy draws them.
+  const presetSlots = Math.max(0, caps.presets.num_presets ?? 0);
+  const hasHome = caps.presets.has_home_preset;
+  // controlPresets: `canEdit('Monitors') && CanSetPresets()`.
+  const canSetPresets = caps.presets.can_set_presets && can('monitors', 'Edit');
+  const homeCommand = () => run(t('Home'), ptz.home(monitorId));
   // Names from `/control_presets`; slots without one show their number.
   const presetLabels = useControlPresets(monitorId, caps.presets.has_presets && presetSlots > 0);
 
@@ -129,6 +144,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
     <div className="space-y-4">
       {/* D-pad cluster — the focal element of the panel. */}
       {pt.can_move && (
+        <InvisibleWhenDisabled.Provider value={classic}>
         <div className="flex justify-center" dir="ltr">
           <div className="grid grid-cols-3 gap-1.5" style={{ width: 196 }}>
             <DpadBtn aria-label={t('Move up-left')}    disabled={!pt.can_move_diag} {...holdMove('up-left')}>
@@ -143,12 +159,16 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
             <DpadBtn aria-label={t('Move left')}       disabled={!pt.can_pan}       {...holdMove('left')}>
               <ArrowLeft size={20} strokeWidth={2.4} />
             </DpadBtn>
-            <DpadBtn aria-label={t('Home')}            center
-              onClick={() => run(t('Home'), ptz.home(monitorId))}
-              title={t('Return to home position')}
-            >
-              <Home size={18} strokeWidth={2.4} />
-            </DpadBtn>
+            {/* Home only when the control has a home preset (`HasHomePreset`);
+                classic keeps it with the presets, as legacy does, and leaves
+                the centre empty since zm-api has no Center command. */}
+            {hasHome && !classic ? (
+              <DpadBtn aria-label={t('Home')} center onClick={homeCommand} title={t('Return to home position')}>
+                <Home size={18} strokeWidth={2.4} />
+              </DpadBtn>
+            ) : (
+              <span aria-hidden />
+            )}
             <DpadBtn aria-label={t('Move right')}      disabled={!pt.can_pan}       {...holdMove('right')}>
               <ArrowRight size={20} strokeWidth={2.4} />
             </DpadBtn>
@@ -163,6 +183,7 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
             </DpadBtn>
           </div>
         </div>
+        </InvisibleWhenDisabled.Provider>
       )}
 
       {/* Last command failure */}
@@ -206,13 +227,14 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
       {caps.zoom.can && (
         <Section label={t('Zoom')}>
           <div className="grid grid-cols-2 gap-2" dir="ltr">
+            {/* controlZoom: Tele (zoom in) and Wide (zoom out). */}
             <RockerBtn {...holdZoom('out')}>
               <Minus size={14} strokeWidth={2.5} />
-              <span>{t('Wider')}</span>
+              <span>{t('Wide')}</span>
             </RockerBtn>
             <RockerBtn {...holdZoom('in')}>
               <Plus size={14} strokeWidth={2.5} />
-              <span>{t('Closer')}</span>
+              <span>{t('Tele')}</span>
             </RockerBtn>
           </div>
         </Section>
@@ -289,16 +311,16 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
       )}
 
       {/* Presets */}
-      {caps.presets.has_presets && presetSlots > 0 && (
+      {((caps.presets.has_presets && presetSlots > 0) || (classic && hasHome)) && (
         <Section
           label={t('Presets')}
-          action={
+          action={presetSlots > 0 ? (
             <span className="text-xs font-mono text-fg-dim tabular-nums">
               {t('{{count}} slot', { count: presetSlots })}
             </span>
-          }
+          ) : undefined}
         >
-          <div className="flex flex-wrap gap-1.5">
+          <div className={clsx('flex flex-wrap gap-1.5', classic && 'max-w-[calc(12*2.625rem)]')}>
             {Array.from({ length: presetSlots }, (_, i) => i + 1).map((n) => (
               <button
                 key={n}
@@ -306,20 +328,28 @@ export function PtzControls({ monitorId, capabilities: caps }: PtzControlsProps)
                 onClick={() => run(t('Preset {{n}}', { n }), ptz.gotoPreset(monitorId, n))}
                 className={clsx(
                   'min-w-9 h-9 px-1.5 rounded border border-border bg-surface-2 text-fg font-mono tabular-nums text-xs select-none transition-colors hover:border-border hover:bg-surface-3',
-                  presetLabels[n] && 'flex flex-col items-center justify-center leading-none gap-0.5',
+                  presetLabels[n] && !classic && 'flex flex-col items-center justify-center leading-none gap-0.5',
                 )}
                 title={presetLabels[n] ? t('Go to preset {{n}}: {{label}}', { n, label: presetLabels[n] }) : t('Go to preset {{n}}', { n })}
                 aria-label={presetLabels[n] ? t('Go to preset {{n}}: {{label}}', { n, label: presetLabels[n] }) : t('Go to preset {{n}}', { n })}
               >
                 {n}
-                {presetLabels[n] && (
+                {presetLabels[n] && !classic && (
                   <span className="text-xs font-sans text-fg-dim max-w-16 truncate">{presetLabels[n]}</span>
                 )}
               </button>
             ))}
           </div>
 
-          {caps.presets.can_set_presets && (
+          {classic && hasHome && (
+            <div className="mt-2">
+              <RockerBtn className="px-3" onClick={homeCommand}>
+                <span>{t('Home')}</span>
+              </RockerBtn>
+            </div>
+          )}
+
+          {canSetPresets && presetSlots > 0 && (
             <div className="mt-3 flex items-center gap-1.5">
               <select
                 value={presetSlot}
@@ -393,12 +423,16 @@ function Tick({ value, highlight }: { value: number; highlight: boolean }) {
   );
 }
 
+/** control_functions.php marks an arrow the camera cannot drive `invisible`. */
+const InvisibleWhenDisabled = createContext(false);
+
 interface DpadBtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   center?: boolean;
   children: ReactNode;
 }
 
 function DpadBtn({ children, center, disabled, className, ...rest }: DpadBtnProps) {
+  const invisible = useContext(InvisibleWhenDisabled) && disabled;
   return (
     <button
       type="button"
@@ -407,6 +441,7 @@ function DpadBtn({ children, center, disabled, className, ...rest }: DpadBtnProp
         // Grey at rest; the accent only appears on `:active`, i.e. while the
         // key is actually driving the camera.
         'aspect-square flex items-center justify-center rounded border select-none touch-none transition-colors',
+        invisible && 'invisible',
         disabled
           ? 'border-border-subtle text-fg-faint cursor-not-allowed bg-surface'
           : center

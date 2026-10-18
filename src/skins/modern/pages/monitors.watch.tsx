@@ -538,9 +538,10 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   ) : null;
 
   // Only mount the PTZ panel when the backend reports real capabilities;
-  // non-PTZ monitors get no empty panel at all.
+  // non-PTZ monitors get no empty panel at all. Viewing the panel needs
+  // Control View, as legacy's `canView('Control')` does.
   const ptzPanel = ptzState.status === 'ready' ? (
-    <RequirePerm feature="control" level="Edit">
+    <RequirePerm feature="control" level="View">
       <Panel
         title={t('Camera control')}
         icon={<Joystick size={16} />}

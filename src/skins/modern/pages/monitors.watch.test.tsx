@@ -495,6 +495,14 @@ describe('modern Watch page', () => {
     expect(screen.getByRole('button', { name: 'Move up' })).toBeInTheDocument();
   });
 
+  it('shows the PTZ panel to a control:View user, as legacy canView(Control) does', async () => {
+    renderRoute('/monitors/2', { perms: { control: 'View' } });
+
+    await findWatch('Driveway');
+    expect(await screen.findByRole('heading', { name: 'Camera control' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Move up' })).toBeInTheDocument();
+  });
+
   it('hides the PTZ surface from a user without control permission', async () => {
     renderRoute('/monitors/2', { perms: { control: 'None' } });
 
@@ -538,7 +546,7 @@ describe('modern Watch page', () => {
     const user = userEvent.setup();
     renderRoute('/monitors/2');
 
-    const closer = await screen.findByRole('button', { name: /Closer/ }, { timeout: 5_000 });
+    const closer = await screen.findByRole('button', { name: /Tele/ }, { timeout: 5_000 });
     fireEvent.pointerDown(closer, { pointerId: 1 });
     await waitFor(() => expect(paths).toContain('/api/v3/ptz/monitors/2/zoom/in'));
 
@@ -696,7 +704,7 @@ describe('modern Watch page — PTZ capability gaps', () => {
     renderRoute('/monitors/2');
 
     await screen.findByRole('heading', { name: 'Camera control' }, { timeout: 5_000 });
-    expect(screen.queryByRole('button', { name: /Closer/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Tele/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Go to preset/ })).toBeNull();
     // Focus is still advertised.
     expect(screen.getByRole('button', { name: /Near/ })).toBeInTheDocument();
