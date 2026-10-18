@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertCircle, AlertTriangle, ExternalLink, Filter, FilterX, GalleryHorizontal, Maximize, Maximize2,
+  AlertCircle, AlertTriangle, Download, ExternalLink, Filter, FilterX, GalleryHorizontal, Maximize, Maximize2,
   Minimize2, Minus, Move, Pause, Pencil, Play, Plus, RefreshCw, SkipBack, SkipForward, Square,
   Volume2, VolumeX,
 } from 'lucide-react';
@@ -13,7 +13,8 @@ import type { PagePropsMap } from '@/skins/types';
 import type { StreamProtocol } from '@/types';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
-import { ClassicEventsTable, WATCH_EVENT_COLUMNS } from '@/features/events/ClassicEventsTable';
+import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
+import { ColumnChooser } from '@/features/events/ColumnChooser';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
 import { stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
@@ -441,9 +442,19 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           <ClassicToolbar
             label={t('Events toolbar')}
             end={
-              <ClassicIconButton aria-label={t('Refresh events')} onClick={events.refetch}>
-                <RefreshCw size={14} aria-hidden />
-              </ClassicIconButton>
+              <>
+                <ClassicIconButton aria-label={t('Refresh events')} onClick={events.refetch}>
+                  <RefreshCw size={14} aria-hidden />
+                </ClassicIconButton>
+                <ColumnChooser variant="classic" source={events.columnSource} />
+                <ClassicIconButton
+                  aria-label={t('Export visible events as CSV')}
+                  onClick={() => events.exportCsv(monitor.name)}
+                  disabled={events.events.length === 0}
+                >
+                  <Download size={14} aria-hidden />
+                </ClassicIconButton>
+              </>
             }
           >
             <h2 id="watch-events-heading" className="text-sm font-bold text-zinc-800 me-2">{t('Events')}</h2>
@@ -460,7 +471,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
               <ClassicEventsTable
                 events={events.events}
                 monitorLookup={{ [monitor.id]: monitor.name }}
-                columns={WATCH_EVENT_COLUMNS}
+                columns={events.columns}
                 selectedIds={events.selectedIds}
                 onToggleSelected={events.toggleSelected}
                 onDeleteRow={can('events', 'Edit') ? events.deleteOne : undefined}

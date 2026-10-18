@@ -476,6 +476,28 @@ describe('ClassicMonitorWatchPage', () => {
     await waitFor(() => expect(deletedEvents).toEqual(['900', '901']));
   });
 
+  it('lets the events table drop columns, remembered, and exports what is visible', async () => {
+    const created: Blob[] = [];
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: (b: Blob) => { created.push(b); return 'blob:x'; } });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => {} });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+    await screen.findByRole('link', { name: '900' });
+
+    await user.click(screen.getByRole('button', { name: /Columns/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Toggle column Notes' }));
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).not.toContain('Notes');
+    expect(useWatchPrefsStore.getState().eventColumnsHidden).toEqual(['notes']);
+
+    await user.click(screen.getByRole('button', { name: 'Export visible events as CSV' }));
+    expect(created).toHaveLength(1);
+    const csv = await created[0].text();
+    expect(csv).toContain('900');
+    expect(csv).not.toMatch(/Notes/);
+  });
+
   it('hides the events table from a user without events:View', async () => {
     useAuthStore.setState({ user: { ...ADMIN, perms: { ...ADMIN.perms, events: 'None' } } as UserClaims });
     stubOk();

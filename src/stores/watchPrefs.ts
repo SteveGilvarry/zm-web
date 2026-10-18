@@ -1,12 +1,13 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { StreamProtocol } from '@/types';
+import type { EventsColumnKey } from './eventsColumns';
 
 /**
  * Watch page preferences that legacy keeps in cookies, so they survive a
  * reload: `zmWatchScaleNew<mid>`, `zmWatchPlayer`, `zmWatchVolume`,
- * `zmWatchMuted`, `zmCyclePeriod` and `ptzShow`. Shared by both skins; the
- * data hooks read and write them, the pages never touch the store directly.
+ * `zmWatchMuted`, `zmCyclePeriod`, `ptzShow` and the events table's column
+ * choice (`zmEventListTable`). Shared by both skins.
  */
 interface WatchPrefsState {
   /** Last player the operator picked by hand; a fallback is not a pick. */
@@ -26,6 +27,10 @@ interface WatchPrefsState {
   /** The PTZ panel's visibility (`ptzShow`); legacy shows it by default. */
   ptzShow: boolean;
   togglePtzShow: () => void;
+  /** Columns the operator hid on the watch page's events table. */
+  eventColumnsHidden: EventsColumnKey[];
+  toggleEventColumn: (key: EventsColumnKey) => void;
+  showAllEventColumns: () => void;
 }
 
 export const useWatchPrefsStore = create<WatchPrefsState>()(
@@ -44,6 +49,14 @@ export const useWatchPrefsStore = create<WatchPrefsState>()(
       setCyclePeriod: (cyclePeriodS) => set({ cyclePeriodS }),
       ptzShow: true,
       togglePtzShow: () => set((s) => ({ ptzShow: !s.ptzShow })),
+      eventColumnsHidden: [],
+      toggleEventColumn: (key) =>
+        set((s) => ({
+          eventColumnsHidden: s.eventColumnsHidden.includes(key)
+            ? s.eventColumnsHidden.filter((k) => k !== key)
+            : [...s.eventColumnsHidden, key],
+        })),
+      showAllEventColumns: () => set({ eventColumnsHidden: [] }),
     }),
     { name: 'zm-watch-prefs' },
   ),
