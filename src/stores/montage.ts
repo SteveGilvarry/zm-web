@@ -42,6 +42,11 @@ interface MontageState {
   montageRatio: string;
   /** Per-tile Ratio overrides, legacy `Positions.monitorRatio`. */
   montageRatioById: Record<number, string>;
+  /**
+   * Classic Montage's `#mfbflip`: the filter + controls panel is open.
+   * Legacy cookie `zmFilterBarFlip#mfbpanel`, default open.
+   */
+  montagePanelOpen: boolean;
 
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   setProtocol: (protocol: StreamProtocol) => void;
@@ -57,6 +62,7 @@ interface MontageState {
   setMontageRatioFor: (monitorId: number, ratio: string) => void;
   /** Replace every per-tile override (loading a saved layout). */
   setMontageRatios: (ratios: Record<number, string>) => void;
+  setMontagePanelOpen: (open: boolean) => void;
 }
 
 export const useMontageStore = create<MontageState>()(
@@ -76,6 +82,7 @@ export const useMontageStore = create<MontageState>()(
       reviewSpeed: DEFAULT_REVIEW_SPEED,
       montageRatio: DEFAULT_MONTAGE_RATIO,
       montageRatioById: {},
+      montagePanelOpen: true,
 
       setTree: (next) =>
         set({ tree: typeof next === 'function' ? next(get().tree) : next }),
@@ -91,6 +98,7 @@ export const useMontageStore = create<MontageState>()(
       setMontageRatioFor: (monitorId, ratio) =>
         set({ montageRatioById: { ...get().montageRatioById, [monitorId]: ratio } }),
       setMontageRatios: (montageRatioById) => set({ montageRatioById }),
+      setMontagePanelOpen: (montagePanelOpen) => set({ montagePanelOpen }),
     }),
     {
       name: 'zm-montage',
@@ -106,6 +114,7 @@ export const useMontageStore = create<MontageState>()(
         reviewSpeed: state.reviewSpeed,
         montageRatio: state.montageRatio,
         montageRatioById: state.montageRatioById,
+        montagePanelOpen: state.montagePanelOpen,
       }),
     },
   ),

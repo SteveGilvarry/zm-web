@@ -51,6 +51,12 @@ describe('mapLegacyUrl', () => {
   it('maps montage, montagereview, cycle', () => {
     expect(map('?view=montage')).toEqual({ to: '/montage', search: {} });
     expect(map('?view=montage&group=2')).toEqual({ to: '/montage', search: { group: 2 } });
+    // montage.php's own request params: layout, zones, caption, kiosk header.
+    expect(map('?view=montage&zmMontageLayout=7&showZones=1&monitorStatusPositionSelected=showOnHover&header=0')).toEqual({
+      to: '/montage',
+      search: { layout: 7, show_zones: 1, status_position: 'showOnHover', header: '0' },
+    });
+    expect(map('?view=montage&showZones=0')).toEqual({ to: '/montage', search: { show_zones: 0 } });
     expect(
       map('?view=montagereview&MonitorId=5&minTime=2026-08-01T00:00:00&maxTime=2026-08-02T00:00:00'),
     ).toEqual({

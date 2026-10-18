@@ -503,3 +503,69 @@ describe('ClassicMontagePage', () => {
     expect(useMonitorFilterStore.getState().groupIds).toEqual([5]);
   });
 });
+
+describe('ClassicMontagePage — header flip and URL params', () => {
+  afterEach(() => { useMontageStore.setState({ montagePanelOpen: true }); });
+
+  it('the #mfbflip icon folds the filter + controls panel and remembers it', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    const flip = screen.getByRole('button', { name: 'Hide filters' });
+    expect(flip).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('combobox', { name: 'Layout' })).toBeInTheDocument();
+
+    await user.click(flip);
+    expect(screen.queryByRole('combobox', { name: 'Layout' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show filters' })).toHaveAttribute('aria-expanded', 'false');
+    expect(useMontageStore.getState().montagePanelOpen).toBe(false);
+    // The wall stays.
+    expect(screen.getByTestId('montage-classic-grid')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show filters' }));
+    expect(screen.getByRole('combobox', { name: 'Layout' })).toBeInTheDocument();
+  });
+
+  it('?header=0 leaves the whole band out (kiosk)', async () => {
+    mockSearch = { header: '0' };
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    expect(screen.queryByRole('button', { name: 'Hide filters' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Layout' })).toBeNull();
+  });
+
+  it('?layout= selects that MontageLayouts row once the list loads', async () => {
+    mockSearch = { layout: 12 };
+    stub();
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Layout' })).toHaveValue('saved:12'));
+    expect(useMontageStore.getState().classicLayoutId).toBe('saved:12');
+  });
+
+  it('?layout= naming a legacy preset row picks the built-in preset', async () => {
+    mockSearch = { layout: 3 };
+    stub({ layouts: [
+      { id: 3, name: '4 Wide', user_id: 0, positions: '{ "default":{"float":"left", "width":"25%"} }' },
+      { id: 12, name: 'Night wall', user_id: 7, positions: SAVED_POSITIONS },
+    ] });
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Layout' })).toHaveValue('preset:4w'));
+  });
+
+  it('?show_zones=1 and ?status_position= override the saved choices', async () => {
+    mockSearch = { show_zones: 1, status_position: 'outsideImgBottom' };
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show Zones' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByRole('combobox', { name: 'Monitor status position' })).toHaveValue('outside');
+    expect(await screen.findByTestId('montage-classic-status-1')).toBeInTheDocument();
+  });
+});

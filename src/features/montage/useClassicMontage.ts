@@ -92,6 +92,9 @@ export interface ClassicMontageState {
   setRatioFor: (monitorId: number, ratio: string) => void;
   protocol: StreamProtocol;
   setProtocol: (p: StreamProtocol) => void;
+  /** Legacy `#mfbflip`: the filter + controls panel is showing. */
+  panelOpen: boolean;
+  setPanelOpen: (open: boolean) => void;
   stage: {
     size: StageSize;
     setWidth: (v: string) => void;
@@ -115,12 +118,37 @@ export function presetColumnsFromName(name: string): number | null {
 }
 
 /**
+ * A legacy `zmMontageLayout` row id → this select's value. Legacy's presets
+ * are rows too (`Freeform` is the old name of `Auto`), so a preset row maps
+ * to the built-in preset of that name; any other row maps to itself when it
+ * is one the select lists. Null when the id names nothing usable.
+ */
+export function layoutValueForRow(
+  rows: Array<Pick<MontageLayout, 'id' | 'name'>>,
+  listedIds: ReadonlySet<number>,
+  id: number,
+): string | null {
+  const row = rows.find((r) => r.id === id);
+  if (!row) return null;
+  const name = (row.name === 'Freeform' ? 'Auto' : row.name).trim().toLowerCase();
+  const preset = MONTAGE_PRESETS.find((p) => p.label.toLowerCase() === name);
+  if (preset) return `preset:${preset.id}`;
+  return listedIds.has(row.id) ? `saved:${row.id}` : null;
+}
+
+export interface ClassicMontageOptions {
+  /** `?layout=` (legacy `zmMontageLayout`): select this row once the list loads. */
+  urlLayoutId?: number;
+}
+
+/**
  * Legacy montage.php controls over the classic flat grid: the Layout select
  * (presets + saved rows, shared with legacy through `layoutFormat.ts`),
  * Edit / Save / Delete layout, monitor-status position, and Width / Height /
  * Scale for the cells.
  */
-export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageState {
+export function useClassicMontage(visibleMonitors: Monitor[], options: ClassicMontageOptions = {}): ClassicMontageState {
+  const { urlLayoutId } = options;
   const { t } = useTranslation();
   const { isAuthenticated, user } = useAuthStore();
   const toast = useToast();
@@ -131,6 +159,7 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     classicLayoutId, setClassicLayoutId, showZones, setShowZones,
     montageStage: size, setMontageStage: setSize,
     montageRatio, setMontageRatio, montageRatioById, setMontageRatioFor,
+    montagePanelOpen, setMontagePanelOpen,
   } = useMontageStore();
 
   const [editMode, setEditMode] = useState(false);
@@ -154,6 +183,16 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
       .filter((l): l is MontageLayout & { parsed: NonNullable<ReturnType<typeof parsePositions>> } => l.parsed != null)
       .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   }, [layoutsQ.data]);
+
+  // `?layout=` wins over the remembered choice and becomes it, as legacy
+  // writes `zmMontageLayout` back to its session. Applied once per value.
+  const appliedUrlLayout = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (urlLayoutId == null || !layoutsQ.isSuccess || appliedUrlLayout.current === urlLayoutId) return;
+    appliedUrlLayout.current = urlLayoutId;
+    const value = layoutValueForRow(layoutsQ.data.items, new Set(saved.map((l) => l.id)), urlLayoutId);
+    if (value) setClassicLayoutId(value);
+  }, [urlLayoutId, layoutsQ.isSuccess, layoutsQ.data, saved, setClassicLayoutId]);
 
   const layoutOptions: ClassicLayoutOption[] = [
     ...MONTAGE_PRESETS.map((p) => ({
@@ -351,6 +390,8 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     setRatioFor: setMontageRatioFor,
     protocol,
     setProtocol,
+    panelOpen: montagePanelOpen,
+    setPanelOpen: setMontagePanelOpen,
     stage: {
       size,
       // Read the live store rather than this render's `size` so two setters

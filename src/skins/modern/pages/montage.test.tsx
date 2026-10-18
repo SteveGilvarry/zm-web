@@ -325,6 +325,28 @@ describe('MontagePage (modern) — toolbar', () => {
       expect(useMonitorFilterStore.getState().groupIds).toEqual([1]);
     });
   });
+
+  it('?header=0 drops the control line (legacy kiosk)', async () => {
+    renderRoute('/montage?header=0');
+    await findWall();
+    expect(screen.queryByRole('button', { name: 'Layout' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Display' })).toBeNull();
+  });
+
+  it('?layout= loads that saved row into the mosaic', async () => {
+    db.montageLayouts = [savedLayout('Driveway only', leaf(2), 5)];
+    renderRoute('/montage?layout=5');
+    await screen.findByText('Driveway');
+    await waitFor(() => expect(screen.queryByText('Front Door')).toBeNull());
+    expect(cellCountLabel()).toBe('1 cell');
+  });
+
+  it('?show_zones=1 and ?status_position= set the Display choices', async () => {
+    renderRoute('/montage?show_zones=1&status_position=outsideImgBottom');
+    await findWall();
+    await waitFor(() => expect(useMontageStore.getState().showZones).toBe(true));
+    expect(useMontageStore.getState().statusPosition).toBe('outside');
+  });
 });
 
 describe('MontagePage (modern) — saved layouts', () => {
