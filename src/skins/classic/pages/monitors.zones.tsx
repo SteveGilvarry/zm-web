@@ -310,6 +310,8 @@ function ClassicZoneView({ monitor, frame, zoneId, runtime, canEdit, canGoBack, 
                   monitorId={monitor.id}
                   player={player.resolved}
                   stillUrl={tool.stillShown ? tool.stillUrl : null}
+                  frame={frame}
+                  orientation={monitor.orientation}
                 />
               }
               otherZones={editor.zones.filter((z) => z.id !== draft.id)}

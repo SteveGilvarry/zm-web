@@ -227,6 +227,27 @@ describe('ZoneEditor — Player', () => {
     expect(stream.hlsStart).not.toHaveBeenCalled();
   });
 
+  it('turns an unrotated camera image onto a rotated camera\'s frame', async () => {
+    const user = userEvent.setup();
+    // A 2000×1000 sensor on ROTATE_90: the view frame is 1000×2000.
+    renderWithProviders(<ZoneEditor monitorId={1} width={1000} height={2000} orientation="ROTATE_90" />);
+    await user.click(await screen.findByText('Yard'));
+    const img = await screen.findByAltText('Monitor snapshot');
+    expect(img.style.transform).toContain('rotate(90deg)');
+    // Laid out at the native landscape size, as a share of the portrait box.
+    expect(img.style.width).toBe('200%');
+    expect(img.style.height).toBe('50%');
+  });
+
+  it('flips without rotating for a flipped camera', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ZoneEditor monitorId={1} width={2000} height={1000} orientation="FLIP_HORI" />);
+    await user.click(await screen.findByText('Yard'));
+    const img = await screen.findByAltText('Monitor snapshot');
+    expect(img.style.transform).toBe('scaleX(-1)');
+    expect(img).toHaveClass('w-full', 'h-full');
+  });
+
   it('follows the monitor\'s Default Player on Auto', async () => {
     const user = userEvent.setup();
     await openYard(user, { defaultPlayer: 'go2rtc_hls' });

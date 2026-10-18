@@ -30,6 +30,8 @@ interface ZoneEditorProps {
   onSelectionChange?: (id: ZoneSelection) => void;
   /** The monitor's Default Player, which the Player select's Auto follows. */
   defaultPlayer?: string | null;
+  /** The monitor's Orientation; `width`/`height` are already the rotated view. */
+  orientation?: string | null;
 }
 
 /**
@@ -37,7 +39,7 @@ interface ZoneEditorProps {
  * list and the form beside it. State and verbs come from `useZoneEditor`,
  * which the classic skin's legacy-layout page uses too.
  */
-export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange, defaultPlayer }: ZoneEditorProps) {
+export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange, defaultPlayer, orientation }: ZoneEditorProps) {
   const { t } = useTranslation();
   const editor = useZoneEditor({ monitorId, width, height, openZoneId, onSelectionChange });
   const tool = useObjectSizeTool(editor);
@@ -55,6 +57,8 @@ export function ZoneEditor({ monitorId, width, height, openZoneId, onSelectionCh
               monitorId={monitorId}
               player={player.resolved}
               stillUrl={tool.stillShown ? tool.stillUrl : null}
+              frame={editor.frame}
+              orientation={orientation}
             />
           }
           otherZones={zones.filter((z) => draft?.id !== z.id)}

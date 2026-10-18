@@ -209,6 +209,7 @@ export default function MonitorZonesPage({ monitorId }: PagePropsMap['monitors.z
                       openZoneId={page.editing}
                       onSelectionChange={(id) => (id == null ? page.closeEditor() : page.openEditor(id))}
                       defaultPlayer={monitor.default_player}
+                      orientation={monitor.orientation}
                     />
                   </div>
                 </RequirePerm>
