@@ -108,7 +108,12 @@ export function timelineAst(
     sort: sort.field,
     dir: sort.dir,
   });
-  return q as FilterAstQuery & { where: { match: 'all'; rules: FilterAstExpr[] } };
+  const out = q as FilterAstQuery & { where: { match: 'all'; rules: FilterAstExpr[] } };
+  // `/filters/preview` answers 400 "filter group must contain at least one
+  // rule" for an empty group, and an unfiltered timeline has nothing to say.
+  // `id >= 1` matches every event and keeps the group well-formed.
+  if (out.where.rules.length === 0) out.where.rules.push({ field: 'id', op: 'gte', value: 1 });
+  return out;
 }
 
 /** Every event overlapping `[lo, hi]` (legacy: `EndDateTime >= min AND StartDateTime <= max`). */

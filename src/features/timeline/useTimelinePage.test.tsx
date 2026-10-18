@@ -12,6 +12,7 @@ import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { makeEvent, makeMonitor } from '@/test/fixtures';
+import { timelineAst } from './useTimelinePage';
 import type { FilterAstQuery } from '@/api/filters';
 
 let mockSearch: Record<string, unknown> = {};
@@ -176,5 +177,12 @@ describe('useTimelinePage', () => {
     expect(result.current.chart!.rows).toEqual([]);
     expect(result.current.showInstructions).toBe(true);
     expect(previews).toHaveLength(0);
+  });
+});
+
+describe('timelineAst with no filter', () => {
+  it('never sends an empty rule group, which the preview route rejects', () => {
+    const q = timelineAst({}, { monitorIds: null }, { field: 'start_time', dir: 'asc' });
+    expect(q.where.rules).toEqual([{ field: 'id', op: 'gte', value: 1 }]);
   });
 });
