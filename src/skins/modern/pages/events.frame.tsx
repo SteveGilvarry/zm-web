@@ -131,7 +131,7 @@ export default function EventFramePage({ eventId, frameId }: { eventId: number; 
                   className="block w-full h-auto"
                 />
               ) : (
-                <p className="py-12 text-center text-sm text-fg-dim">{t('No stored image for this frame.')}</p>
+                <p className="py-12 text-center text-sm text-white/80">{t('No stored image for this frame.')}</p>
               )}
             </div>
             {s.showStats && (
