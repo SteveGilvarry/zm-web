@@ -7,7 +7,7 @@ import { useToast } from '@/components/common/toastStore';
 import { usePerms } from '@/features/auth/usePerms';
 import { useMe } from '@/features/auth/useMe';
 import { useZmConfig } from '@/features/config/useZmConfig';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import { getStorageList } from '@/api/storage';
 import { getUsers } from '@/api/users';
 import {
@@ -113,6 +113,12 @@ export interface FilterFeatures {
   message: boolean;
   /** Only `canEdit('System')` may set the command a filter shells out to. */
   executeCmd: boolean;
+  /**
+   * What zmfilter.pl mails through when a filter names no server:
+   * `ZM_EMAIL_HOST`, else localhost (filter.php:381). The Email Server
+   * placeholder.
+   */
+  emailHost: string;
 }
 
 /** A question the page has to put to the operator before it can go ahead. */
@@ -193,8 +199,8 @@ export function useFiltersPage(): FiltersPageState {
     enabled: isAuthenticated,
   });
   const monitorsQ = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 200 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
   });
   const storageQ = useQuery({
@@ -227,8 +233,9 @@ export function useFiltersPage(): FiltersPageState {
     email: useZmConfig('ZM_OPT_EMAIL', false),
     message: useZmConfig('ZM_OPT_MESSAGE', false),
     executeCmd: canEditSystem,
+    emailHost: useZmConfig('ZM_EMAIL_HOST', '') || 'localhost',
   };
-  const monitors = monitorsQ.data?.items ?? [];
+  const monitors = monitorsQ.data ?? [];
   const storage = storageQ.data?.items ?? [];
   const users = usersQ.data?.items ?? [];
 

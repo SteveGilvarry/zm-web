@@ -3,8 +3,9 @@ import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
-  ArrowLeft, RefreshCw, RotateCcw, Filter, FilterX, Download, Maximize2, List, X,
+  ArrowLeft, RefreshCw, RotateCcw, Filter, FilterX, Download, Maximize2, List, X, History,
 } from 'lucide-react';
+import { timelineLink } from '@/features/events/timelineLink';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
@@ -15,6 +16,8 @@ import {
   useEventsListPage, EVENTS_PAGE_SIZE_MAX, type ArchivedFilter,
 } from '@/features/events/useEventsListPage';
 import { useNoteTypeOptions } from '@/features/events/noteTypes';
+import { tagPickFromOption } from '@/features/events/tagFilter';
+import { EventsTermsBanner } from '@/features/events/EventsTermsBanner';
 import { useCanGoBack } from '@/features/nav/useCanGoBack';
 import { useUiStore } from '@/stores/ui';
 import { ClassicButton, ClassicClearableInput, ClassicFilterField, ClassicPager } from '@/skins/classic/components/events/primitives';
@@ -86,6 +89,15 @@ export default function ClassicEventsListPage() {
             <ClassicButton tone="primary" onClick={s.resetFilters} title={t('Reset filters')} aria-label={t('Reset filters')}>
               <RotateCcw size={14} />
             </ClassicButton>
+            {/* Legacy's tlineBtn (events.php:117): the timeline over the same filter. */}
+            <Link
+              {...timelineLink(s.timelineSearch)}
+              title={t('Show Timeline')}
+              aria-label={t('Show Timeline')}
+              className="inline-flex items-center px-2.5 py-1.5 rounded-sm bg-[#337ab7] border border-[#2e6da4] text-white hover:bg-[#286090]"
+            >
+              <History size={14} />
+            </Link>
             <Link
               to="/filters"
               search={s.filterLinkSearch}
@@ -104,18 +116,31 @@ export default function ClassicEventsListPage() {
             </ClassicButton>
           </div>
 
+          {s.termsMode && (
+            <div className={clsx('flex-1 pt-4', !filterBarOpen && 'hidden')}>
+              <EventsTermsBanner variant="classic" mode={s.termsMode} editSearch={s.filterLinkSearch} onClear={s.clearTerms} />
+            </div>
+          )}
           <div
             data-testid="events-filter-bar"
-            className={clsx('flex-wrap items-end justify-center gap-3 flex-1', filterBarOpen ? 'flex' : 'hidden')}
+            className={clsx('flex-wrap items-end justify-center gap-3 flex-1', filterBarOpen && !s.termsMode ? 'flex' : 'hidden')}
           >
             {s.groups.length > 0 && (
               <ClassicFilterField label={<>{t('Group')} <span className="text-zinc-500">=</span></>} htmlFor="ev-group">
-                <div className="flex items-center gap-1">
-                  <select id="ev-group" value={s.groupFilter} onChange={(e) => s.setGroupFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))} className={clsx(classicSelect, 'w-36')}>
-                    <option value="all">{t('All Groups')}</option>
+                {/* Legacy: a chosen multi-select, placeholder "All Groups" (Filter.php:1307). */}
+                <div className="flex items-start gap-1">
+                  <select
+                    id="ev-group"
+                    multiple
+                    size={3}
+                    title={t('All Groups')}
+                    value={s.groupFilter.map(String)}
+                    onChange={(e) => s.setGroupFilter(Array.from(e.target.selectedOptions, (o) => Number(o.value)))}
+                    className={clsx(classicSelect, 'w-36')}
+                  >
                     {s.groups.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
                   </select>
-                  <TermClearButton label={t('Group')} onClear={() => s.setGroupFilter('all')} disabled={s.groupFilter === 'all'} />
+                  <TermClearButton label={t('Group')} onClear={() => s.setGroupFilter([])} disabled={s.groupFilter.length === 0} />
                 </div>
               </ClassicFilterField>
             )}
@@ -131,7 +156,10 @@ export default function ClassicEventsListPage() {
                   onChange={(e) => s.setMonitorFilter(Array.from(e.target.selectedOptions, (o) => Number(o.value)))}
                   className={clsx(classicSelect, 'w-40')}
                 >
-                  {s.monitors.map((m) => <option key={m.id} value={m.id}>{m.name}</option>)}
+                  {/* Legacy: `Id Name`, sorted by lower(Name) (Filter.php:1332-1334). */}
+                  {[...s.monitors].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase())).map((m) => (
+                    <option key={m.id} value={m.id}>{`${m.id} ${m.name}`}</option>
+                  ))}
                 </select>
                 <TermClearButton label={t('Monitor')} onClear={() => s.setMonitorFilter([])} disabled={s.monitorFilter.length === 0} />
               </div>
@@ -140,7 +168,7 @@ export default function ClassicEventsListPage() {
               <ClassicClearableInput id="ev-start" type="datetime-local" value={s.dateInputValue} onChange={s.setDateInput} ariaLabel={t('Events starting after')} className="w-48" />
             </ClassicFilterField>
             <ClassicFilterField label={<>{t('Start Date/Time')} <span className="text-zinc-500">&lt;=</span></>} htmlFor="ev-end">
-              <div title={t('The API bounds the end time, so an event still running at this instant is left out.')}>
+              <div>
                 <ClassicClearableInput id="ev-end" type="datetime-local" value={s.endInputValue} onChange={s.setEndInput} ariaLabel={t('Events starting before')} className="w-48" />
               </div>
             </ClassicFilterField>
@@ -169,12 +197,25 @@ export default function ClassicEventsListPage() {
               </div>
             </ClassicFilterField>
             <ClassicFilterField label={<>{t('Tags')} <span className="text-zinc-500">=</span></>} htmlFor="ev-tag">
-              <div className="flex items-center gap-1">
-                <select id="ev-tag" value={s.tagFilter} onChange={(e) => s.setTagFilter(e.target.value === 'all' ? 'all' : Number(e.target.value))} className={clsx(classicSelect, 'w-36')}>
-                  <option value="all">{t('All Tags')}</option>
+              {/* Legacy: a chosen multi-select, placeholder "All Tags", with
+                  No Tag and Any Tag ahead of the tags (Filter.php:1211-1252). */}
+              <div className="flex items-start gap-1">
+                <select
+                  id="ev-tag"
+                  multiple
+                  size={3}
+                  title={t('All Tags')}
+                  value={s.tagFilter.map(String)}
+                  onChange={(e) => s.setTagFilter(
+                    Array.from(e.target.selectedOptions, (o) => tagPickFromOption(o.value)).filter((p) => p !== undefined),
+                  )}
+                  className={clsx(classicSelect, 'w-36')}
+                >
+                  <option value="none">{t('No Tag')}</option>
+                  <option value="any">{t('Any Tag')}</option>
                   {s.tags.map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}
                 </select>
-                <TermClearButton label={t('Tags')} onClear={() => s.setTagFilter('all')} disabled={s.tagFilter === 'all'} />
+                <TermClearButton label={t('Tags')} onClear={() => s.setTagFilter([])} disabled={s.tagFilter.length === 0} />
               </div>
             </ClassicFilterField>
             <ClassicFilterField label={<>{t('Archive Status')} <span className="text-zinc-500">=</span></>} htmlFor="ev-archived">
@@ -245,6 +286,7 @@ export default function ClassicEventsListPage() {
               showThumbs={s.showThumbs}
               thumbWidth={s.thumbWidth}
               detailSearch={s.detailSearch}
+              totals={s.totals}
             />
             {paginated && (
             <ClassicPager

@@ -109,6 +109,7 @@ describe('FiltersPage — editing a live ZoneMinder filter', () => {
     await mount();
     await user.click(await screen.findByRole('button', { name: /^PurgeWhenFull/ }));
 
+    expect(screen.getByTestId('filter-id')).toHaveTextContent('Id 1');
     const rows = screen.getAllByTestId('filter-term');
     expect(rows).toHaveLength(3);
     expect((within(rows[1]).getByLabelText('Attribute') as HTMLSelectElement).value).toBe('DiskPercent');

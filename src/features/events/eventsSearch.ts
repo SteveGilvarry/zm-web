@@ -1,5 +1,6 @@
 import { isEventSortField, type EventSortField, type SortDirection } from '@/api/events';
 import type { FilterTerm } from '@/api/filters';
+import { tagPickFromOption, tagPicksToTermValue, type TagPick } from './tagFilter';
 
 /**
  * Everything the Events list keeps in the URL, so back/forward, reload and
@@ -13,8 +14,11 @@ export interface EventsSearchParams {
    * keep working; see `monitorIdsFromSearch`.
    */
   monitor_id?: number | number[];
-  /** Group filter — resolved to its monitors via `/groups-monitors`. */
-  group?: number;
+  /**
+   * Group filter — resolved to its monitors via `/groups-monitors`. Legacy's
+   * Group box is a multi-select (Filter.php:1307); one id serialises bare.
+   */
+  group?: number | number[];
   /** One storage area, as the Storage list's Events link sets it. */
   storage?: number;
   /** Substring match on Cause (the API's `cause` param). */
@@ -31,9 +35,22 @@ export interface EventsSearchParams {
    * links keep working. See `notesFromSearch`.
    */
   notes?: string | string[];
-  tag?: number;
+  /**
+   * Tags box picks: tag ids, `none` (legacy's No Tag) or `any` (Any Tag).
+   * A multi-select like legacy's; one pick serialises bare, so `tag=4`
+   * links keep working. See `tagsFromSearch`.
+   */
+  tag?: TagPick | TagPick[];
   /** Substring match on Name (the API's `name` param). */
   q?: string;
+  /**
+   * A full ZoneMinder term list, JSON-encoded — what the filter editor's
+   * List Matches sends (legacy `?view=events&filter[Query][terms]…`). It
+   * replaces the strip: the list shows exactly these terms.
+   */
+  terms?: string;
+  /** A saved filter whose terms the list shows (legacy `?view=events&filter_id=`). */
+  filter_id?: number;
   page?: number;
   page_size?: number;
   sort?: EventSortField;
@@ -81,6 +98,58 @@ export function notesToSearch(values: string[]): string | string[] | undefined {
   return values.length === 1 ? values[0] : values;
 }
 
+/** The Group filter as a list, empty for "all groups". */
+export function groupIdsFromSearch(s: Pick<EventsSearchParams, 'group'>): number[] {
+  return intList(s.group);
+}
+
+/** The inverse: bare number for one group, nothing for none. */
+export const groupIdsToSearch = monitorIdsToSearch;
+
+/**
+ * `4`, `'none'`, `'4,any'`, `[4, 'none']` → picks. Legacy's own spellings of
+ * the sentinels (`0`, `-1`) are accepted too, so a term value can be passed
+ * straight in.
+ */
+export function tagsFromSearch(s: { tag?: unknown }): TagPick[] {
+  const v = s.tag;
+  const raw = Array.isArray(v) ? v : typeof v === 'string' ? v.split(',') : v == null ? [] : [v];
+  const picks = raw.map((x) => {
+    const str = String(x).trim();
+    if (str === '0') return 'none' as const;
+    if (str === '-1') return 'any' as const;
+    return tagPickFromOption(str);
+  }).filter((p): p is TagPick => p !== undefined);
+  return Array.from(new Set(picks));
+}
+
+/** The inverse: bare value for one pick, nothing for none. */
+export function tagsToSearch(picks: TagPick[]): TagPick | TagPick[] | undefined {
+  if (picks.length === 0) return undefined;
+  return picks.length === 1 ? picks[0] : picks;
+}
+
+/**
+ * The `terms` param as a term list, or `null` when it is missing or not a
+ * list of terms. Accepts the JSON string the app writes and the array the
+ * router hands over when it has already parsed that JSON.
+ */
+export function parseTermsParam(v: unknown): FilterTerm[] | null {
+  let parsed: unknown = v;
+  if (typeof v === 'string') {
+    if (v.trim() === '') return null;
+    try { parsed = JSON.parse(v); } catch { return null; }
+  }
+  if (!Array.isArray(parsed)) return null;
+  const ok = parsed.every((t) => t && typeof t === 'object' && typeof (t as FilterTerm).attr === 'string');
+  return ok ? (parsed as FilterTerm[]) : null;
+}
+
+function termsParamToSearch(v: unknown): string | undefined {
+  const terms = parseTermsParam(v);
+  return terms ? JSON.stringify(terms) : undefined;
+}
+
 function str(v: unknown): string | undefined {
   return typeof v === 'string' && v !== '' ? v : undefined;
 }
@@ -96,15 +165,17 @@ function bool(v: unknown): boolean | undefined {
 export function parseEventsSearch(search: Record<string, unknown>): EventsSearchParams {
   const out: EventsSearchParams = {
     monitor_id: monitorIdsToSearch(intList(search.monitor_id)),
-    group: int(search.group),
+    group: groupIdsToSearch(intList(search.group)),
     storage: int(search.storage),
     cause: str(search.cause),
     archived: bool(search.archived),
     start: str(search.start),
     end: str(search.end),
     notes: notesToSearch(strList(search.notes)),
-    tag: int(search.tag),
+    tag: tagsToSearch(tagsFromSearch(search)),
     q: str(search.q),
+    terms: termsParamToSearch(search.terms),
+    filter_id: int(search.filter_id),
     page: int(search.page),
     page_size: int(search.page_size),
     sort: isEventSortField(search.sort) ? search.sort : undefined,
@@ -130,13 +201,19 @@ export function toZmDateTime(local: string): string {
  * an attribute `zmfilter.pl` understands, so nothing is dropped.
  */
 export function termsFromEventsSearch(s: EventsSearchParams): FilterTerm[] {
+  // A list opened from the filter editor already is a term list.
+  const given = parseTermsParam(s.terms);
+  if (given) return given;
   const terms: FilterTerm[] = [];
   const push = (attr: string, op: FilterTerm['op'], val: string) =>
     terms.push({ cnj: terms.length ? 'and' : undefined, obr: '0', attr, op, val, cbr: '0' });
   const monitorIds = monitorIdsFromSearch(s);
   if (monitorIds.length === 1) push('MonitorId', '=', String(monitorIds[0]));
   else if (monitorIds.length > 1) push('MonitorId', '=[]', monitorIds.join(','));
-  if (s.group != null) push('Group', '=', String(s.group));
+  // Multi-selects travel as the comma list `decode_multi` reads back and
+  // both executors split on (Filter.php:1171, Filter.pm:330).
+  const groups = groupIdsFromSearch(s);
+  if (groups.length) push('Group', '=', groups.join(','));
   if (s.storage != null) push('StorageId', '=', String(s.storage));
   if (s.start) push('StartDateTime', '>=', toZmDateTime(s.start));
   if (s.end) push('StartDateTime', '<=', toZmDateTime(s.end));
@@ -146,7 +223,8 @@ export function termsFromEventsSearch(s: EventsSearchParams): FilterTerm[] {
   const notes = notesFromSearch(s);
   if (notes.length) push('Notes', 'LIKE', notes.join(','));
   if (s.q) push('Name', 'LIKE', s.q);
-  if (s.tag != null) push('Tags', '=', String(s.tag));
+  const tags = tagsFromSearch(s);
+  if (tags.length) push('Tags', '=', tagPicksToTermValue(tags));
   if (s.archived !== undefined) push('Archived', '=', s.archived ? '1' : '0');
   // First term carries no conjunction (ZoneMinder's shape).
   if (terms[0]) delete terms[0].cnj;
@@ -159,12 +237,14 @@ export function termsFromEventsSearch(s: EventsSearchParams): FilterTerm[] {
  * carries `filterQuery` + `sortQuery` the same way). Same shape as the list's
  * own URL minus `group`, which `/events` cannot filter by.
  */
-export type EventNavSearch = Omit<EventsSearchParams, 'group'>;
+export type EventNavSearch = Omit<EventsSearchParams, 'group' | 'terms' | 'filter_id'>;
 
 /** `validateSearch` for `/events/$eventId`. */
 export function parseEventNavSearch(search: Record<string, unknown>): EventNavSearch {
   const out = parseEventsSearch(search);
   delete out.group;
+  delete out.terms;
+  delete out.filter_id;
   return out;
 }
 

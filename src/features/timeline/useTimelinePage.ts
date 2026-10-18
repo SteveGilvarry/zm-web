@@ -102,7 +102,7 @@ export function timelineAst(
     monitorIds: scope.monitorIds ?? undefined,
     archived: filter.archived,
     startTime: filter.start ? toApiTimestamp(filter.start) || undefined : undefined,
-    endTime: filter.end ? toApiTimestamp(filter.end) || undefined : undefined,
+    startBefore: filter.end ? toApiTimestamp(filter.end) || undefined : undefined,
     name: filter.q?.trim() || undefined,
     cause: filter.cause?.trim() || undefined,
     notes: notesFromSearch(filter),

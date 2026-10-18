@@ -2,10 +2,13 @@ import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Archive, Download, Mail } from 'lucide-react';
-import type { CSSProperties } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import { getEventThumbnailUrl, getEventVideoUrl, type EventSortField } from '@/api/events';
 import type { ZmEvent } from '@/types';
 import { formatDuration } from '@/features/events/duration';
+import { COLUMN_SORT_FIELD } from '@/features/events/sortColumns';
+import { formatBytes } from '@/lib/format';
+import { EVENTS_COLUMNS, useEventsColumnsStore, type EventsColumnKey } from '@/stores/eventsColumns';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { EventCauseCell } from '@/features/events/EventCauseCell';
 import type { EventNavSearch } from '@/features/events/eventsSearch';
@@ -19,11 +22,17 @@ import type { EventNavSearch } from '@/features/events/eventsSearch';
  *
  * Numbers are `tabular-nums` so columns line up while sorting; colour is
  * reserved for state (archived), not for decorating scores.
+ *
+ * Which columns show, and in what order, is the operator's choice in the
+ * column chooser (`useEventsColumnsStore`, legacy's `zmEventsTable` cookie);
+ * the classic table reads the same store.
  */
 
 interface EventsTableProps {
   events: ZmEvent[];
   monitorName: (monitorId: number) => string;
+  /** `/storage` name for an event's `storage_id` (0 → Default). */
+  storageName?: (storageId: number) => string;
   token: string | undefined;
   selectedIds: Set<number>;
   onToggleSelected: (id: number) => void;
@@ -106,9 +115,40 @@ function SortableTh({
   );
 }
 
+/** Right-aligned, tabular columns. */
+const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
+  'id', 'duration', 'frames', 'alarm_frames', 'tot_score', 'avg_score', 'max_score', 'disk_space',
+]);
+
+/** Sentence-case header labels (docs/DESIGN.md), keyed like the store. */
+function useModernColumnLabels(): Record<EventsColumnKey, string> {
+  const { t } = useTranslation();
+  return {
+    id: t('Id'),
+    monitor: t('Monitor'),
+    name: t('Name'),
+    cause: t('Cause'),
+    time: t('Start'),
+    end: t('End'),
+    duration: t('Duration'),
+    frames: t('Frames'),
+    alarm_frames: t('Alarm'),
+    tot_score: t('Total score'),
+    avg_score: t('Avg score'),
+    max_score: t('Max score'),
+    tags: t('Tags'),
+    storage: t('Storage'),
+    disk_space: t('Disk space'),
+    archived: t('Archived'),
+    emailed: t('Emailed'),
+    notes: t('Notes'),
+  };
+}
+
 export function EventsTable({
   events,
   monitorName,
+  storageName,
   token,
   selectedIds,
   onToggleSelected,
@@ -121,20 +161,80 @@ export function EventsTable({
 }: EventsTableProps) {
   const { t } = useTranslation();
   const { formatDateTime } = useDateTimeFormat();
+  const labels = useModernColumnLabels();
+  const hidden = useEventsColumnsStore((s) => s.hidden);
+  const columns = EVENTS_COLUMNS.map((c) => c.key).filter((k) => !hidden.includes(k));
   const allSelected = events.length > 0 && events.every((e) => selectedIds.has(e.id));
 
-  // `th()` returns an element rather than defining a component in the render
-  // body — a nested component would remount every cell on each keystroke.
-  const th = (field: EventSortField | undefined, label: string, numeric = false) => (
-    <SortableTh
-      field={field}
-      label={label}
-      numeric={numeric}
-      sortField={sortField}
-      sortDir={sortDir}
-      onSort={onSort}
-    />
+  const mono = 'font-mono tabular-nums text-fg-muted';
+  const tdClass = (key: EventsColumnKey) => clsx(
+    'px-3 py-1',
+    NUMERIC.has(key) && clsx(mono, 'text-end'),
+    (key === 'time' || key === 'end') && clsx(mono, 'whitespace-nowrap'),
+    (key === 'monitor' || key === 'storage') && 'text-fg-muted whitespace-nowrap',
+    key === 'name' && 'max-w-[16rem]',
+    (key === 'cause' || key === 'tags') && 'text-fg-muted max-w-[18rem]',
+    (key === 'archived' || key === 'emailed') && 'text-fg-dim',
   );
+
+  const cell = (event: ZmEvent, key: EventsColumnKey): ReactNode => {
+    const eventLink = { to: '/events/$eventId' as const, params: { eventId: String(event.id) }, search: detailSearch };
+    switch (key) {
+      case 'id':
+        return (
+          <Link {...eventLink} className="hover:text-accent transition-colors">
+            {event.id}
+          </Link>
+        );
+      case 'monitor':
+        return monitorName(event.monitor_id);
+      case 'name':
+        return (
+          <Link
+            {...eventLink}
+            className="text-fg hover:text-accent transition-colors inline-flex items-center gap-1.5 max-w-full"
+          >
+            {event.archived === 1 && (
+              <Archive size={12} className="text-fg-dim" aria-label={t('Archived')} />
+            )}
+            {event.emailed === 1 && (
+              <Mail size={12} className="text-fg-dim" aria-label={t('Emailed')} />
+            )}
+            <span className="truncate">{event.name}</span>
+          </Link>
+        );
+      case 'archived':
+        return event.archived === 1 ? t('Yes') : t('No');
+      case 'emailed':
+        return event.emailed === 1 ? t('Yes') : t('No');
+      case 'cause':
+        return <EventCauseCell event={event} tone="modern" />;
+      case 'tags':
+        return (event.tags ?? []).map((tag) => tag.name).join(', ');
+      case 'time':
+        return formatDateTime(event.start_date_time);
+      case 'end':
+        return event.end_date_time ? formatDateTime(event.end_date_time) : '—';
+      case 'duration':
+        return formatDuration(event.length);
+      case 'frames':
+        return event.frames ?? 0;
+      case 'alarm_frames':
+        return event.alarm_frames ?? 0;
+      case 'tot_score':
+        return event.tot_score ?? 0;
+      case 'avg_score':
+        return event.avg_score ?? 0;
+      case 'max_score':
+        return event.max_score ?? 0;
+      case 'storage':
+        return storageName ? storageName(event.storage_id) : String(event.storage_id);
+      case 'disk_space':
+        return event.disk_space != null ? formatBytes(event.disk_space) : '—';
+      case 'notes':
+        return event.notes ?? '';
+    }
+  };
 
   return (
     <div className="overflow-x-auto rounded border border-border-subtle bg-surface">
@@ -150,16 +250,20 @@ export function EventsTable({
                 aria-label={t('Select all events on this page')}
               />
             </th>
-            {showThumbnail && th(undefined, t('Thumbnail'))}
-            {th('id', t('Id'), true)}
-            {th('monitor_id', t('Monitor'))}
-            {th('name', t('Name'))}
-            {th('cause', t('Cause'))}
-            {th('start_time', t('Start'))}
-            {th('length', t('Duration'), true)}
-            {th('frames', t('Frames'), true)}
-            {th('alarm_frames', t('Alarm'), true)}
-            {th('max_score', t('Max score'), true)}
+            {showThumbnail && (
+              <SortableTh label={t('Thumbnail')} sortField={sortField} sortDir={sortDir} onSort={onSort} />
+            )}
+            {columns.map((key) => (
+              <SortableTh
+                key={key}
+                field={COLUMN_SORT_FIELD[key]}
+                label={labels[key]}
+                numeric={NUMERIC.has(key)}
+                sortField={sortField}
+                sortDir={sortDir}
+                onSort={onSort}
+              />
+            ))}
             <th scope="col" className="w-10 px-3 py-2">
               <span className="sr-only">{t('Actions')}</span>
             </th>
@@ -211,53 +315,9 @@ export function EventsTable({
                     </Link>
                   </td>
                 )}
-                <td className="px-3 py-1 font-mono tabular-nums text-end text-fg-muted">
-                  <Link
-                    to="/events/$eventId"
-                    params={{ eventId: String(event.id) }}
-                    search={detailSearch}
-                    className="hover:text-accent transition-colors"
-                  >
-                    {event.id}
-                  </Link>
-                </td>
-                <td className="px-3 py-1 text-fg-muted whitespace-nowrap">
-                  {monitorName(event.monitor_id)}
-                </td>
-                <td className="px-3 py-1 max-w-[16rem]">
-                  <Link
-                    to="/events/$eventId"
-                    params={{ eventId: String(event.id) }}
-                    search={detailSearch}
-                    className="text-fg hover:text-accent transition-colors inline-flex items-center gap-1.5 max-w-full"
-                  >
-                    {event.archived === 1 && (
-                      <Archive size={12} className="text-fg-dim" aria-label={t('Archived')} />
-                    )}
-                    {event.emailed === 1 && (
-                      <Mail size={12} className="text-fg-dim" aria-label={t('Emailed')} />
-                    )}
-                    <span className="truncate">{event.name}</span>
-                  </Link>
-                </td>
-                <td className="px-3 py-1 text-fg-muted max-w-[18rem]">
-                  <EventCauseCell event={event} tone="modern" />
-                </td>
-                <td className="px-3 py-1 font-mono tabular-nums text-fg-muted whitespace-nowrap">
-                  {formatDateTime(event.start_date_time)}
-                </td>
-                <td className="px-3 py-1 font-mono tabular-nums text-end text-fg-muted">
-                  {formatDuration(event.length)}
-                </td>
-                <td className="px-3 py-1 font-mono tabular-nums text-end text-fg-muted">
-                  {event.frames ?? 0}
-                </td>
-                <td className="px-3 py-1 font-mono tabular-nums text-end text-fg-muted">
-                  {event.alarm_frames ?? 0}
-                </td>
-                <td className="px-3 py-1 font-mono tabular-nums text-end text-fg-muted">
-                  {event.max_score ?? 0}
-                </td>
+                {columns.map((key) => (
+                  <td key={key} className={tdClass(key)}>{cell(event, key)}</td>
+                ))}
                 <td className="px-3 py-1 text-end">
                   <a
                     href={getEventVideoUrl(event.id, token)}

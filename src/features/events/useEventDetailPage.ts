@@ -29,7 +29,8 @@ import type { Monitor, ZmEvent } from '@/types';
 import { toLocalDatetime } from '@/features/reports/datetime';
 import { useEventHotkeys } from './useEventHotkeys';
 import type { TagChipsApi } from './TagChips';
-import { notesFromSearch, monitorIdsFromSearch, toApiTimestamp, toZmDateTime, type EventNavSearch } from './eventsSearch';
+import { notesFromSearch, monitorIdsFromSearch, tagsFromSearch, toApiTimestamp, toZmDateTime, type EventNavSearch } from './eventsSearch';
+import { tagPicksToApi } from './tagFilter';
 
 export function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -440,6 +441,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   // The list's Notes box is a multi-select; `/events` takes one substring,
   // so a multi-type list narrows Prev/Next by its first type only.
   const urlNote = notesFromSearch(listSearch)[0];
+  // Tags is a multi-select too (No Tag / Any Tag included); `/events` takes the list.
+  const urlTags = tagPicksToApi(tagsFromSearch(listSearch));
   /** The list filters this URL carries, as `/events` query params. */
   const urlFilters: EventQueryParams = useMemo(() => ({
     monitor_id: urlMonitorId,
@@ -447,8 +450,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     cause: listSearch.cause || undefined,
     notes: urlNote,
     name: listSearch.q || undefined,
-    tag_id: listSearch.tag != null ? String(listSearch.tag) : undefined,
-  }), [urlMonitorId, listSearch.archived, listSearch.cause, urlNote, listSearch.q, listSearch.tag]);
+    tag_id: urlTags,
+  }), [urlMonitorId, listSearch.archived, listSearch.cause, urlNote, listSearch.q, urlTags]);
 
   // Page + sort is what makes a URL a *list position*; without both there is
   // nothing to take a row above/below from.

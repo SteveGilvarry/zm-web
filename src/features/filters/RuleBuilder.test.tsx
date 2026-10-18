@@ -73,11 +73,16 @@ describe('RuleBuilder — existing terms', () => {
   it('offers the 14 legacy operators for string attributes (pruned per kind), never contains/starts/ends', () => {
     mount(query);
     const rows = screen.getAllByTestId('filter-term');
-    const stringOps = Array.from(within(rows[0]).getByLabelText('Operator').querySelectorAll('option')).map((o) => o.textContent);
+    const stringOps = Array.from(within(rows[0]).getByLabelText('Operator').querySelectorAll('option')).map((o) => o.value);
     expect(stringOps).toEqual(['=', '!=', '=~', '!~', '=[]', '![]', 'LIKE', 'NOT LIKE', 'IS', 'IS NOT']);
-    const numberOps = Array.from(within(rows[1]).getByLabelText('Operator').querySelectorAll('option')).map((o) => o.textContent);
+    const numberOps = Array.from(within(rows[1]).getByLabelText('Operator').querySelectorAll('option')).map((o) => o.value);
     expect(numberOps).toEqual(['=', '!=', '>=', '>', '<', '<=', '=[]', '![]', 'IS', 'IS NOT']);
     expect(stringOps).not.toContain('contains');
+    // Shown in words, as legacy's operator menu is (Filter::opTypes).
+    expect(Array.from(within(rows[0]).getByLabelText('Operator').querySelectorAll('option')).map((o) => o.textContent)).toEqual([
+      'equal to', 'not equal to', 'matches (regex)', 'does not match (regex)', 'in set', 'not in set',
+      'contains', 'does not contain', 'is', 'is not',
+    ]);
   });
 
   it('removing the first term promotes the next one and drops its cnj; other keys survive', async () => {
@@ -109,8 +114,9 @@ describe('RuleBuilder — existing terms', () => {
 
   it('emits bracket counts as strings', async () => {
     const user = userEvent.setup();
-    const onChange = mount({ terms: [{ attr: 'Cause', op: '=', val: 'Motion', obr: '0', cbr: '0' }] });
-    await user.selectOptions(screen.getByLabelText(/open brackets/i), '2');
+    const term = { attr: 'Cause', op: '=' as const, val: 'Motion', obr: '0', cbr: '0' };
+    const onChange = mount({ terms: [term, { ...term, cnj: 'and' as const }, { ...term, cnj: 'or' as const }, { ...term, cnj: 'and' as const }] });
+    await user.selectOptions(screen.getAllByLabelText(/open brackets/i)[0], '2');
     expect((onChange.mock.calls[0][0] as FilterQuery).terms[0].obr).toBe('2');
   });
 });
