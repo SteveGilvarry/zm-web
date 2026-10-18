@@ -5,7 +5,7 @@ import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
-import { useLogsPage, type LogsSearchParams } from './useLogsPage';
+import { fittedLogsPageSize, useLogsPage, type LogsSearchParams } from './useLogsPage';
 
 // The hook reads its filters from the URL and writes them back through
 // `navigate({ search })`. Shim both so we can drive and observe the URL.
@@ -191,9 +191,10 @@ describe('useLogsPage', () => {
     stub();
     const { result } = renderHook(() => useLogsPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.isLoading).toBe(false));
-    // Legacy: default 25, page list [10 … 500] (`log.php:27,140`).
-    expect(result.current.pageSize).toBe(25);
-    expect(result.current.pageSizeOptions).toEqual([10, 25, 50, 100, 200, 300, 400, 500]);
+    // Legacy fits the first page to the window (`logpanel.php:37-48`):
+    // jsdom's 768 px leaves room for 20 rows, which joins the page list.
+    expect(result.current.pageSize).toBe(20);
+    expect(result.current.pageSizeOptions).toEqual([10, 20, 25, 50, 100, 200, 300, 400, 500]);
 
     act(() => result.current.setPageSize(200));
     expect(result.current.pageSize).toBe(200);
@@ -203,6 +204,25 @@ describe('useLogsPage', () => {
 
     act(() => result.current.setPageSize(7));
     expect(result.current.pageSize).toBe(200);
+    // Once picked, the size comes off the list again.
+    expect(result.current.pageSizeOptions).toEqual([10, 25, 50, 100, 200, 300, 400, 500]);
+  });
+
+  it('fits the first page to the window as legacy does, clamped to 10..100', () => {
+    expect(fittedLogsPageSize(768)).toBe(20);
+    expect(fittedLogsPageSize(1440)).toBe(45);
+    expect(fittedLogsPageSize(300)).toBe(10);
+    expect(fittedLogsPageSize(5000)).toBe(100);
+    expect(fittedLogsPageSize(undefined)).toBe(25);
+  });
+
+  it('keeps a remembered page size over the fitted one', async () => {
+    window.localStorage.setItem('zm-web.logs.pageSize', '100');
+    stub();
+    const { result } = renderHook(() => useLogsPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+    expect(result.current.pageSize).toBe(100);
+    expect(logRequests[0].get('page_size')).toBe('100');
   });
 
   it('starts auto refresh on when ZM_WEB_REFRESH_LOGS is set, and the toggle flips it', async () => {

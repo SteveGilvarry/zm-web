@@ -67,10 +67,29 @@ export const LOGS_SEARCH_DEBOUNCE_MS = 350;
 const COLUMN_PREF_KEY = 'zm-web.logs.columns';
 const PAGE_SIZE_PREF_KEY = 'zm-web.logs.pageSize';
 
+/**
+ * Legacy `logPanelPageSize()` (`includes/logpanel.php:37-48`): as many
+ * ~27 px rows as fit under the navbar, summary, toolbar, header and pager,
+ * clamped to 10..100. Without a height it is 25.
+ */
+export function fittedLogsPageSize(innerHeight: number | undefined): number {
+  if (!innerHeight) return LOGS_DEFAULT_PAGE_SIZE;
+  return Math.max(10, Math.min(100, Math.floor((innerHeight - 56 - 18 - 66 - 25 - 58) / 27)));
+}
+
+/** A remembered pick wins (legacy's table cookie); else the window decides. */
 function loadPageSizePref(): number {
   if (typeof window === 'undefined') return LOGS_DEFAULT_PAGE_SIZE;
-  const n = Number(window.localStorage.getItem(PAGE_SIZE_PREF_KEY));
-  return LOGS_PAGE_SIZE_OPTIONS.includes(n) ? n : LOGS_DEFAULT_PAGE_SIZE;
+  let n = NaN;
+  try { n = Number(window.localStorage.getItem(PAGE_SIZE_PREF_KEY)); } catch { /* blocked storage */ }
+  return LOGS_PAGE_SIZE_OPTIONS.includes(n) ? n : fittedLogsPageSize(window.innerHeight);
+}
+
+/** The page list, plus the fitted size when it is not on it, so the picker can show it. */
+function pageSizeOptionsFor(pageSize: number): readonly number[] {
+  return LOGS_PAGE_SIZE_OPTIONS.includes(pageSize)
+    ? LOGS_PAGE_SIZE_OPTIONS
+    : [...LOGS_PAGE_SIZE_OPTIONS, pageSize].sort((a, b) => a - b);
 }
 
 function loadColumnPrefs(): LogColumnKey[] {
@@ -418,7 +437,7 @@ export function useLogsPage(): LogsPageState {
     summary,
     page,
     pageSize,
-    pageSizeOptions: LOGS_PAGE_SIZE_OPTIONS,
+    pageSizeOptions: pageSizeOptionsFor(pageSize),
     setPageSize,
     totalPages,
 
