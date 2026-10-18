@@ -213,16 +213,16 @@ describe('ClassicSettingsStoragePage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Add New Storage' }));
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText('Add Storage')).toBeInTheDocument();
+    expect(screen.getByRole('dialog', { name: 'Storage - New Storage' })).toBe(dialog);
 
     // Create starts disabled until name + path are filled.
-    expect(within(dialog).getByRole('button', { name: 'Create Storage' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: 'Save' })).toBeDisabled();
     await user.type(within(dialog).getByLabelText('Name'), 'Warm');
     await user.type(within(dialog).getByLabelText('Path'), '/mnt/warm');
     await user.selectOptions(within(dialog).getByLabelText('Type'), 's3fs');
     await user.selectOptions(within(dialog).getByLabelText('Scheme'), 'Deep');
     await user.selectOptions(within(dialog).getByLabelText('Server'), '3');
-    await user.click(within(dialog).getByRole('button', { name: 'Create Storage' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
@@ -247,11 +247,12 @@ describe('ClassicSettingsStoragePage', () => {
     expect(within(dialog).getByLabelText('Path')).toHaveValue('/mnt/cold');
     expect(within(dialog).getByLabelText('Scheme')).toHaveValue('Deep');
     await waitFor(() => expect(within(dialog).getByLabelText('Server')).toHaveValue('3'));
-    expect(within(dialog).getByLabelText('URL')).toHaveValue('s3://bucket/zm');
-    // enabled 0 → unchecked; tick it and save.
-    expect(within(dialog).getByLabelText('Enabled')).not.toBeChecked();
-    await user.click(within(dialog).getByLabelText('Enabled'));
-    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }));
+    expect(within(dialog).getByLabelText('Url')).toHaveValue('s3://bucket/zm');
+    // enabled 0 → No; pick Yes and save.
+    const enabled = within(dialog).getByRole('radiogroup', { name: 'Enabled' });
+    expect(within(enabled).getByRole('radio', { name: 'No' })).toBeChecked();
+    await user.click(within(enabled).getByRole('radio', { name: 'Yes' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0].method).toBe('PATCH');
@@ -270,13 +271,11 @@ describe('ClassicSettingsStoragePage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Cold archive' }));
     const dialog = await screen.findByRole('dialog');
-    const doDelete = within(dialog).getByLabelText('Delete events');
-    expect(doDelete).not.toBeChecked();
+    const doDelete = within(dialog).getByRole('radiogroup', { name: 'Do Deletes' });
+    expect(within(doDelete).getByRole('radio', { name: 'No' })).toBeChecked();
     // `UpdateStorageRequest` has no `do_delete`, so an edit cannot change it.
-    expect(doDelete).toBeDisabled();
-    expect(within(dialog).getByText(
-      'Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.',
-    )).toBeInTheDocument();
+    expect(within(doDelete).getByRole('radio', { name: 'Yes' })).toBeDisabled();
+    expect(within(dialog).getByText('Fixed at creation; the API cannot change it.')).toBeInTheDocument();
   });
 
   it('offers DoDelete on create, and sends it', async () => {
@@ -287,12 +286,14 @@ describe('ClassicSettingsStoragePage', () => {
 
     await user.click(await screen.findByRole('button', { name: 'Add New Storage' }));
     const dialog = await screen.findByRole('dialog');
-    const doDelete = within(dialog).getByLabelText('Delete events');
+    const doDelete = within(dialog).getByRole('radiogroup', { name: 'Do Deletes' });
     // `CreateStorageRequest` defaults to 1.
-    expect(doDelete).toBeChecked();
-    expect(doDelete).toBeEnabled();
-    await user.click(doDelete);
-    expect(doDelete).not.toBeChecked();
+    expect(within(doDelete).getByRole('radio', { name: 'Yes' })).toBeChecked();
+    expect(within(doDelete).getByRole('radio', { name: 'Yes' })).toBeEnabled();
+    await user.click(within(doDelete).getByRole('radio', { name: 'No' }));
+    expect(within(doDelete).getByRole('radio', { name: 'No' })).toBeChecked();
+    // The server picker reads as legacy's.
+    expect(within(dialog).getByRole('option', { name: 'Remote / No Specific Server' })).toBeInTheDocument();
   });
 
   it('Cancel closes the modal without a request', async () => {
@@ -321,7 +322,7 @@ describe('ClassicSettingsStoragePage', () => {
     const dialog = await screen.findByRole('dialog');
     await user.type(within(dialog).getByLabelText('Name'), 'Bad');
     await user.type(within(dialog).getByLabelText('Path'), '/nope');
-    await user.click(within(dialog).getByRole('button', { name: 'Create Storage' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('Save failed: path is not writable');
   });
