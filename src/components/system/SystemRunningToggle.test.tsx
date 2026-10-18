@@ -50,7 +50,7 @@ describe('SystemRunningToggle — display', () => {
 });
 
 describe('SystemRunningToggle — run-state chooser (R3)', () => {
-  it('opens the chooser listing Start/Stop/Restart and the saved states', async () => {
+  it('opens the chooser on Stop, with Restart and the saved states (running)', async () => {
     seed(true, [{ id: 1, name: 'default', is_active: 1 }, { id: 2, name: 'Away', is_active: 0 }, { id: 3, name: 'stop', is_active: 0 }]);
     const user = userEvent.setup();
     renderWithProviders(<SystemRunningToggle />);
@@ -58,11 +58,14 @@ describe('SystemRunningToggle — run-state chooser (R3)', () => {
     const dialog = await openChooser(user);
     const select = within(dialog).getByRole('combobox');
     await waitFor(() => expect(within(select).getByRole('option', { name: 'Away' })).toBeInTheDocument());
-    expect(within(select).getByRole('option', { name: 'Start' })).toBeInTheDocument();
+    // Running: legacy offers Stop (chosen) and Restart, not Start.
+    expect(within(select).queryByRole('option', { name: 'Start' })).toBeNull();
+    expect(within(select).getByRole('option', { name: 'Restart' })).toBeInTheDocument();
     expect(within(select).getByRole('option', { name: 'default (active)' })).toBeInTheDocument();
     // a saved row literally named "stop" is not listed twice
     expect(within(select).getAllByRole('option', { name: 'Stop' })).toHaveLength(1);
-    expect(within(dialog).getByRole('button', { name: /^apply$/i })).toBeDisabled();
+    expect(select).toHaveValue('stop');
+    expect(within(dialog).getByRole('button', { name: /^apply$/i })).toBeEnabled();
   });
 
   it('Start: choose, Apply, confirm → POST /server/control/start', async () => {
