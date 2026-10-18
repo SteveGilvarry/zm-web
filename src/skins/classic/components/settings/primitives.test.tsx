@@ -167,7 +167,7 @@ describe('OptionsRail', () => {
     renderWithProviders(<OptionsRail tabs={tabs} active="system" />);
     const nav = screen.getByRole('navigation', { name: 'Options' });
 
-    expect(within(nav).getByRole('link', { name: 'Display' })).toHaveAttribute('href', '/settings');
+    expect(within(nav).getByRole('link', { name: 'This Session' })).toHaveAttribute('href', '/settings');
     expect(within(nav).getByRole('link', { name: 'Servers' })).toHaveAttribute('href', '/settings/servers');
     expect(within(nav).getByRole('link', { name: 'System' })).toHaveAttribute('aria-current', 'page');
     expect(within(nav).getByRole('link', { name: 'MQTT' })).not.toHaveAttribute('aria-current');
@@ -185,7 +185,7 @@ describe('OptionsRail', () => {
     await userEvent.click(screen.getByRole('button', { name: 'MQTT' }));
     expect(onSelectCategory).toHaveBeenLastCalledWith('MQTT');
 
-    await userEvent.click(screen.getByRole('button', { name: 'Display' }));
+    await userEvent.click(screen.getByRole('button', { name: 'This Session' }));
     expect(onSelectCategory).toHaveBeenLastCalledWith('display');
 
     // Sub-page tabs still navigate.
