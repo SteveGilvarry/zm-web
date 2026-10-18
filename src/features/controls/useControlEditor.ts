@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { createControl, updateControl, type Control } from '@/api/controls';
 import { useToast } from '@/components/common/toastStore';
 import {
+  CONTROL_CREATE_TYPE,
   CONTROL_TABS,
   controlToForm,
   emptyControlForm,
@@ -37,7 +38,9 @@ export function useControlEditor(editing: Control | null, onSaved: (saved: Contr
   const save = useMutation({
     mutationFn: () => {
       const payload = formToPayload(values);
-      return editing ? updateControl(editing.id, payload) : createControl(payload);
+      return editing
+        ? updateControl(editing.id, payload)
+        : createControl({ ...payload, type: CONTROL_CREATE_TYPE });
     },
     onSuccess: (saved) => {
       toast.success(editing ? t('Control profile saved') : t('Control profile created'));
@@ -48,7 +51,7 @@ export function useControlEditor(editing: Control | null, onSaved: (saved: Contr
   });
 
   const name = typeof values.name === 'string' ? values.name.trim() : '';
-  /** Legacy requires a name; the backend requires name + type. */
+  /** Legacy requires a name; the backend's required type is filled in on create. */
   const validationError = name ? null : t('Name is required');
 
   return {

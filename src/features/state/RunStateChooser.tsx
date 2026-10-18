@@ -32,6 +32,15 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
     }
   }, [c, onClose]);
 
+  // Legacy offers what the supervisor can do from here, pre-selected:
+  // Stop and Restart while running, Start while stopped (`state.php:23-31`).
+  // With the status unknown, all three.
+  const daemonChoices = running === true ? ['stop', 'restart'] : running === false ? ['start'] : ['start', 'stop', 'restart'];
+  const defaultChoice = running === true ? 'stop' : running === false ? 'start' : '';
+  useEffect(() => {
+    if (isOpen && c.choice === '' && defaultChoice) c.setChoice(defaultChoice);
+  }, [isOpen, c, defaultChoice]);
+
   const close = () => {
     c.reset();
     onClose();
@@ -75,11 +84,9 @@ export function RunStateChooser({ isOpen, onClose, running }: RunStateChooserPro
               onChange={(e) => c.setChoice(e.target.value)}
               className={clsx('mt-1 text-fg', fieldClasses('md'))}
             >
-              <option value="">{t('Choose…')}</option>
+              {!defaultChoice && <option value="">{t('Choose…')}</option>}
               <optgroup label={t('Daemons')}>
-                <option value="start">{t('Start')}</option>
-                <option value="stop">{t('Stop')}</option>
-                <option value="restart">{t('Restart')}</option>
+                {daemonChoices.map((d) => <option key={d} value={d}>{choiceLabel(d)}</option>)}
               </optgroup>
               {c.states.length > 0 && (
                 <optgroup label={t('Saved states')}>

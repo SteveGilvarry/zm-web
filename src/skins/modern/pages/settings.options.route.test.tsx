@@ -94,7 +94,7 @@ describe('Settings → Options — category rail', () => {
     await optionsPage();
     await screen.findByText('ZM_WEB_TITLE');
 
-    await user.click(categoryButton('Web', 1));
+    await user.click(categoryButton('Display', 1));
     await waitFor(() => expect(router.state.location.search).toEqual({ category: 'web' }));
     expect(screen.queryByText('ZM_OPT_USE_AUTH')).not.toBeInTheDocument();
 

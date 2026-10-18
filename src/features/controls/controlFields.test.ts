@@ -4,7 +4,6 @@ import type { Control } from '@/api/controls';
 import {
   CONTROL_FIELD_KEYS,
   CONTROL_TABS,
-  CONTROL_TYPES,
   controlFieldLabel,
   controlTabLabel,
   controlToForm,
@@ -35,20 +34,22 @@ describe('CONTROL_TABS', () => {
     expect(CONTROL_TABS.map((tab) => tab.key)).toEqual([
       'main', 'move', 'pan', 'tilt', 'zoom', 'focus', 'gain', 'white', 'iris', 'presets',
     ]);
-    // 3 main text/select + 4 power flags, 6 move, 10 pan, 10 tilt, 12 zoom
+    // 2 main text fields (Type went in 1.39.39) + 4 power flags, 6 move, 10 pan, 10 tilt, 12 zoom
     // (legacy's 11 plus the API's can_auto_zoom), 12 × focus/gain/white/iris
-    // and 4 presets: 97 of the 99 keys of CreateControlRequest. The two left
-    // out are `can_auto_scan` / `num_scan_paths`, which legacy's form has no
+    // and 4 presets: 96 of the 99 keys of CreateControlRequest. Type is sent
+    // on create only; the other two left out are `can_auto_scan` / `num_scan_paths`, which legacy's form has no
     // tab for either.
     expect(CONTROL_TABS.find((tab) => tab.key === 'pan')!.fields).toHaveLength(10);
     expect(CONTROL_TABS.find((tab) => tab.key === 'zoom')!.fields).toHaveLength(12);
     expect(CONTROL_TABS.find((tab) => tab.key === 'focus')!.fields).toHaveLength(12);
-    expect(CONTROL_FIELD_KEYS).toHaveLength(97);
+    expect(CONTROL_FIELD_KEYS).toHaveLength(96);
   });
 
-  it('offers exactly the five types legacy lists, and no Misc tab', () => {
-    // `controlcap.php:219-225`: Local, Remote, Ffmpeg, Libvlc, cURL.
-    expect([...CONTROL_TYPES]).toEqual(['Local', 'Remote', 'Ffmpeg', 'Libvlc', 'cURL']);
+  it('offers no Type field (dropped in 1.39.39) and no Misc tab', () => {
+    expect(CONTROL_FIELD_KEYS).not.toContain('type' as never);
+    expect(CONTROL_TABS.find((tab) => tab.key === 'main')!.fields.map((f) => f.key)).toEqual(
+      ['name', 'protocol', 'can_wake', 'can_sleep', 'can_reset', 'can_reboot'],
+    );
     expect(CONTROL_TABS.some((tab) => (tab.key as string) === 'misc')).toBe(false);
   });
 
@@ -56,7 +57,7 @@ describe('CONTROL_TABS', () => {
     const keys = new Set(CONTROL_FIELD_KEYS);
     expect(keys.size).toBe(CONTROL_FIELD_KEYS.length);
     for (const key of Object.keys(sample)) {
-      if (key === 'id' || key === 'can_auto_scan' || key === 'num_scan_paths') continue;
+      if (key === 'id' || key === 'type' || key === 'can_auto_scan' || key === 'num_scan_paths') continue;
       expect(keys.has(key as never), key).toBe(true);
     }
     expect(keys.has('can_auto_scan' as never)).toBe(false);
@@ -79,9 +80,8 @@ describe('CONTROL_TABS', () => {
 });
 
 describe('form round trip', () => {
-  it('starts blank with Local type and flags off', () => {
+  it('starts blank with flags off', () => {
     const form = emptyControlForm();
-    expect(form.type).toBe('Local');
     expect(form.can_pan).toBe(0);
     expect(form.min_pan_range).toBe('');
     expect(form.name).toBe('');

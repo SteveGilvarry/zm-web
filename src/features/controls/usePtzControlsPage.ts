@@ -9,7 +9,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import type { Monitor } from '@/types';
 
-export type ControlSortKey = 'id' | 'name' | 'type' | 'protocol';
+export type ControlSortKey = 'id' | 'name' | 'protocol';
 export type SortDir = 'asc' | 'desc';
 
 export interface ControlRow {
@@ -87,8 +87,7 @@ export function usePtzControlsPage() {
     const filtered = q
       ? controls.filter((c) =>
         c.name.toLowerCase().includes(q)
-        || (c.protocol ?? '').toLowerCase().includes(q)
-        || c.type.toLowerCase().includes(q))
+        || (c.protocol ?? '').toLowerCase().includes(q))
       : controls;
     const dir = sortDir === 'asc' ? 1 : -1;
     const sorted = [...filtered].sort((a, b) => {

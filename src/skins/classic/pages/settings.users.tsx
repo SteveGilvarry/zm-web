@@ -87,7 +87,6 @@ export default function ClassicSettingsUsersPage() {
                           </th>
                         )}
                         <th className={classicTh}>{t('Username')}</th>
-                        <th className={classicTh}>{t('Name')}</th>
                         <th className={classicTh}>{t('Email')}</th>
                         <th className={classicTh}>{t('Language')}</th>
                         <th className={classicTh}>{t('Enabled')}</th>
@@ -120,19 +119,9 @@ export default function ClassicSettingsUsersPage() {
                               ) : user.username}
                               {self && <span title={t('You')} className="ms-0.5">*</span>}
                             </td>
-                            <td className={classicTd}>{user.name}</td>
                             <td className={clsx(classicTd, 'font-mono text-xs')}>{user.email}</td>
                             <td className={clsx(classicTd, 'text-xs')}>{user.language || t('default')}</td>
-                            <td className={classicTd}>
-                              {u.canEdit && !self ? (
-                                <input
-                                  type="checkbox"
-                                  checked={user.enabled === 1}
-                                  onChange={() => u.toggleEnabled(user)}
-                                  aria-label={user.enabled === 1 ? t('Disable {{name}}', { name: user.username }) : t('Enable {{name}}', { name: user.username })}
-                                />
-                              ) : (user.enabled === 1 ? t('Yes') : t('No'))}
-                            </td>
+                            <td className={classicTd}>{user.enabled === 1 ? t('Yes') : t('No')}</td>
                             {permCols.map((k) => <td key={k} className={clsx(classicTd, 'text-xs')}>{user[k]}</td>)}
                             <td className={classicTd}>{(user.api_enabled ?? 1) === 1 ? t('Yes') : t('No')}</td>
                           </tr>

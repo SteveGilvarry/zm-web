@@ -23,7 +23,7 @@ import {
 
 /**
  * Options → Control — classic skin. Legacy `?view=options&tab=control`
- * bootstrap-table (mark column, Id, Name, Type, Protocol, capability
+ * bootstrap-table (mark column, Id, Name, Protocol, capability
  * Yes/No columns, presets) and, with `?id=`, the `?view=controlcap` pill
  * form in its place.
  */
@@ -94,7 +94,6 @@ export default function ClassicSettingsPtzControlsPage() {
                           )}
                           <ClassicSortTh active={p.sortKey === 'id'} dir={p.sortDir} onClick={() => p.toggleSort('id')}>{t('Id')}</ClassicSortTh>
                           <ClassicSortTh active={p.sortKey === 'name'} dir={p.sortDir} onClick={() => p.toggleSort('name')}>{t('Name')}</ClassicSortTh>
-                          <ClassicSortTh active={p.sortKey === 'type'} dir={p.sortDir} onClick={() => p.toggleSort('type')}>{t('Type')}</ClassicSortTh>
                           <ClassicSortTh active={p.sortKey === 'protocol'} dir={p.sortDir} onClick={() => p.toggleSort('protocol')}>{t('Protocol')}</ClassicSortTh>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Move')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Zoom')}</th>
@@ -124,7 +123,6 @@ export default function ClassicSettingsPtzControlsPage() {
                                 <button type="button" onClick={() => p.openEdit(c)} className={classicLink}>{c.name}</button>
                               ) : c.name}
                             </td>
-                            <td className={classicTd}>{c.type}</td>
                             <td className={clsx(classicTd, 'font-mono text-xs')}>{c.protocol ?? ''}</td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_move} /></td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_zoom} /></td>

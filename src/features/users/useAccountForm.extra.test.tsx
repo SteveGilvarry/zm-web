@@ -117,3 +117,36 @@ describe('useAccountForm — client-side validation', () => {
     expect(result.current.error).toBeNull();
   });
 });
+
+describe('useAccountForm — ZM_PASSWORD_MIN_LENGTH', () => {
+  it('refuses a password shorter than the configured minimum, and says how long it must be', async () => {
+    server.use(
+      http.get('/api/v3/configs', () => HttpResponse.json({
+        items: [{ id: 1, name: 'ZM_PASSWORD_MIN_LENGTH', value: '8', type: 'integer', category: 'auth', readonly: 0, private: 0, system: 0 }],
+        total: 1, per_page: 1000, current_page: 1, last_page: 1,
+      })),
+      http.post('/api/v3/users', () => {
+        requests += 1;
+        return HttpResponse.json({ ...existing, id: 9, username: 'newbie' });
+      }),
+    );
+    const { result } = renderHook(() => useAccountForm(null, noop), { wrapper });
+    await waitFor(() => expect(result.current.passwordMinLength).toBe(8));
+
+    act(() => {
+      result.current.setField('username', 'newbie');
+      result.current.setField('password', 'short');
+      result.current.setField('confirmPassword', 'short');
+    });
+    act(() => result.current.submit());
+    expect(result.current.error).toBe('Password must be at least 8 characters.');
+    expect(requests).toBe(0);
+
+    act(() => {
+      result.current.setField('password', 'long enough');
+      result.current.setField('confirmPassword', 'long enough');
+    });
+    act(() => result.current.submit());
+    await waitFor(() => expect(requests).toBe(1));
+  });
+});

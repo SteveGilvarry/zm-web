@@ -75,7 +75,6 @@ export default function SettingsPtzControlsPage() {
                   <tr>
                     <SortTh k="id" p={p} className="w-12">{t('ID')}</SortTh>
                     <SortTh k="name" p={p}>{t('Name')}</SortTh>
-                    <SortTh k="type" p={p}>{t('Type')}</SortTh>
                     <SortTh k="protocol" p={p}>{t('Protocol')}</SortTh>
                     <th className={th}>{t('Capabilities')}</th>
                     <th className={clsx(th, 'text-end')}>{t('In use')}</th>
@@ -93,7 +92,6 @@ export default function SettingsPtzControlsPage() {
                           </button>
                         </RequirePerm>
                       </td>
-                      <td className="px-2 py-2 text-fg-muted">{c.type}</td>
                       <td className="px-2 py-2 font-mono text-xs text-fg-muted">{c.protocol ?? '—'}</td>
                       <td className="px-2 py-2 text-xs text-fg-muted">{summarizeCapabilities(c)}</td>
                       <td

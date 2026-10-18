@@ -1,7 +1,6 @@
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import {
-  CONTROL_TYPES,
   controlFieldLabel,
   type ControlField,
   type ControlFieldKey,
@@ -54,16 +53,6 @@ export function ControlEditorFields({
                 onChange={() => onToggle(f.key)}
                 className={classes.checkbox}
               />
-            ) : f.kind === 'type' ? (
-              <select
-                id={id}
-                value={typeof value === 'string' ? value : ''}
-                disabled={disabled}
-                onChange={(e) => onChange(f.key, e.target.value)}
-                className={classes.select}
-              >
-                {CONTROL_TYPES.map((ty) => <option key={ty} value={ty}>{ty}</option>)}
-              </select>
             ) : f.kind === 'number' ? (
               <input
                 id={id}

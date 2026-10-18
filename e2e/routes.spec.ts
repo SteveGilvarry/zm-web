@@ -59,9 +59,17 @@ const ANCHORS: Record<PageKey, Anchor> = {
   'reports.list': (p) => p.locator(`a[href="/reports/${SEED.report}"]`).first(),
   'reports.detail': (p) => p.getByRole('heading', { name: /events per hour/i }),
   audit: (p) => p.getByTestId(`audit-row-${SEED.monitors.frontDoor}`),
-  'settings.options': (p) => p.getByRole('heading', { name: /appearance/i }),
+  // Classic opens on legacy's System tab: one form, one Save.
+  'settings.options': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('form', { name: 'Options' })
+      : p.getByRole('heading', { name: /appearance/i }),
   'settings.users': (p) => p.getByText(SEED.viewer.username).first(),
-  'settings.servers': (p) => p.getByRole('button', { name: /^edit e2e-server-1$/i }),
+  // Classic opens the server modal from any cell of the row, as legacy does.
+  'settings.servers': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('button', { name: 'e2e-server-1', exact: true })
+      : p.getByRole('button', { name: /^edit e2e-server-1$/i }),
   // Classic hangs the edit form off the name itself, as legacy does.
   'settings.storage': (p, skin) =>
     skin === 'classic'

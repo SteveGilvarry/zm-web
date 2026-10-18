@@ -75,7 +75,7 @@ const sampleReport = {
   filter_id: 7,
   start_date_time: '2026-05-25T00:00:00Z',
   end_date_time: '2026-06-01T00:00:00Z',
-  interval: 60,
+  interval: 86400,
 };
 
 const sampleFilters = [
@@ -142,6 +142,11 @@ function stubAll() {
         last_page: 1,
       }),
     ),
+    // MaxScore > 50 maps to the preview AST, so the backend filters.
+    http.post('/api/v3/filters/preview', () => {
+      const items = sampleEvents.filter((e) => e.max_score > 50);
+      return HttpResponse.json({ items, total: items.length, per_page: 1000, current_page: 1, last_page: 1 });
+    }),
   );
 }
 
@@ -156,8 +161,8 @@ describe('ReportDetailPage — load + edit form', () => {
     const filterSelect = screen.getByRole('combobox') as HTMLSelectElement;
     expect(filterSelect.value).toBe('7');
 
-    const intervalInput = screen.getByPlaceholderText(/minutes/i) as HTMLInputElement;
-    expect(intervalInput.value).toBe('60');
+    const intervalInput = screen.getByPlaceholderText(/seconds/i) as HTMLInputElement;
+    expect(intervalInput.value).toBe('86400');
   });
 
   it('sends a PATCH to /reports/:id on Save', async () => {
@@ -181,7 +186,7 @@ describe('ReportDetailPage — load + edit form', () => {
 
     await waitFor(() => expect(body.name).toBe('Renamed'));
     expect(body.filter_id).toBe(7);
-    expect(body.interval).toBe(60);
+    expect(body.interval).toBe(86400);
   });
 
   it('confirms then DELETEs the report', async () => {

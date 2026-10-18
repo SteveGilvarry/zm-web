@@ -1,6 +1,6 @@
 /**
- * Options → Servers (classic skin): the legacy cluster table with its load
- * columns, the register/edit form beneath it, and the delete confirm.
+ * Options → Servers (classic skin): the legacy cluster table with its Mark
+ * and load columns, the server modal, and Delete on the marked rows.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
@@ -129,12 +129,13 @@ async function mount() {
 }
 
 describe('ClassicSettingsServersPage', () => {
-  it('renders the legacy table with monitor counts and load columns', async () => {
+  it('renders the legacy table: mark, ids, paths, monitor counts, load and free/total memory', async () => {
     signIn();
     seed();
     await mount();
 
     const edge01 = (await screen.findByRole('button', { name: 'edge-01' })).closest('tr')!;
+    expect(within(edge01).getByRole('checkbox', { name: 'Mark edge-01' })).toBeEnabled();
     expect(within(edge01).getByText('3')).toBeInTheDocument();
     expect(within(edge01).getByText('http://10.0.0.3:8080')).toBeInTheDocument();
     expect(within(edge01).getByText('/zm/index.php')).toBeInTheDocument();
@@ -145,56 +146,25 @@ describe('ClassicSettingsServersPage', () => {
     expect(within(edge01).getByText('2')).toBeInTheDocument();
     // cpu_load 6.2 > 5 → legacy paints it as an error; assert the tone hook, not classes.
     expect(within(edge01).getByText('6.2')).toHaveAttribute('data-tone', 'error');
-    // free mem 5% → error, free swap 90% → ok
-    expect(within(edge01).getByText('5%')).toHaveAttribute('data-tone', 'error');
-    expect(within(edge01).getByText('90%')).toHaveAttribute('data-tone', 'ok');
-    expect(within(edge01).getByText('84.5%')).toBeInTheDocument();
+    // free / total as legacy's human_filesize prints it; 5% free memory is red.
+    expect(within(edge01).getByText('50.00B / 0.98kB')).toHaveAttribute('data-tone', 'error');
+    expect(within(edge01).getByText('900.00B / 0.98kB')).toHaveAttribute('data-tone', 'ok');
+    // No CPU % column and no action buttons in legacy.
+    expect(within(edge01).queryByText('84.5%')).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Details for edge-01' })).toBeNull();
 
     // No protocol on the row → the Url degrades to the bare host.
     const edge02 = screen.getByRole('button', { name: 'edge-02' }).closest('tr')!;
     expect(within(edge02).getByText('10.0.0.4')).toBeInTheDocument();
     expect(within(edge02).getByText('Not running')).toBeInTheDocument();
-    // Three unset paths plus four missing stat cells.
-    expect(within(edge02).getAllByText('—')).toHaveLength(7);
+    // Three missing stat cells.
+    expect(within(edge02).getAllByText('—')).toHaveLength(3);
 
     // Legacy's four daemon columns, as yes/no (`_options_servers.php:74-77`).
     const flags = (row: HTMLElement) =>
       within(row).getAllByText(/^(yes|no)$/).map((el) => el.textContent);
     expect(flags(edge01)).toEqual(['yes', 'yes', 'no', 'no']);
     expect(flags(edge02)).toEqual(['no', 'no', 'yes', 'yes']);
-  });
-
-  it('expands a row to what the table has no column for', async () => {
-    signIn();
-    seed();
-    const user = userEvent.setup();
-    await mount();
-
-    const toggle = await screen.findByRole('button', { name: 'Details for edge-02' });
-    expect(toggle).toHaveAttribute('aria-expanded', 'false');
-    await user.click(toggle);
-    expect(toggle).toHaveAttribute('aria-expanded', 'true');
-
-    // Scoped to the detail row: the form below has a Protocol field too.
-    const detail = screen.getByText('Run state').closest('dl')!;
-    const value = (label: string) =>
-      within(detail).getByText(label).closest('div')!.querySelector('dd')!.textContent;
-    expect(value('Protocol')).toBe('—');
-    expect(value('Hostname')).toBe('10.0.0.4');
-    expect(value('Run state')).toBe('2');
-    expect(value('Coordinates')).toBe('-37.81, 144.96');
-
-    await user.click(toggle);
-    expect(screen.queryByText('Run state')).toBeNull();
-  });
-
-  it('offers the detail toggle without system Edit', async () => {
-    signIn(VIEWER);
-    seed();
-    const user = userEvent.setup();
-    await mount();
-    await user.click(await screen.findByRole('button', { name: 'Details for edge-01' }));
-    expect(screen.getByText('Run state')).toBeInTheDocument();
   });
 
   it('shows the "this host" row when stats are recorded without a server id', async () => {
@@ -235,22 +205,25 @@ describe('ClassicSettingsServersPage', () => {
     });
   });
 
-  it('registers a server: POST /servers with the trimmed payload', async () => {
+  it('Add New Server opens the modal and Save POSTs the trimmed payload', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
     await mount();
     await screen.findByRole('button', { name: 'edge-01' });
+    expect(screen.queryByRole('dialog')).toBeNull();
 
-    await user.type(screen.getByLabelText('Name'), '  edge-03  ');
-    await user.selectOptions(screen.getByLabelText('Protocol'), 'https');
-    await user.type(screen.getByLabelText('Hostname'), ' 10.0.0.9 ');
+    await user.click(screen.getByRole('button', { name: 'Add New Server' }));
+    const dialog = screen.getByRole('dialog', { name: 'New Server' });
+    await user.type(within(dialog).getByLabelText('Name'), '  edge-03  ');
+    await user.selectOptions(within(dialog).getByLabelText('Protocol'), 'https');
+    await user.type(within(dialog).getByLabelText('Hostname'), ' 10.0.0.9 ');
     // Port strips non-digits.
-    await user.type(screen.getByLabelText('Port'), '80a80');
-    await user.type(screen.getByLabelText('Path to index'), '/zm/index.php');
-    await user.selectOptions(screen.getByLabelText('Status'), 'Running');
-    await user.click(screen.getByLabelText('Run trigger'));
-    await user.click(screen.getByRole('button', { name: 'Register' }));
+    await user.type(within(dialog).getByLabelText('Port'), '80a80');
+    await user.type(within(dialog).getByLabelText('Path to index'), '/zm/index.php');
+    await user.selectOptions(within(dialog).getByLabelText('Status'), 'Running');
+    await user.click(within(dialog).getByLabelText('Run trigger'));
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
@@ -265,30 +238,32 @@ describe('ClassicSettingsServersPage', () => {
         status: 'Running',
       },
     });
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
-  it('Register is disabled without a name', async () => {
+  it('Save is disabled without a name', async () => {
     signIn();
     seed();
+    const user = userEvent.setup();
     await mount();
-    await screen.findByRole('button', { name: 'edge-01' });
-    expect(screen.getByRole('button', { name: 'Register' })).toBeDisabled();
+    await user.click(await screen.findByRole('button', { name: 'Add New Server' }));
+    expect(within(screen.getByRole('dialog')).getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 
-  it('Edit loads the row into the form and Save PATCHes it; Cancel resets to New server', async () => {
+  it('any cell of a row opens the modal on that server; Save PATCHes, Cancel closes', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('button', { name: 'Edit edge-01' }));
-    expect(await screen.findByText('Edit server — edge-01')).toBeInTheDocument();
-    expect(screen.getByLabelText('Name')).toHaveValue('edge-01');
-    expect(screen.getByLabelText('Port')).toHaveValue('8080');
+    await user.click(await screen.findByRole('button', { name: '/zm/api' }));
+    const dialog = screen.getByRole('dialog', { name: 'Server - edge-01' });
+    expect(within(dialog).getByLabelText('Name')).toHaveValue('edge-01');
+    expect(within(dialog).getByLabelText('Port')).toHaveValue('8080');
 
-    await user.clear(screen.getByLabelText('Name'));
-    await user.type(screen.getByLabelText('Name'), 'edge-01b');
-    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await user.clear(within(dialog).getByLabelText('Name'));
+    await user.type(within(dialog).getByLabelText('Name'), 'edge-01b');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(sent).toHaveLength(1));
     expect(sent[0]).toEqual({
@@ -302,41 +277,39 @@ describe('ClassicSettingsServersPage', () => {
         status: 'Running',
       },
     });
-    // onSaved clears `editing`, so the form goes back to the register variant.
-    await waitFor(() => expect(screen.getByText('New server')).toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
 
-    // And the explicit Cancel path.
-    await user.click(screen.getByRole('button', { name: 'Edit edge-02' }));
-    expect(await screen.findByText('Edit server — edge-02')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
-    expect(screen.getByText('New server')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'edge-02' }));
+    const again = screen.getByRole('dialog', { name: 'Server - edge-02' });
+    await user.click(within(again).getByRole('button', { name: 'Cancel' }));
+    expect(screen.queryByRole('dialog')).toBeNull();
   });
 
-  it('clicking the name opens the same editor', async () => {
-    signIn();
-    seed();
-    const user = userEvent.setup();
-    await mount();
-    await user.click(await screen.findByRole('button', { name: 'edge-01' }));
-    expect(await screen.findByText('Edit server — edge-01')).toBeInTheDocument();
-  });
-
-  it('Delete confirms first, then DELETEs; cancelling sends nothing', async () => {
+  it('Delete works on the marked rows, after a confirm; cancelling sends nothing', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
     await mount();
 
-    await user.click(await screen.findByRole('button', { name: 'Delete edge-02' }));
+    const del = await screen.findByRole('button', { name: 'Delete' });
+    await screen.findByRole('button', { name: 'edge-02' });
+    expect(del).toBeDisabled();
+    await user.click(screen.getByRole('checkbox', { name: 'Mark edge-02' }));
+    expect(del).toBeEnabled();
+
+    await user.click(del);
     const dialog = await screen.findByRole('dialog');
-    expect(dialog).toHaveTextContent('Delete server "edge-02"?');
     await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
     expect(sent).toHaveLength(0);
 
-    await user.click(screen.getByRole('button', { name: 'Delete edge-02' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Select all' }));
+    await user.click(del);
     const again = await screen.findByRole('dialog');
     await user.click(within(again).getByRole('button', { name: 'Delete' }));
-    await waitFor(() => expect(sent).toEqual([{ method: 'DELETE', path: '/servers/4', body: null }]));
+    await waitFor(() => expect(sent).toEqual([
+      { method: 'DELETE', path: '/servers/3', body: null },
+      { method: 'DELETE', path: '/servers/4', body: null },
+    ]));
   });
 
   it('surfaces a failed save in the form', async () => {
@@ -347,11 +320,12 @@ describe('ClassicSettingsServersPage', () => {
     ] as never);
     const user = userEvent.setup();
     await mount();
-    await screen.findByRole('button', { name: 'edge-01' });
+    await user.click(await screen.findByRole('button', { name: 'Add New Server' }));
 
-    await user.type(screen.getByLabelText('Name'), 'edge-01');
-    await user.click(screen.getByRole('button', { name: 'Register' }));
-    expect(await screen.findByRole('alert')).toHaveTextContent('Save failed: name already taken');
+    const dialog = screen.getByRole('dialog');
+    await user.type(within(dialog).getByLabelText('Name'), 'edge-01');
+    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Save failed: name already taken');
   });
 
   it('renders the 500 branch as an alert', async () => {
@@ -397,16 +371,16 @@ describe('ClassicSettingsServersPage', () => {
     expect(screen.getByRole('button', { name: 'edge-01' })).toBeInTheDocument();
   });
 
-  it('read-only without system Edit: no form, no row verbs, names are plain text', async () => {
+  it('read-only without system Edit: Add and Delete disabled, marks disabled, cells are plain text', async () => {
     signIn(VIEWER);
     seed();
     await mount();
 
     await waitFor(() => expect(screen.getByText('edge-01')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'edge-01' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Edit edge-01' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Delete edge-01' })).toBeNull();
-    expect(screen.queryByText('New server')).toBeNull();
+    expect(screen.getByRole('button', { name: 'Add New Server' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
+    expect(screen.getByRole('checkbox', { name: 'Mark edge-01' })).toBeDisabled();
   });
 
   it('renders nothing when signed out', async () => {

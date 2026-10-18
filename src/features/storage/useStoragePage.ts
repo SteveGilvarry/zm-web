@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getStorageList, createStorage, updateStorage, deleteStorage, STORAGE_SCHEMES } from '@/api/storage';
 import { listServers } from '@/api/servers';
 import { previewFilter } from '@/api/filters';
@@ -37,6 +37,11 @@ export interface StorageRow {
    * backend has no cached figure for the row.
    */
   diskPercent: number | null;
+  /**
+   * Events stored here (legacy `Storage::EventCount()`), null until counted.
+   * Legacy disables the row's Mark while it is non-zero.
+   */
+  eventCount: number | null;
 }
 
 /** ZoneMinder stores "any server" as 0; the picker and the list treat it as none. */
@@ -115,9 +120,26 @@ export function useStoragePage() {
     );
   }, [storageItems, searchQuery]);
 
+  // One count per listed area, the same `/filters/preview` the delete guard uses.
+  const countQs = useQueries({
+    queries: filteredItems.map((storage) => ({
+      queryKey: ['storage-usage', storage.id],
+      queryFn: () =>
+        previewFilter(
+          { where: { field: 'storage_id', op: 'eq', value: storage.id }, limit: null },
+          { page: 1, page_size: 1 },
+        ),
+      enabled: isAuthenticated,
+      staleTime: 60_000,
+    })),
+  });
+  const eventCounts = countQs.map((q) => q.data?.total ?? null);
+  const eventCountsKey = eventCounts.join(',');
+
   const rows = useMemo<StorageRow[]>(() => {
+    const counts = eventCountsKey.split(',').map((v) => (v === '' ? null : Number(v)));
     const largest = Math.max(0, ...filteredItems.map((s) => s.disk_space ?? 0));
-    return filteredItems.map((storage) => {
+    return filteredItems.map((storage, i) => {
       const serverId = normalizeServerId(storage.server_id);
       return {
         storage,
@@ -127,9 +149,10 @@ export function useStoragePage() {
           storage.disk_space == null || largest <= 0
             ? null
             : Math.round((storage.disk_space / largest) * 100),
+        eventCount: counts[i] ?? null,
       };
     });
-  }, [filteredItems, servers]);
+  }, [filteredItems, servers, eventCountsKey]);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);

@@ -7,7 +7,7 @@ export interface Report {
   start_date_time?: string | null;
   end_date_time?: string | null;
   filter_id?: number | null;
-  /** Reporting cadence in minutes, or null for one-off. */
+  /** Reporting cadence in seconds (legacy default 86400), or null for one-off. */
   interval?: number | null;
 }
 

@@ -586,3 +586,76 @@ describe('useSettingsOptionsPage — config load failures', () => {
     }
   });
 });
+
+describe('useSettingsOptionsPage — one form per tab', () => {
+  it('opens on the default category when the URL names none', async () => {
+    stub();
+    const view = renderHook(() => useSettingsOptionsPage({ defaultCategory: 'system' }), { wrapper: wrapper() });
+    await waitFor(() => expect(view.result.current.selectedCategory).toBe('system'));
+    expect(view.result.current.filteredConfigs.map((c) => c.name)).toEqual(['ZM_PATH_ZMS', 'ZM_OPT_USE_AUTH']);
+  });
+
+  it('marks System rows read-only and leaves the rest alone', async () => {
+    stub({ configs: [cfg({ name: 'ZM_A', category: 'system', system: 1 }), cfg({ name: 'ZM_B', category: 'system', system: 0 })] });
+    const { result } = await mount();
+    expect(result.current.allConfigs.map((c) => [c.name, c.readonly])).toEqual([['ZM_A', 1], ['ZM_B', 0]]);
+  });
+
+  it('drafts in place, and a draft typed back to the stored value goes away', async () => {
+    stub();
+    const { result } = await mount();
+    const title = result.current.allConfigs.find((c) => c.name === 'ZM_WEB_TITLE')!;
+
+    act(() => result.current.setDraft('ZM_WEB_TITLE', 'Mission Control'));
+    expect(result.current.draftValue(title)).toBe('Mission Control');
+    expect(result.current.dirtyCount).toBe(1);
+
+    act(() => result.current.setDraft('ZM_WEB_TITLE', 'ZoneMinder'));
+    expect(result.current.draftValue(title)).toBe('ZoneMinder');
+    expect(result.current.dirtyCount).toBe(0);
+  });
+
+  it('holds Save while a draft fails its pattern', async () => {
+    stub();
+    const { result } = await mount();
+    act(() => result.current.setDraft('ZM_WEB_EVENTS_PER_PAGE', 'lots'));
+    expect(result.current.draftErrors.ZM_WEB_EVENTS_PER_PAGE).toMatch(/pattern/);
+
+    act(() => result.current.saveAll());
+    await new Promise((r) => setTimeout(r, 20));
+    expect(calls).toEqual([]);
+  });
+
+  it('saves only the rows of the tab on screen', async () => {
+    stub();
+    const { result, rerender } = await mount();
+    act(() => result.current.setDraft('ZM_WEB_TITLE', 'Mission Control'));
+    act(() => result.current.setDraft('ZM_PATH_ZMS', '/other'));
+    expect(result.current.dirtyCount).toBe(2);
+
+    mockSearch = { category: 'web' };
+    rerender();
+    expect(result.current.dirtyCount).toBe(1);
+    act(() => result.current.saveAll());
+    await waitFor(() => expect(calls).toHaveLength(1));
+    expect(calls[0]).toEqual({ method: 'PUT', path: '/configs/ZM_WEB_TITLE', body: { value: 'Mission Control' } });
+  });
+
+  it('asks before switching tabs with unsaved rows; Cancel stays, OK drops them', async () => {
+    stub();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const { result } = await mount();
+    act(() => result.current.setDraft('ZM_WEB_TITLE', 'Mission Control'));
+
+    act(() => result.current.selectCategory('system'));
+    expect(confirm).toHaveBeenCalledWith('Discard 1 unsaved change?');
+    expect(mockNavigate).not.toHaveBeenCalled();
+    expect(result.current.dirtyCount).toBe(1);
+
+    confirm.mockReturnValue(true);
+    act(() => result.current.selectCategory('system'));
+    expect(mockNavigate).toHaveBeenCalledTimes(1);
+    expect(result.current.dirtyCount).toBe(0);
+    confirm.mockRestore();
+  });
+});
