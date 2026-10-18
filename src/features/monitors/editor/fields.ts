@@ -18,6 +18,7 @@
 
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
+import type { PermFeature, PermLevel } from '@/types';
 
 export type FieldKind =
   | 'text'
@@ -84,6 +85,11 @@ export interface FieldDef {
   patternHelp?: string;
   /** A link rendered beside the label (legacy "LIST" button next to Control type). */
   link?: { to: string; label: string };
+  /**
+   * Permission needed to change the field. Without it the field renders
+   * read-only with `reason` as its tooltip, and the editor never sends it.
+   */
+  requires?: { feature: PermFeature; level: PermLevel; reason: string };
 }
 
 export interface TabDef {
@@ -413,6 +419,9 @@ export function buildTabs(t: Translate): TabDef[] {
   const IMAGE_ADJUST_HELP = t('-1 = camera default.');
   const PORT_PATTERN = /^(|\d{1,5})$/;
   const PORT_HELP = t('Port must be a number between 0 and 65535.');
+  // zmc runs the event commands as shell commands, so only System editors may
+  // change them (upstream GHSA-vcrj-35c6-g97c).
+  const SYSTEM_EDIT = { feature: 'system', level: 'Edit', reason: t('Requires System edit permission') } as const;
 
   return [
     {
@@ -582,8 +591,8 @@ export function buildTabs(t: Translate): TabDef[] {
           help: t('Log a warning when an event exceeds the section length.') },
         { kind: 'number', key: 'min_section_length', label: t('Minimum section length (s)'), min: 0, integer: true,
           help: t('Events shorter than this are not closed on schedule.') },
-        { kind: 'text',   key: 'event_start_command',label: t('Event start command'), span: 2 },
-        { kind: 'text',   key: 'event_end_command',  label: t('Event end command'),   span: 2 },
+        { kind: 'text',   key: 'event_start_command',label: t('Event start command'), span: 2, requires: SYSTEM_EDIT },
+        { kind: 'text',   key: 'event_end_command',  label: t('Event end command'),   span: 2, requires: SYSTEM_EDIT },
       ],
     },
     {
@@ -758,6 +767,22 @@ export function isFieldVisible(f: FieldDef, draft: Record<string, FieldValue>): 
   if (s.notTypes && s.notTypes.includes(type)) return false;
   if (s.protocols && !s.protocols.includes(String(draft.protocol ?? ''))) return false;
   return true;
+}
+
+/** True when the signed-in user may not change `f` (see {@link FieldDef.requires}). */
+export function isFieldLocked(
+  f: FieldDef,
+  can: (feature: PermFeature, level: PermLevel) => boolean,
+): boolean {
+  return !!f.requires && !can(f.requires.feature, f.requires.level);
+}
+
+/** Keys of every field in `tabs` the user may not change. */
+export function lockedKeys(
+  tabs: TabDef[],
+  can: (feature: PermFeature, level: PermLevel) => boolean,
+): Set<string> {
+  return new Set(tabs.flatMap((tab) => tab.fields.filter((f) => isFieldLocked(f, can)).map((f) => f.key)));
 }
 
 /** Only the fields of `tab` that apply to the draft (groups whose every field is hidden are dropped too). */

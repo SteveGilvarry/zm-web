@@ -622,3 +622,34 @@ describe('MonitorEditor — record as the API returns it', () => {
     expect(text).toBeDefined();
   });
 });
+
+describe('MonitorEditor — event commands need System edit', () => {
+  const withCommands = { ...monitor, event_start_command: '/usr/bin/notify start' } as unknown as Monitor;
+
+  it('renders them read-only with the reason for a user without System edit', async () => {
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'op', perms: { monitors: 'Edit', system: 'View' } } });
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={withCommands} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    const start = screen.getByRole('textbox', { name: /event start command/i }) as HTMLInputElement;
+    expect(start.readOnly).toBe(true);
+    expect(start).toHaveAttribute('title', 'Requires System edit permission');
+    expect(start.value).toBe('/usr/bin/notify start');
+    expect((screen.getByRole('textbox', { name: /event end command/i }) as HTMLInputElement).readOnly).toBe(true);
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin' } });
+  });
+
+  it('stays editable for a System editor', async () => {
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin', perms: { monitors: 'Edit', system: 'Edit' } } });
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={withCommands} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    const end = screen.getByRole('textbox', { name: /event end command/i }) as HTMLInputElement;
+    expect(end.readOnly).toBe(false);
+    await user.type(end, '/bin/true');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    await waitFor(() => expect(captured()).toEqual({ event_end_command: '/bin/true' }));
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin' } });
+  });
+});

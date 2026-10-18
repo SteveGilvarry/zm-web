@@ -14,10 +14,11 @@ import { ApiClientError } from '@/api/client';
 import { useToast } from '@/components/common/toastStore';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import type { Monitor } from '@/types';
 import {
   TABS, useMonitorTabs, visibleFields, validateDraft, fieldErrorsFromDetails, tabForField,
-  RESOLUTION_PRESETS,
+  RESOLUTION_PRESETS, isFieldLocked, lockedKeys,
   type FieldDef, type TabDef, type FieldValue, type FieldErrors,
 } from './fields';
 import {
@@ -93,15 +94,18 @@ function MonitorEditorBody({ monitor, onClose, onDeleted }: MonitorEditorProps) 
   // Diff = keys whose draft value differs from baseline. Write-only fields
   // (`pass`, `onvif_password`) are dropped while blank: the API never sends
   // them back, so blank means "keep what is stored", not "clear it".
+  // Fields the user may not change never reach the PATCH, whatever the draft says.
+  const { can } = usePerms();
+  const locked = useMemo(() => lockedKeys(tabs, can), [tabs, can]);
   const diff = useMemo(() => {
     const out: Record<string, FieldValue> = {};
     for (const [k, v] of Object.entries(draft)) {
-      if (isUnsetSecret(k, v)) continue;
+      if (isUnsetSecret(k, v) || locked.has(k)) continue;
       const orig = baseline[k];
       if (!sameValue(v, orig)) out[k] = v;
     }
     return out;
-  }, [draft, baseline]);
+  }, [draft, baseline, locked]);
 
   // Per-tab diff counts so the rail badges stay live. Keys are counted once
   // even when a tab lists the same key under several `show` conditions.
@@ -501,6 +505,8 @@ interface FieldRowProps {
 
 function FieldRow({ field, monitorId, draft, value, isDirty, error, onChange, onUpdate }: FieldRowProps) {
   const { t } = useTranslation();
+  const { can } = usePerms();
+  const locked = isFieldLocked(field, can);
   const span = field.span === 2 ? 'col-span-2' : 'col-span-2 md:col-span-1';
 
   return (
@@ -538,6 +544,7 @@ function FieldRow({ field, monitorId, draft, value, isDirty, error, onChange, on
         draft={draft}
         value={value}
         invalid={!!error}
+        locked={locked}
         onChange={onChange}
         onUpdate={onUpdate}
       />
@@ -559,6 +566,7 @@ function FieldInput({
   draft,
   value,
   invalid,
+  locked = false,
   onChange,
   onUpdate,
 }: {
@@ -567,10 +575,24 @@ function FieldInput({
   draft: Record<string, FieldValue>;
   value: FieldValue;
   invalid: boolean;
+  /** The user lacks `field.requires`: render read-only with the reason as tooltip. */
+  locked?: boolean;
   onChange: (v: FieldValue) => void;
   onUpdate: (key: string, value: FieldValue) => void;
 }) {
   const { t } = useTranslation();
+  if (locked) {
+    return (
+      <input
+        type="text"
+        readOnly
+        value={value == null ? '' : String(value)}
+        title={field.requires?.reason}
+        aria-label={field.label}
+        className={clsx(fieldClasses('sm', false), 'cursor-not-allowed opacity-70')}
+      />
+    );
+  }
   // Focus comes from the base `:focus-visible` rule in src/index.css, so this
   // is the shared field recipe with nothing bolted on.
   const baseInput = fieldClasses('sm', invalid);
