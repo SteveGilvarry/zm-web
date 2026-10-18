@@ -68,6 +68,14 @@ export interface FieldDef {
   help?: string;
   /** For 'select'. */
   options?: Array<{ value: string | number; label: string }>;
+  /**
+   * For 'select': options offered only while the *stored* value is one of
+   * them, so opening an old monitor does not silently re-save it as
+   * something else (legacy "RTSP (removed)"). Never offered otherwise.
+   */
+  storedOnlyOptions?: Array<{ value: string | number; label: string }>;
+  /** Warning shown under the field while the stored value is a `storedOnlyOptions` entry. */
+  storedOnlyWarning?: string;
   /** For nullable 'select's: label of an extra first option that writes `null`. */
   nullOption?: string;
   /** Optional width hint inside the 2-col grid. Default: 1 col. */
@@ -106,7 +114,13 @@ export type Translate = (key: string) => string;
 /*  Option lists shared with the Add dialog                                 */
 /* ------------------------------------------------------------------------ */
 
-export const MONITOR_TYPE_VALUES = ['Ffmpeg', 'Libvlc', 'Remote', 'Local', 'File', 'cURL', 'WebSite', 'VNC'] as const;
+/**
+ * Source types the editor offers: `monitor.php` `$sourceTypes` in 1.39.41.
+ * Libvlc and NVSocket were removed upstream and cURL was never listed; the
+ * request enum still carries them, so a monitor already stored as one keeps
+ * its value (shown as-is) but nobody can pick them.
+ */
+export const MONITOR_TYPE_VALUES = ['Local', 'Remote', 'File', 'Ffmpeg', 'WebSite', 'VNC'] as const;
 export type MonitorTypeValue = (typeof MONITOR_TYPE_VALUES)[number];
 
 /**
@@ -196,13 +210,17 @@ export function buildTabs(t: Translate): TabDef[] {
 
   const MONITOR_TYPE_OPTIONS = [
     { value: 'Ffmpeg',  label: t('FFmpeg') },
-    { value: 'Libvlc',  label: t('libVLC') },
     { value: 'Remote',  label: t('Remote (HTTP MJPEG)') },
     { value: 'Local',   label: t('Local device (V4L)') },
     { value: 'File',    label: t('File (loop)') },
-    { value: 'cURL',    label: t('cURL') },
     { value: 'WebSite', label: t('Website') },
     { value: 'VNC',     label: t('VNC') },
+  ];
+
+  /** Types a monitor may still be stored as, but that nobody can pick any more. */
+  const MONITOR_TYPE_REMOVED = [
+    { value: 'Libvlc', label: t('Libvlc (removed)') },
+    { value: 'cURL',   label: t('cURL (removed)') },
   ];
 
   const DECODING_OPTIONS = [
@@ -291,17 +309,24 @@ export function buildTabs(t: Translate): TabDef[] {
     { value: 'rtpRtspHttp', label: t('RTP/RTSP/HTTP') },
   ];
 
-  /** Remote + HTTP protocol (`$httpMethods`). */
+  /** Remote + HTTP protocol (`$httpMethods`; legacy unsets JPEG tags as unsupported). */
   const HTTP_METHOD_OPTIONS = [
     { value: 'simple',   label: t('Simple') },
     { value: 'regexp',   label: t('Regexp') },
-    { value: 'jpegTags', label: t('JPEG tags') },
   ];
 
+  /**
+   * Remote protocols (`$remoteProtocols`). ZoneMinder's own RTSP capture is
+   * gone in 1.39.41; a monitor already saved as rtsp still shows it, marked
+   * removed, with the deprecation warning.
+   */
   const REMOTE_PROTOCOL_OPTIONS = [
     { value: 'http', label: t('HTTP') },
-    { value: 'rtsp', label: t('RTSP') },
   ];
+  const REMOTE_PROTOCOL_REMOVED = [
+    { value: 'rtsp', label: t('RTSP (removed)') },
+  ];
+  const RTSP_DEPRECATED = t('ZoneMinder’s own RTSP support has been removed in favour of Ffmpeg. This monitor will not capture until you change it to Type Ffmpeg, putting the full rtsp:// URL in Source Path. The capture log names the exact URL to use.');
 
   /** `SaveJPEGs` is a 0–3 bitmask: bit 0 = capture frames, bit 1 = analysis frames. */
   const SAVE_JPEGS_OPTIONS = [
@@ -412,6 +437,8 @@ export function buildTabs(t: Translate): TabDef[] {
     { value: '1600px',       label: t('Max 1600px') },
   ];
 
+  // Libvlc stays in the visibility lists so a monitor stored with it still
+  // shows its path; it is no longer offered as a type.
   const STREAMING: FieldVisibility = { types: ['Ffmpeg', 'Libvlc'] };
   const REMOTE: FieldVisibility = { types: ['Remote'] };
   const LOCAL: FieldVisibility = { types: ['Local'] };
@@ -435,6 +462,7 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'select',    key: 'device_class', label: t('Device class'), options: DEVICE_CLASS_OPTIONS,
           help: t('What the device is, as opposed to Source type, which is how it is captured. An IP speaker is still captured over FFmpeg.') },
         { kind: 'select',    key: 'type',         label: t('Source type'), options: MONITOR_TYPE_OPTIONS,
+          storedOnlyOptions: MONITOR_TYPE_REMOVED,
           help: t('Backend used to ingest the camera feed. The Source tab changes with it.') },
         { kind: 'select',    key: 'function',     label: t('Function'),
           options: FUNCTION_OPTIONS,
@@ -476,7 +504,8 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'number',    key: 'v4l_captures_per_frame', label: t('V4L captures per frame'), show: LOCAL, min: 1, integer: true },
 
         // Remote (HTTP / RTSP) and VNC
-        { kind: 'select',    key: 'protocol',     label: t('Protocol'), show: REMOTE, options: REMOTE_PROTOCOL_OPTIONS },
+        { kind: 'select',    key: 'protocol',     label: t('Protocol'), show: REMOTE, options: REMOTE_PROTOCOL_OPTIONS,
+          storedOnlyOptions: REMOTE_PROTOCOL_REMOVED, storedOnlyWarning: RTSP_DEPRECATED },
         { kind: 'select',    key: 'method',       label: t('Method'), show: { types: ['Remote'], protocols: ['http', ''] },
           options: HTTP_METHOD_OPTIONS },
         { kind: 'select',    key: 'method',       label: t('Method'), show: { types: ['Remote'], protocols: ['rtsp'] },
@@ -487,8 +516,6 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'text',      key: 'path',         label: t('Remote host path'), show: REMOTE, span: 2 },
         { kind: 'text',      key: 'sub_path',     label: t('Remote host sub-path'), show: REMOTE, span: 2,
           help: t('Secondary (low-res) path on the same host, used for analysis.') },
-        { kind: 'toggle',    key: 'rtsp_describe', label: t('RTSP describe'), show: { types: ['Remote'], protocols: ['rtsp'] },
-          help: t('Use the DESCRIBE response’s media URL instead of the configured path.') },
 
         // FFmpeg / libVLC
         { kind: 'text',      key: 'path',         label: t('Source path'), show: STREAMING, span: 2,

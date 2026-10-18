@@ -25,16 +25,25 @@ describe('Source tab visibility follows the legacy per-type form', () => {
     expect(deint.options!.length).toBe(13);
   });
 
-  it('Remote: method list depends on protocol; RTSP describe only for rtsp', () => {
+  it('Remote: HTTP is the only protocol offered; a stored rtsp monitor keeps it, marked removed', () => {
     const http = visibleFields(source, { type: 'Remote', protocol: 'http' });
-    expect(http.find((f) => f.key === 'method')!.options!.map((o) => o.value)).toEqual(['simple', 'regexp', 'jpegTags']);
-    expect(http.some((f) => f.key === 'rtsp_describe')).toBe(false);
+    const protocol = http.find((f) => f.key === 'protocol')!;
+    expect(protocol.options!.map((o) => o.value)).toEqual(['http']);
+    expect(protocol.storedOnlyOptions!.map((o) => o.value)).toEqual(['rtsp']);
+    expect(protocol.storedOnlyWarning).toMatch(/RTSP support has been removed/);
+    // JPEG tags is unset upstream as unsupported.
+    expect(http.find((f) => f.key === 'method')!.options!.map((o) => o.value)).toEqual(['simple', 'regexp']);
     const rtsp = visibleFields(source, { type: 'Remote', protocol: 'rtsp' });
     expect(rtsp.find((f) => f.key === 'method')!.options!.map((o) => o.value)).toEqual(['rtpUni', 'rtpMulti', 'rtpRtsp', 'rtpRtspHttp']);
-    expect(rtsp.some((f) => f.key === 'rtsp_describe')).toBe(true);
     // Exactly one `method` field is visible at a time.
     expect(http.filter((f) => f.key === 'method')).toHaveLength(1);
     expect(rtsp.filter((f) => f.key === 'method')).toHaveLength(1);
+  });
+
+  it('offers only the 1.39.41 source types and never RTSP describe', () => {
+    const type = TABS.flatMap((t) => t.fields).find((f) => f.key === 'type')!;
+    expect(type.options!.map((o) => o.value).sort()).toEqual(['Ffmpeg', 'File', 'Local', 'Remote', 'VNC', 'WebSite']);
+    expect(TABS.flatMap((t) => t.fields).some((f) => f.key === 'rtsp_describe')).toBe(false);
   });
 
   it('WebSite: URL, plain width/height and no image adjustments; the adjustments group heading goes too', () => {
@@ -49,7 +58,7 @@ describe('Source tab visibility follows the legacy per-type form', () => {
     expect(fields.find((f) => f.key === 'width')!.kind).toBe('number');
   });
 
-  it('VNC: host, port, user, pass; cURL: URL + auth; File: path only', () => {
+  it('VNC: host, port, user, pass; a stored cURL monitor still shows URL + auth; File: path only', () => {
     expect(labels({ type: 'VNC' })).toEqual(expect.arrayContaining(['host', 'port', 'user', 'pass']));
     expect(labels({ type: 'VNC' })).not.toContain('path');
     expect(labels({ type: 'cURL' })).toEqual(expect.arrayContaining(['path', 'user', 'pass']));

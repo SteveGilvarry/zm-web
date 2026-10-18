@@ -480,6 +480,7 @@ function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate }: FormPan
               monitorId={monitorId}
               draft={draft}
               value={draft[f.key]}
+              stored={baseline[f.key]}
               isDirty={!isUnsetSecret(f.key, draft[f.key]) && !sameValue(draft[f.key], baseline[f.key])}
               error={errors[f.key]}
               onChange={(v) => onUpdate(f.key, v)}
@@ -497,13 +498,15 @@ interface FieldRowProps {
   monitorId: number;
   draft: Record<string, FieldValue>;
   value: FieldValue;
+  /** The value as loaded, for options offered only to a stored value. */
+  stored: FieldValue;
   isDirty: boolean;
   error?: string;
   onChange: (v: FieldValue) => void;
   onUpdate: (key: string, value: FieldValue) => void;
 }
 
-function FieldRow({ field, monitorId, draft, value, isDirty, error, onChange, onUpdate }: FieldRowProps) {
+function FieldRow({ field, monitorId, draft, value, stored, isDirty, error, onChange, onUpdate }: FieldRowProps) {
   const { t } = useTranslation();
   const { can } = usePerms();
   const locked = isFieldLocked(field, can);
@@ -543,12 +546,16 @@ function FieldRow({ field, monitorId, draft, value, isDirty, error, onChange, on
         monitorId={monitorId}
         draft={draft}
         value={value}
+        stored={stored}
         invalid={!!error}
         locked={locked}
         onChange={onChange}
         onUpdate={onUpdate}
       />
 
+      {storedOnly(field, stored) && field.storedOnlyWarning && (
+        <p className="text-xs text-warn mt-1 leading-relaxed">{field.storedOnlyWarning}</p>
+      )}
       {error ? (
         <p role="alert" className="text-xs text-danger mt-1 leading-relaxed">{error}</p>
       ) : field.help ? (
@@ -565,6 +572,7 @@ function FieldInput({
   monitorId,
   draft,
   value,
+  stored,
   invalid,
   locked = false,
   onChange,
@@ -574,6 +582,7 @@ function FieldInput({
   monitorId: number;
   draft: Record<string, FieldValue>;
   value: FieldValue;
+  stored?: FieldValue;
   invalid: boolean;
   /** The user lacks `field.requires`: render read-only with the reason as tooltip. */
   locked?: boolean;
@@ -664,9 +673,10 @@ function FieldInput({
     // Coerce back to number when the option values are numeric — keeps the
     // PATCH body's types matching the backend schema (e.g. label_size:int,
     // return_location:int) instead of stringifying them.
-    const optionsAreNumeric = field.options.every((o) => typeof o.value === 'number');
+    const options = [...field.options, ...(storedOnly(field, stored) ? field.storedOnlyOptions! : [])];
+    const optionsAreNumeric = options.every((o) => typeof o.value === 'number');
     const current = value == null ? '' : String(value);
-    const known = field.options.some((o) => String(o.value) === current);
+    const known = options.some((o) => String(o.value) === current);
     return (
       <select
         value={current}
@@ -682,7 +692,7 @@ function FieldInput({
         {(field.nullOption || (!known && current === '')) && (
           <option value="">{field.nullOption ?? t('Not set')}</option>
         )}
-        {field.options.map((o) => (
+        {options.map((o) => (
           <option key={String(o.value)} value={String(o.value)}>{o.label}</option>
         ))}
         {/* A stored value outside the legacy list stays selectable instead of snapping to the first option. */}
@@ -746,6 +756,11 @@ function FieldInput({
       className={baseInput}
     />
   );
+}
+
+/** True when the stored value is one of the field's stored-only options. */
+function storedOnly(field: FieldDef, stored: FieldValue | undefined): boolean {
+  return stored != null && !!field.storedOnlyOptions?.some((o) => String(o.value) === String(stored));
 }
 
 /* ------------------------------------------------------------------------ */

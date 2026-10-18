@@ -524,7 +524,7 @@ describe('monitor editor fields match UpdateMonitorRequest', () => {
     it(`${f.key} options are members of the request schema`, () => {
       const schema = resolve(update[f.key]);
       expect(schema, `${f.key} has no resolvable schema`).toBeDefined();
-      const values = f.options!.map((o) => o.value);
+      const values = [...f.options!, ...(f.storedOnlyOptions ?? [])].map((o) => o.value);
       if (schema!.enum) {
         const bad = values.filter((v) => !schema!.enum!.includes(v));
         expect(bad, `${f.key} options outside enum ${JSON.stringify(schema!.enum)}`).toEqual([]);

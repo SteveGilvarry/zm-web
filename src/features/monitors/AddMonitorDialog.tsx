@@ -33,11 +33,9 @@ function useMonitorOptions(): { types: TypeOption[]; functions: FunctionOption[]
   return {
     types: [
       { value: 'Ffmpeg',  label: t('FFmpeg'),  desc: t('Generic RTSP/RTMP/HTTP via libav.') },
-      { value: 'Libvlc',  label: t('libVLC'),  desc: t('libVLC backend — handy for awkward streams.') },
       { value: 'Remote',  label: t('Remote'),  desc: t('Direct HTTP MJPEG / JPEG-pull cameras.') },
       { value: 'Local',   label: t('Local'),   desc: t('V4L2 capture card or USB camera on this server.') },
       { value: 'File',    label: t('File'),    desc: t('Loop a local video file (testing).') },
-      { value: 'cURL',    label: t('cURL'),    desc: t('Poll a still-image URL.') },
       { value: 'WebSite', label: t('Website'), desc: t('Embed a web page in the montage.') },
       { value: 'VNC',     label: t('VNC'),     desc: t('Capture a VNC desktop.') },
     ],
@@ -263,7 +261,6 @@ function AddMonitorForm({ onClose, initial, clonedFrom, onCreated }: Omit<AddMon
                 >
                   <option value="">{t('Auto')}</option>
                   <option value="http">{t('HTTP')}</option>
-                  <option value="rtsp">{t('RTSP')}</option>
                 </select>
               </Row>
             )}

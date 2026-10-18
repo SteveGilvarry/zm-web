@@ -337,19 +337,6 @@ describe('MonitorEditor — type-dependent Source tab', () => {
     expect(screen.queryByText('Source path')).not.toBeInTheDocument();
   });
 
-  it('Remote swaps the Method list with the protocol and reveals RTSP describe', async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<MonitorEditor monitor={{ ...monitor, type: 'Remote', protocol: 'http', method: 'simple' }} onClose={() => {}} />);
-    await user.click(screen.getByRole('button', { name: /^source$/i }));
-
-    expect(screen.getByRole('option', { name: 'JPEG tags' })).toBeInTheDocument();
-    expect(screen.queryByText('RTSP describe')).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByDisplayValue('HTTP'), { target: { value: 'rtsp' } });
-    expect(screen.getByRole('option', { name: 'RTP/Unicast' })).toBeInTheDocument();
-    expect(screen.getByText('RTSP describe')).toBeInTheDocument();
-  });
-
   it('WebSite shows only the URL, size and refresh — no image adjustments', async () => {
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={{ ...monitor, type: 'WebSite' }} onClose={() => {}} />);
@@ -620,6 +607,33 @@ describe('MonitorEditor — record as the API returns it', () => {
     expect(screen.getByText(/1 unsaved change/i)).toBeInTheDocument();
     const text = screen.getAllByRole('textbox').find((el) => /^#[0-9a-f]{6}$/i.test((el as HTMLInputElement).value));
     expect(text).toBeDefined();
+  });
+});
+
+describe('MonitorEditor — Remote protocol after the RTSP removal', () => {
+  const remote = (protocol: string) =>
+    ({ ...monitor, type: 'Remote', protocol, method: protocol === 'rtsp' ? 'rtpRtsp' : 'simple' }) as unknown as Monitor;
+
+  it('offers only HTTP to an http monitor', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={remote('http')} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const protocol = screen.getByRole('combobox', { name: /^protocol$/i }) as HTMLSelectElement;
+    expect(Array.from(protocol.options).map((o) => o.value)).toEqual(['http']);
+    expect(screen.queryByText(/RTSP support has been removed/)).not.toBeInTheDocument();
+  });
+
+  it('keeps rtsp, marked removed, with the warning, on a monitor stored as rtsp', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={remote('rtsp')} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const protocol = screen.getByRole('combobox', { name: /^protocol$/i }) as HTMLSelectElement;
+    expect(protocol.value).toBe('rtsp');
+    expect(Array.from(protocol.options).map((o) => o.textContent)).toEqual(['HTTP', 'RTSP (removed)']);
+    expect(screen.getByText(/RTSP support has been removed/)).toBeInTheDocument();
+    // Switching to http keeps the old option until the save lands.
+    await user.selectOptions(protocol, 'http');
+    expect(Array.from(protocol.options).map((o) => o.value)).toEqual(['http', 'rtsp']);
   });
 });
 

@@ -18,7 +18,9 @@ import { TABS, type FieldValue, type FieldDef } from './fields';
  */
 function canonicalSelectValue(field: FieldDef, raw: FieldValue): FieldValue {
   if (field.kind !== 'select' || typeof raw !== 'string' || !field.options) return raw;
-  const members = field.options.map((o) => o.value).filter((v): v is string => typeof v === 'string');
+  const members = [...field.options, ...(field.storedOnlyOptions ?? [])]
+    .map((o) => o.value)
+    .filter((v): v is string => typeof v === 'string');
   return members.length ? canonicalEnum(raw, members) : raw;
 }
 
