@@ -27,8 +27,12 @@ const UI = {
     archivedOnly: async (p: Page) => p.getByRole('button', { name: /^archived$/i }).click(),
   },
   classic: {
+    // Legacy's multi-select labels each option `Id Name` (Filter.php:1332).
+    // One pick still goes through `GET /events?monitor_id=`; several go
+    // through `/filters/preview`.
     pickMonitor: async (p: Page, name: string) => {
-      await p.getByLabel('Monitor =', { exact: true }).selectOption({ label: name });
+      const id = Object.entries(SEED.monitors.names).find(([, n]) => n === name)?.[0];
+      await p.getByLabel('Monitor =', { exact: true }).selectOption({ label: `${id} ${name}` });
     },
     sortByDuration: (p: Page) => p.getByRole('button', { name: /^duration/i }),
     perPage: (p: Page) => p.getByLabel(/rows per page/i).first(),
