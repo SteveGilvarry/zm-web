@@ -1,10 +1,11 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 import type { StreamProtocol } from '@/types';
 import type { LayoutNode } from '@/features/montage/mosaic';
 import { leaf } from '@/features/montage/mosaic';
 import { DEFAULT_STAGE_SIZE, type StageSize } from '@/features/monitors/watchStage';
 import { DEFAULT_MONTAGE_RATIO } from '@/features/montage/ratio';
+import { DEFAULT_REVIEW_FILTERS, type ReviewEventFilters } from '@/features/montagereview/useReviewEvents';
 
 /**
  * Where a cell's name + runtime-status caption sits. Mirrors legacy
@@ -42,6 +43,8 @@ interface MontageState {
   montageRatio: string;
   /** Per-tile Ratio overrides, legacy `Positions.monitorRatio`. */
   montageRatioById: Record<number, string>;
+  /** Montage Review event filters, legacy `Archived` / `eventsTags` / `eventsNotes`. */
+  reviewFilters: ReviewEventFilters;
 
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   setProtocol: (protocol: StreamProtocol) => void;
@@ -57,6 +60,7 @@ interface MontageState {
   setMontageRatioFor: (monitorId: number, ratio: string) => void;
   /** Replace every per-tile override (loading a saved layout). */
   setMontageRatios: (ratios: Record<number, string>) => void;
+  setReviewFilters: (filters: ReviewEventFilters) => void;
 }
 
 export const useMontageStore = create<MontageState>()(
@@ -76,6 +80,7 @@ export const useMontageStore = create<MontageState>()(
       reviewSpeed: DEFAULT_REVIEW_SPEED,
       montageRatio: DEFAULT_MONTAGE_RATIO,
       montageRatioById: {},
+      reviewFilters: DEFAULT_REVIEW_FILTERS,
 
       setTree: (next) =>
         set({ tree: typeof next === 'function' ? next(get().tree) : next }),
@@ -91,6 +96,7 @@ export const useMontageStore = create<MontageState>()(
       setMontageRatioFor: (monitorId, ratio) =>
         set({ montageRatioById: { ...get().montageRatioById, [monitorId]: ratio } }),
       setMontageRatios: (montageRatioById) => set({ montageRatioById }),
+      setReviewFilters: (reviewFilters) => set({ reviewFilters }),
     }),
     {
       name: 'zm-montage',
@@ -106,7 +112,56 @@ export const useMontageStore = create<MontageState>()(
         reviewSpeed: state.reviewSpeed,
         montageRatio: state.montageRatio,
         montageRatioById: state.montageRatioById,
+        reviewFilters: state.reviewFilters,
       }),
+      // Earlier versions held no review filters, or Notes as one string.
+      merge: (persisted, current) => {
+        const p = (persisted ?? {}) as Partial<MontageState>;
+        return { ...current, ...p, reviewFilters: normaliseReviewFilters(p.reviewFilters) };
+      },
+    },
+  ),
+);
+
+/** A stored filter set made safe to use: unknown or old shapes fall back field by field. */
+function normaliseReviewFilters(raw: unknown): ReviewEventFilters {
+  const r = (raw ?? {}) as Partial<Record<keyof ReviewEventFilters, unknown>>;
+  const archived = r.archived === 'archived' || r.archived === 'unarchived' ? r.archived : 'all';
+  const tagIds = Array.isArray(r.tagIds) ? r.tagIds.filter((n): n is number => Number.isInteger(n)) : [];
+  const notes = Array.isArray(r.notes)
+    ? r.notes.filter((n): n is string => typeof n === 'string' && n !== '')
+    : typeof r.notes === 'string' && r.notes !== '' ? [r.notes] : [];
+  return { archived, tagIds, notes };
+}
+
+/** ISO bounds of the last Montage Review window. */
+export interface StoredReviewRange {
+  start: string;
+  end: string;
+}
+
+interface ReviewRangeState {
+  range: StoredReviewRange | null;
+  setRange: (range: StoredReviewRange | null) => void;
+}
+
+/**
+ * The last Montage Review window, legacy `zmFilter_StartDateTime` /
+ * `zmFilter_EndDateTime`. Legacy scopes those two cookies to the browser
+ * session (`montagereview.js`, refs #4976), so this lives in sessionStorage:
+ * the window carries across visits in one session, and a new session opens on
+ * the last hour again.
+ */
+export const useReviewRangeStore = create<ReviewRangeState>()(
+  persist(
+    (set) => ({
+      range: null,
+      setRange: (range) => set({ range }),
+    }),
+    {
+      name: 'zm-review-range',
+      storage: createJSONStorage(() => sessionStorage),
+      partialize: (state) => ({ range: state.range }),
     },
   ),
 );

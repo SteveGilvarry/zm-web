@@ -13,7 +13,8 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
-import { useMontageStore } from '@/stores/montage';
+import { useMontageStore, useReviewRangeStore } from '@/stores/montage';
+import { DEFAULT_REVIEW_FILTERS } from '@/features/montagereview/useReviewEvents';
 import type { UserClaims } from '@/types';
 
 let mockSearch: Record<string, unknown> = {};
@@ -44,7 +45,8 @@ vi.mock('@/components/common/StreamCell', () => ({
 }));
 
 // jsdom has no media pipeline; the review cell drives play/pause directly.
-beforeAll(() => {
+// Per test: `restoreMocks` undoes spies after each one.
+beforeEach(() => {
   vi.spyOn(HTMLMediaElement.prototype, 'play').mockImplementation(() => Promise.resolve());
   vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
 });
@@ -65,7 +67,11 @@ const server = setupServer();
 beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
 // Legacy opens fitted; the scaled sizing is what most of these assert, so
 // each test opts into fit explicitly.
-beforeEach(() => { signIn(); useMontageStore.setState({ reviewFit: false }); });
+beforeEach(() => {
+  signIn();
+  useMontageStore.setState({ reviewFit: false, reviewFilters: DEFAULT_REVIEW_FILTERS });
+  useReviewRangeStore.setState({ range: null });
+});
 afterEach(() => {
   server.resetHandlers();
   mockSearch = {};
@@ -142,10 +148,39 @@ describe('ClassicMontageReviewPage — event filters', () => {
     await waitFor(() => expect(eventRequests.some((q) => q.get('archived') === 'true')).toBe(true));
 
     await user.selectOptions(await screen.findByLabelText('Tags'), '4');
-    await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === '4')).toBe(true));
+    await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === '4' && q.get('tag_op') === 'in')).toBe(true));
 
     await user.selectOptions(screen.getByLabelText('Notes'), 'person');
     await waitFor(() => expect(eventRequests.some((q) => q.get('notes') === 'person')).toBe(true));
+  });
+
+  it('Tags and Notes are legacy multi-selects, Tags led by No Tag and Any Tag', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    const tags = await screen.findByLabelText('Tags') as HTMLSelectElement;
+    const notes = screen.getByLabelText('Notes') as HTMLSelectElement;
+    expect(tags.multiple).toBe(true);
+    expect(notes.multiple).toBe(true);
+    await waitFor(() => expect([...tags.options].map((o) => o.text)).toEqual(['No Tag', 'Any Tag', 'Suspicious']));
+    // Legacy's labels, capitalised.
+    expect([...notes.options].map((o) => o.text)).toContain('Person');
+
+    await user.selectOptions(tags, ['0']);
+    await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === 'none')).toBe(true));
+    await user.click(screen.getByRole('button', { name: 'Clear tags' }));
+    await user.selectOptions(tags, ['-1']);
+    await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === 'any')).toBe(true));
+
+    eventRequests.length = 0;
+    await user.selectOptions(notes, ['Motion', 'car']);
+    await waitFor(() => {
+      const asked = new Set(eventRequests.map((q) => q.get('notes')));
+      expect(asked.has('Motion') && asked.has('car')).toBe(true);
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Clear notes' }));
+    expect(useMontageStore.getState().reviewFilters).toMatchObject({ tagIds: [-1], notes: [] });
   });
 });
 
@@ -178,38 +213,52 @@ describe('ClassicMontageReviewPage', () => {
     expect(new Set(eventRequests.map((q) => q.get('monitor_id')))).toEqual(new Set(['1', '2']));
   });
 
-  it('renders the legacy range toolbar with 24 Hour pressed', async () => {
+  it('renders the legacy range toolbar and opens on the last hour', async () => {
     stub();
     await mount();
 
     const bar = await screen.findByRole('toolbar', { name: 'Review range' });
-    expect(within(bar).getByRole('button', { name: '24 Hour' })).toHaveAttribute('aria-pressed', 'true');
-    for (const name of ['< Pan', 'In +', 'Out -', '8 Hour', '1 Hour', 'All Events', 'Live', 'Pan >']) {
+    expect(within(bar).getByRole('button', { name: '1 Hour' })).toHaveAttribute('aria-pressed', 'true');
+    for (const name of ['< Pan', 'In +', 'Out -', '24 Hour', '8 Hour', 'All Events', 'Live', 'Pan >']) {
       expect(within(bar).getByRole('button', { name })).toBeInTheDocument();
     }
-    // The default 24 h window spans exactly a day.
+    // Legacy's default window (montagereview.php:103-116) is the last hour.
     const start = screen.getByLabelText('Date Time >=') as HTMLInputElement;
     const end = screen.getByLabelText('Date Time <=') as HTMLInputElement;
     const span = new Date(end.value).getTime() - new Date(start.value).getTime();
-    expect(span).toBeCloseTo(24 * 3600_000, -4);
+    expect(span).toBeCloseTo(3600_000, -4);
+    // To the second, like legacy's datetimepicker.
+    expect(start).toHaveAttribute('step', '1');
   });
 
-  it('the 1 Hour preset narrows the window and takes the pressed state', async () => {
+  it('the 24 Hour preset widens the window and takes the pressed state', async () => {
     const user = userEvent.setup();
     stub();
     await mount();
 
     const bar = await screen.findByRole('toolbar', { name: 'Review range' });
-    await user.click(within(bar).getByRole('button', { name: '1 Hour' }));
+    await user.click(within(bar).getByRole('button', { name: '24 Hour' }));
 
     await waitFor(() => {
       const start = screen.getByLabelText('Date Time >=') as HTMLInputElement;
       const end = screen.getByLabelText('Date Time <=') as HTMLInputElement;
       const span = new Date(end.value).getTime() - new Date(start.value).getTime();
-      expect(span).toBeCloseTo(3600_000, -4);
+      expect(span).toBeCloseTo(24 * 3600_000, -4);
     });
-    expect(within(bar).getByRole('button', { name: '1 Hour' })).toHaveAttribute('aria-pressed', 'true');
-    expect(within(bar).getByRole('button', { name: '24 Hour' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(bar).getByRole('button', { name: '24 Hour' })).toHaveAttribute('aria-pressed', 'true');
+    expect(within(bar).getByRole('button', { name: '1 Hour' })).toHaveAttribute('aria-pressed', 'false');
+  });
+
+  it('lays the event terms out in legacy order with their operators', async () => {
+    stub();
+    await mount();
+    await screen.findByTestId('review-classic-grid');
+    const order = ['Archive Status', 'Date Time >=', 'Date Time <=', 'Tags', 'Notes']
+      .map((label) => screen.getByLabelText(label));
+    for (let i = 1; i < order.length; i++) {
+      expect(order[i - 1].compareDocumentPosition(order[i]) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    }
+    expect(screen.getByText('LIKE')).toBeInTheDocument();
   });
 
   it('Out - widens the window and Pan > slides it forward', async () => {
@@ -243,20 +292,22 @@ describe('ClassicMontageReviewPage', () => {
     await waitFor(() => expect((screen.getByLabelText('Date Time >=') as HTMLInputElement).value)
       .toBe('2026-08-20T06:00'));
     expect((screen.getByLabelText('Date Time <=') as HTMLInputElement).value).toBe('2026-08-20T12:00');
-    expect(within(bar).getByRole('button', { name: '24 Hour' })).toHaveAttribute('aria-pressed', 'false');
+    expect(within(bar).getByRole('button', { name: '1 Hour' })).toHaveAttribute('aria-pressed', 'false');
   });
 
-  it('ignores a Date Time edit that would invert the window', async () => {
+  it('an End before the Start drags the Start back an hour; a span over 24 h is capped', async () => {
     stub();
     await mount();
 
     await screen.findByTestId('review-classic-grid');
-    const before = (screen.getByLabelText('Date Time <=') as HTMLInputElement).value;
-    // An end before the start is refused outright.
     fireEvent.change(screen.getByLabelText('Date Time <='), { target: { value: '2020-01-01T00:00' } });
+    await waitFor(() => expect((screen.getByLabelText('Date Time >=') as HTMLInputElement).value)
+      .toBe('2019-12-31T23:00'));
 
-    await new Promise((r) => setTimeout(r, 20));
-    expect((screen.getByLabelText('Date Time <=') as HTMLInputElement).value).toBe(before);
+    // Start pulled two days back: legacy keeps at most a day after it.
+    fireEvent.change(screen.getByLabelText('Date Time >='), { target: { value: '2019-12-29T23:00' } });
+    await waitFor(() => expect((screen.getByLabelText('Date Time <=') as HTMLInputElement).value)
+      .toBe('2019-12-30T23:00'));
   });
 
   it('Live swaps the recordings for live cells and drops the timeline', async () => {

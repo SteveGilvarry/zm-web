@@ -1,5 +1,6 @@
-import { useCallback, type CSSProperties } from 'react';
+import { useCallback, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { X } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { StreamCell } from '@/components/common/StreamCell';
@@ -8,6 +9,7 @@ import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
 import { averageArea, reviewCanvasWidth } from '@/features/montagereview/reviewScale';
 import { REVIEW_SPEEDS, reviewSpeedIndex, useMontageReviewPage, useReviewNotesOptions } from '@/features/montagereview/useMontageReviewPage';
+import { REVIEW_ANY_TAG, REVIEW_NO_TAG } from '@/features/montagereview/useReviewEvents';
 import { displayDimensions } from '@/features/monitors/orientation';
 import { maxFit } from '@/features/montage/maxfit';
 import { useAvailableHeight, useMeasuredBox } from '@/features/monitors/useStageFit';
@@ -19,10 +21,69 @@ import type { Monitor } from '@/types';
 
 const selectClass = 'rounded-sm border border-zinc-400 bg-white px-1.5 py-0.5 text-sm text-zinc-900';
 
-/** `Date` → value for `<input type="datetime-local">` (local wall clock). */
+/**
+ * `Date` → value for `<input type="datetime-local" step="1">` (local wall
+ * clock, to the second like legacy's datetimepicker).
+ */
 function toLocalInput(d: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
+ * One legacy filter term: the attribute label over its operator, then the
+ * value (`Filter::simple_widget`).
+ */
+function Term({ label, op, children }: { label: string; op: string; children: ReactNode }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="flex flex-col items-center leading-tight">
+        <span className="font-semibold">{label}</span>
+        <span>{op}</span>
+      </span>
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Legacy's multi-select term value: a `multiple` select (Chosen in legacy)
+ * with the clear button after it. An empty selection means "all".
+ */
+function MultiSelect({
+  label, value, options, onChange,
+}: {
+  label: string;
+  value: string[];
+  options: Array<{ value: string; label: string }>;
+  onChange: (next: string[]) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span className="inline-flex items-stretch rounded-sm border border-zinc-400 bg-white w-40">
+      <select
+        multiple
+        size={3}
+        aria-label={label}
+        value={value}
+        onChange={(e) => onChange([...e.target.selectedOptions].map((o) => o.value))}
+        className="flex-1 min-w-0 bg-transparent px-1.5 py-0.5 text-sm text-zinc-900 focus:outline-none"
+      >
+        {options.map((o) => (
+          <option key={o.value} value={o.value}>{o.label}</option>
+        ))}
+      </select>
+      <button
+        type="button"
+        onClick={() => onChange([])}
+        disabled={value.length === 0}
+        aria-label={t('Clear {{label}}', { label: label.toLocaleLowerCase() })}
+        className="px-1.5 border-s border-zinc-300 text-zinc-600 hover:bg-zinc-100 disabled:text-zinc-300"
+      >
+        <X size={12} aria-hidden />
+      </button>
+    </span>
+  );
 }
 
 /**
@@ -97,25 +158,63 @@ export default function ClassicMontageReviewPage() {
     <AppShell title={t('Montage Review')}>
       <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2 text-white">
         <ClassicFilterRow monitors={page.allMonitors} state={filter} tone="dark" />
-        <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
-          <label className="flex flex-col items-center gap-0.5">
-            <span className="font-semibold">{t('Date Time')} &gt;=</span>
+        {/* Legacy's event terms, in its order: Archive Status, Date Time
+            >= and <=, Tags, Notes (`montagereview.php`, `simple_widget`). */}
+        <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-2 text-sm">
+          <Term label={t('Archive Status')} op="=">
+            <select
+              aria-label={t('Archive Status')}
+              value={page.filters.archived}
+              onChange={(e) => page.setFilters({ archived: e.target.value as 'all' | 'unarchived' | 'archived' })}
+              className={selectClass}
+            >
+              <option value="all">{t('All')}</option>
+              <option value="unarchived">{t('Unarchived Only')}</option>
+              <option value="archived">{t('Archived Only')}</option>
+            </select>
+          </Term>
+          <Term label={t('Date Time')} op=">=">
             <input
               type="datetime-local"
+              step={1}
+              aria-label={t('Date Time >=')}
               value={toLocalInput(clock.rangeStart)}
-              onChange={(e) => { const d = new Date(e.target.value); if (!Number.isNaN(d.getTime())) page.setCustomRange(d, clock.rangeEnd); }}
+              onChange={(e) => page.setRangeBound('start', new Date(e.target.value))}
               className={classicInputClass}
             />
-          </label>
-          <label className="flex flex-col items-center gap-0.5">
-            <span className="font-semibold">{t('Date Time')} &lt;=</span>
+          </Term>
+          <Term label={t('Date Time')} op="<=">
             <input
               type="datetime-local"
+              step={1}
+              aria-label={t('Date Time <=')}
               value={toLocalInput(clock.rangeEnd)}
-              onChange={(e) => { const d = new Date(e.target.value); if (!Number.isNaN(d.getTime())) page.setCustomRange(clock.rangeStart, d); }}
+              onChange={(e) => page.setRangeBound('end', new Date(e.target.value))}
               className={classicInputClass}
             />
-          </label>
+          </Term>
+          <Term label={t('Tags')} op="=">
+            <MultiSelect
+              label={t('Tags')}
+              value={page.filters.tagIds.map(String)}
+              options={[
+                { value: String(REVIEW_NO_TAG), label: t('No Tag') },
+                { value: String(REVIEW_ANY_TAG), label: t('Any Tag') },
+                ...page.tags.map((tag) => ({ value: String(tag.id), label: tag.name })),
+              ]}
+              onChange={(next) => page.setFilters({ tagIds: next.map(Number) })}
+            />
+          </Term>
+          <Term label={t('Notes')} op="LIKE">
+            <MultiSelect
+              label={t('Notes')}
+              value={page.filters.notes}
+              options={notesOptions}
+              onChange={(next) => page.setFilters({ notes: next })}
+            />
+          </Term>
+        </div>
+        <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
           {!page.fit && (
             <label className="flex items-center gap-2">
               <span className="font-semibold">{t('Scale')}</span>
@@ -148,49 +247,6 @@ export default function ClassicMontageReviewPage() {
             <span className="tabular-nums w-16" data-testid="review-speed">
               {speedLabel}
             </span>
-          </label>
-        </div>
-        <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
-          <label className="flex items-center gap-2">
-            <span className="font-semibold">{t('Archive Status')}</span>
-            <select
-              aria-label={t('Archive Status')}
-              value={page.filters.archived}
-              onChange={(e) => page.setFilters({ archived: e.target.value as 'all' | 'unarchived' | 'archived' })}
-              className={selectClass}
-            >
-              <option value="all">{t('All')}</option>
-              <option value="unarchived">{t('Unarchived Only')}</option>
-              <option value="archived">{t('Archived Only')}</option>
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="font-semibold">{t('Tags')}</span>
-            <select
-              aria-label={t('Tags')}
-              value={page.filters.tagIds[0] != null ? String(page.filters.tagIds[0]) : ''}
-              onChange={(e) => page.setFilters({ tagIds: e.target.value ? [Number(e.target.value)] : [] })}
-              className={selectClass}
-            >
-              <option value="">{t('All Tags')}</option>
-              {page.tags.map((tag) => (
-                <option key={tag.id} value={tag.id}>{tag.name}</option>
-              ))}
-            </select>
-          </label>
-          <label className="flex items-center gap-2">
-            <span className="font-semibold">{t('Notes')}</span>
-            <select
-              aria-label={t('Notes')}
-              value={page.filters.notes}
-              onChange={(e) => page.setFilters({ notes: e.target.value })}
-              className={selectClass}
-            >
-              <option value="">{t('Any')}</option>
-              {notesOptions.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
-              ))}
-            </select>
           </label>
         </div>
         <div className="flex flex-wrap items-center justify-center gap-1.5" role="toolbar" aria-label={t('Review range')}>
