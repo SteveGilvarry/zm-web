@@ -48,6 +48,7 @@ export function ClassicFilterRow({ monitors, state, className, tone = 'light' }:
       case 'NotRunning': return t('Not Running');
       case 'Running': return t('Not Capturing');
       case 'Connected': return t('Capturing');
+      case 'Deleted': return t('Deleted');
       default: return v;
     }
   };
@@ -91,9 +92,6 @@ export function ClassicFilterRow({ monitors, state, className, tone = 'light' }:
           options={storages.map((s) => ({ value: String(s.id), label: s.name }))}
         />
       )}
-      {/* Legacy also offers a `Deleted` pseudo-status; zm-api's
-          `GET /monitors` cannot return deleted monitors, so it is omitted
-          rather than rendered as a filter that always comes back empty. */}
       <SelectField
         label={t('Status')} field="status" value={valuesMulti.status} set={setMulti} clear={clear}
         options={RUNTIME_STATUS_OPTIONS.map((v) => ({ value: v, label: statusLabel(v) }))}

@@ -58,6 +58,13 @@ describe('applyLocalFilters', () => {
     expect(applyLocalFilters(list, { name: '', source: '', status: 'Connected,Unknown' }, runtime).map((x) => x.id))
       .toEqual([1, 3]);
   });
+  it('keeps deleted monitors out unless Deleted is picked, and adds them beside real statuses', () => {
+    const withDeleted = [...list, m({ id: 9, name: 'Gone', deleted: true })];
+    const ids = (status: string) => applyLocalFilters(withDeleted, { name: '', source: '', status }, runtime).map((x) => x.id);
+    expect(ids('')).toEqual([1, 2, 3]);
+    expect(ids('Deleted')).toEqual([9]);
+    expect(ids('Connected,Deleted')).toEqual([1, 9]);
+  });
   it('ANDs name and source', () => {
     expect(applyLocalFilters(list, { name: '^B', source: '0\\.2$', status: '' }, runtime).map((x) => x.id)).toEqual([2]);
     expect(applyLocalFilters(list, { name: '^B', source: '0\\.1$', status: '' }, runtime)).toEqual([]);
@@ -157,6 +164,31 @@ describe('useMonitorFilterRow', () => {
     const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.servers).toHaveLength(2));
     expect(result.current.storages.map((s) => s.name)).toEqual(['Default']);
+  });
+
+  it('fetches with include_deleted only while the Status select holds Deleted', async () => {
+    const calls: string[] = [];
+    server.use(http.get('/api/v3/monitors', ({ request }) => {
+      calls.push(new URL(request.url).search);
+      return HttpResponse.json({
+        items: [m({ id: 1, name: 'Front' }), m({ id: 9, name: 'Gone', deleted: true })],
+        total: 2, per_page: 500, current_page: 1, last_page: 1,
+      });
+    }));
+    const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.groups).toHaveLength(1));
+
+    // Every other status, and none, asks nothing of /monitors.
+    for (const status of ['Unknown', 'NotRunning', 'Running', 'Connected']) {
+      act(() => result.current.setMulti('status', [status]));
+    }
+    act(() => result.current.clear('status'));
+    expect(calls).toEqual([]);
+
+    act(() => result.current.setMulti('status', ['Deleted']));
+    await waitFor(() => expect(result.current.filtered.map((x) => x.id)).toEqual([9]));
+    expect(calls).toHaveLength(1);
+    expect(new URLSearchParams(calls[0]).get('include_deleted')).toBe('true');
   });
 
   it('clear() empties one field only', async () => {

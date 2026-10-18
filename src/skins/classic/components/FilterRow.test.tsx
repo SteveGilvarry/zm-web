@@ -109,14 +109,15 @@ describe('ClassicFilterRow', () => {
     expect(optionLabels('Recording')).toEqual(['None', 'On Motion', 'Always']);
   });
 
-  it('translates the runtime status values the way legacy did, without Deleted', () => {
+  it('translates the runtime status values the way legacy did, Deleted last', () => {
     mount();
-    // `Running` means the daemon is up but not yet capturing. Legacy's
-    // `Deleted` pseudo-status is omitted: the API cannot list deleted monitors.
-    expect(optionLabels('Status')).toEqual(['Unknown', 'Not Running', 'Not Capturing', 'Capturing']);
+    // `Running` means the daemon is up but not yet capturing; `Deleted` is
+    // legacy's pseudo-status for soft-deleted monitors.
+    expect(optionLabels('Status')).toEqual(['Unknown', 'Not Running', 'Not Capturing', 'Capturing', 'Deleted']);
     const status = screen.getByRole('listbox', { name: 'Status' });
     expect(within(status).getByRole('option', { name: 'Capturing' })).toHaveValue('Connected');
     expect(within(status).getByRole('option', { name: 'Not Capturing' })).toHaveValue('Running');
+    expect(within(status).getByRole('option', { name: 'Deleted' })).toHaveValue('Deleted');
   });
 
   it('labels each monitor option with its id', () => {

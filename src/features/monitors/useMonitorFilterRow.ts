@@ -6,7 +6,8 @@ import { getStorageList } from '@/api/storage';
 import type { ZmStorage } from '@/types';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
-import type { Monitor } from '@/types';
+import { getAllMonitors } from '@/api/monitors';
+import { isDeleted, type Monitor } from '@/types';
 import { filterMonitors } from './filterMonitors';
 import type { MonitorRuntime } from './useMonitorStatuses';
 
@@ -50,8 +51,14 @@ export function splitValues(value: string): string[] {
   return value.split(',').map((v) => v.trim()).filter(Boolean);
 }
 
-/** Wire values of the legacy Status select; labels are translated in the component. */
-export const RUNTIME_STATUS_OPTIONS = ['Unknown', 'NotRunning', 'Running', 'Connected'] as const;
+/**
+ * Wire values of the legacy Status select; labels are translated in the
+ * component. `Deleted` is legacy's pseudo-status (`monitorStatusFilterSql`):
+ * on its own it lists only soft-deleted monitors, beside real statuses it
+ * adds them, and unselected the list stays live monitors only.
+ */
+export const RUNTIME_STATUS_OPTIONS = ['Unknown', 'NotRunning', 'Running', 'Connected', 'Deleted'] as const;
+export const DELETED_STATUS = 'Deleted';
 
 export const CAPTURING_OPTIONS = ['None', 'Ondemand', 'Always'] as const;
 export const ANALYSING_OPTIONS = ['None', 'Always'] as const;
@@ -92,15 +99,24 @@ export function applyLocalFilters(
 ): Monitor[] {
   // Every select is multi (legacy's Chosen widgets), so these arrive
   // comma-joined and OR-combine within a field.
-  const statuses = splitValues(values.status);
+  const picked = splitValues(values.status);
+  const includeDeleted = picked.includes(DELETED_STATUS);
+  const statuses = picked.filter((s) => s !== DELETED_STATUS);
   const serverIds = splitValues(values.serverId ?? '');
   const storageIds = splitValues(values.storageId ?? '');
   return monitors.filter((m) => {
     if (!matchesText(values.name, m.name)) return false;
     if (!matchesText(values.source, monitorSource(m))) return false;
-    if (statuses.length) {
-      const status = runtimeById[m.id]?.status ?? 'Unknown';
-      if (!statuses.includes(status)) return false;
+    if (isDeleted(m)) {
+      // `(… AND Status IN …) OR Deleted=true`: a deleted monitor passes
+      // whatever else the Status select holds, and only when Deleted is in it.
+      if (!includeDeleted) return false;
+    } else {
+      if (includeDeleted && statuses.length === 0) return false;
+      if (statuses.length) {
+        const status = runtimeById[m.id]?.status ?? 'Unknown';
+        if (!statuses.includes(status)) return false;
+      }
     }
     if (serverIds.length && !serverIds.includes(String(m.server_id ?? 0))) return false;
     if (storageIds.length && !storageIds.includes(String(m.storage_id ?? 0))) return false;
@@ -165,6 +181,22 @@ export function useMonitorFilterRow(
   const storages = storageQ.data?.items ?? [];
   const groupMonitors = groupMonitorsQ.data?.items;
 
+  // Soft-deleted monitors are fetched only while the Status select holds
+  // Deleted, so a page that never asks pays nothing. The page's own list
+  // stays the live monitors; the deleted rows are appended here.
+  const wantDeleted = splitValues(local.status).includes(DELETED_STATUS);
+  const deletedQ = useQuery({
+    queryKey: ['monitors', 'all', { include_deleted: true }],
+    queryFn: () => getAllMonitors({ include_deleted: true }),
+    enabled: isAuthenticated && wantDeleted,
+  });
+  const deletedRows = deletedQ.data;
+  const pool = useMemo(() => {
+    if (!wantDeleted || !deletedRows) return monitors;
+    const live = new Set(monitors.map((m) => m.id));
+    return [...monitors, ...deletedRows.filter((m) => isDeleted(m) && !live.has(m.id))];
+  }, [monitors, wantDeleted, deletedRows]);
+
   const membership = useMemo(() => {
     const map = new Map<number, Set<number>>();
     for (const gm of groupMonitors ?? []) {
@@ -191,7 +223,7 @@ export function useMonitorFilterRow(
   ) as Record<FilterRowField, string[]>;
 
   const filtered = useMemo(() => {
-    const viaStore = filterMonitors(monitors, {
+    const viaStore = filterMonitors(pool, {
       groupIds: store.groupIds,
       capturing: store.capturing,
       analysing: store.analysing,
@@ -201,7 +233,7 @@ export function useMonitorFilterRow(
       monitorIds: store.monitorIds,
     }, membership);
     return applyLocalFilters(viaStore, local, runtimeById);
-  }, [monitors, store.groupIds, store.capturing, store.analysing, store.recording, store.monitorIds, membership, local, runtimeById]);
+  }, [pool, store.groupIds, store.capturing, store.analysing, store.recording, store.monitorIds, membership, local, runtimeById]);
 
   const set = (field: FilterRowField, value: string) => {
     const list = splitValues(value);
