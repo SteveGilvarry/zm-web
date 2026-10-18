@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from '@tanstack/react-router';
 import { useZmConfig } from '@/features/config/useZmConfig';
 import { useWatchPrefsStore } from '@/stores/watchPrefs';
@@ -63,6 +63,15 @@ export function useWatchCycle(
     canTick: options.playing ?? true,
     skip: options.failed ?? false,
   });
+
+  // The page moved without the rotation (modern's prev/next links, a pill
+  // in another tab of history): follow it rather than navigating back.
+  const [syncedId, setSyncedId] = useState(monitorId);
+  if (syncedId !== monitorId) {
+    setSyncedId(monitorId);
+    const at = monitors.findIndex((m) => m.id === monitorId);
+    if (enabled && at >= 0 && at !== rotation.index) rotation.jumpTo(at);
+  }
 
   const currentId = rotation.current?.id;
   useEffect(() => {

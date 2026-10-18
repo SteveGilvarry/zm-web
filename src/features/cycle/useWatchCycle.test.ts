@@ -145,4 +145,18 @@ describe('useWatchCycle — rotation', () => {
     const second = renderHook(() => useWatchCycle(1, [m(1), m(2)], true));
     expect(second.result.current.intervalS).toBe(30);
   });
+
+  it('follows a navigation it did not make instead of bouncing back', () => {
+    vi.useFakeTimers();
+    const list = [m(1), m(2), m(3)];
+    const { result, rerender } = renderHook(
+      ({ id }: { id: number }) => useWatchCycle(id, list, true, { autoStart: true }),
+      { initialProps: { id: 1 } },
+    );
+    rerender({ id: 3 });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(result.current.current?.id).toBe(3);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(navigate).toHaveBeenCalledWith({ to: '/monitors/$monitorId', params: { monitorId: '1' } });
+  });
 });
