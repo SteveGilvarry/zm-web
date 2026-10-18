@@ -27,6 +27,8 @@ export interface CycleRotationState {
   next: () => void;
   prev: () => void;
   togglePause: () => void;
+  /** Stop the rotation (no-op when already paused). */
+  pause: () => void;
   setInterval: (seconds: number) => void;
   jumpTo: (index: number) => void;
 }
@@ -40,6 +42,19 @@ export interface CycleRotationOptions {
    * it is a *default*: an operator override outlives it.
    */
   defaultIntervalS?: number;
+  /** Start paused (the watch sidebar does unless the page has `cycle=true`). */
+  startPaused?: boolean;
+  /**
+   * The countdown only runs while this is true. The watch sidebar passes
+   * "the stream is playing", as legacy's `nextCycleView` only counts down
+   * once the player has frames (`readyState >= 2`).
+   */
+  canTick?: boolean;
+  /**
+   * Move on now: the stream gave up (legacy skips a monitor whose player hit
+   * its error limit). Only acts while the rotation is running.
+   */
+  skip?: boolean;
 }
 
 /**
@@ -48,7 +63,9 @@ export interface CycleRotationOptions {
  */
 export function useCycleRotation(monitors: Monitor[], options: CycleRotationOptions = {}): CycleRotationState {
   const [index, setIndex] = useState(0);
-  const [isPaused, setIsPaused] = useState(false);
+  const [isPaused, setIsPaused] = useState(options.startPaused ?? false);
+  const canTick = options.canTick ?? true;
+  const skip = options.skip ?? false;
   const defaultIntervalS = options.defaultIntervalS ?? CYCLE_DEFAULT_INTERVAL_S;
   // The operator's choice wins over the configured default for the session.
   const [overrideIntervalS, setOverrideIntervalS] = useState<number | null>(null);
@@ -75,11 +92,16 @@ export function useCycleRotation(monitors: Monitor[], options: CycleRotationOpti
     safeIndexRef.current = safeIndex;
   });
 
+  const skipRef = useRef(skip);
   useEffect(() => {
-    if (isPaused || len <= 1) return;
+    skipRef.current = skip;
+  });
+
+  useEffect(() => {
+    if (isPaused || len <= 1 || !(canTick || skip)) return;
     const id = window.setInterval(() => {
       setCountdown((c) => {
-        if (c <= 1) {
+        if (c <= 1 || skipRef.current) {
           setPendingStart(undefined);
           setIndex((safeIndexRef.current + 1) % Math.max(len, 1));
           return intervalS;
@@ -88,7 +110,7 @@ export function useCycleRotation(monitors: Monitor[], options: CycleRotationOpti
       });
     }, 1000);
     return () => window.clearInterval(id);
-  }, [isPaused, intervalS, len]);
+  }, [isPaused, intervalS, len, canTick, skip]);
 
   const move = (to: number) => {
     if (len === 0) return;
@@ -111,6 +133,7 @@ export function useCycleRotation(monitors: Monitor[], options: CycleRotationOpti
         return !p;
       });
     },
+    pause: () => setIsPaused(true),
     setInterval: (seconds) => { setOverrideIntervalS(seconds); setCountdown(seconds); },
     jumpTo: move,
   };

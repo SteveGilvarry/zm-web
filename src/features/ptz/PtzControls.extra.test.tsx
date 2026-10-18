@@ -11,6 +11,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
+import type { UserClaims } from '@/types';
 import type { PtzCapabilities } from '@/api/ptz';
 
 const ptzMock = {
@@ -29,10 +30,18 @@ vi.mock('@/api/ptz', () => ({ ptz: ptzMock }));
 
 const { PtzControls } = await import('./PtzControls');
 
+const ADMIN = {
+  iat: 0, exp: 0, user: 'admin',
+  perms: {
+    stream: 'Edit', events: 'Edit', control: 'Edit', monitors: 'Edit',
+    groups: 'Edit', devices: 'Edit', snapshots: 'Edit', system: 'Edit',
+  },
+} as unknown as UserClaims;
+
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({
-    accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
+    accessToken: 'test', refreshToken: 'test', user: ADMIN, isAuthenticated: true,
   });
   server.listen({ onUnhandledRequest: 'error' });
 });
@@ -91,7 +100,7 @@ const mount = (caps: PtzCapabilities = fullCaps(), monitorId = 42) =>
 describe('PtzControls — zoom rocker', () => {
   it('continuous zoom sends speed only, and stops on pointer up', () => {
     mount();
-    const closer = screen.getByRole('button', { name: /closer/i });
+    const closer = screen.getByRole('button', { name: /tele/i });
     fireEvent.pointerDown(closer, { pointerId: 1 });
     expect(ptzMock.zoom).toHaveBeenCalledWith(42, 'in', { speed: 50 });
 
@@ -101,7 +110,7 @@ describe('PtzControls — zoom rocker', () => {
 
   it('zooming wider works the same way and stops on pointer cancel', () => {
     mount();
-    const wider = screen.getByRole('button', { name: /wider/i });
+    const wider = screen.getByRole('button', { name: /^wide$/i });
     fireEvent.pointerDown(wider, { pointerId: 1 });
     expect(ptzMock.zoom).toHaveBeenCalledWith(42, 'out', { speed: 50 });
 
@@ -114,7 +123,7 @@ describe('PtzControls — zoom rocker', () => {
     caps.zoom = { ...axisOff, can: true, can_con: false };
     mount(caps);
 
-    const closer = screen.getByRole('button', { name: /closer/i });
+    const closer = screen.getByRole('button', { name: /tele/i });
     fireEvent.pointerDown(closer, { pointerId: 1 });
     expect(ptzMock.zoom).toHaveBeenCalledWith(42, 'in', { speed: 50, duration_ms: 300 });
 
@@ -188,7 +197,7 @@ describe('PtzControls — speed', () => {
     fireEvent.pointerDown(screen.getByRole('button', { name: /^move up$/i }), { pointerId: 1 });
     expect(ptzMock.move).toHaveBeenCalledWith(42, 'up', { pan_speed: 90, tilt_speed: 90 });
 
-    fireEvent.pointerDown(screen.getByRole('button', { name: /closer/i }), { pointerId: 1 });
+    fireEvent.pointerDown(screen.getByRole('button', { name: /tele/i }), { pointerId: 1 });
     expect(ptzMock.zoom).toHaveBeenCalledWith(42, 'in', { speed: 90 });
 
     fireEvent.pointerDown(screen.getByRole('button', { name: /near/i }), { pointerId: 1 });
@@ -206,13 +215,32 @@ describe('PtzControls — speed', () => {
 });
 
 describe('PtzControls — preset bank', () => {
-  it('caps the visible slots at 16 however many the camera claims', () => {
+  it('draws every slot the control advertises, past 16', () => {
     mount(fullCaps({
-      presets: { has_presets: true, num_presets: 64, can_set_presets: false, has_home_preset: true },
+      presets: { has_presets: true, num_presets: 20, can_set_presets: false, has_home_preset: true },
     }));
-    expect(screen.getByTitle('Go to preset 16')).toBeInTheDocument();
-    expect(screen.queryByTitle('Go to preset 17')).toBeNull();
-    expect(screen.getByText(/^16 slots?$/)).toBeInTheDocument();
+    expect(screen.getByTitle('Go to preset 20')).toBeInTheDocument();
+    expect(screen.queryByTitle('Go to preset 21')).toBeNull();
+    expect(screen.getByText(/^20 slots?$/)).toBeInTheDocument();
+  });
+
+  it('offers Home only when the control has a home preset', () => {
+    mount(fullCaps({
+      presets: { has_presets: true, num_presets: 4, can_set_presets: true, has_home_preset: false },
+    }));
+    expect(screen.queryByRole('button', { name: /^home$/i })).toBeNull();
+  });
+
+  it('hides Set from a user without monitors:Edit, as controlPresets does', () => {
+    useAuthStore.setState({ user: { ...ADMIN, perms: { ...ADMIN.perms, monitors: 'View' } } as UserClaims });
+    try {
+      mount();
+      expect(screen.getByTitle('Go to preset 1')).toBeInTheDocument();
+      expect(screen.queryByLabelText('Preset slot')).toBeNull();
+      expect(screen.queryByRole('button', { name: /^save$/i })).toBeNull();
+    } finally {
+      useAuthStore.setState({ user: ADMIN });
+    }
   });
 
   it('shows operator labels from /control_presets on the slot and in the select', async () => {
@@ -326,7 +354,7 @@ describe('PtzControls — failure reporting', () => {
       expect(await screen.findByRole('alert')).toHaveTextContent('Home: first');
 
       await act(async () => { await vi.advanceTimersByTimeAsync(3_000); });
-      fireEvent.pointerDown(screen.getByRole('button', { name: /closer/i }), { pointerId: 1 });
+      fireEvent.pointerDown(screen.getByRole('button', { name: /tele/i }), { pointerId: 1 });
       // The first alert is still on screen, so wait for the text to swap
       // rather than for "an alert" to exist.
       await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent('Zoom: second'));
@@ -358,3 +386,35 @@ describe('PtzControls — failure reporting', () => {
     }
   });
 });
+
+describe('PtzControls — classic variant', () => {
+  const mountClassic = (caps: PtzCapabilities = fullCaps()) =>
+    renderWithProviders(<PtzControls monitorId={42} capabilities={caps} variant="classic" />);
+
+  it('labels the zoom rocker Tele / Wide as control_functions.php does', () => {
+    mountClassic();
+    expect(screen.getByRole('button', { name: 'Tele' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Wide' })).toBeInTheDocument();
+  });
+
+  it('hides the arrows the camera cannot drive instead of greying them', () => {
+    mountClassic(fullCaps({ pan_tilt: { ...fullCaps().pan_tilt, can_move_diag: false } }));
+    expect(screen.getByRole('button', { name: 'Move up-left' })).toHaveClass('invisible');
+    expect(screen.getByRole('button', { name: 'Move up' })).not.toHaveClass('invisible');
+  });
+
+  it('puts Home with the presets and the label only in the tooltip', async () => {
+    server.use(http.get('/api/v3/control_presets', () => pagedPresets([
+      { monitor_id: 42, preset: 2, label: 'Gate' },
+    ])));
+    mountClassic();
+    const slot = await screen.findByTitle('Go to preset 2: Gate');
+    expect(slot).toHaveTextContent(/^2$/);
+    const home = screen.getByRole('button', { name: /^home$/i });
+    // Not the pad's centre cell any more.
+    expect(home).toHaveTextContent('Home');
+    fireEvent.click(home);
+    expect(ptzMock.home).toHaveBeenCalledWith(42);
+  });
+});
+

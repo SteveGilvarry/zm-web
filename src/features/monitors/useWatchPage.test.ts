@@ -5,6 +5,7 @@ import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import { useWatchPage } from './useWatchPage';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -53,7 +54,10 @@ beforeAll(() => {
   });
   server.listen({ onUnhandledRequest: 'error' });
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  useWatchPrefsStore.setState(useWatchPrefsStore.getInitialState());
+});
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -317,3 +321,33 @@ describe('useWatchPage — toggleFullscreen', () => {
     expect(contentRequest).not.toHaveBeenCalled();
   });
 });
+
+describe('useWatchPage — monitor list and preferences', () => {
+  it('walks every page of the monitor list for prev/next', async () => {
+    stubMonitor();
+    server.use(
+      http.get('/api/v3/monitors', ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page'));
+        const items = page === 1
+          ? [{ ...monitor, id: 5, name: 'Drive' }, { ...monitor, id: 7, name: 'Gate' }]
+          : [{ ...monitor, id: 9, name: 'Yard' }];
+        return HttpResponse.json({ items, total: 3, per_page: 2, current_page: page, last_page: 2 });
+      }),
+    );
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.siblings.map((m) => m.id)).toEqual([5, 7, 9]));
+    expect(result.current.nextMonitorId).toBe(9);
+    expect(result.current.prevMonitorId).toBe(5);
+  });
+
+  it('starts on the player picked last time, and a hand pick is remembered', async () => {
+    useWatchPrefsStore.setState({ player: 'hls' });
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.monitor).toBeDefined());
+    expect(result.current.protocol).toBe('hls');
+    act(() => result.current.changeProtocol('webrtc'));
+    expect(useWatchPrefsStore.getState().player).toBe('webrtc');
+  });
+});
+

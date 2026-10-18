@@ -92,3 +92,54 @@ describe('usePinchZoom — buttons and click-to-zoom', () => {
     expect(Number(shift![1])).toBeLessThan(0);
   });
 });
+
+describe('usePinchZoom — wheel and double-click', () => {
+  function mount(options: Parameters<typeof usePinchZoom>[2] = {}) {
+    const el = document.createElement('div');
+    el.getBoundingClientRect = () => ({
+      left: 0, top: 0, right: 200, bottom: 100, width: 200, height: 100, x: 0, y: 0,
+      toJSON: () => ({}),
+    });
+    document.body.appendChild(el);
+    const hook = renderHook(() => usePinchZoom<HTMLDivElement>(true, false, options));
+    act(() => hook.result.current.ref(el));
+    return { el, hook };
+  }
+  const wheel = (init: WheelEventInit) =>
+    new WheelEvent('wheel', { clientX: 100, clientY: 50, bubbles: true, cancelable: true, ...init });
+
+  it('zooms one step per notch on shift + wheel, as legacy panzoom binds it', () => {
+    const { el, hook } = mount();
+    const up = wheel({ shiftKey: true, deltaY: -100 });
+    act(() => { el.dispatchEvent(up); });
+    expect(up.defaultPrevented).toBe(true);
+    expect(hook.result.current.scale).toBeCloseTo(PINCH_STEP, 6);
+    // A browser that turns a shifted wheel horizontal still zooms.
+    act(() => { el.dispatchEvent(wheel({ shiftKey: true, deltaX: 100 })); });
+    expect(hook.result.current.scale).toBe(PINCH_MIN);
+  });
+
+  it('leaves a plain wheel to scroll the page', () => {
+    const { el, hook } = mount();
+    const plain = wheel({ deltaY: -100 });
+    act(() => { el.dispatchEvent(plain); });
+    expect(plain.defaultPrevented).toBe(false);
+    expect(hook.result.current.scale).toBe(PINCH_MIN);
+  });
+
+  it('resets on double-click by default', () => {
+    const { el, hook } = mount();
+    act(() => hook.result.current.zoomIn());
+    act(() => { el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); });
+    expect(hook.result.current.scale).toBe(PINCH_MIN);
+  });
+
+  it('hands the double-click to the caller when asked, and keeps the zoom', () => {
+    let calls = 0;
+    const { el, hook } = mount({ onDoubleClick: () => { calls += 1; } });
+    act(() => hook.result.current.zoomIn());
+    act(() => { el.dispatchEvent(new MouseEvent('dblclick', { bubbles: true })); });
+    expect(calls).toBe(1);
+    expect(hook.result.current.scale).toBeCloseTo(PINCH_STEP, 6);
+  });
+});

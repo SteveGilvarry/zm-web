@@ -54,6 +54,12 @@ interface UiState {
   toggleClassicEventsFilterBar: () => void;
   classicCycleSidebarOpen: boolean;
   toggleClassicCycleSidebar: () => void;
+  /**
+   * `zmFilterBarFlip#mfbpanel`: the monitor filter bar on Watch (and on
+   * Montage / Montage Review in legacy), open by default.
+   */
+  classicMonitorFilterBarOpen: boolean;
+  toggleClassicMonitorFilterBar: () => void;
 }
 
 export const DEFAULT_MAX_LIVE_TILES = 12;
@@ -86,6 +92,9 @@ export const useUiStore = create<UiState>()(
       classicCycleSidebarOpen: false,
       toggleClassicCycleSidebar: () =>
         set((s) => ({ classicCycleSidebarOpen: !s.classicCycleSidebarOpen })),
+      classicMonitorFilterBarOpen: true,
+      toggleClassicMonitorFilterBar: () =>
+        set((s) => ({ classicMonitorFilterBarOpen: !s.classicMonitorFilterBarOpen })),
     }),
     {
       name: 'zm-ui',
@@ -98,6 +107,7 @@ export const useUiStore = create<UiState>()(
         classicFilterPanelOpen: state.classicFilterPanelOpen,
         classicEventsFilterBarOpen: state.classicEventsFilterBarOpen,
         classicCycleSidebarOpen: state.classicCycleSidebarOpen,
+        classicMonitorFilterBarOpen: state.classicMonitorFilterBarOpen,
       }),
     },
   ),

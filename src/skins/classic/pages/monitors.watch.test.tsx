@@ -1,11 +1,12 @@
 /**
- * Watch — classic skin (legacy `?view=watch&mid=`). Covers the header, the
- * action row and its permission gate, the Stream/Stills toggle, the transport
- * row, the PTZ column appearing only for a controllable camera, the alarm
- * verbs and the per-monitor events table underneath.
+ * Watch — classic skin (legacy `?view=watch&mid=`, 1.39.41). Covers the
+ * header row and what it no longer carries, the stage's hover block and
+ * zoom gestures, the status line, the transport row (Stop / Pause / Play),
+ * the PTZ toggle and column, the cycle sidebar, the hidden-tab stop, the
+ * alarm toggle and the per-monitor events table underneath.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
@@ -14,11 +15,14 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useUiStore } from '@/stores/ui';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import type { UserClaims } from '@/types';
+
+const { routeSearch } = vi.hoisted(() => ({ routeSearch: { value: {} as Record<string, unknown> } }));
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => vi.fn(),
-  useSearch: () => ({}),
+  useSearch: () => routeSearch.value,
   useParams: () => ({}),
   // jsdom starts with a single history entry, so Back is greyed as legacy
   // greys it on a page nothing linked to.
@@ -225,7 +229,9 @@ afterEach(() => {
   alarmCalls.length = 0;
   deletedEvents.length = 0;
   useToastStore.getState().clear();
-  useUiStore.setState({ classicCycleSidebarOpen: false });
+  useUiStore.setState({ classicCycleSidebarOpen: false, classicMonitorFilterBarOpen: true });
+  useWatchPrefsStore.setState(useWatchPrefsStore.getInitialState());
+  routeSearch.value = {};
   vi.restoreAllMocks();
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -235,34 +241,62 @@ async function mount(monitorId = 3) {
   return renderWithProviders(<Page monitorId={monitorId} />);
 }
 
+/** Wait for the page to render: the status line carries the name, as legacy's does. */
+const ready = () => screen.findByText('Driveway (id=3)');
+
 describe('ClassicMonitorWatchPage', () => {
-  it('renders the legacy header, status line and transport row', async () => {
+  it('renders the 1.39.41 header row and nothing it dropped', async () => {
     stubOk();
     await mount();
+    await ready();
 
-    expect(await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' })).toBeInTheDocument();
-    expect(screen.getByTestId('watch-stage')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Edit' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Force Alarm' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Toggle cycle sidebar' })).toBeInTheDocument();
+    // Not controllable: the toggle is there, greyed, with legacy's title.
+    expect(screen.getByRole('button', { name: 'PTZ Not available' })).toBeDisabled();
+    expect(screen.getByRole('combobox', { name: 'Scale' })).toHaveValue('0');
+    expect(screen.getByRole('combobox', { name: 'Player' })).toHaveValue('webrtc');
 
+    // Commented out or never emitted by watch.php in 1.39.41.
+    for (const name of ['Stream', 'Stills', 'Download Image', 'Cancel Alarm', 'Cycle']) {
+      expect(screen.queryByRole('button', { name })).toBeNull();
+    }
+    expect(screen.queryByRole('combobox', { name: 'Width' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Height' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Monitor' })).toBeNull();
+    expect(screen.queryByRole('heading', { name: 'Monitor - 3 - Driveway' })).toBeNull();
+    // One Fullscreen in the transport row; the stage has its own "Open full screen".
+    expect(screen.getAllByRole('button', { name: 'Fullscreen' })).toHaveLength(1);
+    expect(screen.queryByText('1280×720')).toBeNull();
+    // `ZM - <Name> - Feed`.
+    await waitFor(() => expect(document.title).toBe('ZM - Driveway - Feed'));
+  });
+
+  it('draws the legacy status line: name, state, viewing and capturing fps', async () => {
+    stubOk();
+    await mount();
     const runtime = await screen.findByTestId('watch-runtime');
-    // The shared /monitor-status poll drives the legacy "State:" line.
     await waitFor(() => expect(runtime).toHaveTextContent(/State: Connected/));
     expect(runtime).toHaveTextContent('Driveway (id=3)');
     expect(runtime).toHaveTextContent('WebRTC');
-
-    // Transport verbs.
-    expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Play' })).toBeEnabled();
-    expect(screen.getByRole('combobox', { name: 'Player' })).toHaveValue('webrtc');
-    expect(screen.getByText('1280×720')).toBeInTheDocument();
-    expect(screen.getByRole('link', { name: 'All Events' })).toHaveAttribute('href', '/events?monitor_id=3');
+    expect(within(runtime).getByTitle('Capturing FPS')).toHaveTextContent('10.0 fps');
+    // Nothing painted yet, so the viewing readout is blank as legacy's is.
+    expect(within(runtime).getByTitle('Viewing FPS')).toHaveTextContent(/^\s*fps$/);
+    expect(runtime).not.toHaveTextContent(/Analysis/);
   });
 
-  it('starts the active stream from the stage button', async () => {
+  it('starts the stream on load and from Play', async () => {
     stubOk();
     const user = userEvent.setup();
     await mount();
-
-    await user.click(await screen.findByRole('button', { name: 'Start Stream' }));
+    await ready();
+    await waitFor(() => expect(streamCalls).toContain('webrtc:start'));
+    streamCalls.length = 0;
+    expect(screen.getByRole('button', { name: 'Stop' })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: 'Play' }));
     expect(streamCalls).toContain('webrtc:start');
   });
 
@@ -276,28 +310,56 @@ describe('ClassicMonitorWatchPage', () => {
     expect(streamCalls).toContain('webrtc:stop');
   });
 
-  it('switches the player to HLS and reports it in the status line', async () => {
+  it('pauses the picture without dropping the session, and Play resumes it', async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined);
+    streamState.value = 'connected';
     stubOk();
     const user = userEvent.setup();
     await mount();
 
-    await user.selectOptions(await screen.findByRole('combobox', { name: 'Player' }), 'hls');
-    await waitFor(() => expect(screen.getByTestId('watch-runtime')).toHaveTextContent('HLS'));
+    // Let the on-load auto-start land first, so it is not counted below.
+    await waitFor(() => expect(streamCalls).toContain('webrtc:start'));
+    await user.click(await screen.findByRole('button', { name: 'Pause' }));
+    expect(pause).toHaveBeenCalled();
+    expect(streamCalls).not.toContain('webrtc:stop');
+    streamCalls.length = 0;
+
+    await user.click(screen.getByRole('button', { name: 'Play' }));
+    expect(play).toHaveBeenCalled();
+    // Resuming is a local play(), not a new session.
+    expect(streamCalls).not.toContain('webrtc:start');
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
   });
 
-  it('swaps the stage for a refreshing snapshot in Stills mode', async () => {
+  it('links All Events to this monitor sorted by start time ascending', async () => {
+    stubOk();
+    await mount();
+    await ready();
+    expect(screen.getByRole('link', { name: 'All Events' }))
+      .toHaveAttribute('href', '/events?monitor_id=3&sort=start_time&dir=asc');
+  });
+
+  it('switches the player to HLS, says so in the stream info, and remembers it', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    const view = await mount();
+
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Player' }), 'hls');
+    await waitFor(() => expect(screen.getByTestId('watch-stream-info')).toHaveTextContent('HLS'));
+    expect(useWatchPrefsStore.getState().player).toBe('hls');
+
+    view.unmount();
+    await mount();
+    expect(await screen.findByRole('combobox', { name: 'Player' })).toHaveValue('hls');
+  });
+
+  it('remembers the Scale per monitor', async () => {
     stubOk();
     const user = userEvent.setup();
     await mount();
-
-    const stills = await screen.findByRole('button', { name: 'Stills' });
-    expect(stills).toHaveAttribute('aria-pressed', 'false');
-    await user.click(stills);
-
-    await waitFor(() => expect(stills).toHaveAttribute('aria-pressed', 'true'));
-    expect(screen.getByTestId('watch-runtime')).toHaveTextContent('Stills');
-    // Transport is meaningless without a stream.
-    expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
+    await user.selectOptions(await screen.findByRole('combobox', { name: 'Scale' }), '640px');
+    expect(useWatchPrefsStore.getState().scaleByMonitor['3']).toBe('640px');
   });
 
   it('offers Retry and the error text when the stream failed', async () => {
@@ -305,28 +367,35 @@ describe('ClassicMonitorWatchPage', () => {
     stubOk();
     await mount();
 
-    const alert = await screen.findByRole('alert');
+    const alert = await screen.findByTestId('stream-error');
     expect(alert).toHaveTextContent('ICE failed');
     expect(within(alert).getByRole('button', { name: 'Retry' })).toBeInTheDocument();
   });
 
-  it('hides the mute toggle when the stream carries no audio', async () => {
+  it('greys the volume slider and mute icon while the stream has no audio', async () => {
     stubOk();
     await mount();
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
-    expect(screen.queryByRole('button', { name: /^(Mute|Unmute)$/ })).toBeNull();
+    await ready();
+    expect(screen.getByRole('slider', { name: 'Volume' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Unmute' })).toBeDisabled();
   });
 
-  it('shows the mute toggle when the stream carries audio', async () => {
+  it('drives the volume slider and the mute icon when the stream carries audio', async () => {
     streamState.value = 'connected';
     streamState.hasAudio = true;
     stubOk();
     await mount();
-    expect(await screen.findByRole('button', { name: 'Unmute' })).toHaveAttribute('aria-pressed', 'false');
+    const slider = await screen.findByRole('slider', { name: 'Volume' });
+    expect(slider).toBeEnabled();
+    fireEvent.change(slider, { target: { value: '40' } });
+    // Moving the slider off zero unmutes, and both stick for the next visit.
+    await waitFor(() => expect(useWatchPrefsStore.getState().volume).toBeCloseTo(0.4));
+    expect(useWatchPrefsStore.getState().muted).toBe(false);
+    expect(screen.getByRole('button', { name: 'Mute' })).toHaveAttribute('aria-pressed', 'true');
   });
 
-  it('forces an alarm through PATCH /monitors/:id/alarm after confirming', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+  it('forces an alarm with one button and no confirmation, which then cancels it', async () => {
+    const confirm = vi.spyOn(window, 'confirm');
     stubOk();
     const user = userEvent.setup();
     await mount();
@@ -336,47 +405,42 @@ describe('ClassicMonitorWatchPage', () => {
     await waitFor(() => expect(force).toBeEnabled());
     await user.click(force);
 
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(confirm).not.toHaveBeenCalled();
     await waitFor(() => expect(alarmCalls).toContainEqual({ action: 'on', cause: 'API', score: 100 }));
-    expect(await screen.findByRole('button', { name: 'Alarm forced' })).toBeInTheDocument();
-
-    await user.click(screen.getByRole('button', { name: 'Cancel Alarm' }));
+    const cancel = await screen.findByRole('button', { name: 'Cancel Forced Alarm' });
+    await user.click(cancel);
     await waitFor(() => expect(alarmCalls).toContainEqual({ action: 'cancel' }));
-  });
-
-  it('does not force an alarm when the confirmation is dismissed', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
-    stubOk();
-    const user = userEvent.setup();
-    await mount();
-
-    const force = await screen.findByRole('button', { name: 'Force Alarm' });
-    await waitFor(() => expect(force).toBeEnabled());
-    // The 'status' probe already ran; ignore it when counting.
-    alarmCalls.length = 0;
-    await user.click(force);
-
-    expect(confirm).toHaveBeenCalledOnce();
-    expect(alarmCalls).toEqual([]);
+    expect(await screen.findByRole('button', { name: 'Force Alarm' })).toBeInTheDocument();
   });
 
   it('omits the PTZ column for a camera with no control configured', async () => {
     stubOk({ ptz: 'none' });
     await mount();
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await ready();
     expect(screen.queryByRole('complementary', { name: 'Camera control' })).toBeNull();
   });
 
-  it('renders the PTZ column for a controllable camera', async () => {
+  it('shows the PTZ column by default and the PTZ toggle folds it away, remembered', async () => {
     stubOk({ ptz: 'ready' });
+    const user = userEvent.setup();
+    const view = await mount();
+    expect(await screen.findByRole('complementary', { name: 'Camera control' })).toBeInTheDocument();
+
+    const toggle = screen.getByRole('button', { name: 'Toggle PTZ Controls' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await user.click(toggle);
+    expect(screen.queryByRole('complementary', { name: 'Camera control' })).toBeNull();
+    expect(useWatchPrefsStore.getState().ptzShow).toBe(false);
+
+    view.unmount();
     await mount();
-    const aside = await screen.findByRole('complementary', { name: 'Camera control' });
-    expect(within(aside).getByText('ONVIF')).toBeInTheDocument();
+    await ready();
+    await screen.findByRole('button', { name: 'Toggle PTZ Controls' });
+    expect(screen.queryByRole('complementary', { name: 'Camera control' })).toBeNull();
   });
 
   it('lists this monitor events in the legacy watch shape and deletes from the row icon', async () => {
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
-    stubOk({ events: [{ ...EVENT, notes: 'Motion: Zone 1' }] });
+    stubOk({ events: [{ ...EVENT, notes: 'Motion: Zone 1' }, { ...EVENT, id: 901, name: 'New Event' }] });
     const user = userEvent.setup();
     await mount();
 
@@ -393,18 +457,71 @@ describe('ClassicMonitorWatchPage', () => {
     expect(screen.queryByRole('checkbox', { name: 'Select event 900' })).toBeNull();
     expect(screen.queryByRole('button', { name: /sort/i })).toBeNull();
 
+    // Legacy watch has no totals row, and a still-open event is highlighted.
+    expect(screen.queryByTestId('events-table-footer')).toBeNull();
+    expect(screen.getByRole('link', { name: '901' }).closest('tr')).toHaveClass('recent');
+    expect(screen.getByRole('link', { name: '900' }).closest('tr')).not.toHaveClass('recent');
+
+    // The trash icon asks through legacy's delconfirm modal; Cancel keeps it.
     await user.click(screen.getByRole('button', { name: 'Delete event 900' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Confirmation' });
+    expect(dialog).toHaveTextContent('Are you sure you wish to delete the selected events?');
+    await user.click(within(dialog).getByRole('button', { name: 'Cancel' }));
+    expect(deletedEvents).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Delete event 900' }));
+    await user.click(within(await screen.findByRole('dialog', { name: 'Delete Confirmation' })).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(deletedEvents).toEqual(['900']));
+
+    // Shift+click deletes straight away.
+    fireEvent.click(screen.getByRole('button', { name: 'Delete event 901' }), { shiftKey: true });
+    await waitFor(() => expect(deletedEvents).toEqual(['900', '901']));
   });
 
-  it('shows the PTZ column to a control:View user and disables Back without a referrer', async () => {
+  it('lets the events table drop columns, remembered, and exports what is visible', async () => {
+    const created: Blob[] = [];
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: (b: Blob) => { created.push(b); return 'blob:x'; } });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: () => {} });
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+    await screen.findByRole('link', { name: '900' });
+
+    await user.click(screen.getByRole('button', { name: /Columns/ }));
+    await user.click(screen.getByRole('checkbox', { name: 'Toggle column Notes' }));
+    expect(screen.getAllByRole('columnheader').map((h) => h.textContent)).not.toContain('Notes');
+    expect(useWatchPrefsStore.getState().eventColumnsHidden).toEqual(['notes']);
+
+    await user.click(screen.getByRole('button', { name: 'Export visible events as CSV' }));
+    expect(created).toHaveLength(1);
+    const csv = await created[0].text();
+    expect(csv).toContain('900');
+    expect(csv).not.toMatch(/Notes/);
+  });
+
+  it('hides the events table from a user without events:View', async () => {
+    useAuthStore.setState({ user: { ...ADMIN, perms: { ...ADMIN.perms, events: 'None' } } as UserClaims });
+    stubOk();
+    await mount();
+    await ready();
+    expect(screen.queryByRole('heading', { name: 'Events' })).toBeNull();
+  });
+
+  it('shows the PTZ column to a control:View user', async () => {
     useAuthStore.setState({ user: { ...VIEWER, perms: { ...VIEWER.perms, control: 'View' } } as UserClaims });
     stubOk({ ptz: 'ready' });
     await mount();
     expect(await screen.findByRole('complementary', { name: 'Camera control' })).toBeInTheDocument();
-    // jsdom has no referrer, which is legacy's "nothing to go back to".
-    expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Zoom Out' })).toBeDisabled();
+  });
+
+  it('greys the PTZ toggle for a user without control:View', async () => {
+    useAuthStore.setState({ user: VIEWER });
+    stubOk({ ptz: 'ready' });
+    await mount();
+    await ready();
+    expect(await screen.findByRole('button', { name: 'PTZ Not available' })).toBeDisabled();
+    expect(screen.queryByRole('complementary', { name: 'Camera control' })).toBeNull();
   });
 
   it('shows the legacy empty message when the monitor has no events', async () => {
@@ -418,12 +535,10 @@ describe('ClassicMonitorWatchPage', () => {
     stubOk();
     await mount();
 
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await ready();
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Force Alarm' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Edit monitor' })).toBeNull();
-    // Download Image is not permission-gated.
-    expect(screen.getByRole('button', { name: 'Download Image' })).toBeInTheDocument();
   });
 
   it('replaces the stage with the no-permission note for a stream:None user', async () => {
@@ -431,7 +546,7 @@ describe('ClassicMonitorWatchPage', () => {
     stubOk();
     await mount();
 
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await ready();
     expect(screen.queryByTestId('watch-stage')).toBeNull();
     expect(screen.getByText('You do not have permission to view this.')).toBeInTheDocument();
   });
@@ -442,10 +557,9 @@ describe('ClassicMonitorWatchPage', () => {
 
     expect(await screen.findByText('Monitor is disabled')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Play' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Download Image' })).toBeDisabled();
   });
 
-  it('opens the monitor editor from the Edit verb', async () => {
+  it('opens the monitor editor from the Edit square', async () => {
     stubOk();
     const user = userEvent.setup();
     await mount();
@@ -455,41 +569,15 @@ describe('ClassicMonitorWatchPage', () => {
     expect(await screen.findByRole('heading', { name: 'Edit · Driveway' })).toBeInTheDocument();
   });
 
-
-  it('digitally zooms the picture on a trackpad pinch and resets from Zoom Out', async () => {
-    stubOk();
+  it('shows the filter bar open by default and folds it behind the flip icon', async () => {
     const user = userEvent.setup();
-    await mount();
-
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
-    const runtime = screen.getByTestId('watch-runtime');
-    const zoomOut = screen.getByRole('button', { name: 'Zoom Out' });
-    // Nothing to zoom out of yet.
-    expect(runtime).not.toHaveTextContent(/Zoom:/);
-    expect(zoomOut).toBeDisabled();
-
-    // A trackpad pinch arrives as a ctrl-key wheel event on the zoom layer.
-    fireEvent.wheel(screen.getByTestId('watch-zoom'), {
-      ctrlKey: true, deltaY: -100, clientX: 0, clientY: 0,
-    });
-
-    // exp(100/200) ≈ 1.65, shown to one decimal like legacy.
-    await waitFor(() => expect(runtime).toHaveTextContent('Zoom: 1.6x'));
-    expect(zoomOut).toBeEnabled();
-
-    await user.click(zoomOut);
-    await waitFor(() => expect(zoomOut).toBeDisabled());
-    expect(runtime).not.toHaveTextContent(/Zoom:/);
-  });
-
-  it('ignores a plain wheel, which is a scroll and not a zoom', async () => {
     stubOk();
     await mount();
-
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
-    fireEvent.wheel(screen.getByTestId('watch-zoom'), { deltaY: -100, clientX: 0, clientY: 0 });
-    expect(screen.getByTestId('watch-runtime')).not.toHaveTextContent(/Zoom:/);
-    expect(screen.getByRole('button', { name: 'Zoom Out' })).toBeDisabled();
+    await ready();
+    expect(screen.getByRole('group', { name: 'Monitor filter bar' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Hide filters' }));
+    expect(screen.queryByRole('group', { name: 'Monitor filter bar' })).toBeNull();
+    expect(useUiStore.getState().classicMonitorFilterBarOpen).toBe(false);
   });
 
   it('shows the not-found state when the monitor does not exist', async () => {
@@ -498,6 +586,7 @@ describe('ClassicMonitorWatchPage', () => {
         HttpResponse.json({ kind: 'BAD_REQUEST', error_message: 'no ptz' }, { status: 400 })),
       http.get('/api/v3/monitors/:id', () =>
         HttpResponse.json({ kind: 'NOT_FOUND', error_message: 'no such monitor' }, { status: 404 })),
+      http.get('/api/v3/monitors', () => HttpResponse.json(paged([]))),
       http.get('/api/v3/monitor-status', () => HttpResponse.json(paged([]))),
       http.get('/api/v3/events', () => HttpResponse.json(paged([]))),
       http.get('/api/v3/configs/:name', ({ params }) => HttpResponse.json({ name: params.name, value: '1' })),
@@ -512,9 +601,92 @@ describe('ClassicMonitorWatchPage', () => {
     server.use(http.get('/api/v3/events', () => HttpResponse.error()));
     await mount();
 
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await ready();
     await waitFor(() =>
       expect(screen.getByRole('alert')).toHaveTextContent('Cannot reach the server.'));
+  });
+});
+
+/* ------------------------------------------------------------------ */
+
+describe('ClassicMonitorWatchPage — stage', () => {
+  it('puts the legacy hover block over the picture: zoom in/out, full screen, watch, edit', async () => {
+    stubOk();
+    await mount();
+    await ready();
+    const block = screen.getByTestId('watch-stage-buttons');
+    for (const name of ['Zoom IN', 'Zoom OUT', 'Open full screen', 'Edit monitor']) {
+      expect(within(block).getByRole('button', { name })).toBeInTheDocument();
+    }
+    expect(within(block).getByRole('link', { name: 'Open watch page' })).toHaveAttribute('href', '/monitors/$monitorId');
+    // Legacy hides `#zoomOutBtn` unless "Use old ZoomPan" is ticked.
+    expect(screen.queryByRole('button', { name: 'Zoom Out' })).toBeNull();
+  });
+
+  it('steps the digital zoom with Zoom IN / Zoom OUT, and ctrl+Zoom OUT resets it', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+    await ready();
+    const runtime = screen.getByTestId('watch-runtime');
+    expect(runtime).not.toHaveTextContent(/Zoom:/);
+
+    await user.click(screen.getByRole('button', { name: 'Zoom IN' }));
+    await user.click(screen.getByRole('button', { name: 'Zoom IN' }));
+    // 1.3² ≈ 1.69, to one decimal like legacy.
+    expect(runtime).toHaveTextContent('Zoom: 1.7x');
+    await user.click(screen.getByRole('button', { name: 'Zoom OUT' }));
+    expect(runtime).toHaveTextContent('Zoom: 1.3x');
+
+    await user.click(screen.getByRole('button', { name: 'Zoom IN' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Zoom OUT' }), { ctrlKey: true });
+    await waitFor(() => expect(runtime).not.toHaveTextContent(/Zoom:/));
+  });
+
+  it('zooms on a trackpad pinch and on shift + wheel, but not on a plain wheel', async () => {
+    stubOk();
+    await mount();
+    await ready();
+    const runtime = screen.getByTestId('watch-runtime');
+    const layer = screen.getByTestId('watch-zoom');
+
+    fireEvent.wheel(layer, { deltaY: -100, clientX: 0, clientY: 0 });
+    expect(runtime).not.toHaveTextContent(/Zoom:/);
+
+    fireEvent.wheel(layer, { shiftKey: true, deltaY: -100, clientX: 0, clientY: 0 });
+    await waitFor(() => expect(runtime).toHaveTextContent('Zoom: 1.3x'));
+
+    // exp(100/200) ≈ 1.65 on top of 1.3.
+    fireEvent.wheel(layer, { ctrlKey: true, deltaY: -100, clientX: 0, clientY: 0 });
+    await waitFor(() => expect(runtime).toHaveTextContent('Zoom: 2.1x'));
+  });
+
+  it('fullscreens the picture on a double-click, and from the hover block', async () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { configurable: true, value: request });
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+    await ready();
+    const stage = screen.getByTestId('watch-stage');
+
+    fireEvent.doubleClick(screen.getByTestId('watch-zoom'));
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.contexts[0]).toBe(stage);
+
+    await user.click(screen.getByRole('button', { name: 'Open full screen' }));
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.contexts[1]).toBe(stage);
+    delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
+  });
+
+  it('opens the editor from the hover block', async () => {
+    stubOk();
+    const user = userEvent.setup();
+    await mount();
+    await ready();
+    await user.click(screen.getByRole('button', { name: 'Edit monitor' }));
+    expect(await screen.findByRole('heading', { name: 'Edit · Driveway' })).toBeInTheDocument();
   });
 });
 
@@ -527,14 +699,14 @@ const SIBLINGS = [
 ];
 
 describe('ClassicMonitorWatchPage — cycle sidebar', () => {
-  it('is hidden until the Cycle button asks for it, and the choice sticks', async () => {
+  it('is hidden until the cycle toggle asks for it, and the choice sticks', async () => {
     const user = userEvent.setup();
     stubOk({ monitors: SIBLINGS });
     const view = await mount();
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await ready();
     expect(screen.queryByTestId('watch-cycle-sidebar')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: 'Cycle' }));
+    await user.click(screen.getByRole('button', { name: 'Toggle cycle sidebar' }));
     expect(await screen.findByTestId('watch-cycle-sidebar')).toBeInTheDocument();
     expect(useUiStore.getState().classicCycleSidebarOpen).toBe(true);
 
@@ -543,7 +715,7 @@ describe('ClassicMonitorWatchPage — cycle sidebar', () => {
     expect(await screen.findByTestId('watch-cycle-sidebar')).toBeInTheDocument();
   });
 
-  it('offers the legacy periods, a countdown and the four transport buttons', async () => {
+  it('offers the legacy periods, and opens paused without cycle=true', async () => {
     useUiStore.setState({ classicCycleSidebarOpen: true });
     stubOk({ monitors: SIBLINGS, configs: { ZM_WEB_REFRESH_CYCLE: '45' } });
     await mount();
@@ -556,47 +728,78 @@ describe('ClassicMonitorWatchPage — cycle sidebar', () => {
     // `ZM_WEB_REFRESH_CYCLE` is the starting period, as legacy selects it.
     await waitFor(() => expect(period).toHaveValue('45'));
 
-    expect(within(sidebar).getByTestId('seconds-to-cycle')).toHaveTextContent(/\d+/);
-    for (const name of ['Previous Monitor', 'Pause Cycle', 'Next Monitor']) {
+    // Showing the sidebar does not start the rotation.
+    for (const name of ['Previous Monitor', 'Play Cycle', 'Next Monitor']) {
       expect(within(sidebar).getByRole('button', { name })).toBeInTheDocument();
     }
+    expect(within(sidebar).getByTestId('seconds-to-cycle')).toHaveTextContent('');
     // Nav pills: every capturing monitor, the current one marked.
     const pills = within(sidebar).getAllByRole('button', { name: /Driveway|Back Gate|Side Path/ });
     expect(pills.map((b) => b.textContent)).toEqual(['Driveway', 'Back Gate', 'Side Path']);
     expect(pills[0]).toHaveAttribute('aria-current', 'true');
   });
 
-  it('swaps Pause for Play once the rotation is paused', async () => {
+  it('opens with the rotation running on cycle=true, and a pill click stops it', async () => {
+    routeSearch.value = { cycle: true };
+    streamState.value = 'connected';
     const user = userEvent.setup();
-    useUiStore.setState({ classicCycleSidebarOpen: true });
     stubOk({ monitors: SIBLINGS });
     await mount();
 
     const sidebar = await screen.findByTestId('watch-cycle-sidebar');
-    await user.click(within(sidebar).getByRole('button', { name: 'Pause Cycle' }));
-    expect(within(sidebar).getByRole('button', { name: 'Play Cycle' })).toBeInTheDocument();
-    expect(within(sidebar).getByTestId('seconds-to-cycle')).toHaveTextContent('');
-  });
-});
+    expect(within(sidebar).getByRole('button', { name: 'Pause Cycle' })).toBeInTheDocument();
+    expect(within(sidebar).getByTestId('seconds-to-cycle')).toHaveTextContent(/\d+/);
 
-describe('ClassicMonitorWatchPage — filter bar and idle timeout', () => {
-  it('shows the shared monitor filter bar behind the header chevron', async () => {
+    await user.click(within(sidebar).getByRole('button', { name: 'Back Gate' }));
+    expect(within(sidebar).getByRole('button', { name: 'Play Cycle' })).toBeInTheDocument();
+  });
+
+  it('pauses the rotation from a transport click, as legacy #dvrControls does', async () => {
+    routeSearch.value = { cycle: true };
+    streamState.value = 'connected';
+    vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
     const user = userEvent.setup();
     stubOk({ monitors: SIBLINGS });
     await mount();
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
-    expect(screen.queryByRole('group', { name: 'Monitor filter bar' })).toBeNull();
-
-    await user.click(screen.getByRole('button', { name: 'Show filters' }));
-    expect(screen.getByRole('group', { name: 'Monitor filter bar' })).toBeInTheDocument();
+    const sidebar = await screen.findByTestId('watch-cycle-sidebar');
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(within(sidebar).getByRole('button', { name: 'Play Cycle' })).toBeInTheDocument();
   });
 
+  it('saves the period like zmCyclePeriod', async () => {
+    useUiStore.setState({ classicCycleSidebarOpen: true });
+    const user = userEvent.setup();
+    stubOk({ monitors: SIBLINGS });
+    await mount();
+    const sidebar = await screen.findByTestId('watch-cycle-sidebar');
+    await user.selectOptions(within(sidebar).getByRole('combobox', { name: 'Cycle period' }), '60');
+    expect(useWatchPrefsStore.getState().cyclePeriodS).toBe(60);
+  });
+});
+
+describe('ClassicMonitorWatchPage — WebSite monitor', () => {
+  it('frames the site, reloads it on the Refresh period, and starts no stream or events table', async () => {
+    stubOk({ monitor: { ...MONITOR, type: 'WebSite', path: 'https://example.test/status', refresh: 1 } });
+    await mount();
+    await ready();
+    const frame = screen.getByTitle('Driveway');
+    expect(frame.tagName).toBe('IFRAME');
+    expect(frame).toHaveAttribute('src', 'https://example.test/status');
+    expect(screen.queryByRole('heading', { name: 'Events' })).toBeNull();
+
+    // `reloadWebSite` every Refresh seconds: a fresh frame replaces the old.
+    await waitFor(() => expect(screen.getByTitle('Driveway')).not.toBe(frame), { timeout: 2_500 });
+    expect(streamCalls).not.toContain('webrtc:start');
+  });
+});
+
+describe('ClassicMonitorWatchPage — idle timeout and hidden tab', () => {
   it('stops the stream and asks whether anyone is watching after ZM_WEB_VIEWING_TIMEOUT', async () => {
     const user = userEvent.setup();
     streamState.value = 'connected';
     stubOk({ configs: { ZM_WEB_VIEWING_TIMEOUT: '1' } });
     await mount();
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await ready();
 
     const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 4000 });
     expect(within(dialog).getByText('Video paused. Continue watching?')).toBeInTheDocument();
@@ -611,8 +814,34 @@ describe('ClassicMonitorWatchPage — filter bar and idle timeout', () => {
     streamState.value = 'connected';
     stubOk();
     await mount();
-    await screen.findByRole('heading', { name: 'Monitor - 3 - Driveway' });
+    await ready();
     await new Promise((r) => setTimeout(r, 1200));
     expect(screen.queryByRole('dialog', { name: 'Are you still watching?' })).toBeNull();
+  });
+
+  it('lets go of the stream after 15 s in a hidden tab and picks it back up on return', async () => {
+    streamState.value = 'connected';
+    stubOk();
+    await mount();
+    await ready();
+    streamCalls.length = 0;
+
+    let visibility: DocumentVisibilityState = 'hidden';
+    const spy = vi.spyOn(document, 'visibilityState', 'get').mockImplementation(() => visibility);
+    vi.useFakeTimers();
+    try {
+      act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+      act(() => { vi.advanceTimersByTime(14_000); });
+      expect(streamCalls).not.toContain('webrtc:stop');
+      act(() => { vi.advanceTimersByTime(1_500); });
+      expect(streamCalls).toContain('webrtc:stop');
+
+      visibility = 'visible';
+      act(() => { document.dispatchEvent(new Event('visibilitychange')); });
+      expect(streamCalls.at(-1)).toBe('webrtc:start');
+    } finally {
+      vi.useRealTimers();
+      spy.mockRestore();
+    }
   });
 });

@@ -50,16 +50,24 @@ describe('useMonitorEvents', () => {
     expect(result.current.accessToken).toBe('tok');
   });
 
-  it('deleteOne confirms first, and skips the confirm on shift+click', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('deleteOne asks through the confirmation modal, and shift+click skips it', async () => {
+    const confirm = vi.spyOn(window, 'confirm');
     const { result } = renderHook(() => useMonitorEvents(1), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
     act(() => result.current.deleteOne(11));
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(result.current.pendingDeleteId).toBe(11);
     expect(deleted).toEqual([]);
+    act(() => result.current.cancelDelete());
+    expect(result.current.pendingDeleteId).toBeNull();
+
+    act(() => result.current.deleteOne(11));
+    act(() => result.current.confirmDelete());
+    await waitFor(() => expect(deleted).toEqual(['11']));
+    expect(result.current.pendingDeleteId).toBeNull();
+
     act(() => result.current.deleteOne(12, true));
-    await waitFor(() => expect(deleted).toEqual(['12']));
-    expect(confirm).toHaveBeenCalledOnce();
+    await waitFor(() => expect(deleted).toEqual(['11', '12']));
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it('pages, sorts (same field flips), and resets to page 1 on a sort change', async () => {

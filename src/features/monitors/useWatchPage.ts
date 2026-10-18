@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type CSSProperties, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getMonitor, getMonitors, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
+import { getMonitor, getAllMonitors, updateMonitor, getLiveStats, controlMonitorAlarm, getMonitorSnapshotUrl } from '@/api/monitors';
 import { getAuthToken } from '@/api/client';
 import { getEvents } from '@/api/events';
 import { useAuthStore } from '@/stores/auth';
@@ -15,6 +15,9 @@ import { usePtzCapabilities, type PtzState } from '@/features/ptz/usePtz';
 import { useMonitorStatus, type MonitorRuntime } from './useMonitorStatuses';
 import { useViewingTimeout, type ViewingTimeoutState } from './useViewingTimeout';
 import { useZmConfig } from '@/features/config/useZmConfig';
+import { useDocumentVisible } from '@/hooks/useDocumentVisible';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
+import { useViewingFps } from './useViewingFps';
 import type { LiveStats, Monitor, StreamProtocol, ZmEvent } from '@/types';
 
 export interface WatchModeUpdate {
@@ -97,10 +100,30 @@ export interface WatchPageState {
   closeEditor: () => void;
   updateModes: (data: WatchModeUpdate) => void;
   isUpdating: boolean;
+  /** Play: starts a stopped stream, or resumes a paused one. */
   startStream: () => void;
   stopStream: () => void;
+  /** Legacy Pause: freezes the picture without tearing the session down. */
+  pauseStream: () => void;
+  /** The `<video>` is paused (the session is still up). */
+  isPaused: boolean;
+  /**
+   * Frames per second the browser is painting (legacy "Viewing FPS"), or
+   * null when nothing is playing or the browser cannot count frames.
+   */
+  viewingFps: number | null;
+  /**
+   * The tab has been hidden for 15 s, so the stream was let go (legacy
+   * `stopPage`). It comes back on its own when the tab returns.
+   */
+  tabHidden: boolean;
   changeProtocol: (next: StreamProtocol) => void;
   toggleFullscreen: () => void;
+  /**
+   * Fullscreen just the picture (legacy hover block's fullscreen and the
+   * double-click on the stream), as opposed to the whole content area.
+   */
+  toggleStageFullscreen: (stage: HTMLElement | null) => void;
   toggleMute: () => void;
   retry: () => void;
   /** Refetch the monitor and its recent events. */
@@ -126,7 +149,18 @@ export interface WatchPageState {
    * input and `idle.prompted` asks "Are you still watching?".
    */
   idle: ViewingTimeoutState;
+  /** Legacy `cycle=true`: open the cycle sidebar with the rotation running. */
+  cycleRequested: boolean;
+  /**
+   * A `WebSite` monitor: no stream, the page frames `monitor.path` instead
+   * and reloads it every `monitor.refresh` seconds (watch.js `reloadWebSite`).
+   */
+  isWebSite: boolean;
+  /** Bumped on each reload tick; use it as the iframe's `key`. */
+  webSiteReloadKey: number;
 }
+
+const EMPTY_MONITORS: Monitor[] = [];
 
 /**
  * Volume and mute are DOM properties of the <video>, but the element itself
@@ -159,26 +193,34 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const search = useRouteSearch();
   const id = monitorId;
 
-  const [protocol, setProtocol] = useState<StreamProtocol>('webrtc');
+  const prefs = useWatchPrefsStore();
+  // `zmWatchPlayer`: the last player picked by hand.
+  const [protocol, setProtocol] = useState<StreamProtocol>(() => useWatchPrefsStore.getState().player ?? 'webrtc');
   const [availableHeight, setAvailableHeight] = useState(0);
   const [fellBackToHls, setFellBackToHls] = useState(false);
-  const [isMuted, setIsMuted] = useState(true);
-  // 0–1. Kept next to the mute flag rather than read off the element, so the
-  // slider stays put across a protocol switch (the <video> is re-attached).
-  const [volume, setVolumeState] = useState(1);
+  // `zmWatchMuted` / `zmWatchVolume`. Kept in the prefs store rather than
+  // read off the element, so the slider stays put across a protocol switch
+  // (the <video> is re-attached) and across a reload.
+  const isMuted = prefs.muted;
+  const setIsMuted = prefs.setMuted;
+  const volume = prefs.volume;
+  const { setVolume: storeVolume, setMuted: storeMuted } = prefs;
   const setVolume = useCallback((v: number) => {
     const clamped = Math.min(1, Math.max(0, v));
-    setVolumeState(clamped);
+    storeVolume(clamped);
     // Nudging the slider off zero is the same gesture as unmuting: a slider
     // that moves while nothing comes out is a broken-feeling control.
-    if (clamped > 0) setIsMuted(false);
-  }, []);
+    if (clamped > 0) storeMuted(false);
+  }, [storeVolume, storeMuted]);
+  const [isPaused, setIsPaused] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const contentRef = useRef<HTMLDivElement | null>(null);
   // `?edit=true` (legacy `?view=monitor&mid=`) opens the editor on load.
   const [editorOpen, setEditorOpen] = useState(() => searchFlag(search, 'edit'));
   const [viewMode, setViewModeState] = useState<WatchViewMode>('stream');
-  const [stageSize, setStageSize] = useState<StageSize>(DEFAULT_STAGE_SIZE);
+  const [stageDims, setStageDims] = useState<Pick<StageSize, 'width' | 'height'>>(DEFAULT_STAGE_SIZE);
+  // `zmWatchScaleNew<mid>`: the Scale select is remembered per monitor.
+  const stageSize: StageSize = { ...stageDims, scale: prefs.scaleByMonitor[String(monitorId)] ?? DEFAULT_STAGE_SIZE.scale };
   const [isDownloading, setIsDownloading] = useState(false);
 
   // Track fullscreen so the rotated-video styling can switch between the
@@ -209,6 +251,9 @@ export function useWatchPage(monitorId: number): WatchPageState {
   const isStreaming = activeStream.state === 'connected';
   const isConnecting = activeStream.state === 'connecting' || activeStream.state === 'signaling';
   const isActive = activeStream.state !== 'idle';
+  // A paused <video> is only meaningful while the session is up.
+  if (isPaused && !isActive) setIsPaused(false);
+  const viewingFps = useViewingFps(activeStream.videoRef, isStreaming && !isPaused);
 
   // Fetch monitor details
   const { data: monitor, isLoading: monitorLoading } = useQuery({
@@ -237,8 +282,10 @@ export function useWatchPage(monitorId: number): WatchPageState {
   // Auto-start the stream once monitor data confirms it's capturing. Re-arms
   // when the protocol changes so a switch after auto-start plays too.
   const autoStarted = useRef<StreamProtocol | null>(null);
+  const isWebSite = monitor?.type === 'WebSite';
   useEffect(() => {
     if (!monitor || autoStarted.current === protocol || viewMode !== 'stream') return;
+    if (monitor.type === 'WebSite') return;
     const isCapturing = monitor.capturing !== 'None';
     if (isCapturing) {
       // Always call start() so this view registers as a stream consumer —
@@ -314,10 +361,25 @@ export function useWatchPage(monitorId: number): WatchPageState {
   };
 
   const startStream = () => {
+    if (isPaused && isActive) {
+      setIsPaused(false);
+      activeStream.videoRef.current?.play().catch(() => {});
+      return;
+    }
     activeStream.start();
   };
 
+  // zm-api has no pause command (zm-api#138), so Pause freezes the local
+  // player; the session keeps running and Play picks the live edge back up.
+  const pauseStream = () => {
+    const video = activeStream.videoRef.current;
+    if (!video || !isActive) return;
+    video.pause();
+    setIsPaused(true);
+  };
+
   const stopStream = () => {
+    setIsPaused(false);
     activeStream.stop();
     queryClient.invalidateQueries({ queryKey: ['liveSessions'] });
   };
@@ -330,7 +392,9 @@ export function useWatchPage(monitorId: number): WatchPageState {
       queryClient.invalidateQueries({ queryKey: ['liveSessions'] });
     }
     setFellBackToHls(false);
+    setIsPaused(false);
     setProtocol(newProtocol);
+    prefs.setPlayer(newProtocol);
   };
 
   const toggleFullscreen = () => {
@@ -348,6 +412,14 @@ export function useWatchPage(monitorId: number): WatchPageState {
     if (target) target.requestFullscreen().catch(() => {});
   };
 
+  const toggleStageFullscreen = (stageEl: HTMLElement | null) => {
+    if (document.fullscreenElement) {
+      document.exitFullscreen();
+      return;
+    }
+    stageEl?.requestFullscreen().catch(() => {});
+  };
+
   // The <video> is re-attached on a protocol switch, so the level is applied
   // from state rather than read back off the element.
   useEffect(() => {
@@ -358,6 +430,14 @@ export function useWatchPage(monitorId: number): WatchPageState {
     const muted = flipMuted(activeStream.videoRef.current);
     if (muted !== null) setIsMuted(muted);
   };
+
+  const [webSiteReloadKey, setWebSiteReloadKey] = useState(0);
+  const webSiteRefreshS = isWebSite ? Number(monitor?.refresh ?? 0) : 0;
+  useEffect(() => {
+    if (!(webSiteRefreshS > 0)) return;
+    const timer = window.setInterval(() => setWebSiteReloadKey((k) => k + 1), webSiteRefreshS * 1000);
+    return () => window.clearInterval(timer);
+  }, [webSiteRefreshS]);
 
   // Legacy stops playback and puts up the "are you still watching" modal
   // after `ZM_WEB_VIEWING_TIMEOUT` seconds of no input.
@@ -371,6 +451,25 @@ export function useWatchPage(monitorId: number): WatchPageState {
     },
     onResume: () => activeStream.start(),
   });
+
+  // Legacy `stopPage` / `startPage`: a tab hidden for 15 s lets go of the
+  // stream (a paused one is left alone, as legacy leaves it), and the stream
+  // comes back when the tab does — unless the idle prompt is up, which owns
+  // the restart.
+  const docVisible = useDocumentVisible(15_000);
+  const resumeOnShow = useRef(false);
+  useEffect(() => {
+    if (!docVisible) {
+      if (isActive && !isPaused) {
+        resumeOnShow.current = true;
+        activeStream.stop();
+        queryClient.invalidateQueries({ queryKey: ['liveSessions'] });
+      }
+    } else if (resumeOnShow.current) {
+      resumeOnShow.current = false;
+      if (!idle.prompted) activeStream.start();
+    }
+  }, [docVisible, isActive, isPaused, activeStream, idle.prompted, queryClient]);
 
   const retry = () => {
     activeStream.stop();
@@ -398,9 +497,9 @@ export function useWatchPage(monitorId: number): WatchPageState {
 
   const stage: WatchStageState = {
     size: stageSize,
-    setWidth: (width) => setStageSize((s) => ({ ...s, width })),
-    setHeight: (height) => setStageSize((s) => ({ ...s, height })),
-    setScale: (scale) => setStageSize((s) => ({ ...s, scale })),
+    setWidth: (width) => setStageDims((s) => ({ ...s, width })),
+    setHeight: (height) => setStageDims((s) => ({ ...s, height })),
+    setScale: (scale) => prefs.setScale(monitorId, scale),
     setAvailableHeight,
     style: stageStyle(
       stageSize,
@@ -437,15 +536,16 @@ export function useWatchPage(monitorId: number): WatchPageState {
     }
   };
 
-  // Monitor navigation. Uses the console's list under the shared query key,
-  // so moving between cameras costs nothing once any page has loaded it.
+  // Monitor navigation: every monitor, walked page by page so a large
+  // install is not cut off at one page. Its own key, since the shape (a plain
+  // array) differs from the paged `['monitors']` entry other pages share.
   const { data: monitorList } = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 1000 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     staleTime: 60_000,
   });
-  const siblings = monitorList?.items ?? [];
+  const siblings = monitorList ?? EMPTY_MONITORS;
   const siblingIndex = siblings.findIndex((m) => m.id === id);
   // Wrap, so the last camera's Next is the first — an operator stepping
   // through a wall should not hit a dead end at either end.
@@ -483,8 +583,13 @@ export function useWatchPage(monitorId: number): WatchPageState {
     isUpdating: updateMonitorMutation.isPending,
     startStream,
     stopStream,
+    pauseStream,
+    isPaused,
+    viewingFps,
+    tabHidden: !docVisible,
     changeProtocol,
     toggleFullscreen,
+    toggleStageFullscreen,
     toggleMute,
     retry,
     refresh,
@@ -498,5 +603,8 @@ export function useWatchPage(monitorId: number): WatchPageState {
     prevMonitorId: neighbour(-1),
     nextMonitorId: neighbour(1),
     idle,
+    cycleRequested: searchFlag(search, 'cycle'),
+    isWebSite,
+    webSiteReloadKey,
   };
 }
