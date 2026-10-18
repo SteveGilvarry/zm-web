@@ -41,6 +41,11 @@ export interface ServerLoadSummary {
   /** Free memory / swap as a percentage of total (legacy colours these). */
   memFreePercent: number | null;
   swapFreePercent: number | null;
+  /** Bytes, for legacy's "free / total" cells. */
+  freeMem: number | null;
+  totalMem: number | null;
+  freeSwap: number | null;
+  totalSwap: number | null;
   sampledAt: string;
 }
 
@@ -56,6 +61,10 @@ export function summarizeStat(stat: ServerStat): ServerLoadSummary {
     memPercent: memFreePercent == null ? null : 100 - memFreePercent,
     memFreePercent,
     swapFreePercent: freePercent(stat.total_swap, stat.free_swap),
+    freeMem: stat.free_mem ?? null,
+    totalMem: stat.total_mem ?? null,
+    freeSwap: stat.free_swap ?? null,
+    totalSwap: stat.total_swap ?? null,
     sampledAt: stat.time_stamp,
   };
 }

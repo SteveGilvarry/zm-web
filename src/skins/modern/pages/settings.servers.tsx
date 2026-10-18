@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { clsx } from 'clsx';
+import { formatBytes } from '@/lib/format';
 import { useTranslation } from 'react-i18next';
 import { Plus, Trash2, Pencil, Save, X, ChevronDown, ChevronRight } from 'lucide-react';
 
@@ -257,11 +258,14 @@ function LoadCells({ load, layout }: { load: ServerLoadSummary | null; layout: '
   const cpuLoad = load?.cpuLoad ?? null;
   const memFree = load?.memFreePercent ?? null;
   const swapFree = load?.swapFreePercent ?? null;
+  // Free / total in bytes, as legacy prints it, when the sample carries totals.
+  const freeOf = (free: number | null | undefined, total: number | null | undefined, pctFree: number | null) =>
+    total ? `${formatBytes(free ?? 0)} / ${formatBytes(total)}` : fmt(pctFree, '%');
   const cells: Array<[string, string, LoadTone]> = [
     [t('Load'), fmt(cpuLoad), cpuLoadTone(cpuLoad)],
     [t('CPU'), fmt(load?.cpuPercent ?? null, '%'), 'ok'],
-    [t('Free mem'), fmt(memFree, '%'), freeTone(memFree)],
-    [t('Free swap'), fmt(swapFree, '%'), freeTone(swapFree)],
+    [t('Free mem'), freeOf(load?.freeMem, load?.totalMem, memFree), freeTone(memFree)],
+    [t('Free swap'), freeOf(load?.freeSwap, load?.totalSwap, swapFree), freeTone(swapFree)],
   ];
   if (layout === 'inline') {
     return (

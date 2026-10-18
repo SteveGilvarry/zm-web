@@ -85,8 +85,8 @@ describe('Servers page', () => {
     await waitFor(() => expect(within(row1).getByText('40.2%')).toBeInTheDocument());
     expect(within(row1).getByText('2')).toBeInTheDocument();
     expect(within(row1).getByText('1.7')).toBeInTheDocument();
-    // Free memory 25% (legacy colours < 10% red; 25% sits in the warn-free zone).
-    expect(within(row1).getByText('25%')).toBeInTheDocument();
+    // Free memory as free / total (25% free sits clear of legacy's 10% red line).
+    expect(within(row1).getByText('3.9 GB / 15.6 GB')).toHaveAttribute('data-tone', 'ok');
 
     // 443 is the https default, so the Url drops it; the paths are unset here.
     const row2 = screen.getByText('zm-edge-02').closest('tr')!;

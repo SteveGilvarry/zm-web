@@ -1,17 +1,18 @@
-import { Fragment } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 
 import { AppShell } from '@/skins/AppShell';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { Modal } from '@/components/common/Modal';
 import { QueryState } from '@/components/common/QueryState';
-import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import type { Server } from '@/api/servers';
 import { useServersPage, type ServerRow } from '@/features/servers/useServersPage';
 import { SERVER_PROTOCOLS, SERVER_STATUSES, useServerForm } from '@/features/servers/useServerForm';
 import { SERVER_DAEMONS, serverDaemonLabels } from '@/features/servers/serverFields';
-import { cpuLoadTone, freeTone, serverStatusTone, type LoadTone, type ServerLoadSummary } from '@/features/servers/serverStats';
+import { CPU_LOAD_ERROR, serverStatusTone, type LoadTone, type ServerLoadSummary } from '@/features/servers/serverStats';
+import { humanFilesize } from '@/lib/format';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
@@ -19,10 +20,14 @@ import { ClassicButton, ClassicTable, classicInput, classicLink, classicTd, clas
 
 const input = classicInput;
 
-/** Id, Name, Url, three paths, Status, Monitors, four load cells, four daemon flags, actions. */
-const COLUMN_COUNT = 17;
+/** Mark, Id, Name, Url, three paths, Status, Monitors, load, memory, swap, four daemon flags. */
+const COLUMN_COUNT = 16;
 
-/** Options → Servers — classic skin: legacy server table with load columns. */
+/**
+ * Options → Servers — classic skin, legacy `_options_servers.php`: Add New
+ * Server and Delete over the table, a Mark column, and every cell a link
+ * that opens the server modal for an editor.
+ */
 export default function ClassicSettingsServersPage() {
   const { t, i18n } = useTranslation();
   const s = useServersPage();
@@ -34,8 +39,8 @@ export default function ClassicSettingsServersPage() {
 
   if (!s.isAuthenticated) return null;
 
-  const pct = (v: number | null, suffix = '') =>
-    v == null ? '—' : `${v.toLocaleString(i18n.language, { maximumFractionDigits: 1 })}${suffix}`;
+  const num = (v: number | null) =>
+    v == null ? '—' : v.toLocaleString(i18n.language, { maximumFractionDigits: 2 });
 
   return (
     <AppShell title={t('Servers')}>
@@ -45,6 +50,12 @@ export default function ClassicSettingsServersPage() {
           <div className="flex items-start gap-4">
             <OptionsRail tabs={tabs} active="servers" />
             <div className="flex-1 min-w-0 space-y-3">
+              <div className="flex items-center gap-2">
+                <ClassicButton onClick={s.openCreate} disabled={!canEdit}>{t('Add New Server')}</ClassicButton>
+                <ClassicButton tone="danger" onClick={s.requestDeleteMarked} disabled={!canEdit || s.selectedIds.size === 0}>
+                  {t('Delete')}
+                </ClassicButton>
+              </div>
               {s.statsError && (
                 <p role="alert" className="text-xs text-amber-700">
                   {t('Load columns unavailable: {{message}}', { message: s.statsError })}
@@ -61,6 +72,15 @@ export default function ClassicSettingsServersPage() {
                 <ClassicTable>
                   <thead>
                     <tr>
+                      <th className={clsx(classicTh, 'w-8')}>
+                        <input
+                          type="checkbox"
+                          aria-label={t('Select all')}
+                          disabled={!canEdit || s.rows.length === 0}
+                          checked={s.rows.length > 0 && s.selectedIds.size === s.rows.length}
+                          onChange={s.toggleAll}
+                        />
+                      </th>
                       <th className={clsx(classicTh, 'text-end')}>{t('Id')}</th>
                       <th className={classicTh}>{t('Name')}</th>
                       <th className={classicTh}>{t('Url')}</th>
@@ -69,14 +89,12 @@ export default function ClassicSettingsServersPage() {
                       <th className={classicTh}>{t('Path to API')}</th>
                       <th className={classicTh}>{t('Status')}</th>
                       <th className={clsx(classicTh, 'text-end')}>{t('Monitors')}</th>
-                      <th className={clsx(classicTh, 'text-end')}>{t('Load')}</th>
-                      <th className={clsx(classicTh, 'text-end')}>{t('CPU')}</th>
-                      <th className={clsx(classicTh, 'text-end')}>{t('Free mem')}</th>
-                      <th className={clsx(classicTh, 'text-end')}>{t('Free swap')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('CPU Load')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Free/Total Memory')}</th>
+                      <th className={clsx(classicTh, 'text-end')}>{t('Free/Total Swap')}</th>
                       {SERVER_DAEMONS.map((d) => (
                         <th key={d} className={classicTh}>{daemonLabels[d]}</th>
                       ))}
-                      <th className={clsx(classicTh, 'text-end')}>{t('Actions')}</th>
                     </tr>
                   </thead>
                   <tbody>
@@ -88,19 +106,19 @@ export default function ClassicSettingsServersPage() {
                       </tr>
                     )}
                     {s.rows.map((row) => (
-                      <ServerRows
+                      <ServerTableRow
                         key={row.server.id}
                         row={row}
-                        pct={pct}
+                        num={num}
                         canEdit={canEdit}
-                        expanded={s.expandedId === row.server.id}
-                        onToggle={() => s.toggleDetail(row.server.id)}
+                        marked={s.selectedIds.has(row.server.id)}
+                        onMark={() => s.toggleSelected(row.server.id)}
                         onEdit={() => s.startEdit(row.server)}
-                        onDelete={() => s.requestDelete(row.server)}
                       />
                     ))}
                     {s.localLoad && (
                       <tr className="text-zinc-600">
+                        <td className={classicTd} />
                         <td className={clsx(classicTd, 'italic')} colSpan={7}>
                           {t('This host')}
                           <span className="ms-1 text-[10px] not-italic text-zinc-400">
@@ -108,29 +126,34 @@ export default function ClassicSettingsServersPage() {
                           </span>
                         </td>
                         <td className={clsx(classicTd, 'text-end')}>—</td>
-                        <LoadTds load={s.localLoad} pct={pct} />
+                        <LoadTds load={s.localLoad} num={num} />
                         {SERVER_DAEMONS.map((d) => <td key={d} className={classicTd}>—</td>)}
-                        <td className={classicTd} />
                       </tr>
                     )}
                   </tbody>
                 </ClassicTable>
               </QueryState>
-
-              <RequirePerm feature="system" level="Edit">
-                <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} onCancel={s.cancelEdit} />
-              </RequirePerm>
             </div>
           </div>
         </div>
       </main>
 
+      <Modal
+        isOpen={s.formOpen && canEdit}
+        onClose={s.cancelEdit}
+        title={s.editing ? t('Server - {{name}}', { name: s.editing.name }) : t('New Server')}
+      >
+        <ServerForm key={s.editing?.id ?? 'new'} editing={s.editing} onSaved={s.onSaved} onCancel={s.cancelEdit} />
+      </Modal>
+
       <ConfirmDialog
-        isOpen={!!s.deleteTarget}
+        isOpen={!!s.deleteTarget || s.deleteMarked}
         onClose={s.cancelDelete}
         onConfirm={s.confirmDelete}
         title={t('Delete server')}
-        message={t('Delete server "{{name}}"?', { name: s.deleteTarget?.name })}
+        message={s.deleteTarget
+          ? t('Delete server "{{name}}"?', { name: s.deleteTarget.name })
+          : t('Delete {{count}} marked server?', { count: s.selectedIds.size })}
         confirmText={t('Delete')}
         variant="danger"
         isLoading={s.isDeleting}
@@ -139,90 +162,51 @@ export default function ClassicSettingsServersPage() {
   );
 }
 
-type Pct = (v: number | null, suffix?: string) => string;
+type Num = (v: number | null) => string;
 
-/** One server row plus the read-only detail row it expands into. */
-function ServerRows({ row, pct, canEdit, expanded, onToggle, onEdit, onDelete }: {
+/** One legacy server row: every cell opens the server modal for an editor. */
+function ServerTableRow({ row, num, canEdit, marked, onMark, onEdit }: {
   row: ServerRow;
-  pct: Pct;
+  num: Num;
   canEdit: boolean;
-  expanded: boolean;
-  onToggle: () => void;
+  marked: boolean;
+  onMark: () => void;
   onEdit: () => void;
-  onDelete: () => void;
 }) {
   const { t } = useTranslation();
   const { server, monitorCount, load, url } = row;
   const mono = clsx(classicTd, 'font-mono text-xs');
+  const cell = (content: ReactNode) =>
+    canEdit ? <button type="button" onClick={onEdit} className={clsx(classicLink, 'text-start')}>{content}</button> : content;
 
   return (
-    <>
-      <tr>
-        <td className={clsx(mono, 'text-end tabular-nums')}>{server.id}</td>
-        <td className={classicTd}>
-          {canEdit ? (
-            <button type="button" onClick={onEdit} className={classicLink}>{server.name}</button>
-          ) : server.name}
-        </td>
-        <td className={mono}>{url ?? '—'}</td>
-        <td className={mono}>{server.path_to_index || '—'}</td>
-        <td className={mono}>{server.path_to_zms || '—'}</td>
-        <td className={mono}>{server.path_to_api || '—'}</td>
-        <td className={clsx(classicTd, 'text-xs')}><StatusText status={server.status} /></td>
-        <td className={clsx(classicTd, 'text-end font-mono tabular-nums')}>{monitorCount}</td>
-        <LoadTds load={load} pct={pct} />
-        {row.daemons.map(({ daemon, enabled }) => (
-          <td key={daemon} className={clsx(classicTd, 'text-xs')}>{enabled ? t('yes') : t('no')}</td>
-        ))}
-        <td className={clsx(classicTd, 'text-end whitespace-nowrap')}>
-          <ClassicButton
-            onClick={onToggle}
-            aria-expanded={expanded}
-            aria-label={t('Details for {{name}}', { name: server.name })}
-          >
-            {expanded ? t('Hide') : t('Details')}
-          </ClassicButton>{' '}
-          <RequirePerm feature="system" level="Edit">
-            <ClassicButton onClick={onEdit} aria-label={t('Edit {{name}}', { name: server.name })}>{t('Edit')}</ClassicButton>{' '}
-            <ClassicButton onClick={onDelete} aria-label={t('Delete {{name}}', { name: server.name })}>{t('Delete')}</ClassicButton>
-          </RequirePerm>
-        </td>
-      </tr>
-      {expanded && (
-        <tr>
-          <td colSpan={COLUMN_COUNT} className={clsx(classicTd, 'bg-zinc-50')}>
-            <ServerDetail row={row} />
-          </td>
-        </tr>
-      )}
-    </>
-  );
-}
-
-/** What the legacy table has no column for: protocol, hostname, state, coordinates. */
-function ServerDetail({ row }: { row: ServerRow }) {
-  const { t } = useTranslation();
-  const { server, coords } = row;
-  const items: Array<[string, string]> = [
-    [t('Protocol'), server.protocol || '—'],
-    [t('Hostname'), server.hostname || '—'],
-    [t('Run state'), server.state_id != null ? String(server.state_id) : '—'],
-    [t('Coordinates'), coords ?? '—'],
-  ];
-
-  return (
-    <dl className="grid grid-cols-4 gap-x-6 gap-y-2 text-xs py-1">
-      {items.map(([label, value]) => (
-        <div key={label} className="flex gap-2">
-          <dt className="text-zinc-500">{label}</dt>
-          <dd className="font-mono text-zinc-800">{value}</dd>
-        </div>
+    <tr>
+      <td className={classicTd}>
+        <input
+          type="checkbox"
+          aria-label={t('Mark {{name}}', { name: server.name })}
+          checked={marked}
+          disabled={!canEdit}
+          onChange={onMark}
+        />
+      </td>
+      <td className={clsx(mono, 'text-end tabular-nums')}>{cell(server.id)}</td>
+      <td className={classicTd}>{cell(server.name)}</td>
+      <td className={mono}>{cell(url ?? '')}</td>
+      <td className={mono}>{cell(server.path_to_index || '')}</td>
+      <td className={mono}>{cell(server.path_to_zms || '')}</td>
+      <td className={mono}>{cell(server.path_to_api || '')}</td>
+      <td className={clsx(classicTd, 'text-xs')}>{cell(<StatusText status={server.status} />)}</td>
+      <td className={clsx(classicTd, 'text-end font-mono tabular-nums')}>{cell(monitorCount)}</td>
+      <LoadTds load={load} num={num} />
+      {row.daemons.map(({ daemon, enabled }) => (
+        <td key={daemon} className={clsx(classicTd, 'text-xs')}>{cell(enabled ? t('yes') : t('no'))}</td>
       ))}
-    </dl>
+    </tr>
   );
 }
 
-/** Legacy `server.php` paints CpuLoad > 5 and free mem/swap < 10% red. */
+/** Legacy paints CpuLoad > 5 and free mem/swap under 10 % (or no total) red. */
 const TONE_CLS: Record<LoadTone, string> = {
   ok: '',
   warn: 'text-amber-700',
@@ -230,17 +214,24 @@ const TONE_CLS: Record<LoadTone, string> = {
   none: 'text-zinc-400',
 };
 
-function LoadTds({ load, pct }: { load: ServerLoadSummary | null; pct: Pct }) {
-  const cell = clsx(classicTd, 'text-end font-mono tabular-nums');
+/** `human_filesize(free) / human_filesize(total)`; red when the total is unknown or free is under 10 %. */
+function freeTotal(free: number | null, total: number | null): { text: string; tone: LoadTone } {
+  if (free == null && total == null) return { text: '—', tone: 'none' };
+  const tone: LoadTone = !total || (free ?? 0) / total < 0.1 ? 'error' : 'ok';
+  return { text: `${humanFilesize(free ?? 0)} / ${humanFilesize(total ?? 0)}`, tone };
+}
+
+function LoadTds({ load, num }: { load: ServerLoadSummary | null; num: Num }) {
+  const cell = clsx(classicTd, 'text-end font-mono tabular-nums whitespace-nowrap');
   const cpuLoad = load?.cpuLoad ?? null;
-  const memFree = load?.memFreePercent ?? null;
-  const swapFree = load?.swapFreePercent ?? null;
+  const cpuTone: LoadTone = cpuLoad == null ? 'none' : cpuLoad > CPU_LOAD_ERROR ? 'error' : 'ok';
+  const mem = freeTotal(load?.freeMem ?? null, load?.totalMem ?? null);
+  const swap = freeTotal(load?.freeSwap ?? null, load?.totalSwap ?? null);
   return (
     <>
-      <td className={clsx(cell, TONE_CLS[cpuLoadTone(cpuLoad)])} data-tone={cpuLoadTone(cpuLoad)}>{pct(cpuLoad)}</td>
-      <td className={cell}>{pct(load?.cpuPercent ?? null, '%')}</td>
-      <td className={clsx(cell, TONE_CLS[freeTone(memFree)])} data-tone={freeTone(memFree)}>{pct(memFree, '%')}</td>
-      <td className={clsx(cell, TONE_CLS[freeTone(swapFree)])} data-tone={freeTone(swapFree)}>{pct(swapFree, '%')}</td>
+      <td className={clsx(cell, TONE_CLS[cpuTone])} data-tone={cpuTone}>{num(cpuLoad)}</td>
+      <td className={clsx(cell, TONE_CLS[mem.tone])} data-tone={mem.tone}>{mem.text}</td>
+      <td className={clsx(cell, TONE_CLS[swap.tone])} data-tone={swap.tone}>{swap.text}</td>
     </>
   );
 }
@@ -265,10 +256,7 @@ function ServerForm({ editing, onSaved, onCancel }: { editing: Server | null; on
      four Yes/No daemon flags. Status and the coordinates are extra — the row
      carries them and the API accepts them, legacy's modal just omits them. */
   return (
-    <form onSubmit={f.submit} className="bg-white rounded border border-zinc-300 p-3 space-y-2">
-      <h2 className="text-sm font-semibold text-zinc-800">
-        {editing ? t('Edit server — {{name}}', { name: editing.name }) : t('New server')}
-      </h2>
+    <form onSubmit={f.submit} className="space-y-2">
       <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center text-sm max-w-xl">
         <label htmlFor="srv-name" className="text-zinc-700">{t('Name')}</label>
         <input id="srv-name" value={f.name} onChange={(e) => f.setName(e.target.value)} className={input} placeholder={t('e.g. zm-edge-01')} />
@@ -319,9 +307,9 @@ function ServerForm({ editing, onSaved, onCancel }: { editing: Server | null; on
         ))}
       </div>
       {f.error && <p role="alert" className="text-xs text-red-700">{t('Save failed: {{message}}', { message: f.error })}</p>}
-      <div className="flex gap-2">
-        <ClassicButton type="submit" tone="primary" disabled={f.submitDisabled}>{editing ? t('Save') : t('Register')}</ClassicButton>
-        {editing && <ClassicButton onClick={onCancel}>{t('Cancel')}</ClassicButton>}
+      <div className="flex justify-end gap-2 pt-2">
+        <ClassicButton type="submit" tone="primary" disabled={f.submitDisabled}>{t('Save')}</ClassicButton>
+        <ClassicButton onClick={onCancel}>{t('Cancel')}</ClassicButton>
       </div>
     </form>
   );
