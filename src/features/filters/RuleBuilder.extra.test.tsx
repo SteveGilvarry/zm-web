@@ -176,6 +176,14 @@ describe('RuleBuilder — row structure controls', () => {
     expect(screen.getAllByLabelText('Conjunction')).toHaveLength(1);
   });
 
+  it('classic leaves the first conjunction cell blank, as legacy does', () => {
+    renderWithProviders(
+      <RuleBuilder variant="classic" query={{ terms: twoTerms }} monitors={monitors} storage={storage} onChange={vi.fn()} />,
+    );
+    expect(screen.queryByText('where')).toBeNull();
+    expect(screen.getAllByLabelText('Conjunction')).toHaveLength(1);
+  });
+
   it('switching a conjunction to "or" rewrites that term only', async () => {
     const user = userEvent.setup();
     const onChange = mount(twoTerms);

@@ -27,6 +27,8 @@ interface RuleBuilderProps {
   monitors: Monitor[];
   storage: ZmStorage[];
   onChange: (q: FilterQuery) => void;
+  /** `classic` leaves the first row's conjunction cell blank, as legacy does. */
+  variant?: 'modern' | 'classic';
 }
 
 /**
@@ -46,7 +48,7 @@ function bracketChoices(termCount: number, current: number): number[] {
  * preview cannot model sit under their own group so the operator knows
  * "List matches" will be best-effort for them (the daemon still honours them).
  */
-export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderProps) {
+export function RuleBuilder({ query, monitors, storage, onChange, variant = 'modern' }: RuleBuilderProps) {
   const { t } = useTranslation();
   const attrLabels = useFilterAttrLabels();
   const opLabels = useFilterOpLabels();
@@ -82,7 +84,8 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
           <div key={i} className="flex items-center gap-1.5 flex-wrap" data-testid="filter-term">
             {i === 0 ? (
               <span className="w-12 text-end text-xs text-fg-dim">
-                {t('where')}
+                {/* Legacy's first row has an empty conjunction cell (Filter.php:1080). */}
+                {variant === 'classic' ? '' : t('where')}
               </span>
             ) : (
               <select

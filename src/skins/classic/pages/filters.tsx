@@ -113,7 +113,7 @@ export default function ClassicFiltersPage() {
                 </div>
               ) : draftQuery ? (
                 <>
-                  <RuleBuilder query={draftQuery} monitors={monitors} storage={storage} onChange={setDraftQuery} />
+                  <RuleBuilder variant="classic" query={draftQuery} monitors={monitors} storage={storage} onChange={setDraftQuery} />
                   <div className="mt-2 flex flex-wrap items-center justify-center gap-2 text-sm text-zinc-700">
                     <label htmlFor="filter-sort">{t('Sort by')}</label>
                     <select id="filter-sort" value={draftQuery.sort_field ?? ''} onChange={(e) => setDraftQuery({ ...draftQuery, sort_field: e.target.value })} className={classicSelect}>

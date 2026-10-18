@@ -521,6 +521,21 @@ describe('ClassicEventsListPage — toolbar, sort and pager', () => {
     await waitFor(() => expect(eventRequests.at(-1)?.get('direction')).toBe('desc'));
   });
 
+  it('sorts by Archived, Emailed and DiskSpace, and reads those sorts back from the URL', async () => {
+    const user = userEvent.setup();
+    initialSearch = { sort: 'disk_space', dir: 'desc' };
+    useEventsColumnsStore.getState().showAll();
+    stub();
+    await mountAndSettle();
+    expect(eventRequests.at(-1)?.get('sort')).toBe('disk_space');
+    expect(eventRequests.at(-1)?.get('direction')).toBe('desc');
+
+    await user.click(screen.getByRole('button', { name: /^Archived/ }));
+    await waitFor(() => expect(eventRequests.at(-1)?.get('sort')).toBe('archived'));
+    await user.click(screen.getByRole('button', { name: /^Emailed/ }));
+    await waitFor(() => expect(eventRequests.at(-1)?.get('sort')).toBe('emailed'));
+  });
+
   it('refetches from the toolbar refresh button', async () => {
     const user = userEvent.setup();
     stub();
