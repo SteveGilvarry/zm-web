@@ -51,6 +51,9 @@ const ANCHORS: Record<PageKey, Anchor> = {
   'events.list': (p) => eventLink(p, SEED.events.open).first(),
   'events.detail': (p) => p.locator(`a[href="/events/${SEED.events.withFrames[0]}/frames"]`).first(),
   'events.frames': (p) => p.getByTestId('frames-table'),
+  'events.frame': (p) => p.getByTestId('frame-title').or(p.getByTestId('frame-score')).first(),
+  'events.stats': (p) => p.getByTestId('stats-table'),
+  timeline: (p) => p.getByTestId('timeline-chart'),
   filters: (p) => p.getByRole('button', { name: /add condition/i }),
   // Classic's toolbar is legacy's bare [New]; modern spells it out.
   groups: (p, skin) =>
