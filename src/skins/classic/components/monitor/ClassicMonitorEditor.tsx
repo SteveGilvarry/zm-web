@@ -8,7 +8,7 @@ import { ListOrdered, Rss } from 'lucide-react';
 import { listGroups } from '@/api/groups';
 import { Modal } from '@/components/common/Modal';
 import { usePerms } from '@/features/auth/usePerms';
-import { useClassicMonitorTabs, estimatedRamUse } from '@/features/monitors/editor/classicFields';
+import { useClassicMonitorTabs } from '@/features/monitors/editor/classicFields';
 import { isFieldLocked, visibleFields, type FieldDef, type FieldValue } from '@/features/monitors/editor/fields';
 import { FieldInput } from '@/features/monitors/editor/FieldInput';
 import { storedOnly } from '@/features/monitors/editor/editorState';
@@ -216,16 +216,6 @@ function ClassicFieldRow({ field: f, ed }: { field: FieldDef; ed: MonitorEditorS
   let control: ReactNode;
   if (f.kind === 'groups') {
     control = <ClassicGroupsSelect value={ed.groupsValue} onChange={ed.setGroups} label={f.label} />;
-  } else if (f.kind === 'triggers') {
-    // X10 is the only trigger ZoneMinder has, and X10 is not built.
-    control = <em>{t('None available')}</em>;
-  } else if (f.kind === 'ram-estimate') {
-    const ram = estimatedRamUse(ed.draft);
-    control = (
-      <span data-testid="estimated-ram">
-        {ram ? `${t('Min')}: ${ram.min} ${t('Max')}: ${ram.max ?? t('Unlimited')}` : '—'}
-      </span>
-    );
   } else {
     control = (
       <FieldInput

@@ -259,6 +259,36 @@ describe('MonitorEditor — legacy validateForm', () => {
   });
 });
 
+describe('MonitorEditor — rows legacy has that modern lacked', () => {
+  it('restores a deleted monitor with deleted: false', async () => {
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, deleted: true } as unknown as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('checkbox', { name: 'Restore this deleted monitor' }));
+    // Still offered after ticking, until the save lands.
+    expect(screen.getByRole('checkbox', { name: 'Restore this deleted monitor' })).toBeChecked();
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    await waitFor(() => expect(captured()).toEqual({ deleted: false }));
+  });
+
+  it('is not offered on a live monitor; Triggers reads None available', () => {
+    renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
+    expect(screen.queryByRole('checkbox', { name: 'Restore this deleted monitor' })).not.toBeInTheDocument();
+    expect(screen.getByText('None available')).toBeInTheDocument();
+  });
+
+  it('Buffers shows the estimated RAM and follows the buffer sizes', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MonitorEditor monitor={{ ...monitor, colours: 4, image_buffer_count: 3, pre_event_count: 5, max_image_buffer_count: 0 } as Monitor} onClose={() => {}} />,
+    );
+    await user.click(screen.getByRole('button', { name: /^buffers$/i }));
+    expect(screen.getByTestId('estimated-ram')).toHaveTextContent('Min: 63.28MB Max: Unlimited');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Max image buffer (frames)' }), { target: { value: '121' } });
+    expect(screen.getByTestId('estimated-ram')).toHaveTextContent('Max: 1GB');
+  });
+});
+
 describe('MonitorEditor — header actions', () => {
   it('links to Watch, Cycle (with monitor_id) and Zones', () => {
     renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);

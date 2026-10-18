@@ -10,6 +10,7 @@ import {
   ManufacturerSelect, ModelSelect, StorageSelect, ServerSelect, ReturnLocationSelect, LinkedMonitorsSelect, UserSelect,
 } from './RelationSelects';
 import { randomHexColour, HEX_COLOUR, storedOnly } from './editorState';
+import { estimatedRamUse } from './classicFields';
 
 /**
  * One editor field's input, by `kind`. Shared by both skins' editors:
@@ -119,6 +120,20 @@ export function FieldInput({
         </span>
         {on ? t('Enabled') : t('Disabled')}
       </button>
+    );
+  }
+
+  if (field.kind === 'triggers') {
+    // X10 is the only trigger ZoneMinder has, and X10 is not built.
+    return <em className="text-sm">{t('None available')}</em>;
+  }
+
+  if (field.kind === 'ram-estimate') {
+    const ram = estimatedRamUse(draft);
+    return (
+      <span data-testid="estimated-ram" className="text-sm font-mono tabular-nums">
+        {ram ? `${t('Min')}: ${ram.min} ${t('Max')}: ${ram.max ?? t('Unlimited')}` : '—'}
+      </span>
     );
   }
 

@@ -128,7 +128,17 @@ function MonitorEditorBody({ monitor, seed, onCreated, onClose, onDeleted, initi
             <RefreshCw size={12} />
             {t('Cycle')}
           </Link>
-          <Link to="/monitors/$monitorId/zones" params={{ monitorId }} className={linkClass}>
+          <Link
+            to="/monitors/$monitorId/zones"
+            params={{ monitorId }}
+            className={linkClass}
+            // Legacy asks before leaving for Zones with unsaved edits.
+            onClick={(e) => {
+              if (diffCount > 0 && !confirm(t('Leave for Zones and discard {{count}} unsaved change?', { count: diffCount }))) {
+                e.preventDefault();
+              }
+            }}
+          >
             <PencilRuler size={12} />
             {t('Zones')}
           </Link>
@@ -332,7 +342,7 @@ interface FormPaneProps {
 }
 
 function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate, tools }: FormPaneProps) {
-  const fields = visibleFields(tab, draft);
+  const fields = visibleFields(tab, draft, baseline);
   return (
     <div className="max-w-4xl mx-auto px-6 py-5">
       <header className="mb-5 pb-3 border-b border-border-subtle flex items-start justify-between gap-4">

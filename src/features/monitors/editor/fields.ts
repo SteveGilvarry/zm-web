@@ -508,6 +508,9 @@ export function buildTabs(t: Translate): TabDef[] {
       label: t('General'),
       description: t('Identity, make and model, and how this monitor relates to the rest of the system.'),
       fields: [
+        { kind: 'undelete',  key: 'deleted',      label: t('Restore this deleted monitor'), span: 2,
+          visibleIf: (_d, stored) => isSet(stored.deleted),
+          help: t('The monitor is soft-deleted. Tick this and save to bring it back.') },
         { kind: 'text',      key: 'name',         label: t('Name'), span: 2, required: true },
         { kind: 'textarea',  key: 'notes',        label: t('Notes'), span: 2,
           help: t('Free-form metadata. ZoneMinder convention: key=value pairs.') },
@@ -530,6 +533,8 @@ export function buildTabs(t: Translate): TabDef[] {
           help: t('Website monitors: how often the page is reloaded.') },
         { kind: 'linked-monitors', key: 'linked_monitors', label: t('Linked monitors'), span: 2,
           help: t('An alarm on any linked monitor also triggers this one.') },
+        { kind: 'triggers',  key: '_triggers',    label: t('Triggers'), virtual: true,
+          help: t('X10 is the only trigger type ZoneMinder has, and it is not supported here.') },
       ],
     },
     {
@@ -693,6 +698,8 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'number', key: 'post_event_count',        label: t('Post-event frames'), min: 0, integer: true },
         { kind: 'number', key: 'stream_replay_buffer',    label: t('Stream replay buffer'), min: 0, integer: true },
         { kind: 'number', key: 'alarm_frame_count',       label: t('Alarm frame count'), min: 1, integer: true },
+        { kind: 'ram-estimate', key: '_ram',              label: t('Estimated RAM use'), virtual: true, span: 2,
+          help: t('Shared memory for (image buffer + pre-event) frames at the capture size; the packet queue adds up to the max image buffer on top.') },
       ],
     },
     {
