@@ -4,14 +4,22 @@
  * colours and tooltips `getDbConHTML` / `getRamHTML` / `getZMVersionHTML`
  * give them.
  */
-import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
-import { ClassicStatBar } from './StatBar';
+import type { ReactNode } from 'react';
+
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, ...rest }: { children: ReactNode; to?: string; [k: string]: unknown }) => (
+    <a href={to ?? '#'} {...rest}>{children}</a>
+  ),
+}));
+
+const { ClassicStatBar } = await import('./StatBar');
 
 const server = setupServer();
 beforeAll(() => {
@@ -154,13 +162,28 @@ describe('ClassicStatBar', () => {
     expect(ver.className).toContain('ffa801');
   });
 
-  it('renders nothing at all with ZM_WEB_SHOW_SERVER_STATS off', async () => {
+  it('keeps only the version with ZM_WEB_SHOW_SERVER_STATS off', async () => {
     stub({ running: true, daemons: [], stats: FULL_STATS }, { version: '1.37.64' }, {
       ZM_WEB_SHOW_SERVER_STATS: '0',
     });
-    const { container } = renderWithProviders(<ClassicStatBar />);
-    await waitFor(() => expect(screen.queryByText(/^Load:/)).toBeNull());
-    expect(container.querySelector('#classic-stat-bar')).toBeNull();
+    renderWithProviders(<ClassicStatBar />);
+    await waitFor(() => expect(screen.getByTestId('stat-version')).toHaveTextContent('v1.37.64'));
+    expect(screen.queryByText(/^Load:/)).toBeNull();
+    expect(screen.queryByTestId('stat-storage')).toBeNull();
+  });
+
+  it('polls at ZM_WEB_H_REFRESH_NAVBAR seconds', async () => {
+    stub({ running: true, daemons: [], stats: FULL_STATS }, { version: '1.37.64' }, { ZM_WEB_H_REFRESH_NAVBAR: '1' });
+    let calls = 0;
+    server.use(http.get('/api/v3/system/status', () => { calls++; return HttpResponse.json({ running: true, daemons: [], stats: FULL_STATS }); }));
+    renderWithProviders(<ClassicStatBar />);
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+  });
+
+  it('links the storage entry to Options → Storage', async () => {
+    stub({ running: true, daemons: [], stats: FULL_STATS });
+    renderWithProviders(<ClassicStatBar />);
+    expect(await screen.findByTestId('stat-storage')).toHaveAttribute('href', '/settings/storage');
   });
 
   it('hides itself when the navbar chevron is flipped down', async () => {
