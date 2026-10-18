@@ -50,6 +50,7 @@ const monitor: Monitor = {
   recording: 'OnMotion',
   function: 'Modect',
   type: 'Ffmpeg',
+  path: 'rtsp://10.0.0.1/main',
 
   // Timestamp tab
   label_format: '',

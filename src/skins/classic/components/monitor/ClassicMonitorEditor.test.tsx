@@ -216,8 +216,13 @@ describe('ClassicMonitorEditor', () => {
     expect(screen.getByRole('heading', { name: 'Monitor - Monitor-3' })).toBeInTheDocument();
     expect(tab('Zones')).toBeDisabled();
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    // Legacy validateForm: an Ffmpeg monitor needs a Source Path.
     await user.click(screen.getByRole('button', { name: 'Save and close' }));
-    await waitFor(() => expect(body).toMatchObject({ name: 'Monitor-3', pre_event_count: 5, max_image_buffer_count: 121 }));
+    expect(await screen.findByText('Source -> Path must be set to a valid value')).toBeInTheDocument();
+    expect(tab('Source')).toHaveAttribute('aria-current', 'page');
+    await user.type(screen.getByRole('textbox', { name: 'Source Path' }), 'rtsp://10.0.0.3/live');
+    await user.click(screen.getByRole('button', { name: 'Save and close' }));
+    await waitFor(() => expect(body).toMatchObject({ name: 'Monitor-3', path: 'rtsp://10.0.0.3/live', pre_event_count: 5, max_image_buffer_count: 121 }));
     await waitFor(() => expect(onClose).toHaveBeenCalled());
   });
 });

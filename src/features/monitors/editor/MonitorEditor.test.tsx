@@ -198,13 +198,64 @@ describe('MonitorEditor — save', () => {
 
     renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
     await user.tripleClick(screen.getByDisplayValue('Front Door'));
-    await user.keyboard('Driveway');
+    await user.keyboard('Gatehouse');
     // Leave General so the jump-back is observable.
     await user.click(screen.getByRole('button', { name: /^mqtt$/i }));
     await user.click(screen.getByRole('button', { name: /^save 1$/i }));
 
     await waitFor(() => expect(screen.getByRole('heading', { name: /^general$/i })).toBeInTheDocument());
     expect(screen.getByRole('alert')).toHaveTextContent(/already exists/i);
+  });
+});
+
+describe('MonitorEditor — legacy validateForm', () => {
+  it('refuses another monitor’s name before it reaches the API', async () => {
+    let patched = false;
+    server.use(http.patch('/api/v3/monitors/1', () => { patched = true; return HttpResponse.json(monitor); }));
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
+    await user.tripleClick(screen.getByDisplayValue('Front Door'));
+    await user.keyboard('Driveway');
+    await user.click(screen.getByRole('button', { name: /^mqtt$/i }));
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Duplicate Monitor Name');
+    expect(screen.getByRole('heading', { name: /^general$/i })).toBeInTheDocument();
+    expect(patched).toBe(false);
+  });
+
+  it('moves credentials typed into the FFmpeg URL into Username and Password', async () => {
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, path: '' } as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const path = screen.getByRole('textbox', { name: 'Source path' });
+    fireEvent.change(path, { target: { value: 'rtsp://admin:p%40ss@10.0.0.9/live' } });
+    expect(path).toHaveValue('rtsp://10.0.0.9/live');
+    expect(screen.getByRole('textbox', { name: 'Username' })).toHaveValue('admin');
+    await user.click(screen.getByRole('button', { name: /^save \d+$/i }));
+    await waitFor(() => expect(captured()).toMatchObject({ path: 'rtsp://10.0.0.9/live', user: 'admin', pass: 'p@ss' }));
+  });
+
+  it('asks before saving a recording monitor that stores neither JPEGs nor video', async () => {
+    const captured = patchSpy();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, save_jpe_gs: 0, video_writer: 1 } as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Video writer' }), '0');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    expect(confirmSpy).toHaveBeenCalledWith('SaveJPEGs and VideoWriter are both set to disabled.  Nothing will be recorded!');
+    expect(captured()).toBeNull();
+    confirmSpy.mockRestore();
+  });
+
+  it('keeps Pre Event Count within a set Maximum Image Buffer Size', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, pre_event_count: 5, max_image_buffer_count: 10 } as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^buffers$/i }));
+    const pre = screen.getByRole('spinbutton', { name: 'Pre-event frames' });
+    fireEvent.change(pre, { target: { value: '20' } });
+    expect(screen.getByRole('spinbutton', { name: 'Max image buffer (frames)' })).toHaveValue(20);
   });
 });
 
@@ -665,6 +716,8 @@ describe('MonitorEditor — create mode (Add / Clone)', () => {
     await user.click(await screen.findByRole('checkbox', { name: 'Back' }));
     await user.click(screen.getByRole('button', { name: /^buffers$/i }));
     expect(screen.getByRole('spinbutton', { name: /^max image buffer/i })).toHaveValue(121);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    await user.type(screen.getByRole('textbox', { name: 'Source path' }), 'rtsp://10.0.0.70/live');
 
     await user.click(screen.getByRole('button', { name: /^create monitor$/i }));
     await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 70 })));

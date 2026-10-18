@@ -121,7 +121,8 @@ function ClassicMonitorEditorBody({
                     )}
                   >
                     {tab.label}
-                    {errors > 0 && <span className="ms-1 text-[#d9534f]" aria-label={t('{{count}} invalid field in {{tab}}', { count: errors, tab: tab.label })}>•</span>}
+                    {/* Decorative: each invalid field announces itself with role=alert. */}
+                    {errors > 0 && <span className="ms-1 text-[#d9534f]" aria-hidden>•</span>}
                   </button>
                 </li>
               );

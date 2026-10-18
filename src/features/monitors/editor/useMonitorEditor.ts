@@ -1,7 +1,8 @@
-import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { deleteMonitor, patchMonitor, postMonitor, type MonitorCreatePayload } from '@/api/monitors-crud';
+import { getMonitors } from '@/api/monitors';
 import { attachMonitorToGroup, detachMonitorFromGroup } from '@/api/groups';
 import { ApiClientError } from '@/api/client';
 import { useToast } from '@/components/common/toastStore';
@@ -13,6 +14,7 @@ import {
 } from './fields';
 import { useGroupMembership } from './useGroupMembership';
 import { extractEditableFields, sameValue, sameIdSet, isUnsetSecret } from './editorState';
+import { legacyErrors, legacyWarnings, splitPathCredentials, type OtherMonitors } from './legacyValidation';
 
 /**
  * Draft values in the shape the request wants. The draft keeps every value
@@ -94,6 +96,22 @@ export function useMonitorEditor({
   const groupsValue = groupsDraft ?? groupsBaseline;
   const groupsDirty = groupsDraft != null && !sameIdSet(groupsDraft, groupsBaseline);
 
+  // Every other monitor's name and RTSP stream name, for legacy's duplicate checks.
+  const othersQ = useQuery({
+    queryKey: ['monitors', 'editor-names'],
+    queryFn: () => getMonitors({ page: 1, page_size: 1000 }),
+    staleTime: 60_000,
+  });
+  const others = useMemo<OtherMonitors>(() => {
+    const rows = (othersQ.data?.items ?? []).filter((m) => m.id !== monitor?.id);
+    return {
+      names: new Set(rows.map((m) => m.name)),
+      rtspStreamNames: new Set(rows.map((m) => m.rtsp_stream_name).filter((n): n is string => !!n)),
+    };
+  }, [othersQ.data, monitor?.id]);
+  // Field bounds win over legacy's form-wide checks when both flag a key.
+  const validate = (d: Record<string, FieldValue>) => ({ ...legacyErrors(d, others, t), ...validateDraft(tabs, d, t) });
+
   // Fields the user may not change never reach the PATCH, whatever the draft says.
   const locked = useMemo(() => lockedKeys(tabs, can), [tabs, can]);
 
@@ -136,7 +154,7 @@ export function useMonitorEditor({
   if (validatedDraft !== draft) {
     setValidatedDraft(draft);
     if (Object.keys(fieldErrors).length > 0) {
-      const next = validateDraft(tabs, draft, t);
+      const next = validate(draft);
       // Keep backend messages for keys the client cannot judge.
       for (const [k, msg] of Object.entries(fieldErrors)) {
         if (!(k in next) && k in diff) next[k] = msg;
@@ -146,8 +164,8 @@ export function useMonitorEditor({
   }
 
   const jumpToFirstError = (errors: FieldErrors) => {
-    const first = Object.keys(errors)[0];
-    const id = first ? tabForField(tabs, first) : undefined;
+    const withErrors = new Set(Object.keys(errors).map((k) => tabForField(tabs, k)));
+    const id = tabs.find((tab) => withErrors.has(tab.id))?.id;
     if (id) setActiveTab(id);
   };
 
@@ -230,13 +248,16 @@ export function useMonitorEditor({
    * `after` runs once an edit is saved (the Zones guard's "Save").
    */
   const save = (closeAfter: boolean, after?: () => void) => {
-    const errors = validateDraft(tabs, draft, t);
+    const errors = validate(draft);
     if (Object.keys(errors).length > 0) {
       setFieldErrors(errors);
       setSaveError(t('Fix the highlighted fields first.'));
       jumpToFirstError(errors);
       return;
     }
+    // Legacy asks before saving something that will not work as expected.
+    const warnings = legacyWarnings(draft, t);
+    if (warnings.length > 0 && !confirm(warnings.join('\n'))) return;
     setSaveError(null);
     if (isNew) createMutation.mutate();
     else saveMutation.mutate({ closeAfter, after });
@@ -263,7 +284,29 @@ export function useMonitorEditor({
     setSaveError(null);
   };
 
-  const updateField = (key: string, value: FieldValue) => setDraft((d) => ({ ...d, [key]: value }));
+  const updateField = (key: string, value: FieldValue) =>
+    setDraft((d) => {
+      const next = { ...d, [key]: value };
+      // Legacy `change_Path`: credentials in an FFmpeg URL move into Username / Password.
+      if (key === 'path' && (d.type === 'Ffmpeg' || d.type === 'Libvlc') && typeof value === 'string') {
+        const split = splitPathCredentials(value);
+        if (split && !locked.has('user')) {
+          next.path = split.path;
+          next.user = split.user;
+          next.pass = split.pass;
+        }
+      }
+      // Legacy `buffer_setting_oninput`: Pre Event Count may not exceed a set Maximum Image Buffer Size.
+      if (key === 'pre_event_count' || key === 'max_image_buffer_count') {
+        const max = Number(next.max_image_buffer_count) || 0;
+        const pre = Number(next.pre_event_count) || 0;
+        if (max && pre > max) {
+          if (key === 'pre_event_count') next.max_image_buffer_count = pre;
+          else next.pre_event_count = max;
+        }
+      }
+      return next;
+    });
 
   /**
    * Write several values into the draft at once (a monitor preset, an ONVIF

@@ -435,11 +435,14 @@ describe('Monitors list — Add opens the full editor', () => {
     expect(name).toHaveValue(`Monitor-${maxId + 1}`);
     await user.clear(name);
     await user.type(name, 'Back Gate');
+    // Legacy refuses an Ffmpeg monitor without a Source Path.
+    await user.click(within(dialog).getByRole('button', { name: 'Source' }));
+    await user.type(within(dialog).getByRole('textbox', { name: 'Source path' }), 'rtsp://10.0.0.7/live');
     await user.click(within(dialog).getByRole('button', { name: /Create monitor/i }));
 
     await waitFor(() => expect(body).toBeDefined());
     expect(body).toMatchObject({
-      name: 'Back Gate', type: 'Ffmpeg', width: 1920, height: 1080, deleted: false,
+      name: 'Back Gate', type: 'Ffmpeg', path: 'rtsp://10.0.0.7/live', width: 1920, height: 1080, deleted: false,
       // The box's new-monitor buffers, not the row defaults.
       max_image_buffer_count: 121, pre_event_count: 5, image_buffer_count: 3,
     });
