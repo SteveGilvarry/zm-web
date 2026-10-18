@@ -830,6 +830,8 @@ describe('ClassicEventDetailPage — tag shortcuts', () => {
 
     await user.keyboard('{ArrowDown}');
     expect(screen.getByTestId('tag-input')).toHaveFocus();
+    // …and opens the dropdown on an empty input, as legacy's showDropdown does.
+    expect(within(await screen.findByTestId('tag-suggestions')).getByText('vehicle')).toBeInTheDocument();
 
     // Typing targets are exempt from the shortcuts, so step back off first.
     await user.click(document.body);

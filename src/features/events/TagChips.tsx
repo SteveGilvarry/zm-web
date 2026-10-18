@@ -6,12 +6,20 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { Tag as TagIcon, Plus, X } from 'lucide-react';
 import { listTags, createTag, attachTag, detachTag, type Tag } from '@/api/tags';
+import { useEventPlaybackStore } from '@/stores/eventPlayback';
+import { orderByRecency } from './tagOrder';
+
 
 /** What the page's keyboard shortcuts can ask of the editor (legacy J:77–83). */
 export interface TagChipsApi {
   /** ↓ — put the caret in the tag box and open its dropdown. */
   focus: () => void;
-  /** Ctrl+↓ / tagPrev / tagNext — attach the first tag not already on. */
+  /**
+   * Ctrl+↓ / tagPrev / tagNext — legacy `addTag(availableTags[0])`: the tag
+   * this operator applied last. Already on this event, it does nothing, as
+   * in legacy. With nothing applied yet in this session, the first tag not
+   * already on.
+   */
   addFirst: () => void;
 }
 
@@ -24,8 +32,9 @@ interface TagChipsProps {
 
 /**
  * Inline tag editor for an event. Shows attached tags as removable chips and
- * an autocomplete input that surfaces existing tags as you type — Enter on a
- * brand-new value creates the tag and attaches it in one step.
+ * an input whose dropdown lists the free tags, most recently used first, as
+ * soon as it has focus (legacy opens it on focus and on ↓) and narrows as you
+ * type — Enter on a brand-new value creates the tag and attaches it.
  *
  * Invalidates the parent event query on every mutation so the event detail
  * refreshes its `tags` array without a manual refetch.
@@ -41,7 +50,12 @@ export function TagChips({ eventId, currentTags, apiRef }: TagChipsProps) {
     queryKey: ['tags'],
     queryFn: () => listTags({ page: 1, page_size: 200 }),
   });
-  const allTags: Tag[] = useMemo(() => allTagsData?.items ?? [], [allTagsData]);
+  const recency = useEventPlaybackStore((st) => st.tagRecency);
+  const noteTagUsed = useEventPlaybackStore((st) => st.noteTagUsed);
+  const allTags: Tag[] = useMemo(
+    () => orderByRecency(allTagsData?.items ?? [], recency),
+    [allTagsData, recency],
+  );
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['event', eventId] });
@@ -50,7 +64,11 @@ export function TagChips({ eventId, currentTags, apiRef }: TagChipsProps) {
 
   const attachMutation = useMutation({
     mutationFn: ({ tagId }: { tagId: number }) => attachTag(eventId, tagId),
-    onSuccess: invalidate,
+    // Legacy moves the tag it just added to the front of `availableTags`.
+    onSuccess: (_data, { tagId }) => {
+      noteTagUsed(tagId);
+      invalidate();
+    },
   });
   const detachMutation = useMutation({
     mutationFn: ({ tagId }: { tagId: number }) => detachTag(eventId, tagId),
@@ -66,20 +84,23 @@ export function TagChips({ eventId, currentTags, apiRef }: TagChipsProps) {
     [currentTags],
   );
 
-  // Suggestion list: existing tags that match the input and aren't already on.
+  // Legacy `showDropdown`: every tag not already on that contains the
+  // input — all of them while it is empty, so focus alone opens the list.
   const suggestions = useMemo(() => {
     const q = input.trim().toLowerCase();
-    if (!q) return [];
     return allTags
       .filter((tag) => !attachedIds.has(tag.id))
-      .filter((tag) => tag.name.toLowerCase().includes(q))
-      .slice(0, 6);
+      .filter((tag) => tag.name.toLowerCase().includes(q));
   }, [allTags, input, attachedIds]);
 
-  // Legacy's `availableTags`: every tag not already on this event, in the
-  // order the backend listed them.
-  const availableTags = useMemo(
-    () => allTags.filter((tag) => !attachedIds.has(tag.id)),
+  // The tag Tag & Next applies: the last one this operator used, or the
+  // first free one before they have used any.
+  const lastUsed = useMemo(
+    () => allTags.find((tag) => recency.includes(tag.id)) ?? null,
+    [allTags, recency],
+  );
+  const firstFree = useMemo(
+    () => allTags.find((tag) => !attachedIds.has(tag.id)) ?? null,
     [allTags, attachedIds],
   );
 
@@ -89,13 +110,13 @@ export function TagChips({ eventId, currentTags, apiRef }: TagChipsProps) {
       setFocused(true);
     },
     addFirst: () => {
-      const first = availableTags[0];
-      if (first) attachMutation.mutate({ tagId: first.id });
+      const tag = lastUsed ?? firstFree;
+      if (tag && !attachedIds.has(tag.id)) attachMutation.mutate({ tagId: tag.id });
     },
     // `attachMutation` is stable enough for this (react-query keeps the
     // identity per render, and the handle is read on demand, not stored).
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }), [availableTags]);
+  }), [lastUsed, firstFree, attachedIds]);
 
   const exactMatch = useMemo(() => {
     const q = input.trim().toLowerCase();
@@ -185,7 +206,10 @@ export function TagChips({ eventId, currentTags, apiRef }: TagChipsProps) {
         </div>
 
         {focused && suggestions.length > 0 && (
-          <div className="absolute start-0 end-0 mt-1 rounded border border-border bg-surface shadow-[var(--elevation-2)] z-10 overflow-hidden">
+          <div
+            data-testid="tag-suggestions"
+            className="absolute start-0 end-0 mt-1 max-h-60 overflow-y-auto rounded border border-border bg-surface shadow-[var(--elevation-2)] z-10"
+          >
             {suggestions.map((tag) => (
               <button
                 key={tag.id}
