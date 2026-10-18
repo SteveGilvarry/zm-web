@@ -22,6 +22,11 @@ describe('mapLegacyUrl', () => {
     expect(map('?view=monitor&mid=4')).toEqual({ to: '/monitors/4', search: { edit: true } });
     expect(map('?view=monitor')).toEqual({ to: '/monitors', search: { new: true } });
     expect(map('?view=zones&mid=4')).toEqual({ to: '/monitors/4/zones', search: {} });
+    // One zone opens in the editor; zid=0 is legacy's Add New Zone.
+    expect(map('?view=zone&mid=4&zid=9')).toEqual({ to: '/monitors/4/zones', search: { zid: 9 } });
+    expect(map('?view=zone&mid=4&zid=0')).toEqual({ to: '/monitors/4/zones', search: { zid: 'new' } });
+    expect(map('?view=zone&mid=4')).toEqual({ to: '/monitors/4/zones', search: {} });
+    expect(map('?view=zone')).toEqual({ to: '/monitors', search: {} });
     expect(map('?view=watch&mid=abc')).toEqual({ to: '/monitors', search: {} });
   });
 

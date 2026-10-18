@@ -90,8 +90,14 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
         ? { to: `/monitors/${mid}`, search: { edit: true } }
         : { to: '/monitors', search: { new: true } };
     case 'zones':
-    case 'zone':
       return mid != null ? { to: `/monitors/${mid}/zones`, search: {} } : { to: '/monitors', search: {} };
+    case 'zone': {
+      if (mid == null) return { to: '/monitors', search: {} };
+      // `zid=0` is legacy's Add New Zone.
+      const zid = params.get('zid');
+      const open = zid == null ? null : zid === '0' ? 'new' : toInt(zid);
+      return { to: `/monitors/${mid}/zones`, search: open != null ? { zid: open } : {} };
+    }
     case 'event':
     case 'frames':
     case 'frame':
