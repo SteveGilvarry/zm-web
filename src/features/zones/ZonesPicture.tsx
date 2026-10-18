@@ -6,6 +6,8 @@ import type { Zone } from '@/api/zones';
 import type { Monitor } from '@/types';
 import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { zoneColour, zonePixelPoints } from './zoneArea';
+import { ZoneLiveView } from './ZoneLiveView';
+import { resolveZonePlayer } from './useZonePlayer';
 
 interface ZonesPictureProps {
   monitor: Monitor;
@@ -37,15 +39,26 @@ export function ZonesPicture({ monitor, frame, zones, onZoneClick, canEditMonito
       style={{ aspectRatio: frame.width > 0 && frame.height > 0 ? `${frame.width} / ${frame.height}` : '16 / 9' }}
       data-testid="zones-picture"
     >
-      {/* The box already has the post-rotation aspect, so the snapshot
-          fills it (rotated cameras included). */}
-      <MonitorPreview
-        monitorId={monitor.id}
-        monitorName={monitor.name}
-        orientation={monitor.orientation}
-        isActive={monitor.capturing !== 'None'}
-        rotationFit="fill"
-      />
+      {/* The box already has the post-rotation aspect; the picture is
+          turned onto it (rotated cameras included). */}
+      {monitor.capturing !== 'None' ? (
+        // Legacy streams with the monitor's own player here (no select on
+        // this page); with no preference that is stills.
+        <ZoneLiveView
+          monitorId={monitor.id}
+          player={resolveZonePlayer('', monitor.default_player)}
+          frame={frame}
+          orientation={monitor.orientation}
+        />
+      ) : (
+        <MonitorPreview
+          monitorId={monitor.id}
+          monitorName={monitor.name}
+          orientation={monitor.orientation}
+          isActive={false}
+          rotationFit="fill"
+        />
+      )}
       {frame.width > 0 && (
         <svg
           viewBox={`0 0 ${frame.width} ${frame.height}`}
