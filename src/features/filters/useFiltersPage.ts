@@ -7,7 +7,7 @@ import { useToast } from '@/components/common/toastStore';
 import { usePerms } from '@/features/auth/usePerms';
 import { useMe } from '@/features/auth/useMe';
 import { useZmConfig } from '@/features/config/useZmConfig';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import { getStorageList } from '@/api/storage';
 import { getUsers } from '@/api/users';
 import {
@@ -193,8 +193,8 @@ export function useFiltersPage(): FiltersPageState {
     enabled: isAuthenticated,
   });
   const monitorsQ = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 200 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
   });
   const storageQ = useQuery({
@@ -228,7 +228,7 @@ export function useFiltersPage(): FiltersPageState {
     message: useZmConfig('ZM_OPT_MESSAGE', false),
     executeCmd: canEditSystem,
   };
-  const monitors = monitorsQ.data?.items ?? [];
+  const monitors = monitorsQ.data ?? [];
   const storage = storageQ.data?.items ?? [];
   const users = usersQ.data?.items ?? [];
 

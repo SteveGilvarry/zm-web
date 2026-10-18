@@ -17,6 +17,7 @@ import {
   splitTagIds, SERVER_CURRENT, SERVER_NONE, TAG_ANY, TAG_NONE,
   type FilterAttrKind,
 } from './attrs';
+import { exclusivePick } from '@/features/events/tagFilter';
 import { bracketCount } from './tree';
 import { newTerm, normaliseTerms } from './terms';
 import { useFilterAttrLabels, useFilterOpLabels, useWeekdayLabels } from './labels';
@@ -347,15 +348,20 @@ function TagsValue({ value, label, cls, onChange }: ValueCellProps) {
     staleTime: 60_000,
   });
   const tags = [...(data?.items ?? [])].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  // Read with `decode_multi` tolerance (bare id, comma list, JSON array).
   const selected = splitTagIds(value);
 
+  // Written as the comma list both executors split (FilterTerm.php:135,
+  // Filter.pm:330); one tag is a bare id, which legacy's editor reads back
+  // with `json_decode` (Filter.php:1092). No Tag / Any Tag only work as the
+  // whole value (FilterTerm.php:468), so a sentinel is kept on its own.
   return (
     <select
       multiple
       aria-label={label}
       value={selected}
       onChange={(e) => onChange(
-        Array.from(e.target.selectedOptions, (o) => o.value).join(','),
+        exclusivePick(selected, Array.from(e.target.selectedOptions, (o) => o.value), [TAG_NONE, TAG_ANY]).join(','),
       )}
       className={clsx(cls, 'h-20')}
     >
@@ -375,9 +381,18 @@ function GroupValue({ value, label, cls, onChange }: ValueCellProps) {
     queryFn: () => listGroups(LOOKUP_PAGE),
     staleTime: 60_000,
   });
+  // Legacy's Group value is a multi-select read with `decode_multi`
+  // (Filter.php:1307) and split on commas by both executors, so several
+  // groups travel as a comma list; empty means "All Groups".
   return (
-    <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
-      <option value="">{t('— select —')}</option>
+    <select
+      multiple
+      aria-label={label}
+      title={t('All Groups')}
+      value={splitTagIds(value)}
+      onChange={(e) => onChange(Array.from(e.target.selectedOptions, (o) => o.value).join(','))}
+      className={clsx(cls, 'h-20')}
+    >
       {(data?.items ?? []).map((g) => (
         <option key={g.id} value={String(g.id)}>{g.name}</option>
       ))}

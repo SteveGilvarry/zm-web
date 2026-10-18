@@ -96,14 +96,48 @@ describe('RuleBuilder — lookup-backed value cells', () => {
     expect(ops).toEqual(['=', '!=']);
   });
 
-  it('Group lists the monitor groups by id', async () => {
+  it('Tags keeps No Tag / Any Tag on their own, as legacy executes them', async () => {
     const user = userEvent.setup();
-    const onChange = mount([{ attr: 'Group', op: '=', val: '' }]);
+    const onChange = mount([{ attr: 'Tags', op: '=', val: '1,2' }]);
     const sel = screen.getByLabelText('Value') as HTMLSelectElement;
+    await waitFor(() => expect(sel.options).toHaveLength(4));
+    await user.selectOptions(sel, '0');
+    expect(firstTerm(onChange)).toMatchObject({ attr: 'Tags', val: '0' });
+  });
+
+  it('Tags drops the sentinel when a tag is added to it', async () => {
+    const user = userEvent.setup();
+    const onChange = mount([{ attr: 'Tags', op: '=', val: '-1' }]);
+    const sel = screen.getByLabelText('Value') as HTMLSelectElement;
+    await waitFor(() => expect(sel.options).toHaveLength(4));
+    await user.selectOptions(sel, '2');
+    expect(firstTerm(onChange)).toMatchObject({ attr: 'Tags', val: '2' });
+  });
+
+  it.each([
+    // What legacy's own editor saves: the last-picked option, a bare id.
+    ['a bare id', '2', ['2']],
+    ['legacy No Tag', '0', ['0']],
+    ['a JSON array another client wrote', '[1,2]', ['1', '2']],
+    ['a JSON number', 2, ['2']],
+  ])('Tags reads %s back as selected', async (_label, val, want) => {
+    mount([{ attr: 'Tags', op: '=', val: val as string }]);
+    const sel = screen.getByLabelText('Value') as HTMLSelectElement;
+    await waitFor(() => expect(sel.options).toHaveLength(4));
+    expect(Array.from(sel.selectedOptions).map((o) => o.value)).toEqual(want);
+  });
+
+  it('Group is a multi-select of the monitor groups, written as a comma list', async () => {
+    const user = userEvent.setup();
+    server.use(http.get('/api/v3/groups', () => page([{ id: 7, name: 'Outside' }, { id: 8, name: 'Inside' }])));
+    const onChange = mount([{ attr: 'Group', op: '=', val: '7' }]);
+    const sel = screen.getByLabelText('Value') as HTMLSelectElement;
+    expect(sel.multiple).toBe(true);
     await waitFor(() => expect(sel.options).toHaveLength(2));
-    expect(options(sel)[1]).toEqual(['7', 'Outside']);
-    await user.selectOptions(sel, '7');
-    expect(firstTerm(onChange)).toMatchObject({ attr: 'Group', val: '7' });
+    expect(options(sel)).toEqual([['7', 'Outside'], ['8', 'Inside']]);
+    expect(Array.from(sel.selectedOptions).map((o) => o.value)).toEqual(['7']);
+    await user.selectOptions(sel, '8');
+    expect(firstTerm(onChange)).toMatchObject({ attr: 'Group', val: '7,8' });
   });
 
   it('AlarmedZoneId fans out over the monitors and labels "<monitor>: <zone>"', async () => {
