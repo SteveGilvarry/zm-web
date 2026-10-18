@@ -14,6 +14,7 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { FILTER_SORT_FIELDS, type FilterColumns } from '@/api/filters';
 import { RuleBuilder } from '@/features/filters/RuleBuilder';
 import { MatchesPreview } from '@/features/filters/MatchesPreview';
+import { ModernFilterLogPanel } from '../components/FilterLogPanel';
 import { useFilterSortFieldLabels } from '@/features/filters/labels';
 import { useFiltersPage, type FlagKey } from '@/features/filters/useFiltersPage';
 import type { ZmStorage } from '@/types';
@@ -402,6 +403,8 @@ export default function FiltersPage() {
                     </pre>
                   </div>
                 )}
+
+                {s.selectedFilter && <ModernFilterLogPanel filterId={s.selectedFilter.id} />}
 
                 {draftQuery && (
                   <details className="text-xs">

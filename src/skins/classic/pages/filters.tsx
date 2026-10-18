@@ -13,6 +13,7 @@ import { useFilterSortFieldLabels } from '@/features/filters/labels';
 import { useFiltersPage, type FlagKey } from '@/features/filters/useFiltersPage';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { classicInput, classicSelect } from '../components/events/styles';
+import { ClassicFilterLogPanel } from '../components/FilterLogPanel';
 
 const btnBar = 'px-3 py-1.5 text-xs font-semibold uppercase border rounded-sm disabled:opacity-50 disabled:cursor-not-allowed';
 const grey = clsx(btnBar, 'bg-[#e9ecef] border-[#adb5bd] text-zinc-800 hover:bg-[#dde1e5]');
@@ -239,6 +240,9 @@ export default function ClassicFiltersPage() {
               {JSON.stringify(s.debug.source === 'backend' ? s.debug.backendAst : s.debug.ast, null, 2)}
             </pre>
           )}
+
+          {/* New in 1.39.41: the saved filter's own log, under the form. */}
+          {selectedFilter && <ClassicFilterLogPanel filterId={selectedFilter.id} />}
         </QueryState>
       </main>
 

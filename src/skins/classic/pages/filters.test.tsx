@@ -190,6 +190,27 @@ describe('ClassicFiltersPage', () => {
     expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ replace: true }));
   });
 
+  it('shows the chosen filter\'s own log under the form (new in 1.39.41)', async () => {
+    const user = userEvent.setup();
+    stub();
+    const asked: string[] = [];
+    server.use(http.get('/api/v3/logs', ({ request }) => {
+      asked.push(new URL(request.url).searchParams.get('component') ?? '');
+      return HttpResponse.json({
+        items: [{ id: 5, time_key: '1760000000', level: 0, code: 'INF', component: 'zmfilter_1', message: 'Purged 3 events', pid: 9, file: 'zmfilter.pl', line: 1 }],
+        total: 1, per_page: 10, current_page: 1, last_page: 1,
+      });
+    }));
+    await mount();
+    expect(screen.queryByTestId('filter-log')).toBeNull();
+
+    await user.selectOptions(await chooser(), '1');
+    const panel = await screen.findByTestId('filter-log');
+    expect(within(panel).getByText('Filter log')).toBeInTheDocument();
+    expect(await within(panel).findByText('Purged 3 events')).toBeInTheDocument();
+    expect(asked).toContain('zmfilter_1');
+  });
+
   it('PUTs the name, query_json and every column on Save', async () => {
     const user = userEvent.setup();
     stub();
