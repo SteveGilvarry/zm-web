@@ -19,6 +19,9 @@ import {
   REVIEW_MAX_PAGES,
   REVIEW_PAGE_SIZE,
   DEFAULT_REVIEW_FILTERS,
+  REVIEW_ANY_TAG,
+  REVIEW_NO_TAG,
+  reviewTagQueries,
 } from './useReviewEvents';
 
 const server = setupServer();
@@ -222,10 +225,11 @@ describe('fetchReviewEvents — Archived / Tags / Notes filters', () => {
   it('maps the three controls onto the backend params', async () => {
     const seen = capture();
     await fetchReviewEvents(1, RANGE_START.toISOString(), RANGE_END.toISOString(), {
-      archived: 'archived', tagIds: [4, 9], notes: '  person  ',
+      archived: 'archived', tagIds: [4, 9], notes: ['  person  '],
     });
     expect(seen[0].get('archived')).toBe('true');
     expect(seen[0].get('tag_id')).toBe('4,9');
+    expect(seen[0].get('tag_op')).toBe('in');
     expect(seen[0].get('notes')).toBe('person');
 
     await fetchReviewEvents(1, RANGE_START.toISOString(), RANGE_END.toISOString(), {
@@ -238,13 +242,61 @@ describe('fetchReviewEvents — Archived / Tags / Notes filters', () => {
     const seen = capture();
     const wrapper = makeWrapper();
     const { rerender } = renderHook(
-      ({ notes }: { notes: string }) =>
+      ({ notes }: { notes: string[] }) =>
         useReviewEvents(1, RANGE_START, RANGE_END, { ...DEFAULT_REVIEW_FILTERS, notes }),
-      { wrapper, initialProps: { notes: '' } },
+      { wrapper, initialProps: { notes: [] as string[] } },
     );
     await waitFor(() => expect(seen.length).toBe(1));
-    rerender({ notes: 'Motion' });
+    rerender({ notes: ['Motion'] });
     await waitFor(() => expect(seen.length).toBe(2));
     expect(seen[1].get('notes')).toBe('Motion');
+  });
+});
+
+describe('reviewTagQueries — legacy No Tag / Any Tag onto tag_id', () => {
+  it('maps the selection onto what zm-api accepts', () => {
+    expect(reviewTagQueries([])).toEqual([null]);
+    expect(reviewTagQueries([3, 7])).toEqual(['3,7']);
+    expect(reviewTagQueries([REVIEW_NO_TAG])).toEqual(['none']);
+    expect(reviewTagQueries([REVIEW_ANY_TAG])).toEqual(['any']);
+    // Any Tag already covers every listed tag.
+    expect(reviewTagQueries([REVIEW_ANY_TAG, 3])).toEqual(['any']);
+    // Tagged or untagged is everything.
+    expect(reviewTagQueries([REVIEW_NO_TAG, REVIEW_ANY_TAG])).toEqual([null]);
+    // Untagged or tag 3: zm-api takes no mix, so two requests.
+    expect(reviewTagQueries([REVIEW_NO_TAG, 3])).toEqual(['none', '3']);
+  });
+});
+
+describe('fetchReviewEvents — multi-select Notes and Tags as a union', () => {
+  it('asks once per Notes pick and per tag query, and merges the answers in start order', async () => {
+    const seen: URLSearchParams[] = [];
+    server.use(http.get('/api/v3/events', ({ request }) => {
+      const q = new URL(request.url).searchParams;
+      seen.push(q);
+      const items = q.get('notes') === 'Motion'
+        ? [
+          { id: 2, monitor_id: 1, start_date_time: '2026-08-21T02:00:00Z' },
+          { id: 5, monitor_id: 1, start_date_time: '2026-08-21T05:00:00Z' },
+        ]
+        : [
+          { id: 1, monitor_id: 1, start_date_time: '2026-08-21T01:00:00Z' },
+          { id: 5, monitor_id: 1, start_date_time: '2026-08-21T05:00:00Z' },
+        ];
+      return HttpResponse.json({ items, total: items.length, per_page: REVIEW_PAGE_SIZE, current_page: 1, last_page: 1 });
+    }));
+
+    const events = await fetchReviewEvents(1, RANGE_START.toISOString(), RANGE_END.toISOString(), {
+      archived: 'all', tagIds: [REVIEW_NO_TAG, 4], notes: ['Motion', 'person'],
+    });
+
+    expect(seen.map((q) => [q.get('notes'), q.get('tag_id'), q.get('tag_op')])).toEqual([
+      ['Motion', 'none', 'in'],
+      ['Motion', '4', 'in'],
+      ['person', 'none', 'in'],
+      ['person', '4', 'in'],
+    ]);
+    // Event 5 matched both notes: listed once.
+    expect(events.map((e) => e.id)).toEqual([1, 2, 5]);
   });
 });
