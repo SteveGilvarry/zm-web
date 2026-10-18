@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { listZonesForMonitor, parseCoords } from '@/api/zones';
+import { listZonesForMonitor } from '@/api/zones';
+import { coordsToPixels } from '@/features/zones/zoneArea';
 
 interface ZonesOverlayProps {
   monitorId: number;
@@ -51,7 +52,8 @@ export function ZonesOverlay({ monitorId, monitorWidth, monitorHeight }: ZonesOv
     >
       {data.items.map((zone) => {
         const c = ZONE_COLORS[zone.type] ?? ZONE_COLORS.Active;
-        const pts = parseCoords(zone.coords).map((p) => `${p.x},${p.y}`).join(' ');
+        // Legacy 1.39.41 saves percent coords; scale those to the frame.
+        const pts = coordsToPixels(zone.coords, { width: w, height: h }).map((p) => `${p.x},${p.y}`).join(' ');
         if (!pts) return null;
         return (
           <polygon

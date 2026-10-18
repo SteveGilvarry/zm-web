@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { polygonArea, zoneArea, zoneColour, zoneOutOfBounds, zonePixelPoints, zoneReportedArea } from './zoneArea';
+import { coordsArePercent, coordsToPixels, polygonArea, zoneArea, zoneColour, zoneOutOfBounds, zonePixelPoints, zoneReportedArea } from './zoneArea';
 
 const frame = { width: 100, height: 50 };
 
@@ -52,5 +52,32 @@ describe('bounds and colours', () => {
     expect(zoneColour('Active')).toBe('#ff0000');
     expect(zoneColour('Privacy')).toBe('#000000');
     expect(zoneColour('Whatever')).toBe('#ffffff');
+  });
+});
+
+describe('coordsArePercent / coordsToPixels — the two ways ZoneMinder stores a polygon', () => {
+  it('reads integer coords as pixels, whatever Units says', () => {
+    expect(coordsArePercent('0,0 100,0 100,50 0,50')).toBe(false);
+    expect(coordsToPixels('0,0 100,0 100,50 0,50', frame)).toEqual([
+      { x: 0, y: 0 }, { x: 100, y: 0 }, { x: 100, y: 50 }, { x: 0, y: 50 },
+    ]);
+  });
+
+  it('reads the two-decimal form legacy 1.39.41 saves as percent of the frame', () => {
+    const coords = '0.00,0.00 50.00,0.00 50.00,100.00 0.00,100.00';
+    expect(coordsArePercent(coords)).toBe(true);
+    expect(coordsToPixels(coords, frame)).toEqual([
+      { x: 0, y: 0 }, { x: 50, y: 0 }, { x: 50, y: 50 }, { x: 0, y: 50 },
+    ]);
+    expect(zoneArea({ units: 'Percent', coords }, frame)).toEqual({ px: 2500, pct: 50 });
+  });
+
+  it('treats decimals above 100 as pixels, as legacy\'s PHP does', () => {
+    // Monitor 2's "All" zone on the dev box.
+    expect(coordsArePercent('0.00,0.00 56.17,0.00 56.17,177.64 0.00,177.64')).toBe(false);
+  });
+
+  it('never flags a percent zone as outside the frame', () => {
+    expect(zoneOutOfBounds({ units: 'Percent', coords: '0.00,0.00 100.00,0.00 100.00,100.00' }, frame)).toBe(false);
   });
 });
