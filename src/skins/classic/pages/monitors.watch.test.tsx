@@ -318,6 +318,8 @@ describe('ClassicMonitorWatchPage', () => {
     const user = userEvent.setup();
     await mount();
 
+    // Let the on-load auto-start land first, so it is not counted below.
+    await waitFor(() => expect(streamCalls).toContain('webrtc:start'));
     await user.click(await screen.findByRole('button', { name: 'Pause' }));
     expect(pause).toHaveBeenCalled();
     expect(streamCalls).not.toContain('webrtc:stop');
