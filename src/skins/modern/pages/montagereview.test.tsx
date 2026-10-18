@@ -13,7 +13,7 @@
  * setup, which no other page needs.
  */
 import { describe, expect, it, beforeEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import i18next from 'i18next';
@@ -448,5 +448,22 @@ describe('MontageReviewPage (modern) — event filters', () => {
     await user.click(within(list).getByRole('checkbox', { name: 'Any Tag' }));
     await waitFor(() => expect(seen.some((q) => q.get('tag_id') === 'any')).toBe(true));
     expect(useMontageStore.getState().reviewFilters.tagIds).toEqual([-1]);
+  });
+});
+
+describe('MontageReviewPage (modern) — From / To', () => {
+  it('the window opens From / To inputs that set it, capped at 24 h', async () => {
+    const user = userEvent.setup();
+    renderRoute(`/montagereview${WIDE_RANGE}`);
+    await findChips();
+
+    await user.click(screen.getByRole('button', { name: new RegExp(`^${fmt(WIDE_START)}`) }));
+    const from = screen.getByLabelText('From') as HTMLInputElement;
+    const to = screen.getByLabelText('To') as HTMLInputElement;
+    expect(from.value).toBe('2026-08-01T00:00');
+
+    // A month-wide window, one end edited: legacy keeps a day after it.
+    fireEvent.change(from, { target: { value: '2026-08-10T00:00' } });
+    await waitFor(() => expect(to.value).toBe('2026-08-11T00:00'));
   });
 });

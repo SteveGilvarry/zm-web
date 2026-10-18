@@ -20,6 +20,7 @@ import {
   reviewGridColumns,
   useMontageReviewPage,
   useReviewNotesOptions,
+  toLocalInputValue,
   type ReviewRangePreset,
 } from '@/features/montagereview/useMontageReviewPage';
 import { ToolbarDisclosure } from '../components/ToolbarDisclosure';
@@ -137,9 +138,33 @@ export default function MontageReviewPage() {
               >
                 <Maximize2 size={14} aria-hidden />
               </button>
-              <span className={clsx('text-xs font-mono tabular-nums whitespace-nowrap', preset === 'custom' ? 'text-fg' : 'text-fg-dim')}>
-                {fmt(clock.rangeStart)} – {fmt(clock.rangeEnd)}
-              </span>
+              {/* The window itself opens the From / To inputs (legacy's
+                  Date Time >= / <=, capped at 24 h when edited). */}
+              <ToolbarDisclosure label={`${fmt(clock.rangeStart)} – ${fmt(clock.rangeEnd)}`} icon={Calendar}>
+                <div className="flex flex-col gap-2">
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('From')}
+                    <input
+                      type="datetime-local"
+                      step={1}
+                      value={toLocalInputValue(clock.rangeStart)}
+                      onChange={(e) => page.setRangeBound('start', new Date(e.target.value))}
+                      className={selectField}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('To')}
+                    <input
+                      type="datetime-local"
+                      step={1}
+                      value={toLocalInputValue(clock.rangeEnd)}
+                      onChange={(e) => page.setRangeBound('end', new Date(e.target.value))}
+                      className={selectField}
+                    />
+                  </label>
+                  <p className="text-xs text-fg-faint">{t('Editing one end keeps the window within 24 hours.')}</p>
+                </div>
+              </ToolbarDisclosure>
               {page.fitEventsEmpty && (
                 <span role="status" className="text-xs text-warn">
                   {t('No events to fit')}
