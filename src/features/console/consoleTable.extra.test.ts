@@ -1,15 +1,15 @@
 /**
  * Coverage for the console table helpers the first pass left untouched:
  * every `compareRows` branch (including the four name-lookup columns and
- * the five event buckets), the `pageSlice` edges, every `exportColumns`
- * value function, and `downloadText`'s anchor dance.
+ * the five event buckets), the `pageSlice` edges, and `downloadText`'s
+ * anchor dance.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Monitor } from '@/types';
 import type { EventSummary } from '@/api/eventSummaries';
 import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import {
-  compareRows, consoleStatus, downloadText, exportColumns, pageSlice, rowsToCsv, rowsToJson,
+  compareRows, consoleStatus, downloadText, pageSlice,
   searchRows, sortRows, statusBreakdown, totalsFor, type ConsoleRow, type ConsoleSortKey,
 } from './consoleTable';
 
@@ -129,68 +129,6 @@ describe('sortRows / searchRows / pageSlice edges', () => {
     expect(t.events).toEqual({ count: 0, disk: 0 });
     expect(t.archived).toEqual({ count: 0, disk: 0 });
     expect(t.zones).toBe(0);
-  });
-});
-
-describe('exportColumns — every value function', () => {
-  const runtime: MonitorRuntime = {
-    monitorId: 1, status: 'Connected', captureFps: 10.5, analysisFps: 5, captureFpsRaw: '0', analysisFpsRaw: '5', bandwidth: 2048,
-    updatedOn: new Date().toISOString(),
-  };
-  const full = row(
-    { id: 7, name: 'Front', manufacturer_id: 1, model_id: 2, zone_count: 3, sequence: 4, width: 640, height: 480 },
-    {
-      total_events: 30, hour_events: 1, day_events: 2, week_events: 3, month_events: 4, archived_events: 5,
-    },
-    runtime,
-  );
-  const ctx = {
-    manufacturerName: () => 'Axis',
-    modelName: () => 'P3245',
-  };
-
-  it('renders every column for a fully populated row', () => {
-    const cols = exportColumns(ctx);
-    const out = Object.fromEntries(cols.map((c) => [c.key, c.value(full)]));
-    expect(out).toEqual({
-      id: 7,
-      name: 'Front',
-      manufacturer: 'Axis',
-      model: 'P3245',
-      function: 'Analysing: Always Recording: OnMotion',
-      status: 'Connected',
-      capture_fps: 10.5,
-      source: '10.0.0.1',
-      resolution: '640x480',
-      events: 30,
-      hour: 1,
-      day: 2,
-      week: 3,
-      month: 4,
-      archived: 5,
-      zones: 3,
-      sequence: 4,
-    });
-  });
-
-  it('falls back to Unknown / blank when runtime, lookups and sequence are absent', () => {
-    const bare = row({ id: 8, zone_count: undefined, sequence: null });
-    const out = Object.fromEntries(exportColumns().map((c) => [c.key, c.value(bare)]));
-    expect(out.status).toBe('Unknown');
-    expect(out.capture_fps).toBe('');
-    expect(out.manufacturer).toBe('');
-    expect(out.model).toBe('');
-    expect(out.zones).toBe(0);
-    expect(out.sequence).toBe('');
-  });
-
-  it('quotes newline-bearing CSV cells and emits a header-only file for no rows', () => {
-    const cols = exportColumns().filter((c) => c.key === 'name');
-    expect(rowsToCsv([row({ name: 'line1\nline2' })], cols).split('\n')).toEqual([
-      'Name', '"line1', 'line2"',
-    ]);
-    expect(rowsToCsv([], cols)).toBe('Name');
-    expect(rowsToJson([], cols)).toBe('[]');
   });
 });
 

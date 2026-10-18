@@ -227,53 +227,6 @@ export function totalsFor(rows: ConsoleRow[]): ConsoleTotals {
   return acc;
 }
 
-/* ------------------------------------------------------------------------ */
-/*  Export (bootstrap-table's CSV / JSON)                                   */
-/* ------------------------------------------------------------------------ */
-
-export interface ExportColumn { key: string; label: string; value: (row: ConsoleRow) => string | number }
-
-export function exportColumns(ctx: SortContext = {}): ExportColumn[] {
-  return [
-    { key: 'id', label: 'Id', value: (r) => r.monitor.id },
-    { key: 'name', label: 'Name', value: (r) => r.monitor.name },
-    { key: 'manufacturer', label: 'Manufacturer', value: (r) => ctx.manufacturerName?.(r.monitor.manufacturer_id) ?? '' },
-    { key: 'model', label: 'Model', value: (r) => ctx.modelName?.(r.monitor.model_id) ?? '' },
-    { key: 'function', label: 'Function', value: (r) => functionLines(r.monitor, r.runtime).join(' ') },
-    { key: 'status', label: 'Status', value: (r) => r.runtime?.status ?? 'Unknown' },
-    { key: 'capture_fps', label: 'CaptureFPS', value: (r) => r.runtime?.captureFps ?? '' },
-    { key: 'source', label: 'Source', value: (r) => monitorSource(r.monitor) },
-    { key: 'resolution', label: 'Resolution', value: (r) => `${r.monitor.width}x${r.monitor.height}` },
-    { key: 'events', label: 'Events', value: (r) => r.summary.total_events },
-    { key: 'hour', label: 'Hour', value: (r) => r.summary.hour_events },
-    { key: 'day', label: 'Day', value: (r) => r.summary.day_events },
-    { key: 'week', label: 'Week', value: (r) => r.summary.week_events },
-    { key: 'month', label: 'Month', value: (r) => r.summary.month_events },
-    { key: 'archived', label: 'Archived', value: (r) => r.summary.archived_events },
-    { key: 'zones', label: 'Zones', value: (r) => r.monitor.zone_count ?? 0 },
-    { key: 'sequence', label: 'Sequence', value: (r) => r.monitor.sequence ?? '' },
-  ];
-}
-
-const csvCell = (v: string | number): string => {
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
-export function rowsToCsv(rows: ConsoleRow[], columns: ExportColumn[]): string {
-  const head = columns.map((c) => csvCell(c.label)).join(',');
-  const body = rows.map((r) => columns.map((c) => csvCell(c.value(r))).join(','));
-  return [head, ...body].join('\n');
-}
-
-export function rowsToJson(rows: ConsoleRow[], columns: ExportColumn[]): string {
-  return JSON.stringify(
-    rows.map((r) => Object.fromEntries(columns.map((c) => [c.key, c.value(r)]))),
-    null,
-    2,
-  );
-}
-
 /** Hand the browser a file. Not exercised in jsdom. */
 export function downloadText(filename: string, text: string, mime: string): void {
   const blob = new Blob([text], { type: mime });

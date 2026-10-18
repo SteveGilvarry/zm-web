@@ -17,14 +17,12 @@ import { useRouteSearch, searchFlag } from '@/features/monitors/useRouteSearch';
 import { summarizeRuntime, type RuntimeTotals } from '@/features/monitors/useMonitorStatuses';
 import type { Monitor } from '@/types';
 import { monitorIdsToSearch } from '@/features/events/eventsSearch';
+import { fetchMonitorsExport, MONITORS_EXPORT_FILENAME } from './exportMonitors';
 import { useConsoleData, lookupSummary, type ConsoleData } from './useConsoleData';
 import { useConsoleColumnsStore, type ConsoleColumnKey } from './consoleColumns';
 import {
   downloadText,
-  exportColumns,
   pageSlice,
-  rowsToCsv,
-  rowsToJson,
   searchRows,
   sortRows,
   totalsFor,
@@ -132,7 +130,8 @@ export interface ClassicConsolePageState {
   narrowToSelected: () => void;
   busy: boolean;
   refresh: () => void;
-  exportRows: (format: 'csv' | 'json') => void;
+  /** Legacy EXPORT: every live monitor's config, zones and groups as JSON. */
+  exportMonitors: () => void;
 }
 
 /** Legacy `zm_Config` default for the console page size (`ZM_WEB_EVENTS_PER_PAGE`). */
@@ -336,11 +335,13 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     qc.invalidateQueries({ queryKey: ['monitorStatuses'] });
   };
 
-  const exportRows = (format: 'csv' | 'json') => {
-    const cols = exportColumns(names);
-    if (format === 'csv') downloadText('console.csv', rowsToCsv(allRows, cols), 'text/csv;charset=utf-8');
-    else downloadText('console.json', rowsToJson(allRows, cols), 'application/json');
-  };
+  // console.js `exportMonitors` → ajax/console.php `exportMonitorsJSON`:
+  // the whole fleet's config, not the table's visible cells.
+  const exportMutation = useMutation({
+    mutationFn: () => fetchMonitorsExport(),
+    onSuccess: (doc) => downloadText(MONITORS_EXPORT_FILENAME, JSON.stringify(doc, null, 4), 'application/json'),
+    onError: toast.apiError,
+  });
 
   return {
     isAuthenticated,
@@ -390,6 +391,6 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     narrowToSelected,
     busy: cloneMutation.isPending || deleteMutation.isPending || reorderMutation.isPending,
     refresh,
-    exportRows,
+    exportMonitors: () => exportMutation.mutate(),
   };
 }

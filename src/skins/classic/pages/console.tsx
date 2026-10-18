@@ -145,10 +145,9 @@ export default function ClassicConsolePage() {
                   {t('Reset columns')}
                 </button>
               </ClassicDropdown>
-              <ClassicDropdown label={t('Export')} icon={<Download size={14} aria-hidden />}>
-                <button type="button" role="menuitem" className={classicMenuItemClass} onClick={() => page.exportRows('csv')}>{t('Export CSV')}</button>
-                <button type="button" role="menuitem" className={classicMenuItemClass} onClick={() => page.exportRows('json')}>{t('Export JSON')}</button>
-              </ClassicDropdown>
+              <ClassicButton icon={<Download size={14} aria-hidden />} onClick={page.exportMonitors} disabled={page.busy}>
+                {t('Export')}
+              </ClassicButton>
               <ClassicIconButton aria-label={t('Reset sort order')} onClick={page.resetSort}>
                 <ArrowDownUp size={14} aria-hidden />
               </ClassicIconButton>

@@ -162,6 +162,9 @@ function stub(options: StubOptions = {}) {
     http.get('/api/v3/manufacturers', () => HttpResponse.json(paged([{ id: 7, name: 'Hikvision' }], { per_page: 500 }))),
     http.get('/api/v3/models', () => HttpResponse.json(paged([{ id: 9, name: 'DS-2CD' }], { per_page: 500 }))),
     configListHandler(cfg),
+    // EXPORT
+    http.get('/api/v3/host/getVersion', () => HttpResponse.json({ version: '1.39.41', api_version: '3', db_version: '1.39.41' })),
+    http.get('/api/v3/monitors/:id/zones', () => HttpResponse.json(paged([], { per_page: 1000 }))),
     // Mutations
     http.get('/api/v3/monitors/:id', ({ params }) => {
       const m = MONITORS.find((x) => x.id === Number(params.id));
@@ -426,7 +429,7 @@ describe('ClassicConsolePage — columns and export', () => {
     expect(within(screen.getByTestId('console-row-2')).getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('exports the rows as CSV and JSON', async () => {
+  it('exports every monitor\'s config as zm_monitors_export.json', async () => {
     const user = userEvent.setup();
     const createObjectURL = vi.fn(() => 'blob:console');
     const original = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
@@ -437,13 +440,11 @@ describe('ClassicConsolePage — columns and export', () => {
       stub();
       await mountAndSettle();
 
+      const downloads: string[] = [];
+      click.mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this.download); });
       await user.click(screen.getByRole('button', { name: 'Export' }));
-      await user.click(screen.getByRole('menuitem', { name: 'Export CSV' }));
-      expect(click).toHaveBeenCalledTimes(1);
-
-      await user.click(screen.getByRole('menuitem', { name: 'Export JSON' }));
-      expect(click).toHaveBeenCalledTimes(2);
-      expect(createObjectURL).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(downloads).toEqual(['zm_monitors_export.json']));
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
     } finally {
       click.mockRestore();
       if (original) Object.defineProperty(URL, 'createObjectURL', original);
