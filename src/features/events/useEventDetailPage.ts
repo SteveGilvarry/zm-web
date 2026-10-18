@@ -353,6 +353,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     id,
     videoInfo,
     codec,
+    // No end time yet: still recording, so its playlist is retried.
+    !!event && !event.end_date_time,
   );
 
   // Seed the scrubber length from /info up front; the precise duration from
