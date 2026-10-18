@@ -39,6 +39,7 @@ const ROUTES: Array<{ id: string; path: string; heading: RegExp; anonymous?: tru
   { id: '/montagereview/', path: '/montagereview', heading: /^Montage Review$/ },
   { id: '/reports/', path: '/reports', heading: /^Reports$/ },
   { id: '/reports/$reportId', path: '/reports/1', heading: /^Report$/ },
+  { id: '/timeline/', path: '/timeline', heading: /^Timeline$/ },
   { id: '/settings/', path: '/settings', heading: /^System Settings$/ },
   { id: '/settings/ai/classes', path: '/settings/ai/classes', heading: /^AI$/ },
   { id: '/settings/ai/datasets', path: '/settings/ai/datasets', heading: /^AI$/ },

@@ -34,6 +34,7 @@ export type PageKey =
   | 'montage'
   | 'montagereview'
   | 'cycle'
+  | 'timeline'
   | 'events.list'
   | 'events.detail'
   | 'events.frames'
@@ -62,6 +63,7 @@ export interface PagePropsMap {
   montage: Record<never, never>;
   montagereview: Record<never, never>;
   cycle: Record<never, never>;
+  timeline: Record<never, never>;
   'events.list': Record<never, never>;
   'events.detail': { eventId: number };
   'events.frames': { eventId: number };

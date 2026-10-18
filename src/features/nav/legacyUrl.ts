@@ -102,8 +102,19 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
       const group = toInt(params.get('group'));
       return { to: '/montage', search: group != null ? { group } : {} };
     }
-    case 'montagereview':
     case 'timeline': {
+      // The events filter it was opened with, plus the chart's window.
+      const search = eventsTarget(params).search;
+      const keys = [['minTime', 'min_time'], ['maxTime', 'max_time'], ['midTime', 'mid_time']] as const;
+      for (const [legacy, ours] of keys) {
+        const value = params.get(legacy);
+        if (value) search[ours] = value;
+      }
+      const range = toInt(params.get('range'));
+      if (range) search.range = range;
+      return { to: '/timeline', search };
+    }
+    case 'montagereview': {
       const search: Record<string, SearchValue> = {};
       const monitorId = toInt(params.get('MonitorId') ?? params.get('mid'));
       if (monitorId != null) search.monitor_id = monitorId;

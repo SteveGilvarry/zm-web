@@ -14,6 +14,7 @@ export const ALL_PAGE_KEYS: readonly PageKey[] = [
   'montage',
   'montagereview',
   'cycle',
+  'timeline',
   'events.list',
   'events.detail',
   'events.frames',
