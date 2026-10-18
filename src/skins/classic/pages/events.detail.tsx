@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, RefreshCw, Archive, ArchiveRestore, Pencil, ExternalLink, Download, Trash2,
   Film, Info, Layers, LayoutGrid, SkipBack, SkipForward, Rewind, FastForward, Play, Pause,
-  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight,
+  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight, Tag,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -33,11 +33,12 @@ const barSelect = clsx(classicSelect, 'py-0.5 text-xs');
 const dvrBtn = 'p-1.5 rounded-sm text-zinc-700 hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed';
 
 /**
- * Event view — classic skin, after legacy `?view=event`: dark control bar
- * (back/refresh, title, Replay / Scale / Stream quality / Codec / Rate),
- * toolbar (Archive, Edit, Export, Download, Delete, Frames, Stats, Zones,
- * Montage Review), stats table beside the full-width player, the progress
- * strip with alarm cues, the DVR button row and the replay status line.
+ * Event view — classic skin, after legacy 1.39.41 `?view=event`: dark
+ * control bar (back/refresh, title, Replay / Scale / Stream quality /
+ * Codec), toolbar (Archive, Edit, Export, Download, Delete, Frames, Stats,
+ * Zones, Montage Review), the tag input heading the stats column beside the
+ * player, the level graph under it, and one row holding the monitor name,
+ * the DVR buttons and the replay status with its Rate select.
  */
 export default function ClassicEventDetailPage({ eventId }: { eventId: number }) {
   const { t } = useTranslation();
@@ -108,12 +109,6 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                 ))}
               </select>
             </label>
-            <label className="flex items-center gap-1">
-              <span className="font-semibold">{t('Rate')}</span>
-              <select aria-label={t('Playback speed')} value={s.rate} onChange={(e) => s.setRate(Number(e.target.value))} className={barSelect}>
-                {rateOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-              </select>
-            </label>
           </div>
         </div>
 
@@ -177,34 +172,42 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                 )}
               </div>
 
-              {/* Tags */}
-              <div className="flex items-center gap-2 text-sm">
-                <span className="text-zinc-600">{t('Tags')}</span>
-                <RequirePerm feature="events" level="Edit" fallback={<span>{(event.tags ?? []).map((tag) => tag.name).join(', ') || t('No tags')}</span>}>
-                  <TagChips eventId={event.id} currentTags={event.tags ?? []} apiRef={tagApiRef} />
-                  <ClassicButton
-                    onClick={s.tagAndPrev}
-                    disabled={s.prevEventId == null}
-                    title={t('Apply the last tag, then play the previous event')}
-                  >
-                    <ChevronsLeft size={14} className="rtl:-scale-x-100" />
-                    {t('Tag & Prev')}
-                  </ClassicButton>
-                  <ClassicButton
-                    onClick={s.tagAndNext}
-                    disabled={s.nextEventId == null}
-                    title={t('Apply the last tag, then play the next event')}
-                  >
-                    {t('Tag & Next')}
-                    <ChevronsRight size={14} className="rtl:-scale-x-100" />
-                  </ClassicButton>
-                </RequirePerm>
-              </div>
-
-              <div className="flex flex-col lg:flex-row gap-3">
-                {/* Stats table, with legacy's two stills under it */}
+              {/* Legacy's `#eventStats` column keeps the tag input at its top
+                  and stays when the stats are hidden, spanning the width
+                  above the video (`showEventStats`, 710c6f07e). */}
+              <div className={clsx('flex flex-col gap-3', s.showStats && 'lg:flex-row')}>
+                <div className={clsx('shrink-0 space-y-2', s.showStats ? 'lg:w-80 self-start' : 'w-full')}>
+                  <RequirePerm feature="events" level="Edit" fallback={<span className="text-sm">{(event.tags ?? []).map((tag) => tag.name).join(', ') || t('No tags')}</span>}>
+                    <div className="flex items-start gap-1" data-testid="event-tags">
+                      <div className="flex-1 min-w-0">
+                        <TagChips eventId={event.id} currentTags={event.tags ?? []} apiRef={tagApiRef} />
+                      </div>
+                      {/* Legacy's two `label` icons, the first mirrored. */}
+                      <button
+                        type="button"
+                        onClick={s.tagAndPrev}
+                        disabled={s.prevEventId == null}
+                        title={t('Apply the last tag, then play the previous event')}
+                        aria-label={t('Apply the last tag, then play the previous event')}
+                        className={dvrBtn}
+                      >
+                        <Tag size={16} className="-scale-x-100" />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={s.tagAndNext}
+                        disabled={s.nextEventId == null}
+                        title={t('Apply the last tag, then play the next event')}
+                        aria-label={t('Apply the last tag, then play the next event')}
+                        className={dvrBtn}
+                      >
+                        <Tag size={16} />
+                      </button>
+                    </div>
+                  </RequirePerm>
+                {/* Stats table, with legacy's stills under it */}
                 {s.showStats && (
-                  <div className="lg:w-80 shrink-0 self-start space-y-2">
+                  <div className="space-y-2">
                     <table className="text-sm w-full" data-testid="event-stats-panel">
                       <tbody className="[&>tr>th]:text-end [&>tr>th]:pe-3 [&>tr>th]:py-0.5 [&>tr>th]:font-semibold [&>tr>th]:text-zinc-600 [&>tr>td]:py-0.5 [&>tr>td]:tabular-nums">
                         <tr><th scope="row">{t('Id')}</th><td>{event.id}</td></tr>
@@ -238,6 +241,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     <EventKeyFrames eventId={event.id} />
                   </div>
                 )}
+                </div>
 
                 {/* Player */}
                 <div className="flex-1 min-w-0 space-y-1">
@@ -305,7 +309,10 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     />
                   </div>
 
-                  <p className="text-center text-xs text-zinc-600">
+                  {/* Legacy's `#eventControls` (ce4588bcc): monitor name,
+                      DVR buttons and replay status share one row. */}
+                  <div data-testid="event-controls" className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1">
+                  <p className="text-xs text-zinc-600" data-testid="event-monitor-status">
                     {monitor?.name ?? t('Monitor {{id}}', { id: event.monitor_id })} ({t('ID={{id}}', { id: event.monitor_id })})
                   </p>
 
@@ -325,15 +332,21 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   </div>
 
                   {/* Replay status */}
-                  <p data-testid="event-replay-status" className="flex flex-wrap items-center justify-center gap-4 text-xs text-zinc-700">
+                  <div data-testid="event-replay-status" className="flex flex-wrap items-center gap-3 text-xs text-zinc-700">
                     {/* Legacy's `#replayStatus`: Mode is the transport, not the
-                        replay-mode select next to it. */}
+                        replay-mode select; Rate is the select itself. */}
                     <span>{t('Mode')}: <b>{s.isPlaying ? t('Replay') : t('Paused')}</b></span>
-                    <span>{t('Rate')}: <b>{rateOptions.find((o) => o.value === s.rate)?.label}</b></span>
+                    <label className="inline-flex items-center gap-1">
+                      {t('Rate')}:
+                      <select aria-label={t('Playback speed')} value={s.rate} onChange={(e) => s.setRate(Number(e.target.value))} className={clsx(classicSelect, 'py-0 text-xs')}>
+                        {rateOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                      </select>
+                    </label>
                     <span>{t('Progress')}: <b>{Math.floor(s.currentTime)}</b>s</span>
                     <span>{t('Time')}: <b>{s.startTime ? new Date(s.startTime.getTime() + s.currentTime * 1000).toLocaleTimeString() : '—'}</b></span>
                     <span>{t('Zoom')}: <b>{zoomScale.toFixed(1)}</b>x</span>
-                  </p>
+                  </div>
+                  </div>
                 </div>
               </div>
 

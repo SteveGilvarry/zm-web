@@ -179,15 +179,41 @@ describe('ClassicEventDetailPage — chrome', () => {
     expect(screen.getByLabelText('Playback speed')).toHaveValue('1');
   });
 
-  it('changes the playback rate and reports it in the status line', async () => {
+  it('puts the Rate select in the replay status, as 1.39.41 does', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText('Playback speed'), '2');
+    const status = screen.getByTestId('event-replay-status');
+    const rate = within(status).getByLabelText('Playback speed');
+    await user.selectOptions(rate, '2');
     expect(useEventPlaybackStore.getState().rate).toBe(2);
-    // "2x" is also an <option>; the status line is the bold one.
-    await waitFor(() => expect(screen.getAllByText('2x').some((el) => el.tagName === 'B')).toBe(true));
+    expect(rate).toHaveValue('2');
+  });
+
+  it('lays out the monitor name, DVR buttons and replay status as one row', async () => {
+    stub();
+    await mountAndSettle();
+    const row = screen.getByTestId('event-controls');
+    expect(within(row).getByTestId('event-monitor-status')).toHaveTextContent('(ID=1)');
+    expect(within(row).getByRole('button', { name: 'Previous event' })).toBeInTheDocument();
+    expect(within(row).getByTestId('event-replay-status')).toBeInTheDocument();
+  });
+
+  it('heads the stats column with the tag input, and keeps it when the stats are hidden', async () => {
+    const user = userEvent.setup();
+    useEventPlaybackStore.getState().setShowStats(true);
+    stub();
+    await mountAndSettle();
+    const panel = screen.getByTestId('event-stats-panel');
+    const tags = screen.getByTestId('event-tags');
+    // The tags come first in the same column as the stats table.
+    expect(tags.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tags.parentElement).toBe(panel.parentElement?.parentElement);
+
+    await user.click(screen.getByRole('button', { name: 'Stats' }));
+    expect(screen.queryByTestId('event-stats-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('event-tags')).toBeInTheDocument();
   });
 
   it('links Frames and Montage Review from the toolbar', async () => {
@@ -778,9 +804,9 @@ describe('ClassicEventDetailPage — tag shortcuts', () => {
       }),
     );
     await mountAndSettle();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tag & Next/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply the last tag, then play the next event' })).toBeEnabled());
 
-    await user.click(screen.getByRole('button', { name: /Tag & Next/ }));
+    await user.click(screen.getByRole('button', { name: 'Apply the last tag, then play the next event' }));
 
     // `person` is already on the event, so `vehicle` is the first free tag.
     await waitFor(() => expect(attached).toEqual({ event_id: 4242, tag_id: 6 }));
