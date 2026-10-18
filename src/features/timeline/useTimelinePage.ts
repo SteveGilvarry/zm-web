@@ -28,6 +28,7 @@ import {
   type EventSlot,
   type TimelineChart,
   type ZoomBand,
+  imagePaddingTop as imagePaddingTopOf,
 } from './timelineChart';
 import {
   eventNavSearch,
@@ -63,6 +64,8 @@ export interface TimelinePageState {
   truncated: boolean;
   /** Readouts by monitor id, in chart row order. */
   previews: Array<{ monitorId: number; preview: TimelinePreview | null }>;
+  /** `padding-top` for the preview image boxes (legacy `.imageHeight`). */
+  imagePaddingTop: string;
   /** Hover (or click) a bar: show that event in its monitor's readout. */
   preview: (slot: EventSlot | ActivitySlot) => void;
   /** Legacy's tips sit there until the first readout replaces them. */
@@ -305,6 +308,10 @@ export function useTimelinePage(): TimelinePageState {
 
   const error = (monitorsQ.error ?? rangeQ.error ?? eventsQ.error ?? null) as Error | null;
   const hasPreview = previews.some((p) => p.preview !== null);
+  const imagePaddingTop = useMemo(() => {
+    const onChart = new Set((chart?.rows ?? []).map((r) => r.monitorId));
+    return imagePaddingTopOf(monitors.filter((m) => onChart.has(m.id)));
+  }, [chart, monitors]);
 
   return {
     isAuthenticated,
@@ -315,6 +322,7 @@ export function useTimelinePage(): TimelinePageState {
     chart,
     truncated: eventsQ.data?.truncated ?? false,
     previews,
+    imagePaddingTop,
     preview,
     showInstructions: !hasPreview,
     zoomTo,

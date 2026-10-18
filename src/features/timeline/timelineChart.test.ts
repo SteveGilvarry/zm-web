@@ -13,6 +13,7 @@ import {
   rangeTitle,
   requestedWindow,
   xGrid,
+  imagePaddingTop,
 } from './timelineChart';
 
 /** Local wall clock → Unix seconds, so the tests hold in any zone. */
@@ -187,5 +188,14 @@ describe('buildChart', () => {
     const empty = buildChart({ window: win, events: [], monitors, nowT: at(23, 0) });
     expect(empty.rows).toEqual([]);
     expect(empty.eventsHeight).toBe(40);
+  });
+});
+
+describe('imagePaddingTop', () => {
+  it('uses the largest capture aspect across the monitors, as legacy .imageHeight does', () => {
+    // 3840x2160 rotated 90 still reports capture 3840x2160: landscape box.
+    expect(imagePaddingTop([{ width: 3840, height: 2160 }, { width: 2688, height: 1520 }])).toBe('56.18%');
+    expect(imagePaddingTop([{ width: 640, height: 480 }])).toBe('75.19%');
+    expect(imagePaddingTop([])).toBe('56.25%');
   });
 });

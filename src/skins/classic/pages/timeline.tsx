@@ -73,13 +73,14 @@ export default function ClassicTimelinePage() {
               </div>
             )}
 
-            <div id="topPanel" className="relative block w-full mt-1 mb-1.5 after:block after:clear-both after:content-['']">
+            {/* Legacy's `.graphWidth`: the panel, chart and labels share the graph's 600 px. */}
+            <div id="topPanel" className="relative block mx-auto mt-1 mb-1.5 after:block after:clear-both after:content-['']" style={{ width: GRAPH_WIDTH }}>
               {s.previews.map(({ monitorId, preview }) => (
                 <div key={monitorId} className="float-left" style={{ width: `${100 / n}%` }} data-testid={`timeline-panel-${monitorId}`}>
                   <div className={clsx('text-end', n === 1 && 'w-1/2 float-left')}>
                     <div
                       className="relative w-full me-0.5 bg-[#eeeeee] border border-[#c8c8c8]"
-                      style={{ paddingTop: aspectPadding(preview) }}
+                      style={{ paddingTop: s.imagePaddingTop }}
                     >
                       {preview && (
                         <img
@@ -117,7 +118,7 @@ export default function ClassicTimelinePage() {
             {chart && (
               <>
                 <div id="chartPanel" className="clear-both relative block w-full px-8">
-                  <div id="chart" className="relative border border-black mx-auto" style={{ height: GRAPH_HEIGHT }} data-testid="timeline-chart">
+                  <div id="chart" className="relative border border-black mx-auto" style={{ width: GRAPH_WIDTH, height: GRAPH_HEIGHT }} data-testid="timeline-chart">
                     {/* Y scale: score gridlines over the activity strip. */}
                     {chart.yTicks.map((y) => (
                       <div key={`y${y.value}`}>
@@ -186,7 +187,7 @@ export default function ClassicTimelinePage() {
                   </div>
                 </div>
 
-                <div id="chartLabels" className="block w-full mt-[25px] text-center px-8">
+                <div id="chartLabels" className="block mx-auto mt-[25px] text-center px-8" style={{ width: GRAPH_WIDTH }}>
                   <div id="key" className="float-right -mt-1 text-end text-sm">
                     {chart.rows.map((row) => (
                       <span key={row.monitorId} className="ms-2">
@@ -219,11 +220,6 @@ export default function ClassicTimelinePage() {
 
 const navBtn = 'bg-[#eeeeee] border border-[#c8c8c8] p-[5px] text-zinc-800 hover:bg-[#e0e0e0]';
 
-function aspectPadding(preview: TimelinePreview | null): string {
-  const w = preview?.event.width ?? 0;
-  const h = preview?.event.height ?? 0;
-  return w > 0 && h > 0 ? `${Math.round((10000 * h) / w) / 100}%` : '56.25%';
-}
 
 /** Legacy prints `StartDateTime` as stored: `YYYY-MM-DD HH:MM:SS`. */
 function startText(iso: string | null | undefined): string {

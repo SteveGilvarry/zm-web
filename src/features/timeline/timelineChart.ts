@@ -490,3 +490,19 @@ export function buildChart(opts: {
     title: rangeTitle(win.lo, win.hi),
   };
 }
+
+/**
+ * Legacy's `.imageHeight`: the preview box is a square of the panel width
+ * scaled by `100 / max_aspect_ratio`, where the ratio is the largest
+ * capture `Width / Height` among the monitors on the chart. Capture
+ * dimensions, not the event's — a rotated monitor still gets a landscape
+ * box and its portrait image fits inside it. 16:9 when nothing is known.
+ */
+export function imagePaddingTop(monitors: ReadonlyArray<{ width?: number | null; height?: number | null }>): string {
+  let max = 0;
+  for (const m of monitors) {
+    const w = m.width ?? 0, h = m.height ?? 0;
+    if (w > 0 && h > 0) max = Math.max(max, Math.round((100 * w) / h) / 100);
+  }
+  return `${max > 0 ? Math.round((10000 / max)) / 100 : 56.25}%`;
+}
