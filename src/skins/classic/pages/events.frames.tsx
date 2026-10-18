@@ -1,7 +1,7 @@
-import { Fragment } from 'react';
+import { Fragment, useRef, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Download, RefreshCw, Search } from 'lucide-react';
+import { ArrowLeft, Download, LayoutList, Maximize2, RefreshCw, Search } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -10,7 +10,8 @@ import { FrameThumbnail } from '@/features/events/FrameThumbnail';
 import { FramesColumnChooser } from '@/features/events/FramesColumnChooser';
 import { FRAMES_ALL_PAGE_SIZE, useEventFramesPage } from '@/features/events/useEventFramesPage';
 import { useFramesColumnLabels } from '@/features/events/columnLabels';
-import { FRAMES_COLUMNS, type FramesSortKey } from '@/features/events/framesTable';
+import { FRAMES_COLUMNS, type FramesColumnKey, type FramesSortKey } from '@/features/events/framesTable';
+import { useIsFullscreen } from '@/hooks/useIsFullscreen';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useCanGoBack } from '@/features/nav/useCanGoBack';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
@@ -37,6 +38,13 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
   const canGoBack = useCanGoBack();
   const title = t('Frames — Event {{id}}', { id: eventId });
   useDocumentTitle(title);
+  // bootstrap-table's Fullscreen button: the table alone fills the screen.
+  const tableRef = useRef<HTMLDivElement>(null);
+  const isFullscreen = useIsFullscreen(tableRef);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void tableRef.current?.requestFullscreen?.();
+  };
 
   if (!s.isAuthenticated) return null;
 
@@ -79,6 +87,17 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                   <Download size={14} />
                   {t('Export')}
                 </ClassicButton>
+                <ClassicButton onClick={toggleFullscreen} title={t('Fullscreen')} aria-label={t('Fullscreen')} aria-pressed={isFullscreen}>
+                  <Maximize2 size={14} />
+                </ClassicButton>
+                <ClassicButton
+                  onClick={s.toggleCardView}
+                  aria-pressed={s.cardView}
+                  title={s.cardView ? t('Hide card view') : t('Show card view')}
+                  aria-label={s.cardView ? t('Hide card view') : t('Show card view')}
+                >
+                  <LayoutList size={14} />
+                </ClassicButton>
               </div>
             }
           >
@@ -97,8 +116,9 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
             emptyMessage={t('No frames recorded for this event.')}
             className="bg-white border border-[#dee2e6] text-zinc-700"
           >
+            <div ref={tableRef} className={clsx(isFullscreen && 'bg-white overflow-auto p-2')}>
             <ClassicTable testId="frames-table">
-              <ClassicThead>
+              {!s.cardView && <ClassicThead>
                 <tr>
                   {/* bootstrap-table's detail-view column: the "+" per row. */}
                   <td aria-hidden className="w-6 px-1 py-1" />
@@ -124,7 +144,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                     </th>
                   ))}
                 </tr>
-              </ClassicThead>
+              </ClassicThead>}
               <ClassicTbody>
                 {s.frames.map((f) => (
                   <Fragment key={f.id}>
@@ -139,6 +159,9 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                       onToggle={() => s.toggleExpanded(f.frame_id)}
                       onOpen={() => s.openFrame(f.frame_id)}
                       onStats={() => s.openStats(f.frame_id)}
+                      cardView={s.cardView}
+                      labels={labels}
+                      colSpan={s.visibleColumns.length + 1}
                     />
                     {s.isExpanded(f.frame_id) && (
                       <tr data-testid={`frame-detail-${f.frame_id}`}>
@@ -151,6 +174,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                 ))}
               </ClassicTbody>
             </ClassicTable>
+            </div>
           </QueryState>
 
           <ClassicPager
@@ -186,10 +210,11 @@ function FrameStatsDetail({ event, eventId, frameId }: { event: ZmEvent | undefi
 
 function FrameRow({
   frame: f, maxScore, isVisible, showThumbs, thumbWidth, token, expanded, onToggle, onOpen, onStats,
+  cardView, labels, colSpan,
 }: {
   frame: Frame;
   maxScore: number;
-  isVisible: (key: (typeof FRAMES_COLUMNS)[number]['key']) => boolean;
+  isVisible: (key: FramesColumnKey) => boolean;
   showThumbs: boolean;
   thumbWidth: number;
   token: string | null;
@@ -198,11 +223,52 @@ function FrameRow({
   /** Any cell but the "+" and Score: legacy `processClicks` opens the frame. */
   onOpen: () => void;
   onStats: () => void;
+  /** bootstrap-table's card view: one stacked "label value" block per row. */
+  cardView: boolean;
+  labels: Record<FramesColumnKey, string>;
+  colSpan: number;
 }) {
   const { t } = useTranslation();
   const { formatDateTime } = useDateTimeFormat();
   const alarm = f.type === 'Alarm';
   const pct = maxScore > 0 ? Math.round((f.score / maxScore) * 100) : 0;
+  const statsClick = (e: React.MouseEvent) => { e.stopPropagation(); onStats(); };
+
+  const content: Record<FramesColumnKey, ReactNode> = {
+    event_id: f.event_id,
+    frame_id: f.frame_id,
+    type: f.type,
+    time_stamp: formatDateTime(f.time_stamp),
+    delta: Number(f.delta).toFixed(2),
+    score: (
+      <span className="inline-flex items-center justify-end gap-2">
+        <span aria-hidden className="inline-block h-2 w-16 bg-zinc-200 border border-zinc-300 overflow-hidden">
+          <span
+            className={clsx('block h-full', alarm ? 'bg-[#d9534f]' : 'bg-[#337ab7]')}
+            style={{ width: `${pct}%` }}
+          />
+        </span>
+        <span>{f.score}</span>
+      </span>
+    ),
+    thumbnail: showThumbs ? (
+      <FrameThumbnail frameId={f.id} frameNumber={f.frame_id} token={token} width={thumbWidth} />
+    ) : null,
+  };
+  const keys = FRAMES_COLUMNS.map((c) => c.key).filter(isVisible);
+
+  const toggle = (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      aria-expanded={expanded}
+      aria-label={expanded ? t('Hide stats for frame {{n}}', { n: f.frame_id }) : t('Show stats for frame {{n}}', { n: f.frame_id })}
+      className="w-5 font-bold text-[#337ab7] hover:text-[#23527c]"
+    >
+      {expanded ? '−' : '+'}
+    </button>
+  );
+
   return (
     <tr
       data-testid={`frame-row-${f.frame_id}`}
@@ -212,56 +278,43 @@ function FrameRow({
       className={clsx('cursor-pointer', alarm && 'bg-[#f8d7da]! text-[#721c24]')}
       onClick={onOpen}
     >
-      <ClassicTd center className="w-6 px-1">
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onToggle(); }}
-          aria-expanded={expanded}
-          aria-label={expanded ? t('Hide stats for frame {{n}}', { n: f.frame_id }) : t('Show stats for frame {{n}}', { n: f.frame_id })}
-          className="w-5 font-bold text-[#337ab7] hover:text-[#23527c]"
-        >
-          {expanded ? '−' : '+'}
-        </button>
-      </ClassicTd>
-      {isVisible('event_id') && <ClassicTd numeric>{f.event_id}</ClassicTd>}
-      {isVisible('frame_id') && <ClassicTd numeric>{f.frame_id}</ClassicTd>}
-      {isVisible('type') && <ClassicTd>{f.type}</ClassicTd>}
-      {isVisible('time_stamp') && (
-        <ClassicTd className="whitespace-nowrap">{formatDateTime(f.time_stamp)}</ClassicTd>
-      )}
-      {isVisible('delta') && <ClassicTd numeric>{Number(f.delta).toFixed(2)}</ClassicTd>}
-      {isVisible('score') && (
-        <ClassicTd
-          numeric
-          onClick={(e) => { e.stopPropagation(); onStats(); }}
-          title={t('Stats')}
-          data-testid={`frame-score-${f.frame_id}`}
-        >
-          <span className="inline-flex items-center justify-end gap-2">
-            <span
-              aria-hidden
-              className="inline-block h-2 w-16 bg-zinc-200 border border-zinc-300 overflow-hidden"
-            >
-              <span
-                className={clsx('block h-full', alarm ? 'bg-[#d9534f]' : 'bg-[#337ab7]')}
-                style={{ width: `${pct}%` }}
-              />
-            </span>
-            <span>{f.score}</span>
-          </span>
+      {cardView ? (
+        <ClassicTd colSpan={colSpan}>
+          <div className="flex gap-2">
+            {toggle}
+            <div className="space-y-0.5">
+              {keys.map((key) => (
+                <div
+                  key={key}
+                  onClick={key === 'score' ? statsClick : undefined}
+                  data-testid={key === 'score' ? `frame-score-${f.frame_id}` : undefined}
+                >
+                  <b className="me-2">{labels[key]}</b>{content[key]}
+                </div>
+              ))}
+            </div>
+          </div>
         </ClassicTd>
-      )}
-      {isVisible('thumbnail') && (
-        <ClassicTd center className="whitespace-nowrap">
-          {showThumbs && (
-            <FrameThumbnail
-              frameId={f.id}
-              frameNumber={f.frame_id}
-              token={token}
-              width={thumbWidth}
-            />
-          )}
-        </ClassicTd>
+      ) : (
+        <>
+          <ClassicTd center className="w-6 px-1">{toggle}</ClassicTd>
+          {keys.map((key) => {
+            const col = FRAMES_COLUMNS.find((c) => c.key === key)!;
+            return (
+              <ClassicTd
+                key={key}
+                numeric={col.numeric}
+                center={key === 'thumbnail'}
+                className={key === 'time_stamp' || key === 'thumbnail' ? 'whitespace-nowrap' : undefined}
+                onClick={key === 'score' ? statsClick : undefined}
+                title={key === 'score' ? t('Stats') : undefined}
+                data-testid={key === 'score' ? `frame-score-${f.frame_id}` : undefined}
+              >
+                {content[key]}
+              </ClassicTd>
+            );
+          })}
+        </>
       )}
     </tr>
   );

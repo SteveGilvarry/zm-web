@@ -67,6 +67,9 @@ export interface EventFramesPageState {
   openFrame: (frameId: number) => void;
   /** A Score click: legacy `?view=stats&eid=&fid=`. */
   openStats: (frameId: number) => void;
+  /** bootstrap-table's card view (`show-toggle`): each row as a stacked block. */
+  cardView: boolean;
+  toggleCardView: () => void;
 }
 
 /**
@@ -97,6 +100,7 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
   const [dir, setDir] = useState<SortDir>('asc');
   const [hiddenColumns, setHiddenColumns] = useState<FramesColumnKey[]>([...FRAMES_DEFAULT_HIDDEN]);
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(() => new Set());
+  const [cardView, setCardView] = useState(false);
 
   const setSearch = (patch: EventFramesSearchParams) => {
     navigate({
@@ -201,6 +205,8 @@ export function useEventFramesPage(eventId: number): EventFramesPageState {
         params: { eventId: String(eventId), frameId: String(fid) },
       });
     },
+    cardView,
+    toggleCardView: () => setCardView((v) => !v),
     openStats: (fid) => {
       void navigate({
         to: '/events/$eventId/stats',

@@ -313,3 +313,38 @@ describe('EventFramesPage — modern stats and frame links', () => {
     expect(await screen.findByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/^\/api\/v3\/frames\/3\/image/));
   });
 });
+
+describe('EventFramesPage — modern card view and paging', () => {
+  it('shows each frame as a tile that opens the frame', async () => {
+    db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
+    db.frames = [
+      makeFrame({ id: 1, event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+    ];
+    const user = userEvent.setup();
+    const { router } = renderRoute('/events/101/frames');
+    await screen.findByTestId('frame-row-2');
+
+    await user.click(screen.getByRole('button', { name: 'Show card view' }));
+    const card = await screen.findByTestId('frame-card-2');
+    expect(card).toHaveTextContent('#2');
+    expect(card).toHaveTextContent('score 88');
+    await user.click(card);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/events/101/frames/2'));
+  });
+
+  it('jumps to a page typed into the pager', async () => {
+    db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
+    db.frames = Array.from({ length: 30 }, (_, i) =>
+      makeFrame({ id: i + 1, event_id: 101, frame_id: i + 1, delta: String(i) }));
+    const user = userEvent.setup();
+    const { router } = renderRoute('/events/101/frames?page_size=10');
+    await screen.findByTestId('frame-row-1');
+
+    const jump = screen.getByLabelText('Go to page');
+    await user.clear(jump);
+    await user.type(jump, '3{Enter}');
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ page: 3 }));
+    expect(await screen.findByTestId('frame-row-21')).toBeVisible();
+  });
+});

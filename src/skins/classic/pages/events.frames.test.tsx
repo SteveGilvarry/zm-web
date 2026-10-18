@@ -337,3 +337,38 @@ describe('EventFramesPage — classic stats and frame links', () => {
     });
   });
 });
+
+describe('EventFramesPage — classic card view and fullscreen', () => {
+  it('stacks each row as label / value pairs, and back', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Show card view' }));
+    expect(screen.queryAllByRole('columnheader')).toHaveLength(0);
+    const row = screen.getByTestId('frame-row-2');
+    expect(row).toHaveTextContent('Frame Id2');
+    expect(row).toHaveTextContent('TypeAlarm');
+    // Score still opens the stats page in card view.
+    await user.click(screen.getByTestId('frame-score-2'));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ to: '/events/$eventId/stats' }));
+
+    await user.click(screen.getByRole('button', { name: 'Hide card view' }));
+    expect(screen.getAllByRole('columnheader').length).toBeGreaterThan(0);
+  });
+
+  it('fullscreens the table', async () => {
+    const user = userEvent.setup();
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      value: requestFullscreen, configurable: true, writable: true,
+    });
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    expect(requestFullscreen).toHaveBeenCalled();
+    expect(requestFullscreen.mock.contexts[0]).toContainElement(screen.getByTestId('frames-table'));
+  });
+});
