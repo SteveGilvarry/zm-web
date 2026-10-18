@@ -22,6 +22,7 @@ const RULES: ReadonlyArray<[prefix: string, req: NavRequirement]> = [
   ['/filters', { feature: 'events', level: 'View' }],
   ['/audit', { feature: 'events', level: 'View' }],
   ['/reports', { feature: 'events', level: 'View' }],
+  ['/timeline', { feature: 'events', level: 'View' }],
   ['/montage', { feature: 'stream', level: 'View' }],
   ['/montagereview', { feature: 'stream', level: 'View' }],
   ['/cycle', { feature: 'stream', level: 'View' }],
