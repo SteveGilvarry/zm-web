@@ -95,8 +95,8 @@ describe('MontageClassicGrid — preset list', () => {
   it('exposes Auto + every "N Wide" preset the legacy spec requires', () => {
     const labels = MONTAGE_PRESETS.map((p) => p.label);
     expect(labels).toEqual([
-      'Auto', '1 Wide', '2 Wide', '3 Wide', '4 Wide', '5 Wide', '6 Wide',
-      '8 Wide', '12 Wide', '16 Wide', '20 Wide', '24 Wide', '32 Wide', '48 Wide',
+      'Auto', '1 Wide', '2 Wide', '3 Wide', '4 Wide', '6 Wide',
+      '8 Wide', '12 Wide', '16 Wide', '24 Wide', '48 Wide',
     ]);
   });
 });
@@ -110,10 +110,11 @@ describe('MontageClassicGrid — live cells', () => {
     expect(streamCellProps[0]).toMatchObject({ protocol: 'webrtc', autoStart: true, gated: true, compact: true });
   });
 
-  it('captions each cell with runtime state + capture fps when known, id otherwise', () => {
+  it('captions each cell the legacy way: Name (id=N), State: and the capture fps', () => {
     render(<MontageClassicGrid monitors={[makeMonitor({ id: 1 }), makeMonitor({ id: 2 })]} columns={2} protocol="webrtc" />);
-    expect(screen.getByTestId('montage-classic-status-1')).toHaveTextContent('Connected · 10.9 fps');
-    expect(screen.getByTestId('montage-classic-status-2')).toHaveTextContent('#2');
+    expect(screen.getByTestId('montage-classic-status-1')).toHaveTextContent('State:Connected 10.9 fps');
+    expect(screen.getByTestId('montage-classic-status-2')).toHaveTextContent(/^State:$/);
+    expect(screen.getByRole('link', { name: 'Front Door (id=1)' })).toBeInTheDocument();
   });
 
   it('moves the caption inside the picture (or drops it) per the status position', () => {
@@ -122,7 +123,7 @@ describe('MontageClassicGrid — live cells', () => {
       <MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="hls" statusPosition="inside" />,
     );
     expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
-    expect(streamCellProps.at(-1)).toMatchObject({ protocol: 'hls', showName: true, statusText: 'Connected · 10.9 fps' });
+    expect(streamCellProps.at(-1)).toMatchObject({ protocol: 'hls', showName: true, statusText: 'State:Connected 10.9 fps' });
     rerender(<MontageClassicGrid monitors={[makeMonitor({ id: 1 })]} columns={1} protocol="hls" statusPosition="hidden" />);
     expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
     expect(streamCellProps.at(-1)).toMatchObject({ showName: false });
@@ -134,7 +135,7 @@ describe('MontageClassicGrid — live cells', () => {
     );
     const caption = screen.getByTestId('montage-classic-hover-1');
     expect(caption).toHaveTextContent('Front Door');
-    expect(caption).toHaveTextContent('Connected · 10.9 fps');
+    expect(caption).toHaveTextContent('State:Connected 10.9 fps');
     expect(caption.className).toContain('group-hover:opacity-100');
     // Nothing outside the picture, and the stream's own caption stays off.
     expect(screen.queryByTestId('montage-classic-status-1')).toBeNull();
@@ -155,9 +156,9 @@ describe('MontageClassicGrid — rendering', () => {
         ]}
       />,
     );
-    expect(screen.getByText('Front Door')).toBeInTheDocument();
-    expect(screen.getByText('Garage')).toBeInTheDocument();
-    expect(screen.getByText('Driveway')).toBeInTheDocument();
+    expect(screen.getByText('Front Door (id=1)')).toBeInTheDocument();
+    expect(screen.getByText('Garage (id=2)')).toBeInTheDocument();
+    expect(screen.getByText('Driveway (id=3)')).toBeInTheDocument();
     expect(screen.getByTestId('montage-classic-cell-1')).toBeInTheDocument();
     expect(screen.getByTestId('montage-classic-cell-2')).toBeInTheDocument();
     expect(screen.getByTestId('montage-classic-cell-3')).toBeInTheDocument();
@@ -267,7 +268,7 @@ describe('MontageClassicGrid — tile controls', () => {
 });
 
 /**
- * Legacy's per-tile `ratio<id>` select (only while editing the layout) and
+ * Legacy's per-tile `ratio<id>` select (shown on hover) and
  * WebSite monitors, which `Monitor::getStreamHTML` embeds rather than streams.
  */
 describe('MontageClassicGrid — ratio and WebSite tiles', () => {
@@ -289,7 +290,26 @@ describe('MontageClassicGrid — ratio and WebSite tiles', () => {
     expect(onRatioChange).toHaveBeenCalledWith(1, '4:3');
   });
 
-  it('hides the per-tile Ratio select outside edit mode', () => {
+  it('offers the per-tile Ratio select outside edit mode too, revealed on hover', () => {
+    const onRatioChange = vi.fn();
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor()]}
+        columns={1}
+        protocol="webrtc"
+        ratioFor={() => 'auto'}
+        onRatioChange={onRatioChange}
+      />,
+    );
+    const select = screen.getByRole('combobox', { name: 'Ratio for Front Door' });
+    // Legacy `showControlElementsOnStream` slides it in on mouseover.
+    expect(select.className).toContain('opacity-0');
+    expect(select.className).toContain('group-hover:opacity-100');
+    fireEvent.change(select, { target: { value: '5:4' } });
+    expect(onRatioChange).toHaveBeenCalledWith(1, '5:4');
+  });
+
+  it('labels the Ratio options the way legacy buildRatioSelect does', () => {
     render(
       <MontageClassicGrid
         monitors={[makeMonitor()]}
@@ -299,6 +319,14 @@ describe('MontageClassicGrid — ratio and WebSite tiles', () => {
         onRatioChange={vi.fn()}
       />,
     );
+    const labels = Array.from(screen.getByRole('combobox', { name: 'Ratio for Front Door' }).querySelectorAll('option'))
+      .map((o) => o.textContent);
+    expect(labels.slice(0, 3)).toEqual(['Auto', 'Real', '1:1 (1.000)']);
+    expect(labels).toContain('16:9 (1.778)');
+  });
+
+  it('has no per-tile Ratio select without a change handler', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor()]} columns={1} protocol="webrtc" />);
     expect(screen.queryByRole('combobox', { name: 'Ratio for Front Door' })).toBeNull();
   });
 

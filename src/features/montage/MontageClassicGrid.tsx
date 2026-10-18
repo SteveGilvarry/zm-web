@@ -5,11 +5,11 @@ import { useTranslation } from 'react-i18next';
 import { StreamCell } from '@/components/common/StreamCell';
 import { ZonesOverlay } from '@/features/events/ZonesOverlay';
 import { displayDimensions } from '@/features/monitors/orientation';
-import { useMonitorStatuses, formatFps, runtimeTone, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
+import { useMonitorStatuses, formatFps, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import type { MontageStatusPosition } from '@/stores/montage';
 import type { Monitor, StreamProtocol } from '@/types';
 import { GRIDSTACK_COLUMNS, type GridStackItem } from './layoutFormat';
-import { MONTAGE_RATIOS } from './ratio';
+import { MONTAGE_RATIOS, ratioOptionLabel } from './ratio';
 import { TileControls } from './TileControls';
 import { useTileZoom } from './tileZoom';
 import { WebsiteTile } from './WebsiteTile';
@@ -45,8 +45,10 @@ export interface MontageClassicGridProps {
   fitHeight?: number;
   /** That tile's Ratio choice (legacy per-monitor `ratio<id>` select). */
   ratioFor?: (monitorId: number) => string;
-  /** Change one tile's Ratio; the select only shows while editing. */
+  /** Change one tile's Ratio; the select shows while the tile is hovered. */
   onRatioChange?: (monitorId: number, ratio: string) => void;
+  /** Viewing timeout: every stream is stopped until the operator answers. */
+  streamsStopped?: boolean;
 }
 
 /**
@@ -60,7 +62,7 @@ export interface MontageClassicGridProps {
  */
 export function MontageClassicGrid({
   monitors, columns, protocol, statusPosition = 'outside', editMode = false, onReorder, cellStyle,
-  showZones = false, fitHeight, ratioFor, onRatioChange, items, onResize, gridRef,
+  showZones = false, fitHeight, ratioFor, onRatioChange, items, onResize, gridRef, streamsStopped = false,
 }: MontageClassicGridProps) {
   const { t } = useTranslation();
   const { byId: runtimeById } = useMonitorStatuses(monitors.length > 0 && statusPosition !== 'hidden');
@@ -109,6 +111,7 @@ export function MontageClassicGrid({
           fitted={fitHeight != null}
           ratio={ratioFor?.(m.id)}
           onRatioChange={onRatioChange}
+          streamsStopped={streamsStopped}
           isDragging={draggingId === m.id}
           onDragStart={() => setDraggingId(m.id)}
           onDragEnd={() => setDraggingId(null)}
@@ -123,16 +126,9 @@ export function MontageClassicGrid({
 /*  Cell                                                                      */
 /* -------------------------------------------------------------------------- */
 
-const TONE_DOT: Record<ReturnType<typeof runtimeTone>, string> = {
-  ok: 'bg-emerald-500',
-  warn: 'bg-amber-500',
-  down: 'bg-red-500',
-  unknown: 'bg-zinc-400',
-};
-
 function ClassicCell({
   monitor, protocol, runtime, statusPosition, style, showZones, editMode, fitted = false, isDragging, onDragStart, onDragEnd, onDrop,
-  ratio, onRatioChange, item, onResize,
+  ratio, onRatioChange, item, onResize, streamsStopped,
 }: {
   monitor: Monitor;
   protocol: StreamProtocol;
@@ -152,14 +148,17 @@ function ClassicCell({
   onDrop: () => void;
   ratio?: string;
   onRatioChange?: (monitorId: number, ratio: string) => void;
+  streamsStopped: boolean;
 }) {
   const { t, i18n } = useTranslation();
   const frameRef = useRef<HTMLDivElement>(null);
   const zoom = useTileZoom();
-  const tone = runtimeTone(runtime?.status);
+  // Legacy `#monitorStatus<id>`: `Name (id=N)`, then `State:Connected` and
+  // the capture fps.
+  const nameLabel = `${monitor.name} (id=${monitor.id})`;
   const caption = runtime
-    ? `${runtime.status} · ${formatFps(runtime.captureFps, i18n.language)}`
-    : `#${monitor.id}`;
+    ? `${t('State')}:${runtime.status} ${formatFps(runtime.captureFps, i18n.language)}`
+    : `${t('State')}:`;
   // Legacy's gridstack resize handles. Width is all that persists there too:
   // `sizeToContent` recomputes the height from the tile, and so do we.
   const drag = useRef<{ startX: number; startW: number; columnWidth: number } | null>(null);
@@ -218,12 +217,16 @@ function ClassicCell({
         ref={frameRef}
         className={clsx('relative w-full overflow-hidden bg-zinc-900', fitted && 'flex-1 min-h-0')}
         style={fitted ? undefined : { aspectRatio: style?.aspectRatio ?? '16 / 9' }}
+        {...(editMode ? {} : zoom.gestures)}
       >
         <div className="absolute inset-0" style={zoom.style}>
           {/* A WebSite monitor is a page, not a camera (legacy
               `Monitor::getStreamHTML` embeds it instead of a stream). */}
           {isWebsiteMonitor(monitor) ? (
             <WebsiteTile monitor={monitor} />
+          ) : streamsStopped ? (
+            // Viewing timeout: the stream is torn down until the prompt is answered.
+            <div className="absolute inset-0" data-testid={`montage-classic-stopped-${monitor.id}`} />
           ) : (
             <StreamCell
               protocol={protocol}
@@ -246,16 +249,19 @@ function ClassicCell({
           )}
         </div>
         {!editMode && <TileControls monitorId={monitor.id} targetRef={frameRef} zoom={zoom} />}
-        {editMode && onRatioChange && (
+        {/* Legacy `#ratioControl<id>`: slides in under the tile buttons
+            while the pointer is over the tile, in either mode. */}
+        {onRatioChange && (
           <select
             value={ratio ?? 'auto'}
             onChange={(e) => onRatioChange(monitor.id, e.target.value)}
             aria-label={t('Ratio for {{name}}', { name: monitor.name })}
-            className="absolute top-1 end-1 z-20 rounded-sm border border-zinc-400 bg-white px-1 py-0.5 text-xs text-zinc-900"
+            data-testid={`montage-classic-ratio-${monitor.id}`}
+            className="absolute top-11 end-0.5 z-20 min-w-[130px] rounded-sm border border-zinc-400 bg-zinc-400/50 px-1 py-0.5 text-xs text-zinc-900 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
           >
             {MONTAGE_RATIOS.map((r) => (
               <option key={r} value={r}>
-                {r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : r}
+                {r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : ratioOptionLabel(r)}
               </option>
             ))}
           </select>
@@ -265,8 +271,8 @@ function ClassicCell({
             data-testid={`montage-classic-hover-${monitor.id}`}
             className="absolute inset-x-0 bottom-0 z-10 flex items-center gap-2 px-2 py-1 bg-black/60 text-white text-xs opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
           >
-            <span className="truncate">{monitor.name}</span>
-            <span className="ms-auto font-mono tabular-nums whitespace-nowrap">{caption}</span>
+            <span className="truncate">{nameLabel}</span>
+            <span className="ms-auto tabular-nums whitespace-nowrap">{caption}</span>
           </div>
         )}
       </div>
@@ -280,16 +286,15 @@ function ClassicCell({
           <Link
             to="/monitors/$monitorId"
             params={{ monitorId: String(monitor.id) }}
-            className="inline-flex items-center gap-1.5 text-[#337ab7] hover:underline truncate"
+            className="text-[#337ab7] hover:underline truncate"
           >
-            <span
-              className={clsx('w-1.5 h-1.5 rounded-full flex-shrink-0', TONE_DOT[tone])}
-              role="img"
-              aria-label={runtime?.status ?? t('Unknown')}
-            />
-            <span className="truncate">{monitor.name}</span>
+            {nameLabel}
           </Link>
-          <span className="font-mono text-[10px] text-zinc-500 flex-shrink-0 tabular-nums" data-testid={`montage-classic-status-${monitor.id}`}>
+          <span
+            className="text-zinc-600 flex-shrink-0 tabular-nums"
+            title={t('Capturing FPS')}
+            data-testid={`montage-classic-status-${monitor.id}`}
+          >
             {caption}
           </span>
         </div>

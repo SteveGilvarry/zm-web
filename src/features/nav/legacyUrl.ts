@@ -99,8 +99,18 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
     case 'events':
       return eventsTarget(params);
     case 'montage': {
+      const search: Record<string, SearchValue> = {};
       const group = toInt(params.get('group'));
-      return { to: '/montage', search: group != null ? { group } : {} };
+      if (group != null) search.group = group;
+      const layout = toInt(params.get('zmMontageLayout'));
+      if (layout != null) search.layout = layout;
+      const showZones = params.get('showZones');
+      if (showZones != null) search.show_zones = showZones === '1' ? 1 : 0;
+      const position = params.get('monitorStatusPositionSelected');
+      if (position) search.status_position = position;
+      const header = params.get('header');
+      if (header) search.header = header;
+      return { to: '/montage', search };
     }
     case 'timeline': {
       // The events filter it was opened with, plus the chart's window.

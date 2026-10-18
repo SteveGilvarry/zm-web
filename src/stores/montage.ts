@@ -49,6 +49,11 @@ interface MontageState {
   reviewPanelOpen: boolean;
   /** Classic Review timeline toggle (`#collapse`), legacy cookie `zmFilterBarFlip#timelinediv`. */
   reviewTimelineOpen: boolean;
+  /**
+   * Classic Montage's `#mfbflip`: the filter + controls panel is open.
+   * Legacy cookie `zmFilterBarFlip#mfbpanel`, default open.
+   */
+  montagePanelOpen: boolean;
 
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   setProtocol: (protocol: StreamProtocol) => void;
@@ -67,6 +72,7 @@ interface MontageState {
   setReviewFilters: (filters: ReviewEventFilters) => void;
   setReviewPanelOpen: (open: boolean) => void;
   setReviewTimelineOpen: (open: boolean) => void;
+  setMontagePanelOpen: (open: boolean) => void;
 }
 
 export const useMontageStore = create<MontageState>()(
@@ -90,6 +96,7 @@ export const useMontageStore = create<MontageState>()(
       // skin.js: a flip with no cookie starts open.
       reviewPanelOpen: true,
       reviewTimelineOpen: true,
+      montagePanelOpen: true,
 
       setTree: (next) =>
         set({ tree: typeof next === 'function' ? next(get().tree) : next }),
@@ -108,6 +115,7 @@ export const useMontageStore = create<MontageState>()(
       setReviewFilters: (reviewFilters) => set({ reviewFilters }),
       setReviewPanelOpen: (reviewPanelOpen) => set({ reviewPanelOpen }),
       setReviewTimelineOpen: (reviewTimelineOpen) => set({ reviewTimelineOpen }),
+      setMontagePanelOpen: (montagePanelOpen) => set({ montagePanelOpen }),
     }),
     {
       name: 'zm-montage',
@@ -126,6 +134,7 @@ export const useMontageStore = create<MontageState>()(
         reviewFilters: state.reviewFilters,
         reviewPanelOpen: state.reviewPanelOpen,
         reviewTimelineOpen: state.reviewTimelineOpen,
+        montagePanelOpen: state.montagePanelOpen,
       }),
       // Earlier versions held no review filters, or Notes as one string.
       merge: (persisted, current) => {

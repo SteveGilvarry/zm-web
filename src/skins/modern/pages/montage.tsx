@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
@@ -12,6 +12,11 @@ import {
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { StreamCell } from '@/components/common/StreamCell';
+import { Button } from '@/components/common/Button';
+import { Modal } from '@/components/common/Modal';
+import { useMontageIdle } from '@/features/montage/useMontageIdle';
+import { TileControls } from '@/features/montage/TileControls';
+import { useTileZoom } from '@/features/montage/tileZoom';
 import { WebsiteTile } from '@/features/montage/WebsiteTile';
 import { isWebsiteMonitor } from '@/features/montage/websiteMonitor';
 import { RequirePerm } from '@/features/auth/RequirePerm';
@@ -81,6 +86,7 @@ export default function MontagePage() {
     showZones, setShowZones,
   } = page;
   const { can } = usePerms();
+  const idle = useMontageIdle(page.isAuthenticated && page.cellsOnScreen > 0);
   const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated && statusPosition !== 'hidden');
 
   // The filter bar lives behind a disclosure, so the wall applies the shared
@@ -116,148 +122,150 @@ export default function MontagePage() {
   return (
     <AppShell title={t('Montage')}>
       <main className="flex-1 min-h-0 min-w-0 flex flex-col">
-        <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
-          <ToolbarDisclosure label={t('Layout')} icon={LayoutGrid}>
-            <div className="space-y-3">
-              <div>
-                <p className="text-xs text-fg-dim mb-1.5">{t('Preset shapes')}</p>
-                <div role="group" aria-label={t('Layout presets')} className="flex flex-wrap items-center gap-1">
-                  {presets.map((p) => (
-                    <button
-                      key={p.id}
-                      type="button"
-                      onClick={() => page.applyPreset(p)}
-                      className="px-2 py-1 rounded border border-border-subtle text-xs text-fg-muted hover:text-fg hover:border-border transition-colors"
-                      title={t('Apply {{layout}} layout', { layout: presetLabel(p) })}
-                    >
-                      {presetLabel(p)}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Saved-layout CRUD — pick a named arrangement, save the
-                  current one, or update / rename / delete the loaded one. */}
-              <SavedLayoutsMenu
-                currentTree={tree}
-                statusPosition={statusPosition}
-                onLoad={(layout) => {
-                  setTree(layout.tree);
-                  if (layout.statusPosition) setStatusPosition(layout.statusPosition);
-                }}
-              />
-            </div>
-          </ToolbarDisclosure>
-
-          <div
-            role="group"
-            aria-label={t('Stream protocol')}
-            className="shrink-0 flex items-center gap-0.5 rounded border border-border-subtle p-0.5"
-          >
-            <button
-              type="button"
-              aria-pressed={protocol === 'webrtc'}
-              onClick={() => page.changeProtocol('webrtc')}
-              className={clsx(
-                'flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors',
-                protocol === 'webrtc' ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
-              )}
-            >
-              <Wifi size={12} aria-hidden />
-              WebRTC
-            </button>
-            <button
-              type="button"
-              aria-pressed={protocol === 'hls'}
-              onClick={() => page.changeProtocol('hls')}
-              className={clsx(
-                'flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors',
-                protocol === 'hls' ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
-              )}
-            >
-              <Radio size={12} aria-hidden />
-              HLS
-            </button>
-          </div>
-
-          <span className="text-xs font-mono tabular-nums text-fg-dim">
-            {t('{{count}} cell', { count: cellsOnScreen })}
-          </span>
-
-          <div className="ms-auto flex items-center gap-2 shrink-0">
-            <ToolbarDisclosure label={t('Filters')} icon={Filter} count={activeCount} align="end">
-              <MonitorFilterBar monitors={monitors} onChange={noop} />
-            </ToolbarDisclosure>
-
-            <ToolbarDisclosure label={t('Display')} icon={SlidersHorizontal} align="end">
-              <div className="space-y-3 min-w-[16rem]">
-                <label className="flex flex-col gap-1 text-xs text-fg-dim">
-                  {t('Monitor status position')}
-                  <select
-                    aria-label={t('Monitor status position')}
-                    value={statusPosition}
-                    onChange={(e) => setStatusPosition(e.target.value as MontageStatusPosition)}
-                    className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
-                  >
-                    {(['inside', 'outside', 'hidden', 'hover'] as const).map((p) => (
-                      <option key={p} value={p}>{positionLabel(p)}</option>
+        {!page.headerHidden && (
+          <div className="flex items-center gap-2 px-3 h-11 shrink-0 border-b border-border-subtle bg-surface">
+            <ToolbarDisclosure label={t('Layout')} icon={LayoutGrid}>
+              <div className="space-y-3">
+                <div>
+                  <p className="text-xs text-fg-dim mb-1.5">{t('Preset shapes')}</p>
+                  <div role="group" aria-label={t('Layout presets')} className="flex flex-wrap items-center gap-1">
+                    {presets.map((p) => (
+                      <button
+                        key={p.id}
+                        type="button"
+                        onClick={() => page.applyPreset(p)}
+                        className="px-2 py-1 rounded border border-border-subtle text-xs text-fg-muted hover:text-fg hover:border-border transition-colors"
+                        title={t('Apply {{layout}} layout', { layout: presetLabel(p) })}
+                      >
+                        {presetLabel(p)}
+                      </button>
                     ))}
-                  </select>
-                </label>
-
-                <label
-                  className="flex flex-col gap-1 text-xs text-fg-dim"
-                  title={t('How many tiles may stream at once in this browser; the rest wait for a free slot')}
-                >
-                  {t('Live tile limit')}
-                  <select
-                    aria-label={t('Live tile limit')}
-                    value={maxLiveTiles}
-                    onChange={(e) => setMaxLiveTiles(Number(e.target.value))}
-                    className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
-                  >
-                    {[...MAX_LIVE_TILES_OPTIONS, ...(MAX_LIVE_TILES_OPTIONS.includes(maxLiveTiles as 12) ? [] : [maxLiveTiles])]
-                      .sort((a, b) => a - b)
-                      .map((n) => (
-                        <option key={n} value={n}>{t('{{count}} live', { count: n })}</option>
-                      ))}
-                  </select>
-                </label>
-
-                {can('system', 'View') && (
-                  <label className="flex items-center gap-2 text-xs text-fg-dim">
-                    <input
-                      type="checkbox"
-                      checked={showZones}
-                      onChange={(e) => setShowZones(e.target.checked)}
-                      className="accent-accent"
-                    />
-                    {t('Show Zones')}
-                  </label>
-                )}
+                  </div>
+                </div>
+  
+                {/* Saved-layout CRUD — pick a named arrangement, save the
+                    current one, or update / rename / delete the loaded one. */}
+                <SavedLayoutsMenu
+                  currentTree={tree}
+                  statusPosition={statusPosition}
+                  onLoad={(layout) => {
+                    setTree(layout.tree);
+                    if (layout.statusPosition) setStatusPosition(layout.statusPosition);
+                  }}
+                />
               </div>
             </ToolbarDisclosure>
-
-            <button
-              type="button"
-              onClick={page.restartAll}
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
-              title={t('Restart all streams')}
+  
+            <div
+              role="group"
+              aria-label={t('Stream protocol')}
+              className="shrink-0 flex items-center gap-0.5 rounded border border-border-subtle p-0.5"
             >
-              <RotateCw size={12} aria-hidden />
-              {t('Restart')}
-            </button>
-            <button
-              type="button"
-              onClick={page.toggleFullscreen}
-              className={toolBtn}
-              title={t('Fullscreen')}
-              aria-label={t('Fullscreen')}
-            >
-              <Maximize2 size={16} />
-            </button>
+              <button
+                type="button"
+                aria-pressed={protocol === 'webrtc'}
+                onClick={() => page.changeProtocol('webrtc')}
+                className={clsx(
+                  'flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors',
+                  protocol === 'webrtc' ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
+              >
+                <Wifi size={12} aria-hidden />
+                WebRTC
+              </button>
+              <button
+                type="button"
+                aria-pressed={protocol === 'hls'}
+                onClick={() => page.changeProtocol('hls')}
+                className={clsx(
+                  'flex items-center gap-1 px-2 py-0.5 rounded text-xs transition-colors',
+                  protocol === 'hls' ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
+                )}
+              >
+                <Radio size={12} aria-hidden />
+                HLS
+              </button>
+            </div>
+  
+            <span className="text-xs font-mono tabular-nums text-fg-dim">
+              {t('{{count}} cell', { count: cellsOnScreen })}
+            </span>
+  
+            <div className="ms-auto flex items-center gap-2 shrink-0">
+              <ToolbarDisclosure label={t('Filters')} icon={Filter} count={activeCount} align="end">
+                <MonitorFilterBar monitors={monitors} onChange={noop} />
+              </ToolbarDisclosure>
+  
+              <ToolbarDisclosure label={t('Display')} icon={SlidersHorizontal} align="end">
+                <div className="space-y-3 min-w-[16rem]">
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('Monitor status position')}
+                    <select
+                      aria-label={t('Monitor status position')}
+                      value={statusPosition}
+                      onChange={(e) => setStatusPosition(e.target.value as MontageStatusPosition)}
+                      className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
+                    >
+                      {(['inside', 'outside', 'hidden', 'hover'] as const).map((p) => (
+                        <option key={p} value={p}>{positionLabel(p)}</option>
+                      ))}
+                    </select>
+                  </label>
+  
+                  <label
+                    className="flex flex-col gap-1 text-xs text-fg-dim"
+                    title={t('How many tiles may stream at once in this browser; the rest wait for a free slot')}
+                  >
+                    {t('Live tile limit')}
+                    <select
+                      aria-label={t('Live tile limit')}
+                      value={maxLiveTiles}
+                      onChange={(e) => setMaxLiveTiles(Number(e.target.value))}
+                      className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
+                    >
+                      {[...MAX_LIVE_TILES_OPTIONS, ...(MAX_LIVE_TILES_OPTIONS.includes(maxLiveTiles as 12) ? [] : [maxLiveTiles])]
+                        .sort((a, b) => a - b)
+                        .map((n) => (
+                          <option key={n} value={n}>{t('{{count}} live', { count: n })}</option>
+                        ))}
+                    </select>
+                  </label>
+  
+                  {can('system', 'View') && (
+                    <label className="flex items-center gap-2 text-xs text-fg-dim">
+                      <input
+                        type="checkbox"
+                        checked={showZones}
+                        onChange={(e) => setShowZones(e.target.checked)}
+                        className="accent-accent"
+                      />
+                      {t('Show Zones')}
+                    </label>
+                  )}
+                </div>
+              </ToolbarDisclosure>
+  
+              <button
+                type="button"
+                onClick={page.restartAll}
+                className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors"
+                title={t('Restart all streams')}
+              >
+                <RotateCw size={12} aria-hidden />
+                {t('Restart')}
+              </button>
+              <button
+                type="button"
+                onClick={page.toggleFullscreen}
+                className={toolBtn}
+                title={t('Fullscreen')}
+                aria-label={t('Fullscreen')}
+              >
+                <Maximize2 size={16} />
+              </button>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Mosaic viewport — the page. Needs display:flex so the MosaicView
             wrapper can take its own flex share and resolve percentage
@@ -285,6 +293,10 @@ export default function MontagePage() {
                     {t('{{name}} (filtered)', { name: m.name })}
                   </div>
                 );
+              }
+              // Viewing timeout: no live cells until the operator answers.
+              if (idle.prompted) {
+                return <div className="absolute inset-0 bg-bg-sunken" data-testid={`montage-stopped-${m.id}`} />;
               }
               const runtime = runtimeById[m.id];
               const zones = showZones ? (
@@ -315,19 +327,19 @@ export default function MontagePage() {
                   // ends up portrait, fit otherwise.
                 />
               );
+              const framed = <TileFrame monitorId={m.id}>{cell}{zones}</TileFrame>;
               if (statusPosition === 'hover') {
                 return (
                   <>
-                    {cell}
-                    {zones}
+                    {framed}
                     <HoverCaption monitor={m} caption={captionFor(runtime)} />
                   </>
                 );
               }
-              if (statusPosition !== 'outside') return <>{cell}{zones}</>;
+              if (statusPosition !== 'outside') return framed;
               return (
                 <div className="absolute inset-0 flex flex-col">
-                  <div className="relative flex-1 min-h-0">{cell}{zones}</div>
+                  <div className="relative flex-1 min-h-0">{framed}</div>
                   <OutsideCaption monitor={m} runtime={runtime} caption={captionFor(runtime)} />
                 </div>
               );
@@ -347,8 +359,30 @@ export default function MontagePage() {
             onCancel={page.cancelPick}
           />
         )}
+
+        {/* `ZM_WEB_VIEWING_TIMEOUT`: every stream is stopped until answered. */}
+        <Modal isOpen={idle.prompted} onClose={idle.resume} title={t('Are you still watching?')}>
+          <p className="text-sm text-fg-muted mb-4">{t('Video paused. Continue watching?')}</p>
+          <Button variant="primary" onClick={idle.resume}>{t('Yes')}</Button>
+        </Modal>
       </main>
     </AppShell>
+  );
+}
+
+/**
+ * The picture of one tile with legacy's per-tile buttons over it: zoom in
+ * and out, full screen, watch page and (with Monitors Edit) the editor.
+ * A component of its own because the zoom is per tile state.
+ */
+function TileFrame({ monitorId, children }: { monitorId: number; children: ReactNode }) {
+  const frameRef = useRef<HTMLDivElement>(null);
+  const zoom = useTileZoom();
+  return (
+    <div ref={frameRef} className="group absolute inset-0 overflow-hidden" {...zoom.gestures}>
+      <div className="absolute inset-0" style={zoom.style}>{children}</div>
+      <TileControls monitorId={monitorId} targetRef={frameRef} zoom={zoom} />
+    </div>
   );
 }
 

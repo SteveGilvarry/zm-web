@@ -20,14 +20,11 @@ export const MONTAGE_PRESETS: readonly MontagePreset[] = [
   { id: '2w',    label: '2 Wide',   columns: 2 },
   { id: '3w',    label: '3 Wide',   columns: 3 },
   { id: '4w',    label: '4 Wide',   columns: 4 },
-  { id: '5w',    label: '5 Wide',   columns: 5 },
   { id: '6w',    label: '6 Wide',   columns: 6 },
   { id: '8w',    label: '8 Wide',   columns: 8 },
   { id: '12w',   label: '12 Wide',  columns: 12 },
   { id: '16w',   label: '16 Wide',  columns: 16 },
-  { id: '20w',   label: '20 Wide',  columns: 20 },
   { id: '24w',   label: '24 Wide',  columns: 24 },
-  { id: '32w',   label: '32 Wide',  columns: 32 },
   { id: '48w',   label: '48 Wide',  columns: 48 },
 ] as const;
 

@@ -30,6 +30,7 @@ const savedPositions = serialisePositions(gridLayout(2, 1, [3, 1]), 'outside');
 
 /** Requests captured for assertion. */
 let posted: Array<{ url: string; body: unknown }> = [];
+let patched: Array<{ id: string; body: unknown }> = [];
 let deleted: string[] = [];
 
 const server = setupServer();
@@ -53,7 +54,7 @@ beforeEach(() => {
 });
 afterEach(() => {
   server.resetHandlers();
-  posted = []; deleted = [];
+  posted = []; patched = []; deleted = [];
   useToastStore.getState().clear();
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -74,6 +75,12 @@ function stubLayouts(seed: unknown[] = [
       const created = { id: 99, name: (body as { name: string }).name, positions: savedPositions, user_id: 7 };
       items.push(created);
       return HttpResponse.json(created);
+    }),
+    http.patch('/api/v3/montage_layouts/:id', async ({ params, request }) => {
+      const body = await request.json();
+      patched.push({ id: String(params.id), body });
+      const row = items.find((i) => String((i as { id: number }).id) === String(params.id)) as { id: number; name: string; user_id: number };
+      return HttpResponse.json({ ...row, ...(body as object) });
     }),
     http.get('/api/v3/me', () => new HttpResponse(null, { status: 404 })),
     http.delete('/api/v3/montage_layouts/:id', ({ params }) => {
@@ -100,12 +107,41 @@ async function mounted(list = monitors) {
 }
 
 describe('useClassicMontage — saved layout list', () => {
-  it('sorts saved layouts by name and drops rows whose positions will not parse', async () => {
-    stubLayouts();
+  it('sorts saved layouts by name, old-format rows included, preset rows left to the presets', async () => {
+    stubLayouts([
+      { id: 12, name: 'Zulu wall', user_id: 1, positions: savedPositions },
+      { id: 13, name: 'alpha wall', user_id: 1, positions: savedPositions },
+      { id: 14, name: 'Corrupt', user_id: 1, positions: 'not-json' },
+      { id: 2, name: '4 Wide', user_id: 0, positions: '{ "default":{"float":"left"} }' },
+      { id: 1, name: 'Freeform', user_id: 0, positions: '{ "default":{"float":"left"} }' },
+    ]);
     const { result } = await mounted();
     const savedOpts = result.current.layoutOptions.filter((o) => o.value.startsWith('saved:'));
-    expect(savedOpts.map((o) => o.label)).toEqual(['alpha wall', 'Zulu wall']);
-    expect(savedOpts.some((o) => o.label === 'Corrupt')).toBe(false);
+    expect(savedOpts.map((o) => o.label)).toEqual(['alpha wall', 'Corrupt', 'Zulu wall']);
+  });
+
+  it('an old-format row opens "Error reading Layout", walls four across, and saves in place', async () => {
+    stubLayouts([
+      { id: 12, name: 'Zulu wall', user_id: 1, positions: savedPositions },
+      { id: 14, name: 'Pre-2024', user_id: 7, positions: '{ "mId1":{"width":"50%"} }' },
+    ]);
+    const { result } = await mounted();
+    expect(result.current.layoutErrorOpen).toBe(false);
+
+    act(() => result.current.setLayoutId('saved:14'));
+    expect(result.current.layoutId).toBe('saved:14');
+    expect(result.current.layoutErrorOpen).toBe(true);
+    expect(result.current.columns).toBe(4);
+    expect(result.current.isSavedLayout).toBe(true);
+    act(() => result.current.closeLayoutError());
+    expect(result.current.layoutErrorOpen).toBe(false);
+
+    // Legacy's advice is to place the monitors again and resave: an empty
+    // Name writes the new gridStack over the old row.
+    act(() => result.current.beginEdit());
+    await act(async () => { result.current.save(); });
+    await waitFor(() => expect(patched.map((p) => p.id)).toEqual(['14']));
+    expect(JSON.parse((patched[0].body as { positions: string }).positions)).toHaveProperty('gridStack');
   });
 
   it('survives the backend being unreachable — presets still work', async () => {
@@ -123,6 +159,16 @@ describe('useClassicMontage — saved layout list', () => {
     const { result } = renderHook(() => useClassicMontage(monitors), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.layoutOptions.length).toBeGreaterThan(0));
     expect(result.current.isSavedLayout).toBe(false);
+  });
+
+  it('offers only legacy\'s presets and drops a remembered one legacy lacks', async () => {
+    stubLayouts();
+    useMontageStore.setState({ classicLayoutId: 'preset:5w' });
+    const { result } = await mounted();
+    expect(result.current.layoutOptions.filter((o) => o.value.startsWith('preset:')).map((o) => o.label)).toEqual([
+      'Auto', '1 Wide', '2 Wide', '3 Wide', '4 Wide', '6 Wide', '8 Wide', '12 Wide', '16 Wide', '24 Wide', '48 Wide',
+    ]);
+    expect(result.current.layoutId).toBe('preset:auto');
   });
 
   it('falls back to the auto column count for a saved layout not named "N Wide"', async () => {
@@ -178,18 +224,68 @@ describe('useClassicMontage — save layout', () => {
     expect(useToastStore.getState().toasts.some((t) => /Layout "Front wall" saved/.test(t.message))).toBe(true);
   });
 
-  it('seeds the Name field from the layout being edited and keeps that name', async () => {
+  it('an empty Name PATCHes the selected layout in place (legacy actions/montage.php)', async () => {
+    stubLayouts([{ id: 30, name: 'Mine', user_id: 7, positions: savedPositions }, { id: 12, name: 'Zulu wall', user_id: 1, positions: savedPositions }]);
+    const { result } = await mounted();
+    act(() => result.current.setLayoutId('saved:30'));
+    act(() => result.current.beginEdit());
+    // The field opens empty, and this user's own layout raises no notice.
+    expect(result.current.saveName).toBe('');
+    expect(result.current.saveError).toBeNull();
+
+    // The saved order is 3, 1 then 2; swapping 3 and 1 gives 1, 3, 2.
+    act(() => result.current.reorder(3, 1));
+    await act(async () => { result.current.save(); });
+    await waitFor(() => expect(patched).toHaveLength(1));
+    expect(posted).toEqual([]);
+    expect(patched[0].id).toBe('30');
+    const body = patched[0].body as { name?: string; positions: string };
+    expect(body.name).toBeUndefined();
+    expect(parsePositions(body.positions)?.items.map((i) => i.id)).toEqual(['1', '3', '2']);
+    await waitFor(() => expect(result.current.editMode).toBe(false));
+    expect(result.current.layoutId).toBe('saved:30');
+  });
+
+  it('a typed Name always creates a new row, even with a saved layout selected', async () => {
+    stubLayouts([{ id: 30, name: 'Mine', user_id: 7, positions: savedPositions }, { id: 12, name: 'Zulu wall', user_id: 1, positions: savedPositions }]);
+    const { result } = await mounted();
+    act(() => result.current.setLayoutId('saved:30'));
+    act(() => result.current.beginEdit());
+    act(() => result.current.setSaveName('Copy of mine'));
+    await act(async () => { result.current.save(); });
+    await waitFor(() => expect(posted).toHaveLength(1));
+    expect(patched).toEqual([]);
+    expect((posted[0].body as { name: string }).name).toBe('Copy of mine');
+    await waitFor(() => expect(result.current.layoutId).toBe('saved:99'));
+  });
+
+  it('refuses an empty-Name save over someone else\'s layout without System Edit', async () => {
+    stubLayouts();
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'op', uid: 7, perms: { system: 'View', stream: 'View' } } as never });
+    try {
+      const { result } = await mounted();
+      act(() => result.current.setLayoutId('saved:12'));
+      act(() => result.current.beginEdit());
+      expect(result.current.saveError).toMatch(/may not edit this layout/);
+      await act(async () => { result.current.save(); });
+      expect(result.current.saveError).toMatch(/someone else's layouts/);
+      expect(patched).toEqual([]);
+      expect(posted).toEqual([]);
+    } finally {
+      useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin', uid: 7 } as never });
+    }
+  });
+
+  it('lets a System editor overwrite someone else\'s layout', async () => {
     stubLayouts();
     const { result } = await mounted();
     act(() => result.current.setLayoutId('saved:12'));
     act(() => result.current.beginEdit());
-    expect(result.current.saveName).toBe('Zulu wall');
-
-    // Saving with the field untouched keeps the layout's own name — the
-    // owner is this user's, so legacy allows it.
+    // Legacy alerts on edit regardless of permission…
+    expect(result.current.saveError).toMatch(/may not edit this layout/);
     await act(async () => { result.current.save(); });
-    await waitFor(() => expect(posted).toHaveLength(1));
-    expect((posted[0].body as { name: string }).name).toBe('Zulu wall');
+    // …but its server lets canEdit('System') save over it.
+    await waitFor(() => expect(patched.map((p) => p.id)).toEqual(['12']));
   });
 
   it('refuses a name that collides with a built-in layout', async () => {
@@ -201,12 +297,13 @@ describe('useClassicMontage — save layout', () => {
     expect(result.current.saveError).toMatch(/built in layouts/i);
   });
 
-  it('refuses an empty name with nothing selected to inherit from', async () => {
+  it('refuses an empty name over a preset', async () => {
     stubLayouts();
     const { result } = await mounted();
     await act(async () => { result.current.save(); });
     expect(posted).toHaveLength(0);
-    expect(result.current.saveError).toMatch(/give the layout a name/i);
+    expect(patched).toHaveLength(0);
+    expect(result.current.saveError).toMatch(/cannot edit the built in layouts/i);
   });
 
   it('reports a failed save through the toast rail', async () => {
@@ -226,45 +323,64 @@ describe('useClassicMontage — save layout', () => {
 describe('useClassicMontage — delete layout', () => {
   it('does nothing on a preset', async () => {
     stubLayouts();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { result } = await mounted();
     await act(async () => { result.current.remove(); });
-    expect(confirm).not.toHaveBeenCalled();
+    expect(result.current.deleteConfirmOpen).toBe(false);
     expect(deleted).toEqual([]);
   });
 
   it('confirms, DELETEs the row and falls back to the Auto preset', async () => {
     stubLayouts();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { result } = await mounted();
     act(() => result.current.setLayoutId('saved:12'));
 
-    await act(async () => { result.current.remove(); });
+    act(() => result.current.remove());
+    expect(result.current.deleteConfirmOpen).toBe(true);
+    expect(deleted).toEqual([]);
+    await act(async () => { result.current.confirmDelete(); });
     await waitFor(() => expect(deleted).toEqual(['12']));
-    expect(confirm).toHaveBeenCalledWith('Delete layout "Zulu wall"?');
     await waitFor(() => expect(result.current.layoutId).toBe('preset:auto'));
+    expect(result.current.deleteConfirmOpen).toBe(false);
     expect(useToastStore.getState().toasts.some((t) => t.message === 'Layout deleted')).toBe(true);
   });
 
-  it('sends nothing when the operator declines the confirm', async () => {
+  it('sends nothing when the operator cancels the confirm', async () => {
     stubLayouts();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     const { result } = await mounted();
     act(() => result.current.setLayoutId('saved:12'));
-    await act(async () => { result.current.remove(); });
+    act(() => result.current.remove());
+    act(() => result.current.cancelDelete());
+    expect(result.current.deleteConfirmOpen).toBe(false);
     expect(deleted).toEqual([]);
     expect(result.current.layoutId).toBe('saved:12');
+  });
+
+  it('answers a user without System Edit with the no-permission modal', async () => {
+    stubLayouts();
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'op', uid: 7, perms: { system: 'View', stream: 'View' } } as never });
+    try {
+      const { result } = await mounted();
+      act(() => result.current.setLayoutId('saved:12'));
+      act(() => result.current.remove());
+      expect(result.current.noPermOpen).toBe(true);
+      expect(result.current.deleteConfirmOpen).toBe(false);
+      act(() => result.current.closeNoPerm());
+      expect(result.current.noPermOpen).toBe(false);
+      expect(deleted).toEqual([]);
+    } finally {
+      useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin', uid: 7 } as never });
+    }
   });
 
   it('reports a failed delete and keeps the selection', async () => {
     stubLayouts();
     server.use(http.delete('/api/v3/montage_layouts/:id', () =>
       HttpResponse.json({ kind: 'FORBIDDEN', error_message: 'not yours' }, { status: 403 })));
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const { result } = await mounted();
     act(() => result.current.setLayoutId('saved:12'));
 
-    await act(async () => { result.current.remove(); });
+    act(() => result.current.remove());
+    await act(async () => { result.current.confirmDelete(); });
     await waitFor(() =>
       expect(useToastStore.getState().toasts.some((t) => t.tone === 'error')).toBe(true));
     expect(result.current.layoutId).toBe('saved:12');

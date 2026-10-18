@@ -13,6 +13,8 @@ import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
+import { useMontageStore } from '@/stores/montage';
+import { DEFAULT_STAGE_SIZE } from '@/features/monitors/watchStage';
 
 let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({
@@ -90,6 +92,7 @@ afterEach(() => {
   mockSearch = {};
   useMonitorFilterStore.getState().reset();
   useMonitorFilterRowStore.getState().reset();
+  useMontageStore.setState({ cycleStage: { ...DEFAULT_STAGE_SIZE } });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
@@ -116,14 +119,26 @@ describe('ClassicCyclePage', () => {
     expect(screen.getByTestId('cycle-stage')).toHaveAttribute('dir', 'ltr');
   });
 
-  it('shows the dwell time ZoneMinder is configured for', async () => {
-    stub();
-    server.use(http.get('/api/v3/configs', () => HttpResponse.json(paged([
-      { id: 1, name: 'ZM_WEB_REFRESH_CYCLE', value: '45' },
-    ], { per_page: 1000 }))));
-    await mount();
-    await pills();
-    expect(await screen.findByText('45s')).toBeInTheDocument();
+  it('holds each monitor for the dwell time ZoneMinder is configured for, with no countdown', async () => {
+    vi.useFakeTimers();
+    try {
+      stub();
+      server.use(http.get('/api/v3/configs', () => HttpResponse.json(paged([
+        { id: 1, name: 'ZM_WEB_REFRESH_CYCLE', value: '45' },
+      ], { per_page: 1000 }))));
+      await mount();
+      await vi.waitFor(() => expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:1'));
+      // Let the config land before the clock starts counting.
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      // Legacy prints no countdown next to the transport.
+      expect(screen.queryByText(/^\d+s$/)).toBeNull();
+      await act(async () => { await vi.advanceTimersByTimeAsync(44_000); });
+      expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:1');
+      await act(async () => { await vi.advanceTimersByTimeAsync(1_000); });
+      expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:2');
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('puts the zoom / fullscreen / watch controls over the stage', async () => {
@@ -146,11 +161,11 @@ describe('ClassicCyclePage', () => {
     await mount();
     await pills();
 
-    await user.click(screen.getByRole('button', { name: 'Next monitor' }));
+    await user.click(screen.getByRole('button', { name: 'Next Monitor' }));
     expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:2');
-    await user.click(screen.getByRole('button', { name: 'Next monitor' }));
+    await user.click(screen.getByRole('button', { name: 'Next Monitor' }));
     expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:1');
-    await user.click(screen.getByRole('button', { name: 'Previous monitor' }));
+    await user.click(screen.getByRole('button', { name: 'Previous Monitor' }));
     expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:2');
   });
 
@@ -166,7 +181,7 @@ describe('ClassicCyclePage', () => {
     expect((await pills())[0]).not.toHaveAttribute('aria-current');
   });
 
-  it('starts on ?monitor_id and shows the countdown until paused', async () => {
+  it('starts on ?monitor_id; pause disables || and enables |>', async () => {
     const user = userEvent.setup();
     mockSearch = { monitor_id: 2 };
     stub();
@@ -174,18 +189,34 @@ describe('ClassicCyclePage', () => {
     await pills();
 
     expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:2');
-    // Two monitors in rotation → the auto-advance countdown is visible.
-    expect(screen.getByText('10s')).toBeInTheDocument();
-
-    const pause = screen.getByRole('button', { name: 'Pause cycling' });
-    const resume = screen.getByRole('button', { name: 'Resume cycling' });
+    const pause = screen.getByRole('button', { name: 'Pause Cycle' });
+    const play = screen.getByRole('button', { name: 'Play Cycle' });
     expect(pause).toBeEnabled();
-    expect(resume).toBeDisabled();
+    expect(pause).toHaveTextContent('||');
+    expect(play).toBeDisabled();
+    expect(play).toHaveTextContent('|>');
 
     await user.click(pause);
-    expect(screen.queryByText('10s')).toBeNull();
-    expect(screen.getByRole('button', { name: 'Pause cycling' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Resume cycling' })).toBeEnabled();
+    expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Play Cycle' })).toBeEnabled();
+    await user.click(screen.getByRole('button', { name: 'Play Cycle' }));
+    expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeEnabled();
+  });
+
+  it('a step or a nav-pill resumes a paused cycle, as legacy\'s page load does', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await pills();
+
+    await user.click(screen.getByRole('button', { name: 'Pause Cycle' }));
+    await user.click(screen.getByRole('button', { name: 'Next Monitor' }));
+    expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:2');
+    expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeEnabled();
+
+    await user.click(screen.getByRole('button', { name: 'Pause Cycle' }));
+    await user.click((await pills())[0]);
+    expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeEnabled();
   });
 
   it('auto-advances on the interval timer', async () => {
@@ -236,6 +267,35 @@ describe('ClassicCyclePage', () => {
       .getByRole('option', { name: '1920px' })).toBeInTheDocument();
   });
 
+  it('Scale puts Width and Height back to auto, and Width puts Scale back to Auto', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await pills();
+
+    const group = screen.getByRole('group', { name: 'Stage size' });
+    await user.selectOptions(within(group).getByLabelText('Width'), '640px');
+    await user.selectOptions(within(group).getByLabelText('Height'), '480px');
+    // legacy changeScale
+    await user.selectOptions(within(group).getByLabelText('Scale'), '100');
+    expect(within(group).getByLabelText('Width')).toHaveValue('auto');
+    expect(within(group).getByLabelText('Height')).toHaveValue('auto');
+    expect(screen.getByTestId('cycle-stage')).toHaveStyle({ width: '1920px' });
+    // legacy changeSize
+    await user.selectOptions(within(group).getByLabelText('Width'), '320px');
+    expect(within(group).getByLabelText('Scale')).toHaveValue('0');
+    expect(screen.getByTestId('cycle-stage')).toHaveStyle({ width: '320px' });
+  });
+
+  it('on all-auto fits the stage to the window height, like legacy scaleToFit', async () => {
+    stub();
+    await mount();
+    await pills();
+    // jsdom: the stage area's top is 0 and the window 768 px tall, less the
+    // 64 px transport row → 704 px, so a 16:9 camera is at most 1251 px wide.
+    await waitFor(() => expect(screen.getByTestId('cycle-stage')).toHaveStyle({ width: '1251px', maxWidth: '100%' }));
+  });
+
   it('narrows the rotation with the legacy filter row', async () => {
     const user = userEvent.setup();
     stub();
@@ -244,8 +304,22 @@ describe('ClassicCyclePage', () => {
 
     await user.selectOptions(screen.getByLabelText('Recording'), 'OnMotion');
     await waitFor(async () => expect((await pills()).map((b) => b.textContent)).toEqual(['Front Door']));
-    // A single monitor means no auto-advance countdown.
-    expect(screen.queryByText(/^\d+s$/)).toBeNull();
+  });
+
+  it('a filter change starts the rotation again from its first monitor', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await pills();
+
+    await user.click(screen.getByRole('button', { name: 'Next Monitor' }));
+    expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:2');
+    await user.click(screen.getByRole('button', { name: 'Pause Cycle' }));
+    // Driveway (2) records nothing; Front Door survives and goes on stage,
+    // and the reload legacy does here leaves the cycle playing.
+    await user.selectOptions(screen.getByLabelText('Recording'), 'OnMotion');
+    await waitFor(() => expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:1'));
+    expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeEnabled();
   });
 
   it('shows the legacy empty message when nothing is capturing', async () => {
