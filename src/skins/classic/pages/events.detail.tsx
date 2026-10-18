@@ -386,12 +386,11 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                 </div>
               </div>
 
-              {/* Event_Data rows */}
+              {/* Event_Data rows: Timestamp and Data, as event.php:568 prints them. */}
               {s.eventData.length > 0 && (
                 <table className="text-xs border border-[#dee2e6]" data-testid="event-data-table">
                   <thead className="bg-[#e9ecef]">
                     <tr>
-                      <th className="px-2 py-1 text-start">{t('Frame')}</th>
                       <th className="px-2 py-1 text-start">{t('Timestamp')}</th>
                       <th className="px-2 py-1 text-start">{t('Data')}</th>
                     </tr>
@@ -399,7 +398,6 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   <tbody>
                     {s.eventData.map((row) => (
                       <tr key={row.id} className="border-t border-[#dee2e6]">
-                        <td className="px-2 py-1">{row.frame_id ?? '—'}</td>
                         <td className="px-2 py-1 whitespace-nowrap">{row.timestamp ? formatDateTime(row.timestamp) : '—'}</td>
                         <td className="px-2 py-1 whitespace-pre-wrap break-words">{row.data ?? '—'}</td>
                       </tr>

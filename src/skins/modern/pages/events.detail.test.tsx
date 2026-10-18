@@ -72,7 +72,7 @@ beforeEach(() => {
   // Reset session-store between tests so cross-test bleed doesn't change
   // the dropdown defaults.
   useEventPlaybackStore.setState({
-    replayMode: 'none', scaleByMonitor: {}, showZones: false, showStats: false, rate: 1,
+    replayMode: 'none', scaleByMonitor: {}, zonesByMonitor: {}, showStats: false, rate: 1,
     navScope: null,
   });
   mockSearch = {};

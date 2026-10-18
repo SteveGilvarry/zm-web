@@ -65,7 +65,8 @@ export interface EventNavScope {
 interface EventPlaybackState {
   replayMode: ReplayMode;
   scaleByMonitor: Record<number, PlaybackScale>;
-  showZones: boolean;
+  /** Zones overlay per monitor (legacy `zmEventShowZones<mid>` cookie), default off. */
+  zonesByMonitor: Record<number, boolean>;
   showStats: boolean;
   /** One of `PLAYBACK_RATES`. */
   rate: number;
@@ -82,7 +83,7 @@ interface EventPlaybackState {
   tagRecency: number[];
   setReplayMode: (mode: ReplayMode) => void;
   setScale: (monitorId: number, scale: PlaybackScale) => void;
-  setShowZones: (show: boolean) => void;
+  setShowZones: (monitorId: number, show: boolean) => void;
   setShowStats: (show: boolean) => void;
   setRate: (rate: number) => void;
   setCodec: (codec: PlaybackCodec) => void;
@@ -106,7 +107,7 @@ export const useEventPlaybackStore = create<EventPlaybackState>()(
     (set) => ({
       replayMode: 'none',
       scaleByMonitor: {},
-      showZones: false,
+      zonesByMonitor: {},
       // Legacy `zmEventStats` cookie defaults to on.
       showStats: true,
       rate: 1,
@@ -117,7 +118,8 @@ export const useEventPlaybackStore = create<EventPlaybackState>()(
       setReplayMode: (mode) => set({ replayMode: REPLAY_MODES.includes(mode) ? mode : 'none' }),
       setScale: (monitorId, scale) =>
         set((s) => ({ scaleByMonitor: { ...s.scaleByMonitor, [monitorId]: scale } })),
-      setShowZones: (show) => set({ showZones: show }),
+      setShowZones: (monitorId, show) =>
+        set((s) => ({ zonesByMonitor: { ...s.zonesByMonitor, [monitorId]: show } })),
       setShowStats: (show) => set({ showStats: show }),
       setRate: (rate) => set({ rate: PLAYBACK_RATES.includes(rate) ? rate : 1 }),
       setCodec: (codec) => set({ codec: PLAYBACK_CODECS.includes(codec) ? codec : 'auto' }),

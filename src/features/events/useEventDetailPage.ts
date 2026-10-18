@@ -273,7 +273,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const {
     replayMode, setReplayMode,
     scaleByMonitor, setScale: setMonitorScale,
-    showZones, setShowZones,
+    zonesByMonitor, setShowZones: setMonitorZones,
     showStats, setShowStats,
     rate, setRate,
     codec, setCodec,
@@ -977,8 +977,9 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     setReplayMode,
     scale,
     setScale,
-    showZones,
-    setShowZones,
+    // Remembered per monitor, as legacy's `zmEventShowZones<mid>` cookie is.
+    showZones: event ? (zonesByMonitor[event.monitor_id] ?? false) : false,
+    setShowZones: (v: boolean) => { if (event) setMonitorZones(event.monitor_id, v); },
     showStats,
     setShowStats,
     playerMaxWidth,

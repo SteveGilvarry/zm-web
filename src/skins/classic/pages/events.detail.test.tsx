@@ -145,7 +145,7 @@ afterEach(() => {
   calls = [];
   mockNavigate.mockReset();
   useEventPlaybackStore.getState().setShowStats(false);
-  useEventPlaybackStore.getState().setShowZones(false);
+  useEventPlaybackStore.setState({ zonesByMonitor: {} });
   useEventPlaybackStore.getState().setRate(1);
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -300,7 +300,8 @@ describe('ClassicEventDetailPage — stats and data', () => {
     await mountAndSettle();
 
     const table = await screen.findByTestId('event-data-table');
-    expect(within(table).getByText('12')).toBeInTheDocument();
+    // Legacy's two columns; the frame number is not one of them.
+    expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Timestamp', 'Data']);
     expect(within(table).getByText('{"label":"person"}')).toBeInTheDocument();
   });
 
@@ -319,7 +320,8 @@ describe('ClassicEventDetailPage — stats and data', () => {
     expect(zones).toHaveAttribute('aria-pressed', 'false');
     await user.click(zones);
     expect(screen.getByRole('button', { name: 'Zones' })).toHaveAttribute('aria-pressed', 'true');
-    expect(useEventPlaybackStore.getState().showZones).toBe(true);
+    // Remembered for this event's monitor only.
+    expect(useEventPlaybackStore.getState().zonesByMonitor).toEqual({ 1: true });
   });
 });
 
