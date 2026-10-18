@@ -131,12 +131,12 @@ describe('search params round-trip through validateSearch', () => {
     expect(router.state.location.search).not.toHaveProperty('monitor_id');
   });
 
-  it('/logs keeps its component and numeric level filters', async () => {
+  it('/logs keeps its component and level filters, reading a numeric level as its code', async () => {
     const { router } = renderRoute('/logs?component=zmc_m1&level=-2&page=2');
     await screen.findAllByRole('heading', { name: /^Log$/ });
     expect(router.state.location.search).toMatchObject({
       component: 'zmc_m1',
-      level: -2,
+      level: 'ERR',
       page: 2,
     });
   });

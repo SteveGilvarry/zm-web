@@ -13,14 +13,23 @@ export const LOG_LEVEL_BY_CODE: Record<LogLevelCode, number> = {
   DBG: 1, INF: 0, WAR: -1, ERR: -2, FAT: -3, PNC: -4, AUD: -5, OFF: -6,
 };
 
+const CODE_BY_LEVEL = new Map<string, LogLevelCode>(
+  LOG_LEVEL_CODES.map((c) => [String(LOG_LEVEL_BY_CODE[c]), c]),
+);
+
 /**
  * Read the URL's `level` (a comma list of codes, `ERR,WAR`) into the
- * known codes, deduplicated and in legacy's order. Unknown entries are
- * dropped, the way `ajax/log.php` keeps only recognised codes.
+ * known codes, deduplicated and in legacy's order. A numeric level (`-2`,
+ * or `-2,-1`, as older links carry it) is read as its code. Unknown
+ * entries are dropped, the way `ajax/log.php` keeps only recognised codes.
  */
 export function parseLevelCodes(raw: unknown): LogLevelCode[] {
+  if (typeof raw === 'number') raw = String(raw);
   if (typeof raw !== 'string' || raw === '') return [];
-  const picked = new Set(raw.split(',').map((s) => s.trim().toUpperCase()));
+  const picked = new Set(raw.split(',').map((s) => {
+    const v = s.trim().toUpperCase();
+    return CODE_BY_LEVEL.get(v) ?? v;
+  }));
   return LOG_LEVEL_CODES.filter((c) => picked.has(c));
 }
 

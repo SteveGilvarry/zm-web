@@ -13,6 +13,12 @@ describe('log level codes', () => {
     expect(parseLevelCodes(3)).toEqual([]);
   });
 
+  it('reads a numeric level, as older links carry it, as its code', () => {
+    expect(parseLevelCodes(-2)).toEqual(['ERR']);
+    expect(parseLevelCodes('-1,0,-5')).toEqual(['INF', 'WAR', 'AUD']);
+    expect(parseLevelCodes('1,ERR')).toEqual(['DBG', 'ERR']);
+  });
+
   it('writes the URL list in legacy order, or nothing for All', () => {
     expect(levelCodesParam(['PNC', 'DBG'])).toBe('DBG,PNC');
     expect(levelCodesParam([])).toBeUndefined();
