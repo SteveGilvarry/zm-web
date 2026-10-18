@@ -59,8 +59,16 @@ export interface GroupsPageState {
   /** Ids ticked in legacy's Mark column. */
   marked: Set<number>;
   toggleMark: (id: number) => void;
-  /** Legacy's "Delete" toolbar button: confirms, then deletes every mark. */
+  /** Legacy's "Delete" toolbar button: asks for confirmation (see below). */
   deleteMarked: () => void;
+  /** The groups ticked in the Mark column. */
+  markedGroups: Group[];
+  /** The delete confirmation is up. */
+  deleteConfirmOpen: boolean;
+  /** Yes: delete every marked group. */
+  confirmDeleteMarked: () => void;
+  /** No: leave them. */
+  cancelDeleteMarked: () => void;
   /** Monitor ids in a group, for the edit dialog's multi-select. */
   monitorIdsOf: (groupId: number) => number[];
   /** Monitor names in a group, joined the way legacy's Monitors column is. */
@@ -254,15 +262,17 @@ export function useGroupsPage(): GroupsPageState {
       else next.add(id);
       return next;
     });
+  // Legacy asks in a modal (`getDelConfirmModal('ConfirmDeleteGroups')`),
+  // so the page renders the question and these answer it.
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const markedGroups = groups.filter((g) => marked.has(g.id));
   const deleteMarked = () => {
-    const targets = groups.filter((g) => marked.has(g.id));
-    if (!targets.length) return;
-    const message = t('Delete {{count}} group and everything under it? This cannot be undone.', {
-      count: targets.length,
-    }) + '\n\n' + targets.map((g) => `  - ${g.name}`).join('\n');
-    if (!window.confirm(message)) return;
-    targets.forEach((g) => deleteMutation.mutate(g.id));
+    if (markedGroups.length) setDeleteConfirmOpen(true);
+  };
+  const confirmDeleteMarked = () => {
+    markedGroups.forEach((g) => deleteMutation.mutate(g.id));
     setMarked(new Set());
+    setDeleteConfirmOpen(false);
   };
 
   const monitorIdsOf = (groupId: number) =>
@@ -301,6 +311,10 @@ export function useGroupsPage(): GroupsPageState {
     marked,
     toggleMark,
     deleteMarked,
+    markedGroups,
+    deleteConfirmOpen,
+    confirmDeleteMarked,
+    cancelDeleteMarked: () => setDeleteConfirmOpen(false),
     monitorIdsOf,
     monitorNamesOf,
     attach: (monitorId) => {
