@@ -267,7 +267,7 @@ describe('MontageClassicGrid — tile controls', () => {
 });
 
 /**
- * Legacy's per-tile `ratio<id>` select (only while editing the layout) and
+ * Legacy's per-tile `ratio<id>` select (shown on hover) and
  * WebSite monitors, which `Monitor::getStreamHTML` embeds rather than streams.
  */
 describe('MontageClassicGrid — ratio and WebSite tiles', () => {
@@ -289,7 +289,26 @@ describe('MontageClassicGrid — ratio and WebSite tiles', () => {
     expect(onRatioChange).toHaveBeenCalledWith(1, '4:3');
   });
 
-  it('hides the per-tile Ratio select outside edit mode', () => {
+  it('offers the per-tile Ratio select outside edit mode too, revealed on hover', () => {
+    const onRatioChange = vi.fn();
+    render(
+      <MontageClassicGrid
+        monitors={[makeMonitor()]}
+        columns={1}
+        protocol="webrtc"
+        ratioFor={() => 'auto'}
+        onRatioChange={onRatioChange}
+      />,
+    );
+    const select = screen.getByRole('combobox', { name: 'Ratio for Front Door' });
+    // Legacy `showControlElementsOnStream` slides it in on mouseover.
+    expect(select.className).toContain('opacity-0');
+    expect(select.className).toContain('group-hover:opacity-100');
+    fireEvent.change(select, { target: { value: '5:4' } });
+    expect(onRatioChange).toHaveBeenCalledWith(1, '5:4');
+  });
+
+  it('labels the Ratio options the way legacy buildRatioSelect does', () => {
     render(
       <MontageClassicGrid
         monitors={[makeMonitor()]}
@@ -299,6 +318,14 @@ describe('MontageClassicGrid — ratio and WebSite tiles', () => {
         onRatioChange={vi.fn()}
       />,
     );
+    const labels = Array.from(screen.getByRole('combobox', { name: 'Ratio for Front Door' }).querySelectorAll('option'))
+      .map((o) => o.textContent);
+    expect(labels.slice(0, 3)).toEqual(['Auto', 'Real', '1:1 (1.000)']);
+    expect(labels).toContain('16:9 (1.778)');
+  });
+
+  it('has no per-tile Ratio select without a change handler', () => {
+    render(<MontageClassicGrid monitors={[makeMonitor()]} columns={1} protocol="webrtc" />);
     expect(screen.queryByRole('combobox', { name: 'Ratio for Front Door' })).toBeNull();
   });
 

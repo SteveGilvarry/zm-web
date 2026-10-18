@@ -9,7 +9,7 @@ import { useMonitorStatuses, formatFps, runtimeTone, type MonitorRuntime } from 
 import type { MontageStatusPosition } from '@/stores/montage';
 import type { Monitor, StreamProtocol } from '@/types';
 import { GRIDSTACK_COLUMNS, type GridStackItem } from './layoutFormat';
-import { MONTAGE_RATIOS } from './ratio';
+import { MONTAGE_RATIOS, ratioOptionLabel } from './ratio';
 import { TileControls } from './TileControls';
 import { useTileZoom } from './tileZoom';
 import { WebsiteTile } from './WebsiteTile';
@@ -45,7 +45,7 @@ export interface MontageClassicGridProps {
   fitHeight?: number;
   /** That tile's Ratio choice (legacy per-monitor `ratio<id>` select). */
   ratioFor?: (monitorId: number) => string;
-  /** Change one tile's Ratio; the select only shows while editing. */
+  /** Change one tile's Ratio; the select shows while the tile is hovered. */
   onRatioChange?: (monitorId: number, ratio: string) => void;
 }
 
@@ -246,16 +246,19 @@ function ClassicCell({
           )}
         </div>
         {!editMode && <TileControls monitorId={monitor.id} targetRef={frameRef} zoom={zoom} />}
-        {editMode && onRatioChange && (
+        {/* Legacy `#ratioControl<id>`: slides in under the tile buttons
+            while the pointer is over the tile, in either mode. */}
+        {onRatioChange && (
           <select
             value={ratio ?? 'auto'}
             onChange={(e) => onRatioChange(monitor.id, e.target.value)}
             aria-label={t('Ratio for {{name}}', { name: monitor.name })}
-            className="absolute top-1 end-1 z-20 rounded-sm border border-zinc-400 bg-white px-1 py-0.5 text-xs text-zinc-900"
+            data-testid={`montage-classic-ratio-${monitor.id}`}
+            className="absolute top-11 end-0.5 z-20 min-w-[130px] rounded-sm border border-zinc-400 bg-zinc-400/50 px-1 py-0.5 text-xs text-zinc-900 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
           >
             {MONTAGE_RATIOS.map((r) => (
               <option key={r} value={r}>
-                {r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : r}
+                {r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : ratioOptionLabel(r)}
               </option>
             ))}
           </select>

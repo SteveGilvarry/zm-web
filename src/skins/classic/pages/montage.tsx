@@ -8,7 +8,7 @@ import { Modal } from '@/components/common/Modal';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { MontageClassicGrid } from '@/features/montage/MontageClassicGrid';
-import { MONTAGE_RATIOS } from '@/features/montage/ratio';
+import { MONTAGE_RATIOS, ratioOptionLabel } from '@/features/montage/ratio';
 import { useClassicMontage } from '@/features/montage/useClassicMontage';
 import { useMontageWallPage } from '@/features/montage/useMontagePage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
@@ -77,7 +77,7 @@ export default function ClassicMontagePage() {
             onChange={montage.setRatio}
             options={MONTAGE_RATIOS.map((r) => ({
               value: r,
-              label: r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : r,
+              label: r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : (ratioOptionLabel(r) ?? r),
             }))}
           />
           <ClassicSelect
