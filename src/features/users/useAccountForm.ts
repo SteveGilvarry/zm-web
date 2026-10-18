@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { createUser, updateUser } from '@/api/users';
 import { useToast } from '@/components/common/toastStore';
 import { LANGUAGES } from '@/i18n/languages';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import type { User } from '@/types';
 
 /** Legacy `user.php` input pattern for Username. */
@@ -107,6 +108,10 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
     apiEnabled: editing?.api_enabled ?? 1,
   });
   const [error, setError] = useState<string | null>(null);
+  // `ZM_PASSWORD_MIN_LENGTH` (1.39.41, `b631d2efc`): legacy puts it on the
+  // password inputs as `minlength`. 0 or unset means no minimum.
+  const passwordMinLength = Math.max(0, useZmConfig('ZM_PASSWORD_MIN_LENGTH', 0));
+  const passwordTooShort = !!formData.password && formData.password.length < passwordMinLength;
 
   const createMutation = useMutation({
     mutationFn: createUser,
@@ -153,6 +158,10 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
       setError(usernameError);
       return;
     }
+    if (passwordTooShort) {
+      setError(t('Password must be at least {{count}} characters.', { count: passwordMinLength }));
+      return;
+    }
     if (formData.password && formData.password !== formData.confirmPassword) {
       setError(t('Passwords do not match.'));
       return;
@@ -188,7 +197,7 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
 
   return {
     formData, setField, toggleEnabled, toggleApiEnabled, error, usernameError, isSaving, submitDisabled, submit,
-    canChange, selfEdit,
+    canChange, selfEdit, passwordMinLength: passwordMinLength || undefined,
     languages: languageOptions(editing?.language, t('Default')),
     homeViews: HOME_VIEWS,
   };

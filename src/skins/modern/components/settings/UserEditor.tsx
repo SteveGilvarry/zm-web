@@ -111,7 +111,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
   const { t } = useTranslation();
   const {
     formData, setField, toggleEnabled, toggleApiEnabled, error, usernameError, isSaving, submitDisabled, submit,
-    canChange, languages, homeViews,
+    canChange, languages, homeViews, passwordMinLength,
   } = useAccountForm(editing, onSaved, { selfEdit });
   const lockedCls = 'opacity-60 cursor-not-allowed';
   const adminOnly = t('Only an administrator can change this');
@@ -173,6 +173,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
             value={formData.password}
             onChange={(e) => setField('password', e.target.value)}
             autoComplete="new-password"
+            minLength={passwordMinLength}
             placeholder={editing ? t('Leave blank to keep') : t('Password')}
           />
           <TextField
@@ -181,6 +182,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
             value={formData.confirmPassword}
             onChange={(e) => setField('confirmPassword', e.target.value)}
             autoComplete="new-password"
+            minLength={passwordMinLength}
             placeholder={t('Confirm password')}
           />
         </div>
