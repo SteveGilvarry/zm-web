@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, RefreshCw, Archive, ArchiveRestore, Pencil, ExternalLink, Download, Trash2,
   Film, Info, Layers, LayoutGrid, SkipBack, SkipForward, Rewind, FastForward, Play, Pause,
-  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight, Tag,
+  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight, Tag, Tv,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -25,17 +25,19 @@ import { formatDurationHms } from '@/features/events/duration';
 import { useEventDetailPage } from '@/features/events/useEventDetailPage';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { formatBytes } from '@/lib/format';
+import { useCanGoBack } from '@/features/nav/useCanGoBack';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { ClassicButton, ClassicLinkButton } from '../components/events/primitives';
 import { classicSelect, classicLink } from '../components/events/styles';
 
 const barSelect = clsx(classicSelect, 'py-0.5 text-xs');
+/** Legacy's small `btn-normal` icon buttons beside the monitor name. */
+const statsBtn = 'inline-flex items-center p-1 border rounded-sm bg-[#e9ecef] border-[#adb5bd] text-zinc-800 hover:bg-[#dde1e5]';
 const dvrBtn = 'p-1.5 rounded-sm text-zinc-700 hover:bg-zinc-200 disabled:opacity-40 disabled:cursor-not-allowed';
 
 /**
  * Event view — classic skin, after legacy 1.39.41 `?view=event`: dark
- * control bar (back/refresh, title, Replay / Scale / Stream quality /
- * Codec), toolbar (Archive, Edit, Export, Download, Delete, Frames, Stats,
+ * control bar (back/refresh, title, Replay / Scale / Codec), toolbar (Archive, Edit, Export, Download, Delete, Frames, Stats,
  * Zones, Montage Review), the tag input heading the stats column beside the
  * player, the level graph under it, and one row holding the monitor name,
  * the DVR buttons and the replay status with its Rate select.
@@ -49,6 +51,8 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
   // Event stamps render through ZoneMinder's own patterns / server zone.
   const { formatDateTime } = useDateTimeFormat();
   const s = useEventDetailPage(eventId);
+  // Legacy greys Back with no referrer to go back to (event.js:1541).
+  const canGoBack = useCanGoBack();
   // Click, pinch or trackpad-pinch to zoom into the picture, as legacy's
   // panzoom does; the overlay buttons drive the same state.
   const { ref: zoomRef, style: zoomStyle, scale: zoomScale, zoomIn, zoomOut } =
@@ -67,7 +71,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
           <div className="flex items-center gap-1">
             {/* Legacy's Back is `history.back()`, not a link to the list —
                 it returns to wherever the operator came from. */}
-            <ClassicButton onClick={() => window.history.back()} title={t('Back')} aria-label={t('Back')}>
+            <ClassicButton onClick={() => window.history.back()} disabled={!canGoBack} title={t('Back')} aria-label={t('Back')}>
               <ArrowLeft size={14} className="rtl:-scale-x-100" />
             </ClassicButton>
             <ClassicButton tone="primary" onClick={() => window.location.reload()} title={t('Refresh')} aria-label={t('Refresh')}>
@@ -90,12 +94,8 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                 {scaleOptions.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
               </select>
             </label>
-            <label className="flex items-center gap-1" title={t('Recorded playback is served as-is; stream quality applies to live views only.')}>
-              <span className="font-semibold">{t('Stream quality')}</span>
-              <select aria-label={t('Stream quality')} disabled value="optimal" className={barSelect}>
-                <option value="optimal">{t('Optimal')}</option>
-              </select>
-            </label>
+            {/* Stream quality is hidden whenever a video tag plays
+                (event.php:255), which is every event here. */}
             <label className="flex items-center gap-1" title={t('Source codec: {{codec}}', { codec: s.codecHint })}>
               <span className="font-semibold">{t('Codec')}</span>
               <select
@@ -118,9 +118,14 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
               {/* Toolbar */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <RequirePerm feature="events" level="Edit">
-                  <ClassicButton onClick={s.toggleArchived} disabled={s.archivePending} aria-pressed={event.archived === 1} title={event.archived === 1 ? t('Unarchive') : t('Archive')}>
-                    {event.archived === 1 ? <ArchiveRestore size={14} /> : <Archive size={14} />}
-                    {event.archived === 1 ? t('Unarchive') : t('Archive')}
+                  {/* Two buttons, each live in one state (event.js:1532). */}
+                  <ClassicButton onClick={s.toggleArchived} disabled={s.archivePending || event.archived === 1} title={t('Archive')}>
+                    <Archive size={14} />
+                    {t('Archive')}
+                  </ClassicButton>
+                  <ClassicButton onClick={s.toggleArchived} disabled={s.archivePending || event.archived !== 1} title={t('Unarchive')}>
+                    <ArchiveRestore size={14} />
+                    {t('Unarchive')}
                   </ClassicButton>
                   <ClassicButton onClick={s.openEdit} title={t('Edit')}>
                     <Pencil size={14} />
@@ -210,32 +215,63 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                   <div className="space-y-2">
                     <table className="text-sm w-full" data-testid="event-stats-panel">
                       <tbody className="[&>tr>th]:text-end [&>tr>th]:pe-3 [&>tr>th]:py-0.5 [&>tr>th]:font-semibold [&>tr>th]:text-zinc-600 [&>tr>td]:py-0.5 [&>tr>td]:tabular-nums">
-                        <tr><th scope="row">{t('Id')}</th><td>{event.id}</td></tr>
-                        <tr><th scope="row">{t('Name')}</th><td>{event.name}</td></tr>
+                        {/* Legacy `getStat` (event.js:1291), row for row. */}
+                        <tr><th scope="row">{t('Name')}</th><td>{event.name} ({t('Id')}:{event.id})</td></tr>
                         <tr>
                           <th scope="row">{t('Monitor')}</th>
                           <td>
-                            <Link to="/monitors/$monitorId" params={{ monitorId: String(event.monitor_id) }} className={classicLink}>
-                              {monitor?.name ?? t('Monitor {{id}}', { id: event.monitor_id })}
-                            </Link>
+                            <span className="me-1">({event.monitor_id}) {monitor?.name ?? ''}</span>
+                            <span className="inline-flex gap-0.5 align-middle">
+                              <Link to="/monitors/$monitorId" params={{ monitorId: String(event.monitor_id) }} title={t('Live')} aria-label={t('Live')} className={statsBtn}>
+                                <Tv size={12} />
+                              </Link>
+                              <RequirePerm feature="monitors" level="Edit">
+                                <Link to="/monitors/$monitorId" params={{ monitorId: String(event.monitor_id) }} search={{ edit: true }} title={t('Edit')} aria-label={t('Edit')} className={statsBtn}>
+                                  <Pencil size={12} />
+                                </Link>
+                              </RequirePerm>
+                              <Link to="/events" search={{ monitor_id: event.monitor_id, sort: 'start_time', dir: 'asc' }} title={t('All Events')} aria-label={t('All Events')} className={statsBtn}>
+                                <Film size={12} />
+                              </Link>
+                            </span>
                           </td>
                         </tr>
-                        <tr><th scope="row">{t('Cause')}</th><td>{event.cause ?? '—'}</td></tr>
-                        {event.notes && <tr><th scope="row">{t('Notes')}</th><td className="whitespace-pre-wrap">{event.notes}</td></tr>}
-                        <tr><th scope="row">{t('Start')}</th><td>{s.startTime ? formatDateTime(s.startTime) : '—'}</td></tr>
-                        <tr><th scope="row">{t('End')}</th><td>{s.endTime ? formatDateTime(s.endTime) : '—'}</td></tr>
+                        <tr><th scope="row">{t('Cause')}</th><td>{event.cause ?? ''}</td></tr>
+                        <tr><th scope="row">{t('Notes')}</th><td className="whitespace-pre-wrap">{event.notes ?? ''}</td></tr>
+                        <tr><th scope="row">{t('Start Time')}</th><td>{s.startTime ? formatDateTime(s.startTime) : ''}</td></tr>
+                        <tr><th scope="row">{t('End Time')}</th><td>{s.endTime ? formatDateTime(s.endTime) : ''}</td></tr>
                         <tr><th scope="row">{t('Duration')}</th><td>{formatDurationHms(event.length)}</td></tr>
-                        <tr><th scope="row">{t('Frames')}</th><td>{event.frames ?? 0}</td></tr>
-                        <tr><th scope="row">{t('Alarm Frames')}</th><td>{event.alarm_frames ?? 0}</td></tr>
-                        <tr><th scope="row">{t('Total Score')}</th><td>{event.tot_score ?? 0}</td></tr>
-                        <tr><th scope="row">{t('Avg. Score')}</th><td>{event.avg_score ?? 0}</td></tr>
-                        <tr><th scope="row">{t('Max. Score')}</th><td>{event.max_score ?? 0}</td></tr>
-                        <tr><th scope="row">{t('Disk Space')}</th><td>{formatBytes(event.disk_space ?? 0)}</td></tr>
-                        <tr><th scope="row">{t('Storage')}</th><td data-testid="event-storage">{s.storageName ?? t('ID: {{id}}', { id: event.storage_id })}</td></tr>
-                        <tr><th scope="row">{t('Archived')}</th><td>{event.archived === 1 ? t('Yes') : t('No')}</td></tr>
-                        <tr><th scope="row">{t('Emailed')}</th><td>{event.emailed === 1 ? t('Yes') : t('No')}</td></tr>
+                        <tr>
+                          <th scope="row">{t('Frames')}</th>
+                          <td>
+                            <Link to="/events/$eventId/frames" params={{ eventId: String(event.id) }} className={classicLink}>{event.frames ?? 0}</Link>
+                            {' '}{t('Alarm')}:<Link to="/events/$eventId/frames" params={{ eventId: String(event.id) }} className={classicLink}>{event.alarm_frames ?? 0}</Link>
+                          </td>
+                        </tr>
+                        <tr>
+                          <th scope="row">{t('Score')}</th>
+                          <td data-testid="event-score">
+                            {t('Total')}:{event.tot_score ?? 0}{' '}
+                            {/* Legacy links Max to `?view=frame&fid=0`, the max-score frame. */}
+                            <Link to="/events/$eventId/frames/$frameId" params={{ eventId: String(event.id), frameId: '0' }} className={classicLink}>
+                              {t('Max')}:{event.max_score ?? 0}
+                            </Link>
+                            {' '}{t('Avg')}:{event.avg_score ?? 0}
+                          </td>
+                        </tr>
                         <tr><th scope="row">{t('Resolution')}</th><td>{event.width}x{event.height}</td></tr>
-                        <tr><th scope="row">{t('Codec')}</th><td>{s.codecHint}</td></tr>
+                        <tr>
+                          <th scope="row">{t('Disk Space')}</th>
+                          <td data-testid="event-storage">
+                            {t('{{size}} on {{storage}}', { size: formatBytes(event.disk_space ?? 0), storage: s.storageName ?? t('ID: {{id}}', { id: event.storage_id }) })}
+                          </td>
+                        </tr>
+                        <tr>
+                          <th scope="row">{t('Info')}</th>
+                          <td>
+                            {t('Archived')}:{event.archived === 1 ? t('Yes') : t('No')}, {t('Emailed')}:{event.emailed === 1 ? t('Yes') : t('No')}
+                          </td>
+                        </tr>
                       </tbody>
                     </table>
                     <EventKeyFrames eventId={event.id} />
@@ -328,7 +364,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     <button type="button" onClick={s.scanForward} disabled={!s.canScan} className={dvrBtn} title={t('Fast Forward')} aria-label={t('Fast Forward')}><FastForward size={18} /></button>
                     <button type="button" onClick={s.handleToggleMute} className={dvrBtn} aria-label={s.isMuted ? t('Unmute') : t('Mute')}>{s.isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}</button>
                     <button type="button" onClick={s.handleToggleFullscreen} className={dvrBtn} title={t('Fullscreen')} aria-label={t('Fullscreen')}><Maximize2 size={18} /></button>
-                    <button type="button" onClick={s.navNext} disabled={s.nextEventId == null} className={dvrBtn} title={t('Next')} aria-label={t('Next event')}><SkipForward size={18} /></button>
+                    <button type="button" onClick={s.navNext} className={dvrBtn} title={t('Next')} aria-label={t('Next event')}><SkipForward size={18} /></button>
                   </div>
 
                   {/* Replay status */}

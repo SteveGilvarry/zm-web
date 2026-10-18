@@ -33,6 +33,7 @@ import {
   LayoutGrid,
   ChevronsLeft,
   ChevronsRight,
+  RefreshCw,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -143,6 +144,15 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
             </Link>
             <ChevronRight size={12} className="shrink-0 text-fg-faint rtl:-scale-x-100" aria-hidden />
             <span className="shrink-0 text-sm text-fg truncate max-w-[14rem]">{event.name}</span>
+            <button
+              type="button"
+              onClick={s.refresh}
+              aria-label={t('Refresh')}
+              title={t('Refresh')}
+              className="shrink-0 p-1 rounded text-fg-dim hover:text-fg transition-colors"
+            >
+              <RefreshCw size={14} aria-hidden />
+            </button>
 
             <span className="h-5 w-px bg-border-subtle shrink-0" />
 
@@ -512,6 +522,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 <span>{t('Mode')}: <span className="text-fg">{isPlaying ? t('Replay') : t('Paused')}</span></span>
                 <span>{t('Rate')}: <span className="text-fg">{rateOptions.find((o) => o.value === rate)?.label}</span></span>
                 <span>{t('Progress')}: <span className="text-fg">{Math.floor(currentTime)}</span>s</span>
+                <span>{t('Time')}: <span className="text-fg">{startTime ? new Date(startTime.getTime() + currentTime * 1000).toLocaleTimeString() : '—'}</span></span>
                 <span>{t('Zoom')}: <span className="text-fg">{zoomScale.toFixed(1)}</span>x</span>
               </p>
 
@@ -527,14 +538,29 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <StatRow label={t('Total Frames')} value={event.frames ?? 0} />
                     <StatRow label={t('Tot Score')} value={event.tot_score ?? 0} />
                     <StatRow label={t('Avg Score')} value={event.avg_score ?? 0} />
-                    <StatRow label={t('Max Score')} value={event.max_score ?? 0} />
+                    <StatRow
+                      label={t('Max Score')}
+                      value={
+                        // Legacy links Max to the max-score frame (`?view=frame&fid=0`).
+                        <Link
+                          to="/events/$eventId/frames/$frameId"
+                          params={{ eventId: String(event.id), frameId: '0' }}
+                          className="text-accent hover:text-accent-dim transition-colors"
+                          title={t('Open the frame with the max score')}
+                        >
+                          {event.max_score ?? 0}
+                        </Link>
+                      }
+                    />
                     <StatRow
                       label={t('Duration')}
                       value={t('{{seconds}}s', { seconds: eventDurationSeconds(event.length) })}
                     />
                     <StatRow
                       label={t('Disk Space')}
-                      value={formatBytes(event.disk_space ?? 0)}
+                      value={s.storageName
+                        ? t('{{size}} on {{storage}}', { size: formatBytes(event.disk_space ?? 0), storage: s.storageName })
+                        : formatBytes(event.disk_space ?? 0)}
                     />
                     <StatRow
                       label={t('Start')}
@@ -552,6 +578,10 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <StatRow
                       label={t('Archived')}
                       value={event.archived === 1 ? t('Yes') : t('No')}
+                    />
+                    <StatRow
+                      label={t('Emailed')}
+                      value={event.emailed === 1 ? t('Yes') : t('No')}
                     />
                   </div>
                   {/* Legacy's two stills under the stats table. */}
@@ -632,6 +662,26 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     >
                       <Monitor size={14} />
                       {monitor?.name || t('Monitor {{id}}', { id: event.monitor_id })}
+                    </Link>
+                  </div>
+                  {/* Legacy's Edit and All Events buttons beside the monitor. */}
+                  <div className="flex items-center justify-end gap-3 -mt-2 text-xs">
+                    <RequirePerm feature="monitors" level="Edit">
+                      <Link
+                        to="/monitors/$monitorId"
+                        params={{ monitorId: String(event.monitor_id) }}
+                        search={{ edit: true }}
+                        className="text-fg-dim hover:text-fg transition-colors"
+                      >
+                        {t('Edit monitor')}
+                      </Link>
+                    </RequirePerm>
+                    <Link
+                      to="/events"
+                      search={{ monitor_id: event.monitor_id, sort: 'start_time', dir: 'asc' }}
+                      className="text-fg-dim hover:text-fg transition-colors"
+                    >
+                      {t('All Events')}
                     </Link>
                   </div>
 
@@ -924,7 +974,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
 }
 
 /** Two-cell label/value row used inside the stats panel. */
-function StatRow({ label, value }: { label: string; value: number | string }) {
+function StatRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1">
       <span className="text-fg-dim text-xs">{label}</span>

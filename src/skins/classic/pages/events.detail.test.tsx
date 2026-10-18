@@ -16,7 +16,10 @@ import { useEventPlaybackStore } from '@/stores/eventPlayback';
 /* ---------------------------------------------------------------- router */
 
 const mockNavigate = vi.fn();
+/** Whether the router has an entry behind this page — legacy's `document.referrer`. */
+let canGoBack = true;
 vi.mock('@tanstack/react-router', () => ({
+  useCanGoBack: () => canGoBack,
   useSearch: () => ({}),
   useNavigate: () => mockNavigate,
   Link: ({
@@ -170,8 +173,8 @@ describe('ClassicEventDetailPage — chrome', () => {
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
     expect(screen.getByLabelText('Replay mode')).toBeInTheDocument();
     expect(screen.getByLabelText('Scale')).toBeInTheDocument();
-    // Stream quality and Codec are informational only on recorded playback.
-    expect(screen.getByLabelText('Stream quality')).toBeDisabled();
+    // Legacy hides Stream quality whenever a video tag plays (event.php:255).
+    expect(screen.queryByLabelText('Stream quality')).not.toBeInTheDocument();
     // Codec forces the container (legacy `&codec=`); MJPEG is listed but
     // unselectable because zm-api serves no such endpoint.
     expect(screen.getByLabelText('Codec')).toHaveValue('auto');
@@ -264,19 +267,28 @@ describe('ClassicEventDetailPage — stats and data', () => {
     const stats = screen.getByTestId('event-stats-panel');
     const row = (label: string) =>
       within(stats).getByRole('rowheader', { name: label }).closest('tr')!;
-    expect(within(row('Id')).getByText('4242')).toBeInTheDocument();
+    // Legacy's rows, in its order (event.js.php eventDataStrings).
+    expect(within(stats).getAllByRole('rowheader').map((th) => th.textContent)).toEqual([
+      'Name', 'Monitor', 'Cause', 'Notes', 'Start Time', 'End Time', 'Duration', 'Frames', 'Score',
+      'Resolution', 'Disk Space', 'Info',
+    ]);
+    expect(row('Name')).toHaveTextContent(/\(Id:4242\)$/);
+    expect(row('Monitor')).toHaveTextContent('(1) Front Door');
+    expect(within(row('Monitor')).getByRole('link', { name: 'Live' })).toHaveAttribute('href', '/monitors/1');
+    expect(within(row('Monitor')).getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '/monitors/1?edit=true');
+    expect(within(row('Monitor')).getByRole('link', { name: 'All Events' }).getAttribute('href'))
+      .toMatch(/^\/events\?.*monitor_id=1/);
     expect(within(row('Cause')).getByText('Motion')).toBeInTheDocument();
     expect(within(row('Notes')).getByText('parcel at the door')).toBeInTheDocument();
-    expect(within(row('Frames')).getByText('100')).toBeInTheDocument();
-    expect(within(row('Alarm Frames')).getByText('5')).toBeInTheDocument();
-    expect(within(row('Max. Score')).getByText('44')).toBeInTheDocument();
-    expect(within(row('Disk Space')).getByText('1.0 MB')).toBeInTheDocument();
-    expect(within(row('Archived')).getByText('No')).toBeInTheDocument();
-    expect(within(row('Emailed')).getByText('Yes')).toBeInTheDocument();
+    expect(row('Frames')).toHaveTextContent('100 Alarm:5');
+    for (const link of within(row('Frames')).getAllByRole('link')) {
+      expect(link).toHaveAttribute('href', '/events/4242/frames');
+    }
+    expect(within(row('Score')).getByRole('link', { name: 'Max:44' })).toHaveAttribute('href', '/events/4242/frames/0');
+    expect(row('Score')).toHaveTextContent(/^ScoreTotal:\d+ Max:44 Avg:\d+$/);
     expect(within(row('Resolution')).getByText('1920x1080')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId('event-storage')).toHaveTextContent('Default'));
-    expect(within(row('Monitor')).getByRole('link', { name: 'Front Door' }))
-      .toHaveAttribute('href', '/monitors/1');
+    await waitFor(() => expect(screen.getByTestId('event-storage')).toHaveTextContent('1.0 MB on Default'));
+    expect(row('Info')).toHaveTextContent('Archived:No, Emailed:Yes');
   });
 
   it('renders the Event_Data rows when the backend has any', async () => {
@@ -317,8 +329,9 @@ describe('ClassicEventDetailPage — mutations', () => {
     stub();
     await mountAndSettle();
 
+    // Legacy's two buttons: only the one that applies is live.
     const archive = screen.getByRole('button', { name: 'Archive' });
-    expect(archive).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Unarchive' })).toBeDisabled();
     await user.click(archive);
 
     await waitFor(() => expect(calls).toHaveLength(1));
@@ -331,6 +344,7 @@ describe('ClassicEventDetailPage — mutations', () => {
     stub({ event: { ...EVENT, archived: 1 } });
     await mountAndSettle();
 
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Unarchive' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toMatchObject({ archived: false });
@@ -398,11 +412,26 @@ describe('ClassicEventDetailPage — mutations', () => {
 });
 
 describe('ClassicEventDetailPage — DVR transport', () => {
-  it('disables Prev / Next when there is no neighbour', async () => {
+  it('disables Prev with no neighbour, and has Next say there are no more events', async () => {
+    const user = userEvent.setup();
     stub();
     await mountAndSettle();
     expect(screen.getByRole('button', { name: 'Previous event' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Next event' })).toBeDisabled();
+    // Legacy keeps Next live and answers it with "No more events".
+    await user.click(screen.getByRole('button', { name: 'Next event' }));
+    expect(screen.getByTestId('event-replay-message')).toHaveTextContent('No more events');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('greys Back when there is nowhere to go back to', async () => {
+    canGoBack = false;
+    try {
+      stub();
+      await mountAndSettle();
+      expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+    } finally {
+      canGoBack = true;
+    }
   });
 
   it('navigates to the neighbouring event when one exists', async () => {

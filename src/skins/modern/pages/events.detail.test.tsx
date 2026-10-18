@@ -580,7 +580,20 @@ describe('EventDetailPage — stats panel toggle', () => {
     const panel = await screen.findByTestId('event-stats-panel');
     expect(panel.textContent).toMatch(/42/);
     expect(panel.textContent).toMatch(/99/);
-    expect(panel.textContent).toMatch(/25\.0 MB/);
+    // Size on the storage it lives on, once /storage has answered.
+    await waitFor(() => expect(panel.textContent).toMatch(/25\.0 MB on Default/));
+    // Max score opens the max-score frame, as legacy's Max link does.
+    expect(within(panel).getByRole('link', { name: '99' })).toHaveAttribute('href', '/events/100/frames/0');
+    expect(panel.textContent).toMatch(/Emailed/);
+  });
+
+  it('links the monitor\'s events and reads the wall-clock time in the status line', async () => {
+    stubBase();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'All Events' })).toHaveAttribute('href', '/events');
+    expect(screen.getByTestId('event-replay-status').textContent).toMatch(/Time: /);
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 });
 

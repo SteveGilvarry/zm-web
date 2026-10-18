@@ -195,6 +195,9 @@ export interface EventDetailPageState {
   tagAndPrev: () => void;
   tagAndNext: () => void;
 
+  /** Legacy's Refresh, without reloading the app: refetch everything this page shows. */
+  refresh: () => void;
+
   handleVideoEnded: () => void;
   handlePlayPause: () => void;
   handleToggleMute: () => void;
@@ -604,7 +607,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     }
   };
   const navPrev = () => goTo(prevEventId);
-  const navNext = () => goTo(nextEventId);
+  // Legacy keeps Next live at the end of the run; pressing it says so
+  // (`streamNext`, event.js:725).
+  const navNext = () => {
+    if (nextEventId != null) goTo(nextEventId);
+    else if (event) setNoMoreEvents(true);
+  };
 
   // ----- End of playback ---------------------------------------------------
   //
@@ -995,6 +1003,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     tagApiRef,
     tagAndPrev,
     tagAndNext,
+
+    refresh: () => {
+      for (const key of ['event', 'eventInfo', 'eventData', 'eventFrames']) {
+        void queryClient.invalidateQueries({ queryKey: [key, id] });
+      }
+    },
 
     handleVideoEnded,
     handlePlayPause,
