@@ -14,7 +14,9 @@ import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useConsoleColumnsStore } from '@/features/console/consoleColumns';
+import { parseEventsSearch } from '@/features/events/eventsSearch';
 import { useToastStore } from '@/components/common/toastStore';
 import { useUiStore } from '@/stores/ui';
 
@@ -160,6 +162,9 @@ function stub(options: StubOptions = {}) {
     http.get('/api/v3/manufacturers', () => HttpResponse.json(paged([{ id: 7, name: 'Hikvision' }], { per_page: 500 }))),
     http.get('/api/v3/models', () => HttpResponse.json(paged([{ id: 9, name: 'DS-2CD' }], { per_page: 500 }))),
     configListHandler(cfg),
+    // EXPORT
+    http.get('/api/v3/host/getVersion', () => HttpResponse.json({ version: '1.39.41', api_version: '3', db_version: '1.39.41' })),
+    http.get('/api/v3/monitors/:id/zones', () => HttpResponse.json(paged([], { per_page: 1000 }))),
     // Mutations
     http.get('/api/v3/monitors/:id', ({ params }) => {
       const m = MONITORS.find((x) => x.id === Number(params.id));
@@ -203,6 +208,7 @@ afterEach(() => {
   mockSearch = {};
   mockNavigate.mockReset();
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useConsoleColumnsStore.getState().reset();
   useToastStore.getState().clear();
   useUiStore.setState({ classicFilterPanelOpen: true });
@@ -288,9 +294,8 @@ describe('ClassicConsolePage — table', () => {
     expect(within(row3).getByRole('img', { name: 'Not Running' })).toBeInTheDocument();
 
     const pills = screen.getByTestId('console-status-pills');
-    expect(pills).toHaveTextContent('Capturing 33.3%');   // monitor 1 — Connected
-    expect(pills).toHaveTextContent('Not Capturing 33.3%'); // monitor 2 — Running
-    expect(pills).toHaveTextContent('Unknown 33.3%');     // monitor 3 — no row
+    // Order of first appearance down the sequence; no runtime row is Not Running.
+    expect(pills).toHaveTextContent('Capturing33.3%Not Capturing33.3%Not Running33.3%');
   });
 
   it('totals the visible rows in the footer', async () => {
@@ -310,6 +315,17 @@ describe('ClassicConsolePage — table', () => {
     // Runtime totals cell: aggregate bandwidth and fps.
     // Summed fps prints as PHP would: trailing zeros dropped, so 5 not 5.00.
     expect(within(foot).getByTestId('console-runtime-totals')).toHaveTextContent('2.00kB/s 10 fps / 5 fps');
+  });
+
+  it('scopes the footer links to the visible monitors once the table is narrowed', async () => {
+    stub();
+    useMonitorFilterStore.getState().setMonitorIds([1, 2]);
+    await mount();
+    await screen.findByTestId('console-row-2');
+    const foot = screen.getByTestId('console-classic-table').querySelector('tfoot')!;
+    expect(within(foot).getByText('Total: 2')).toBeInTheDocument();
+    const href = within(foot).getByRole('link', { name: '34' }).getAttribute('href') ?? '';
+    expect(parseEventsSearch(Object.fromEntries(new URLSearchParams(href.split('?')[1]))).monitor_id).toEqual([1, 2]);
   });
 
   it('sorts by a column header and flips direction on a second click', async () => {
@@ -413,7 +429,7 @@ describe('ClassicConsolePage — columns and export', () => {
     expect(within(screen.getByTestId('console-row-2')).getAllByText('—').length).toBeGreaterThan(0);
   });
 
-  it('exports the rows as CSV and JSON', async () => {
+  it('exports every monitor\'s config as zm_monitors_export.json', async () => {
     const user = userEvent.setup();
     const createObjectURL = vi.fn(() => 'blob:console');
     const original = Object.getOwnPropertyDescriptor(URL, 'createObjectURL');
@@ -424,13 +440,11 @@ describe('ClassicConsolePage — columns and export', () => {
       stub();
       await mountAndSettle();
 
+      const downloads: string[] = [];
+      click.mockImplementation(function (this: HTMLAnchorElement) { downloads.push(this.download); });
       await user.click(screen.getByRole('button', { name: 'Export' }));
-      await user.click(screen.getByRole('menuitem', { name: 'Export CSV' }));
-      expect(click).toHaveBeenCalledTimes(1);
-
-      await user.click(screen.getByRole('menuitem', { name: 'Export JSON' }));
-      expect(click).toHaveBeenCalledTimes(2);
-      expect(createObjectURL).toHaveBeenCalledTimes(2);
+      await waitFor(() => expect(downloads).toEqual(['zm_monitors_export.json']));
+      expect(createObjectURL).toHaveBeenCalledTimes(1);
     } finally {
       click.mockRestore();
       if (original) Object.defineProperty(URL, 'createObjectURL', original);
@@ -461,9 +475,15 @@ describe('ClassicConsolePage — Name cell', () => {
   });
 
   it('suffixes a soft-deleted monitor and drops its links', async () => {
-    stub({ monitors: [{ ...MONITORS[0], deleted: 1 }] });
+    stub({ monitors: [{ ...MONITORS[0], deleted: 1 }, MONITORS[1]] });
+    const user = userEvent.setup();
     const view = await mount();
+    // Hidden like legacy until the Status select holds Deleted.
+    await screen.findByTestId('console-row-2');
+    expect(screen.queryByTestId('console-row-1')).toBeNull();
+    await user.selectOptions(screen.getByRole('listbox', { name: 'Status' }), 'Deleted');
     const row1 = await screen.findByTestId('console-row-1');
+    expect(screen.queryByTestId('console-row-2')).toBeNull();
     await waitFor(() => expect(within(row1).getByText('(deleted)')).toBeInTheDocument());
     expect(within(row1).queryByRole('link', { name: 'Front Door' })).toBeNull();
     expect(within(row1).queryByRole('link', { name: '1' })).toBeNull();
@@ -477,6 +497,8 @@ describe('ClassicConsolePage — Name cell', () => {
     const row1 = screen.getByTestId('console-row-1');
     expect(within(row1).queryByRole('link', { name: 'Front Door' })).toBeNull();
     expect(row1).toHaveTextContent('Front Door');
+    // No thumbnail either: ajax/console.php wants canView('Stream').
+    expect(within(row1).queryByRole('link', { name: 'Watch Front Door' })).toBeNull();
   });
 });
 
@@ -522,8 +544,35 @@ describe('ClassicConsolePage — verbs', () => {
     expect(screen.queryByRole('button', { name: 'Add' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
     expect(screen.queryByRole('checkbox', { name: 'Select all monitors on this page' })).toBeNull();
-    // The read-only table is still there.
+    // The read-only table is still there, its Source as text, not an editor link.
     expect(screen.getByTestId('console-classic-table')).toBeInTheDocument();
+    const row1 = screen.getByTestId('console-row-1');
+    expect(within(row1).getByText('10.0.0.11')).toBeInTheDocument();
+    expect(within(row1).queryByRole('link', { name: '10.0.0.11' })).toBeNull();
+  });
+
+  it('prints a missing storage area as a red "Deleted N"', async () => {
+    stub({ monitors: [{ ...MONITORS[0], storage_id: 9 }] });
+    await mount();
+    const row1 = await screen.findByTestId('console-row-1');
+    await waitFor(() => expect(within(row1).getByText('Deleted 9')).toBeInTheDocument());
+  });
+
+  it('selects a row on a click anywhere but its links, as data-click-to-select does', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    const row1 = screen.getByTestId('console-row-1');
+    const box = within(row1).getByRole('checkbox', { name: 'Select Front Door' });
+    // A Stream viewer gets the thumbnail (the Stream-less case is tested above).
+    expect(within(row1).getByRole('link', { name: 'Watch Front Door' })).toBeInTheDocument();
+    await user.click(within(row1).getByText('1920x1080'));
+    expect(box).toBeChecked();
+    await user.click(within(row1).getByText('1920x1080'));
+    expect(box).not.toBeChecked();
+    // The checkbox itself still toggles once, not twice.
+    await user.click(box);
+    expect(box).toBeChecked();
   });
 
   it('deletes the selected monitors after confirming', async () => {
@@ -539,7 +588,7 @@ describe('ClassicConsolePage — verbs', () => {
       await user.click(screen.getByRole('button', { name: 'Delete' }));
 
       expect(confirm).toHaveBeenCalledWith(
-        'Delete 2 monitors? Recorded events are kept until storage reclaims them.',
+        'Deleting a monitor only marks it as deleted.  Events will age out. If you want them to be immediately removed, please delete them first.\nAre you sure you wish to delete?',
       );
       await waitFor(() => expect(calls.filter((c) => c.method === 'DELETE')).toHaveLength(2));
       expect(calls.map((c) => c.path).sort()).toEqual(['/monitors/1', '/monitors/2']);

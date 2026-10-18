@@ -7,8 +7,12 @@ import { createElement, type ReactNode } from 'react';
 import type { Monitor } from '@/types';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import type { MonitorRuntime } from './useMonitorStatuses';
-import { applyLocalFilters, matchesText, monitorSource, useMonitorFilterRow } from './useMonitorFilterRow';
+import {
+  applyLocalFilters, expandGroupIds, groupDropdownOptions, matchesText, monitorSource, useMonitorFilterRow,
+} from './useMonitorFilterRow';
+import type { Group } from '@/api/groups';
 
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => ({}), useNavigate: () => vi.fn() }));
 
@@ -50,17 +54,52 @@ describe('applyLocalFilters', () => {
   };
   const list = [m({ id: 1, name: 'Front' }), m({ id: 2, name: 'Back', host: '10.0.0.2' }), m({ id: 3, name: 'Side' })];
 
-  it('filters by runtime status, treating a missing row as Unknown', () => {
+  it('filters by runtime status, treating a missing row as Not Running (legacy COALESCE)', () => {
     expect(applyLocalFilters(list, { name: '', source: '', status: 'Connected' }, runtime).map((x) => x.id)).toEqual([1]);
-    expect(applyLocalFilters(list, { name: '', source: '', status: 'Unknown' }, runtime).map((x) => x.id)).toEqual([3]);
+    expect(applyLocalFilters(list, { name: '', source: '', status: 'NotRunning' }, runtime).map((x) => x.id)).toEqual([2, 3]);
+    expect(applyLocalFilters(list, { name: '', source: '', status: 'Unknown' }, runtime)).toEqual([]);
   });
   it('ORs the statuses within the multi-select', () => {
-    expect(applyLocalFilters(list, { name: '', source: '', status: 'Connected,Unknown' }, runtime).map((x) => x.id))
-      .toEqual([1, 3]);
+    expect(applyLocalFilters(list, { name: '', source: '', status: 'Connected,NotRunning' }, runtime).map((x) => x.id))
+      .toEqual([1, 2, 3]);
+  });
+  it('matches Source against the full Path as well as the host', () => {
+    const cams = [
+      m({ id: 1, host: '10.0.0.1', path: 'rtsp://10.0.0.1:554/Streaming/Channels/101' }),
+      m({ id: 2, host: '10.0.0.2', path: 'rtsp://10.0.0.2:554/h264' }),
+    ];
+    expect(applyLocalFilters(cams, { name: '', source: 'Channels/101', status: '' }, runtime).map((x) => x.id)).toEqual([1]);
+    expect(applyLocalFilters(cams, { name: '', source: '0\\.2$', status: '' }, runtime).map((x) => x.id)).toEqual([2]);
+  });
+  it('keeps deleted monitors out unless Deleted is picked, and adds them beside real statuses', () => {
+    const withDeleted = [...list, m({ id: 9, name: 'Gone', deleted: true })];
+    const ids = (status: string) => applyLocalFilters(withDeleted, { name: '', source: '', status }, runtime).map((x) => x.id);
+    expect(ids('')).toEqual([1, 2, 3]);
+    expect(ids('Deleted')).toEqual([9]);
+    expect(ids('Connected,Deleted')).toEqual([1, 9]);
   });
   it('ANDs name and source', () => {
     expect(applyLocalFilters(list, { name: '^B', source: '0\\.2$', status: '' }, runtime).map((x) => x.id)).toEqual([2]);
     expect(applyLocalFilters(list, { name: '^B', source: '0\\.1$', status: '' }, runtime)).toEqual([]);
+  });
+});
+
+describe('group dropdown', () => {
+  const groups: Group[] = [
+    { id: 1, name: 'outside', parent_id: null },
+    { id: 2, name: 'Yard', parent_id: 1 },
+    { id: 3, name: 'Gate', parent_id: 2 },
+    { id: 4, name: 'Drive', parent_id: 1 },
+    { id: 5, name: 'Indoors', parent_id: null },
+    { id: 6, name: 'Orphan', parent_id: 99 },
+  ];
+  it('orders by lower-cased name with children under their parent, depth from the root', () => {
+    expect(groupDropdownOptions(groups).map((g) => `${g.depth}:${g.name}`))
+      .toEqual(['0:Indoors', '0:Orphan', '0:outside', '1:Drive', '1:Yard', '2:Gate']);
+  });
+  it('adds the direct children of a picked group, one level down like Group::get_group_sql', () => {
+    expect(expandGroupIds([1], groups).sort()).toEqual([1, 2, 4]);
+    expect(expandGroupIds([], groups)).toEqual([]);
   });
 });
 
@@ -74,7 +113,11 @@ beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
   server.listen({ onUnhandledRequest: 'error' });
 });
-afterEach(() => { server.resetHandlers(); useMonitorFilterStore.getState().reset(); });
+afterEach(() => {
+  server.resetHandlers();
+  useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
+});
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
 
 function wrapper() {
@@ -157,6 +200,96 @@ describe('useMonitorFilterRow', () => {
     const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.servers).toHaveLength(2));
     expect(result.current.storages.map((s) => s.name)).toEqual(['Default']);
+  });
+
+  it('fetches with include_deleted only while the Status select holds Deleted', async () => {
+    const calls: string[] = [];
+    server.use(http.get('/api/v3/monitors', ({ request }) => {
+      calls.push(new URL(request.url).search);
+      return HttpResponse.json({
+        items: [m({ id: 1, name: 'Front' }), m({ id: 9, name: 'Gone', deleted: true })],
+        total: 2, per_page: 500, current_page: 1, last_page: 1,
+      });
+    }));
+    const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.groups).toHaveLength(1));
+
+    // Every other status, and none, asks nothing of /monitors.
+    for (const status of ['Unknown', 'NotRunning', 'Running', 'Connected']) {
+      act(() => result.current.setMulti('status', [status]));
+    }
+    act(() => result.current.clear('status'));
+    expect(calls).toEqual([]);
+
+    act(() => result.current.setMulti('status', ['Deleted']));
+    await waitFor(() => expect(result.current.filtered.map((x) => x.id)).toEqual([9]));
+    expect(calls).toHaveLength(1);
+    expect(new URLSearchParams(calls[0]).get('include_deleted')).toBe('true');
+  });
+
+  it('includes a picked group\'s child groups', async () => {
+    server.use(
+      http.get('/api/v3/groups', () => HttpResponse.json({
+        items: [{ id: 7, name: 'Yard', parent_id: null }, { id: 8, name: 'Gate', parent_id: 7 }],
+        total: 2, per_page: 200, current_page: 1, last_page: 1,
+      })),
+      http.get('/api/v3/groups-monitors', () => HttpResponse.json({
+        items: [{ id: 1, group_id: 8, monitor_id: 1 }],
+        total: 1, per_page: 1000, current_page: 1, last_page: 1,
+      })),
+    );
+    const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.groupOptions).toHaveLength(2));
+    act(() => result.current.set('groupId', '7'));
+    await waitFor(() => expect(result.current.filtered.map((x) => x.id)).toEqual([1]));
+  });
+
+  it('offers in the Monitor select only what the other fields let through', async () => {
+    const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    act(() => result.current.set('name', 'back'));
+    expect(result.current.monitorOptions.map((x) => x.id)).toEqual([2]);
+  });
+
+  it('ignores a Monitor selection none of which survives the other fields', async () => {
+    const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    act(() => result.current.set('monitorId', '1'));
+    expect(result.current.filtered.map((x) => x.id)).toEqual([1]);
+    act(() => result.current.set('name', 'back'));
+    expect(result.current.filtered.map((x) => x.id)).toEqual([2]);
+  });
+
+  it('keeps Name, Source, Status, Server and Storage across a remount, as legacy cookies do', async () => {
+    const first = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    act(() => {
+      first.result.current.set('name', 'front');
+      first.result.current.set('source', '10\\.0');
+      first.result.current.setMulti('status', ['Connected']);
+      first.result.current.setMulti('serverId', ['2']);
+      first.result.current.setMulti('storageId', ['3']);
+    });
+    first.unmount();
+    const second = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    expect(second.result.current.values).toMatchObject({
+      name: 'front', source: '10\\.0', status: 'Connected', serverId: '2', storageId: '3',
+    });
+    expect(JSON.parse(sessionStorage.getItem('zm-monitor-filter-row') ?? '{}').state.name).toBe('front');
+  });
+
+  it('polls /monitor-status itself for a page that passes no runtime, only once a status is picked', async () => {
+    let polls = 0;
+    server.use(http.get('/api/v3/monitor-status', () => {
+      polls++;
+      return HttpResponse.json({
+        items: [{ monitor_id: 1, status: 'Connected', capture_fps: '5', analysis_fps: '0', capture_bandwidth: 0, updated_on: '' }],
+        total: 1, per_page: 1000, current_page: 1, last_page: 1,
+      });
+    }));
+    const { result } = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.groups).toHaveLength(1));
+    expect(polls).toBe(0);
+    act(() => result.current.setMulti('status', ['Connected']));
+    await waitFor(() => expect(result.current.filtered.map((x) => x.id)).toEqual([1]));
+    expect(polls).toBeGreaterThan(0);
   });
 
   it('clear() empties one field only', async () => {

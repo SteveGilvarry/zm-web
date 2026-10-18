@@ -10,7 +10,6 @@ import {
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { logout as apiLogout } from '@/api/auth';
-import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
 import { usePerms } from '@/features/auth/usePerms';
 import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
 import { useCurrentUsername } from '@/features/auth/useMe';
@@ -19,6 +18,7 @@ import { Button } from '@/components/common/Button';
 import { useLogState, type LogState } from '@/features/logs/useLogState';
 import { useUiStore } from '@/stores/ui';
 import { ClassicBrandMenu } from './BrandMenu';
+import { ClassicStatusButton } from './StatusButton';
 
 /**
  * Classic ZoneMinder top navigation. Same items, order and labels as the
@@ -130,7 +130,7 @@ export function ClassicTopNav() {
           >
             <LogOut size={15} className="rtl:-scale-x-100" aria-hidden />
           </Button>
-          {can('system', 'Edit') && <SystemRunningToggle tone="light" />}
+          {can('system', 'View') && <ClassicStatusButton canChange={can('system', 'Edit')} />}
           {/* Legacy header-flip chevron (`#flip`, cookie `zmHeaderFlip`): hides
               the stat strip and stays hidden until flipped back. */}
           <button

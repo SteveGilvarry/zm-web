@@ -7,6 +7,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useToastStore } from '@/components/common/toastStore';
 import { useConsoleColumnsStore } from './consoleColumns';
 
@@ -76,6 +77,7 @@ afterEach(() => {
   patched.length = 0; deleted.length = 0; navigate.mockClear();
   mockSearch = {};
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useConsoleColumnsStore.getState().reset();
   useToastStore.getState().clear();
 });
@@ -157,11 +159,23 @@ describe('useClassicConsolePage', () => {
     expect(result.current.cloneSeed).toBeNull();
   });
 
-  it('footer scope: one visible row → monitor_id, a lone group filter → group, otherwise everything', () => {
-    expect(eventsScopeFor([4], { values: { groupId: '' } as never, activeCount: 0 })).toEqual({ monitor_id: 4 });
-    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 1 })).toEqual({ group: 9 });
-    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 2 })).toEqual({});
+  it('footer scope: the visible ids once the table is narrowed, nothing when it is not', () => {
+    expect(eventsScopeFor([4], false)).toEqual({ monitor_id: 4 });
+    expect(eventsScopeFor([1, 2], true)).toEqual({ monitor_id: [1, 2] });
+    expect(eventsScopeFor([1, 2, 3], false)).toEqual({});
+    expect(eventsScopeFor([], true)).toEqual({});
     expect(cloneName('Cam', ['Cam', 'Clone of Cam'])).toBe('Clone of Clone of Cam');
+  });
+
+  it('keeps sort, page size and search across a remount, as the zmConsoleTable cookie does', async () => {
+    const first = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
+    act(() => first.result.current.toggleSort('name'));
+    act(() => first.result.current.toggleSort('name'));
+    act(() => first.result.current.setPageSize(50));
+    act(() => first.result.current.setSearch('cam'));
+    first.unmount();
+    const second = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
+    expect(second.result.current).toMatchObject({ sortKey: 'name', sortDir: 'desc', pageSize: 50, search: 'cam', page: 1 });
   });
 
   it('reorder renumbers only the monitors whose sequence changed', async () => {

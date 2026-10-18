@@ -16,14 +16,13 @@ import { useMonitorFilterRow, type MonitorFilterRowState } from '@/features/moni
 import { useRouteSearch, searchFlag } from '@/features/monitors/useRouteSearch';
 import { summarizeRuntime, type RuntimeTotals } from '@/features/monitors/useMonitorStatuses';
 import type { Monitor } from '@/types';
+import { monitorIdsToSearch } from '@/features/events/eventsSearch';
+import { fetchMonitorsExport, MONITORS_EXPORT_FILENAME } from './exportMonitors';
 import { useConsoleData, lookupSummary, type ConsoleData } from './useConsoleData';
 import { useConsoleColumnsStore, type ConsoleColumnKey } from './consoleColumns';
 import {
   downloadText,
-  exportColumns,
   pageSlice,
-  rowsToCsv,
-  rowsToJson,
   searchRows,
   sortRows,
   totalsFor,
@@ -56,16 +55,18 @@ export function cloneName(source: string, taken: Iterable<string>): string {
 }
 
 /**
- * Monitor scope for the footer's events-list links. The events page takes one
- * `monitor_id` or one `group`; it has no `monitor_ids`, so any other subset
- * falls back to "every monitor" (legacy sends `Monitor IN (…)`).
+ * Monitor scope for the footer's events-list links. Legacy adds
+ * `Monitor IN (visible ids)` (ajax/console.php); `/events` takes the same
+ * list as `monitor_id`. An unnarrowed table sends nothing, which selects
+ * the same events without putting every monitor id in the URL; an empty
+ * table sends nothing too, as legacy skips the term when no id is left.
  */
-export type EventsScope = { monitor_id: number } | { group: number } | Record<string, never>;
+export type EventsScope = { monitor_id?: number | number[] };
 
-export function eventsScopeFor(visibleIds: number[], filter: Pick<MonitorFilterRowState, 'values' | 'activeCount'>): EventsScope {
-  if (visibleIds.length === 1) return { monitor_id: visibleIds[0] };
-  if (filter.activeCount === 1 && filter.values.groupId) return { group: Number(filter.values.groupId) };
-  return {};
+export function eventsScopeFor(visibleIds: number[], narrowed: boolean): EventsScope {
+  if (!narrowed && visibleIds.length !== 1) return {};
+  const ids = monitorIdsToSearch(visibleIds);
+  return ids === undefined ? {} : { monitor_id: ids };
 }
 
 export interface ClassicConsolePageState {
@@ -129,7 +130,8 @@ export interface ClassicConsolePageState {
   narrowToSelected: () => void;
   busy: boolean;
   refresh: () => void;
-  exportRows: (format: 'csv' | 'json') => void;
+  /** Legacy EXPORT: every live monitor's config, zones and groups as JSON. */
+  exportMonitors: () => void;
 }
 
 /** Legacy `zm_Config` default for the console page size (`ZM_WEB_EVENTS_PER_PAGE`). */
@@ -157,12 +159,10 @@ export function useClassicConsolePage(): ClassicConsolePageState {
   const showId = useZmConfig('ZM_WEB_ID_ON_CONSOLE', true);
   const configPageSize = useZmConfig('ZM_WEB_EVENTS_PER_PAGE', DEFAULT_PAGE_SIZE);
 
-  const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<ConsoleSortKey>('sequence');
-  const [sortDir, setSortDir] = useState<SortDir>('asc');
+  // Sort, page size, page and search survive a reload, as legacy's
+  // `zmConsoleTable` cookie keeps them.
+  const { search: query, sortKey, sortDir, page, pageSize: pageSizeOverride, setView } = columnsStore;
   const [sortMode, setSortMode] = useState(false);
-  const [page, setPageState] = useState(1);
-  const [pageSizeOverride, setPageSizeOverride] = useState<number | null>(null);
   const pageSize = pageSizeOverride ?? configPageSize;
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   // `?new=true` (legacy `?view=monitor` with no id) opens the Add dialog on load.
@@ -226,17 +226,17 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     [data.runtimeById, allRows],
   );
   const hasRuntime = allRows.some((r) => r.runtime != null);
-  const eventsScope = eventsScopeFor(allRows.map((r) => r.monitor.id), filter);
+  const eventsScope = eventsScopeFor(allRows.map((r) => r.monitor.id), filter.activeCount > 0 || query.trim() !== '');
 
-  const setPage = (p: number) => setPageState(Math.max(1, p));
-  const setPageSize = (n: number) => { setPageSizeOverride(n); setPageState(1); };
-  const setSearch = (q: string) => { setQuery(q); setPageState(1); };
+  const setPage = (p: number) => setView({ page: Math.max(1, p) });
+  const setPageSize = (n: number) => setView({ pageSize: n, page: 1 });
+  const setSearch = (q: string) => setView({ search: q, page: 1 });
 
   const toggleSort = (key: ConsoleSortKey) => {
-    if (sortKey === key) setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
-    else { setSortKey(key); setSortDir('asc'); }
+    if (sortKey === key) setView({ sortDir: sortDir === 'asc' ? 'desc' : 'asc' });
+    else setView({ sortKey: key, sortDir: 'asc' });
   };
-  const resetSort = () => { setSortKey('sequence'); setSortDir('asc'); };
+  const resetSort = () => setView({ sortKey: 'sequence', sortDir: 'asc' });
   const toggleSortMode = () => {
     // Dragging only makes sense over the sequence order.
     if (!sortMode) resetSort();
@@ -314,7 +314,8 @@ export function useClassicConsolePage(): ClassicConsolePageState {
   const deleteSelected = () => {
     const ids = allRows.filter((r) => selectedIds.has(r.monitor.id)).map((r) => r.monitor.id);
     if (ids.length === 0) return;
-    if (window.confirm(t('Delete {{count}} monitor? Recorded events are kept until storage reclaims them.', { count: ids.length }))) {
+    // console.js `deleteMonitor`, word for word.
+    if (window.confirm(t('Deleting a monitor only marks it as deleted.  Events will age out. If you want them to be immediately removed, please delete them first.\nAre you sure you wish to delete?'))) {
       deleteMutation.mutate(ids);
     }
   };
@@ -326,7 +327,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     if (ids.length === 0) return;
     filter.set('monitorId', ids.join(','));
     clearSelection();
-    setPageState(1);
+    setPage(1);
   };
 
   const refresh = () => {
@@ -334,11 +335,13 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     qc.invalidateQueries({ queryKey: ['monitorStatuses'] });
   };
 
-  const exportRows = (format: 'csv' | 'json') => {
-    const cols = exportColumns(names);
-    if (format === 'csv') downloadText('console.csv', rowsToCsv(allRows, cols), 'text/csv;charset=utf-8');
-    else downloadText('console.json', rowsToJson(allRows, cols), 'application/json');
-  };
+  // console.js `exportMonitors` → ajax/console.php `exportMonitorsJSON`:
+  // the whole fleet's config, not the table's visible cells.
+  const exportMutation = useMutation({
+    mutationFn: () => fetchMonitorsExport(),
+    onSuccess: (doc) => downloadText(MONITORS_EXPORT_FILENAME, JSON.stringify(doc, null, 4), 'application/json'),
+    onError: toast.apiError,
+  });
 
   return {
     isAuthenticated,
@@ -372,7 +375,7 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     toggleSelected,
     toggleAllOnPage,
     clearSelection,
-    columns: { isVisible: columnsStore.isVisible, toggle: columnsStore.toggle, reset: columnsStore.reset },
+    columns: { isVisible: columnsStore.isVisible, toggle: columnsStore.toggle, reset: columnsStore.resetColumns },
     showThumbs,
     showId,
     showServer: serverCount > 0,
@@ -388,6 +391,6 @@ export function useClassicConsolePage(): ClassicConsolePageState {
     narrowToSelected,
     busy: cloneMutation.isPending || deleteMutation.isPending || reorderMutation.isPending,
     refresh,
-    exportRows,
+    exportMonitors: () => exportMutation.mutate(),
   };
 }

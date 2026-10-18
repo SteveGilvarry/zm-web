@@ -40,7 +40,7 @@ export default function ClassicCyclePage() {
     <AppShell title={t('Cycle')}>
       <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2">
         <div className="flex items-start gap-3 flex-wrap">
-          <ClassicFilterRow monitors={cycle.allMonitors} state={filter} tone="dark" className="flex-1" />
+          <ClassicFilterRow state={filter} tone="dark" className="flex-1" />
           <button
             type="button"
             onClick={() => cycle.setViewMode(cycle.viewMode === 'stream' ? 'stills' : 'stream')}

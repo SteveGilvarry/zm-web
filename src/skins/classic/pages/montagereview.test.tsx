@@ -15,6 +15,7 @@ import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMontageStore, useReviewRangeStore } from '@/stores/montage';
 import { DEFAULT_REVIEW_FILTERS } from '@/features/montagereview/useReviewEvents';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import type { UserClaims } from '@/types';
 
 let mockSearch: Record<string, unknown> = {};
@@ -80,6 +81,7 @@ afterEach(() => {
   streamProps.length = 0;
   useToastStore.getState().clear();
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useMontageStore.setState({ reviewFit: false });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

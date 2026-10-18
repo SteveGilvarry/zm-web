@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { Monitor } from '@/types';
 import type { EventSummary } from '@/api/eventSummaries';
 import {
-  exportColumns, functionLines, isOffline, pageSlice, periodStart, rowsToCsv, rowsToJson, runtimeLine, searchRows,
+  functionLines, isOffline, pageSlice, periodStart, runtimeLine, searchRows,
   sortRows, sourceClass, streamAvailable, totalsFor, type ConsoleRow,
 } from './consoleTable';
 import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
@@ -155,17 +155,5 @@ describe('pageSlice / totalsFor', () => {
     expect(t.events).toEqual({ count: 315, disk: 110 });
     expect(t.hour.count).toBe(6);
     expect(t.zones).toBe(4);
-  });
-});
-
-describe('export', () => {
-  it('writes CSV with a header row and quotes fields that need it', () => {
-    const cols = exportColumns().filter((c) => ['id', 'name', 'events'].includes(c.key));
-    const csv = rowsToCsv([{ ...rows[0], monitor: { ...rows[0].monitor, name: 'Front, "North"' } }], cols);
-    expect(csv.split('\n')).toEqual(['Id,Name,Events', '1,"Front, ""North""",30']);
-  });
-  it('writes JSON keyed by column', () => {
-    const cols = exportColumns().filter((c) => ['id', 'zones'].includes(c.key));
-    expect(JSON.parse(rowsToJson(rows.slice(0, 1), cols))).toEqual([{ id: 1, zones: 2 }]);
   });
 });

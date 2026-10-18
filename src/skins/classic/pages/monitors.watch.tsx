@@ -142,7 +142,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
             {showFilters ? <FilterX size={15} aria-hidden /> : <Filter size={15} aria-hidden />}
           </ClassicIconButton>
           {showFilters && (
-            <ClassicFilterRow monitors={page.siblings} state={filter} className="flex-1 min-w-0" />
+            <ClassicFilterRow state={filter} className="flex-1 min-w-0" />
           )}
         </div>
 

@@ -183,7 +183,7 @@ export default function ClassicMontageReviewPage() {
             {t('Monitor Filters')}
           </button>
           {monitorFiltersOpen && (
-            <ClassicFilterRow monitors={page.allMonitors} state={filter} tone="dark" />
+            <ClassicFilterRow state={filter} tone="dark" />
           )}
           {/* Legacy's event terms, in its order: the Monitor select spliced in
               first, then Archive Status, Date Time >= and <=, Tags, Notes

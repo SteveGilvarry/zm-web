@@ -1,4 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
+import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { getSystemStatus, getVersion } from '@/api/system';
@@ -7,16 +8,20 @@ import { useUiStore } from '@/stores/ui';
 import { usePerms } from '@/features/auth/usePerms';
 import { useZmConfig, useZmConfigTable } from '@/features/config/useZmConfig';
 import { humanFilesize } from '@/lib/format';
+import { consoleRefreshInterval } from '@/features/console/refreshInterval';
 import {
   DB_THRESHOLDS, RAM_THRESHOLDS, STAT_TONE_CLASS, STORAGE_THRESHOLDS, statTone,
 } from './statTone';
 import { versionState } from './versionState';
+import { ClassicVersionReminder } from './VersionReminder';
 
 /**
  * Classic sub-header stat strip (legacy navbar-two): Load / Cpu / DB /
  * storage / Memory / Swap / version, each with the tooltip and colour
- * `skins/classic/includes/functions.php` gives it. Shown only with
- * `ZM_WEB_SHOW_SERVER_STATS` and `canView('System')`, as legacy gates it.
+ * `skins/classic/includes/functions.php` gives it. Every entry needs
+ * `canView('System')`; `ZM_WEB_SHOW_SERVER_STATS` off drops the server
+ * stats but keeps the version (`buildStatisticsBar`). Polls every
+ * `ZM_WEB_H_REFRESH_NAVBAR` seconds (legacy `navBarRefresh`).
  *
  * The bandwidth-profile chip is deliberately absent (out of scope). Storage
  * is one global figure, not one entry per area: `/api/v3/storage` reports the
@@ -31,13 +36,17 @@ export function ClassicStatBar() {
   const showStats = useZmConfig('ZM_WEB_SHOW_SERVER_STATS', true);
   // The navbar's flip chevron (legacy cookie `zmHeaderFlip`).
   const flippedOpen = useUiStore((s) => s.classicStatBarOpen);
-  const enabled = isAuthenticated && canViewSystem && showStats;
+  const enabled = isAuthenticated && canViewSystem;
+  const { data: configs } = useZmConfigTable();
+  // The bandwidth switcher is out of scope, so the high-bandwidth row
+  // stands in for all three, as for the console's own refresh.
+  const navbarRefresh = consoleRefreshInterval(configs?.ZM_WEB_H_REFRESH_NAVBAR, 10_000);
 
   const { data: status } = useQuery({
     queryKey: ['systemStatus'],
     queryFn: getSystemStatus,
-    enabled,
-    refetchInterval: 10_000,
+    enabled: enabled && showStats,
+    refetchInterval: navbarRefresh,
   });
   const { data: version } = useQuery({
     queryKey: ['version'],
@@ -45,11 +54,10 @@ export function ClassicStatBar() {
     enabled,
     refetchInterval: 60_000,
   });
-  const { data: configs } = useZmConfigTable();
 
   if (!enabled || !flippedOpen) return null;
 
-  const stats = status?.stats;
+  const stats = showStats ? status?.stats : undefined;
   const pct = (used: number, total: number) =>
     total > 0 ? Math.round((used / total) * 100) : null;
   // Legacy reads /proc/meminfo and subtracts Buffers and Cached as well;
@@ -96,8 +104,10 @@ export function ClassicStatBar() {
         </span>
       )}
       {stats?.disk_usage_percent != null && (
-        <span
-          className={STAT_TONE_CLASS[statTone(stats.disk_usage_percent, STORAGE_THRESHOLDS)]}
+        // Legacy links each storage entry to Options → Storage.
+        <Link
+          to="/settings/storage"
+          className={clsx('hover:underline', STAT_TONE_CLASS[statTone(stats.disk_usage_percent, STORAGE_THRESHOLDS)])}
           title={t('{{used}} of {{total}}', {
             used: humanFilesize(stats.used_disk),
             total: humanFilesize(stats.total_disk),
@@ -105,7 +115,7 @@ export function ClassicStatBar() {
           data-testid="stat-storage"
         >
           {t('Default')}: {stats.disk_usage_percent.toFixed(0)}%
-        </span>
+        </Link>
       )}
       {memUsedPct != null && (
         <span
@@ -131,13 +141,22 @@ export function ClassicStatBar() {
           {t('Swap')}: {swapUsedPct}%
         </span>
       )}
-      <span
-        className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
-        title={versionTitle}
-        data-testid="stat-version"
-      >
-        {version?.version ? `v${version.version}` : ''}
-      </span>
+      {ver.status === 'update-available' && can('system', 'Edit') && version?.version ? (
+        <ClassicVersionReminder
+          version={version.version}
+          lastVersion={configs?.ZM_DYN_LAST_VERSION ?? ''}
+          title={versionTitle}
+          className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
+        />
+      ) : (
+        <span
+          className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
+          title={versionTitle}
+          data-testid="stat-version"
+        >
+          {version?.version ? `v${version.version}` : ''}
+        </span>
+      )}
     </div>
   );
 }

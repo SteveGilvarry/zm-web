@@ -4,14 +4,23 @@
  * colours and tooltips `getDbConHTML` / `getRamHTML` / `getZMVersionHTML`
  * give them.
  */
-import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
-import { ClassicStatBar } from './StatBar';
+import type { ReactNode } from 'react';
+
+vi.mock('@tanstack/react-router', () => ({
+  Link: ({ children, to, ...rest }: { children: ReactNode; to?: string; [k: string]: unknown }) => (
+    <a href={to ?? '#'} {...rest}>{children}</a>
+  ),
+}));
+
+const { ClassicStatBar } = await import('./StatBar');
 
 const server = setupServer();
 beforeAll(() => {
@@ -148,19 +157,56 @@ describe('ClassicStatBar', () => {
       ZM_CHECK_FOR_UPDATES: '1',
     });
     renderWithProviders(<ClassicStatBar />);
-    const ver = await screen.findByTestId('stat-version');
     await waitFor(() =>
-      expect(ver).toHaveAttribute('title', 'An update to ZoneMinder is available.'));
-    expect(ver.className).toContain('ffa801');
+      expect(screen.getByTestId('stat-version')).toHaveAttribute('title', 'An update to ZoneMinder is available.'));
+    expect(screen.getByTestId('stat-version').className).toContain('ffa801');
   });
 
-  it('renders nothing at all with ZM_WEB_SHOW_SERVER_STATS off', async () => {
+  it('offers a System editor the reminder menu and writes the chosen config row', async () => {
+    const user = userEvent.setup();
+    const puts: Array<{ name: string; value: string }> = [];
+    stub({ running: true, daemons: [], stats: FULL_STATS }, { version: '1.37.64' }, {
+      ZM_DYN_LAST_VERSION: '1.39.0',
+      ZM_CHECK_FOR_UPDATES: '1',
+    });
+    server.use(http.put('/api/v3/configs/:name', async ({ params, request }) => {
+      const body = await request.json() as { value: string };
+      puts.push({ name: String(params.name), value: body.value });
+      return HttpResponse.json({ name: params.name, value: body.value });
+    }));
+    renderWithProviders(<ClassicStatBar />);
+    await user.click(await screen.findByRole('button', { name: 'v1.37.64' }));
+    const menu = screen.getByRole('menu', { name: 'An update to ZoneMinder is available.' });
+    expect(within(menu).getAllByRole('menuitem').map((b) => b.textContent)).toEqual([
+      'Ignore this version', 'Remind again in 1 hour', 'Remind again in 1 day',
+      'Remind again in 1 week', 'Remind again in 1 month', "Don't remind about new versions",
+    ]);
+    await user.click(within(menu).getByRole('menuitem', { name: 'Ignore this version' }));
+    await waitFor(() => expect(puts).toEqual([{ name: 'ZM_DYN_CURR_VERSION', value: '1.39.0' }]));
+  });
+
+  it('keeps only the version with ZM_WEB_SHOW_SERVER_STATS off', async () => {
     stub({ running: true, daemons: [], stats: FULL_STATS }, { version: '1.37.64' }, {
       ZM_WEB_SHOW_SERVER_STATS: '0',
     });
-    const { container } = renderWithProviders(<ClassicStatBar />);
-    await waitFor(() => expect(screen.queryByText(/^Load:/)).toBeNull());
-    expect(container.querySelector('#classic-stat-bar')).toBeNull();
+    renderWithProviders(<ClassicStatBar />);
+    await waitFor(() => expect(screen.getByTestId('stat-version')).toHaveTextContent('v1.37.64'));
+    expect(screen.queryByText(/^Load:/)).toBeNull();
+    expect(screen.queryByTestId('stat-storage')).toBeNull();
+  });
+
+  it('polls at ZM_WEB_H_REFRESH_NAVBAR seconds', async () => {
+    stub({ running: true, daemons: [], stats: FULL_STATS }, { version: '1.37.64' }, { ZM_WEB_H_REFRESH_NAVBAR: '1' });
+    let calls = 0;
+    server.use(http.get('/api/v3/system/status', () => { calls++; return HttpResponse.json({ running: true, daemons: [], stats: FULL_STATS }); }));
+    renderWithProviders(<ClassicStatBar />);
+    await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2), { timeout: 2500 });
+  });
+
+  it('links the storage entry to Options → Storage', async () => {
+    stub({ running: true, daemons: [], stats: FULL_STATS });
+    renderWithProviders(<ClassicStatBar />);
+    expect(await screen.findByTestId('stat-storage')).toHaveAttribute('href', '/settings/storage');
   });
 
   it('hides itself when the navbar chevron is flipped down', async () => {

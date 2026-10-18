@@ -121,6 +121,14 @@ export function SystemStatus({
               value={`${formatBytes(stats.total_swap - stats.free_swap)} / ${formatBytes(stats.total_swap)}`}
             />
           )}
+          {/* Legacy `getDbConHTML`: connections in use out of the pool, warned over 90 %. */}
+          {stats?.db_connections != null && stats.db_max_connections ? (
+            <Reading
+              label={t('DB')}
+              value={`${stats.db_connections} / ${stats.db_max_connections}`}
+              warn={stats.db_connections / stats.db_max_connections > 0.9}
+            />
+          ) : null}
         </dl>
       </section>
 

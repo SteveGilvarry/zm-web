@@ -48,9 +48,14 @@ function configRows(overrides: Record<string, string> = {}) {
   }));
 }
 let configOverrides: Record<string, string> = {};
+let states: Array<{ id: number; name: string; is_active: number }> = [];
 
 const server = setupServer(
   http.get('/api/v3/system/status', () => HttpResponse.json({ running: true, daemons: [] })),
+  http.get('/api/v3/states', () => HttpResponse.json({
+    items: states.map((st) => ({ ...st, definition: '' })),
+    total: states.length, per_page: 200, current_page: 1, last_page: 1,
+  })),
   http.get('/api/v3/auth/logout', () => { logoutCalls += 1; return new HttpResponse(null, { status: 204 }); }),
   http.get('/api/v3/me', () => HttpResponse.json({ kind: 'NOT_FOUND' }, { status: 404 })),
   http.get('/api/v3/configs', () => HttpResponse.json({
@@ -68,6 +73,7 @@ afterEach(() => {
   server.resetHandlers();
   pathname = '/';
   logoutCalls = 0;
+  states = [];
   mockNavigate.mockReset();
   logTotals = {};
   configOverrides = {};
@@ -157,6 +163,27 @@ describe('ClassicTopNav', () => {
     signIn();
     renderWithProviders(<ClassicTopNav />);
     expect(await screen.findByRole('button', { name: 'Run state: Running. Change run state' })).toBeInTheDocument();
+  });
+
+  it('names the active saved state on the button, as legacy runtimeStatus() does', async () => {
+    states = [{ id: 1, name: 'default', is_active: 0 }, { id: 2, name: 'Away', is_active: 1 }];
+    signIn();
+    renderWithProviders(<ClassicTopNav />);
+    expect(await screen.findByRole('button', { name: 'Run state: Away. Change run state' })).toHaveTextContent('Away');
+  });
+
+  it('reads Running, not "default", while the default state is active', async () => {
+    states = [{ id: 1, name: 'default', is_active: 1 }];
+    signIn();
+    renderWithProviders(<ClassicTopNav />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Run state:/ })).toHaveTextContent('Running'));
+  });
+
+  it('shows the status as text, with no button, to a System View user', async () => {
+    signIn({ system: 'View' });
+    renderWithProviders(<ClassicTopNav />);
+    await waitFor(() => expect(screen.getByTestId('classic-run-state')).toHaveTextContent('Running'));
+    expect(screen.queryByRole('button', { name: /Run state/ })).toBeNull();
   });
 
   it('marks only the current page with aria-current', () => {

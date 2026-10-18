@@ -7,6 +7,7 @@ import { getVersion } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { SystemRunningToggle } from '@/components/system/SystemRunningToggle';
 import { RequirePerm } from '@/features/auth/RequirePerm';
+import { usePerms } from '@/features/auth/usePerms';
 import { Button } from '@/components/common/Button';
 
 interface HeaderProps {
@@ -28,6 +29,7 @@ interface HeaderProps {
  */
 export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
   const { t, i18n } = useTranslation();
+  const { can } = usePerms();
   const locale = i18n.resolvedLanguage ?? i18n.language ?? undefined;
   const { isAuthenticated } = useAuthStore();
   const [currentTime, setCurrentTime] = useState(new Date());
@@ -92,9 +94,11 @@ export function Header({ title, onMenu, menuOpen = false }: HeaderProps) {
           </span>
         )}
 
+        {/* System Edit changes the run state; System View only reads it,
+            as legacy prints it as plain text then. */}
         {isAuthenticated && (
-          <RequirePerm feature="system" level="Edit">
-            <SystemRunningToggle />
+          <RequirePerm feature="system" level="View">
+            <SystemRunningToggle readOnly={!can('system', 'Edit')} />
           </RequirePerm>
         )}
 

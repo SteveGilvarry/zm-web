@@ -175,7 +175,8 @@ describe('Run State — envelope', () => {
   it('reads the states out of the {items,total,…} envelope', async () => {
     server.use(
       http.get('/api/v3/states', () =>
-        HttpResponse.json(paginated([makeState({ id: 5, name: 'night' })], { total: 1 })),
+        // Inactive, so the header's run-state label does not read 'night' too.
+        HttpResponse.json(paginated([makeState({ id: 5, name: 'night', is_active: 0 })], { total: 1 })),
       ),
     );
     renderRoute('/settings/state');
