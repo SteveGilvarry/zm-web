@@ -208,7 +208,7 @@ export default function ClassicEventsListPage() {
           </div>
 
           <div className="pt-4">
-            <BulkActionBar variant="classic" selectedIds={s.selectedIds} events={s.events} onClear={s.clearSelection} />
+            <BulkActionBar variant="classic" selectedIds={s.selectedIds} events={s.events} onClear={s.clearSelection} monitorName={(id) => s.monitorLookup[id] ?? String(id)} />
           </div>
         </div>
 
@@ -219,14 +219,15 @@ export default function ClassicEventsListPage() {
           </p>
         )}
 
-        {/* bootstrap-table toolbar */}
+        {/* bootstrap-table toolbar: its search box (events.php:157) is
+            free text over every column, run server-side as zm-api's `q`. */}
         <div className="flex flex-wrap items-center justify-end gap-1.5 px-4 py-2">
           <input
             type="search"
             value={s.searchQuery}
             onChange={(e) => s.setSearchQuery(e.target.value)}
-            placeholder={t('Name contains…')}
-            aria-label={t('Name contains')}
+            placeholder={t('Search')}
+            aria-label={t('Search events')}
             className="px-2 py-1 text-sm border border-[#ced4da] rounded-sm w-48 focus:outline-none focus:border-[#80bdff]"
           />
           <ClassicButton tone="primary" onClick={() => s.refetch()} aria-label={t('Refresh events')} title={t('Refresh')}>

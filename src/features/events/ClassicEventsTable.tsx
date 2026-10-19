@@ -19,6 +19,7 @@ import { EventThumbnail } from './EventThumbnail';
 import { formatDurationHms, sumEventDurations, sumEventDiskSpace } from './duration';
 import { useEventsColumnLabels } from './columnLabels';
 import { COLUMN_SORT_FIELD } from './sortColumns';
+import { maxScoreFrameParams } from './maxScoreLink';
 import type { EventNavSearch } from './eventsSearch';
 
 interface ClassicEventsTableProps {
@@ -162,7 +163,8 @@ export function ClassicEventsTable({
       case 'avg_score':
         return e.avg_score ?? 0;
       case 'max_score':
-        return <Link {...framesLink} className={classicLink}>{e.max_score ?? 0}</Link>;
+        // Legacy links Max to the max-score frame (events.js:108).
+        return <Link to="/events/$eventId/frames/$frameId" params={maxScoreFrameParams(e)} className={classicLink}>{e.max_score ?? 0}</Link>;
       case 'storage':
         // Legacy links Storage and DiskSpace to the event too (events.js:110-111).
         return <Link {...eventLink} className={classicLink}>{storageName ? storageName(e.storage_id) : String(e.storage_id)}</Link>;

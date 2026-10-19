@@ -449,7 +449,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     archived: listSearch.archived,
     cause: listSearch.cause || undefined,
     notes: urlNote,
-    name: listSearch.q || undefined,
+    q: listSearch.q || undefined,
     tag_id: urlTags,
   }), [urlMonitorId, listSearch.archived, listSearch.cause, urlNote, listSearch.q, urlTags]);
 

@@ -260,6 +260,12 @@ export function groupEventsAst(opts: {
   /** Upper bound on the *start* time — legacy's `StartDateTime <=` term. */
   startBefore?: string;
   name?: string;
+  /**
+   * The search box. `/filters/preview` has no free-text field, so it becomes
+   * an any-of over the text columns (and the id, for a number) — close to
+   * what `/events?q=` matches, short of its time, score and size columns.
+   */
+  q?: string;
   cause?: string;
   /** One substring, or several ORed together (legacy's Notes multi-select). */
   notes?: string | string[];
@@ -278,6 +284,7 @@ export function groupEventsAst(opts: {
   if (opts.startTime) rules.push({ field: 'start_time', op: 'gte', value: opts.startTime });
   if (opts.startBefore) rules.push({ field: 'start_time', op: 'lte', value: opts.startBefore });
   if (opts.name) rules.push({ field: 'name', op: 'like', value: `%${opts.name}%` });
+  if (opts.q) rules.push(searchRule(opts.q));
   if (opts.cause) rules.push({ field: 'cause', op: 'like', value: `%${opts.cause}%` });
   const notes = typeof opts.notes === 'string' ? [opts.notes] : opts.notes ?? [];
   if (notes.length === 1) rules.push({ field: 'notes', op: 'like', value: `%${notes[0]}%` });
@@ -292,6 +299,19 @@ export function groupEventsAst(opts: {
   if (opts.storageId != null) rules.push({ field: 'storage_id', op: 'eq', value: opts.storageId });
   if (opts.extra) rules.push(...opts.extra);
   return { where: { match: 'all', rules }, sort: { field: opts.sort, dir: opts.dir } };
+}
+
+/** The search box as a preview rule: any text column contains it, or the id is it. */
+export function searchRule(q: string): FilterAstExpr {
+  const like = `%${q}%`;
+  const rules: FilterAstExpr[] = [
+    { field: 'name', op: 'like', value: like },
+    { field: 'cause', op: 'like', value: like },
+    { field: 'notes', op: 'like', value: like },
+    { field: 'monitor_name', op: 'like', value: like },
+  ];
+  if (/^\d+$/.test(q)) rules.unshift({ field: 'id', op: 'eq', value: Number(q) });
+  return { match: 'any', rules };
 }
 
 /**
@@ -522,7 +542,7 @@ export function useEventsListPage(): EventsListPageState {
         const ast = groupEventsAst({
           monitorIds: monitorScope ?? undefined, archived,
           startTime: dateFilter || undefined, startBefore: endFilter || undefined,
-          name: searchQuery || undefined,
+          q: searchQuery || undefined,
           cause: causeQuery || undefined,
           notes: notesFilter,
           extra: tagRule && !noIds ? [tagRule] : undefined,
@@ -538,7 +558,8 @@ export function useEventsListPage(): EventsListPageState {
         archived,
         storage_id: storageFilter,
         start_time: dateFilter || undefined,
-        name: searchQuery || undefined,
+        // Legacy's table search box: free text over every column (zm-api `q`).
+        q: searchQuery || undefined,
         cause: causeQuery || undefined,
         notes: notesFilter[0],
         tag_id: tagPicksToApi(tagFilter),

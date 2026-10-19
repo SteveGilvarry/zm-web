@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -34,6 +35,7 @@ import {
   ChevronsLeft,
   ChevronsRight,
   RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -46,6 +48,10 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { EventEditForm } from '@/features/events/EventEditForm';
+import { ExportEventsModal } from '@/features/events/ExportEventsModal';
+import { GenerateVideoModal } from '@/features/events/GenerateVideoModal';
+import { maxScoreFrameParams } from '@/features/events/maxScoreLink';
+import { useEventFileCheck } from '@/features/events/useEventFileCheck';
 import {
   useCodecOptions, useRateOptions, useReplayModeOptions, useScaleOptions,
 } from '@/features/events/playbackOptions';
@@ -89,6 +95,8 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
   } = s;
 
   useDocumentTitle(event ? t('Event {{id}}', { id: event.id }) : t('Events'));
+  const { missingPath } = useEventFileCheck(event);
+  const [mediaOpen, setMediaOpen] = useState<'export' | 'video' | null>(null);
 
   // Wire values stay as-is; only the display label is translated.
 
@@ -279,6 +287,14 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
               {showStats ? t('Hide Stats') : t('Stats')}
             </button>
           </div>
+
+          {/* Legacy's warning when the event directory is gone (event.php:207). */}
+          {missingPath && (
+            <p role="alert" data-testid="event-missing-files" className="flex items-center gap-2 px-3 py-2 shrink-0 border-b border-border-subtle text-sm text-danger">
+              <AlertTriangle size={14} aria-hidden />
+              {t('Event was not found at {{path}}. It is unlikely that playback will be possible.', { path: missingPath })}
+            </p>
+          )}
 
           <div className="flex-1 min-h-0 overflow-auto p-3 grid grid-cols-12 gap-3 items-start">
             {/* Video Player - 8 columns */}
@@ -554,7 +570,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                         // Legacy links Max to the max-score frame (`?view=frame&fid=0`).
                         <Link
                           to="/events/$eventId/frames/$frameId"
-                          params={{ eventId: String(event.id), frameId: '0' }}
+                          params={maxScoreFrameParams(event)}
                           className="text-accent hover:text-accent-dim transition-colors"
                           title={t('Open the frame with the max score')}
                         >
@@ -776,6 +792,13 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     </div>
                   )}
 
+                  {event.path && (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-fg-muted">{t('Path')}</span>
+                      <span className="font-mono text-fg text-xs break-all text-end" data-testid="event-path">{event.path}</span>
+                    </div>
+                  )}
+
                   {event.scheme && (
                     <div className="flex items-center justify-between">
                       <span className="text-fg-muted">{t('Scheme')}</span>
@@ -912,6 +935,31 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     </a>
                   )}
 
+                  <button
+                    type="button"
+                    onClick={() => setMediaOpen('export')}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                    )}
+                  >
+                    <ExternalLink size={14} aria-hidden />
+                    {t('Export')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMediaOpen('video')}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                    )}
+                  >
+                    <FileVideo size={14} aria-hidden />
+                    {t('Generate Video')}
+                  </button>
+
                   <RequirePerm feature="events" level="Edit">
                     <button
                       onClick={(e) => s.requestDelete(e.shiftKey)}
@@ -954,6 +1002,19 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
               <span className="font-mono text-fg-muted truncate">{codecHint}</span>
             </span>
           </div>
+
+          <ExportEventsModal
+            isOpen={mediaOpen === 'export'}
+            onClose={() => setMediaOpen(null)}
+            ids={[event.id]}
+            events={[event]}
+            monitorName={() => monitor?.name ?? String(event.monitor_id)}
+          />
+          <GenerateVideoModal
+            isOpen={mediaOpen === 'video'}
+            onClose={() => setMediaOpen(null)}
+            event={event}
+          />
 
           <ConfirmDialog
             isOpen={s.deleteOpen}

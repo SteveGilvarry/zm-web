@@ -270,7 +270,7 @@ describe('ClassicEventDetailPage — stats and data', () => {
     // Legacy's rows, in its order (event.js.php eventDataStrings).
     expect(within(stats).getAllByRole('rowheader').map((th) => th.textContent)).toEqual([
       'Name', 'Monitor', 'Cause', 'Notes', 'Start Time', 'End Time', 'Duration', 'Frames', 'Score',
-      'Resolution', 'Disk Space', 'Info',
+      'Resolution', 'Disk Space', 'Path', 'Info',
     ]);
     expect(row('Name')).toHaveTextContent(/\(Id:4242\)$/);
     expect(row('Monitor')).toHaveTextContent('(1) Front Door');

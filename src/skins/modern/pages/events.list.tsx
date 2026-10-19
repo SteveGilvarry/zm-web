@@ -95,9 +95,10 @@ export default function EventsListPage() {
           <div className="relative">
             <Search className="absolute start-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-faint" aria-hidden />
             <input
-              type="text"
-              aria-label={t('Name contains')}
-              placeholder={t('Name contains…')}
+              type="search"
+              aria-label={t('Search events')}
+              placeholder={t('Search')}
+              title={t('Matches id, monitor, name, cause, notes, times, scores and more')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={clsx(field, 'ps-7 pe-2 py-1 w-44 text-sm')}
@@ -377,7 +378,7 @@ export default function EventsListPage() {
         </QueryState>
         </div>
 
-        <BulkActionBar selectedIds={selectedIds} events={events} onClear={clearSelection} />
+        <BulkActionBar selectedIds={selectedIds} events={events} onClear={clearSelection} monitorName={(id) => monitorLookup[id] ?? String(id)} />
 
         {/* Status bar: what this page is showing, and how to leave it. */}
         <div className="flex items-center gap-3 px-3 py-2 shrink-0 border-t border-border-subtle bg-surface text-xs text-fg-dim">
