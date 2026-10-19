@@ -324,6 +324,23 @@ export async function apiPost<T, R = T>(endpoint: string, data?: T): Promise<R> 
   return handleResponse<R>(response);
 }
 
+/**
+ * POST and take the body back as a file (`application/zip`, video). Errors
+ * come through `handleResponse` like every other call; a 2xx is returned as
+ * a Blob with the server's `Content-Disposition` filename when it sent one.
+ */
+export async function apiPostBlob<T>(endpoint: string, data?: T): Promise<{ blob: Blob; filename: string | null }> {
+  const response = await authedFetch(`${API_BASE}${endpoint}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: data ? JSON.stringify(data) : undefined,
+  });
+  if (!response.ok) await handleResponse<never>(response);
+  const disposition = response.headers.get('content-disposition') ?? '';
+  const m = /filename\*?=(?:UTF-8'')?"?([^";]+)"?/i.exec(disposition);
+  return { blob: await response.blob(), filename: m ? decodeURIComponent(m[1]) : null };
+}
+
 export async function apiPatch<T, R = T>(endpoint: string, data: T): Promise<R> {
   const response = await authedFetch(`${API_BASE}${endpoint}`, {
     method: 'PATCH',

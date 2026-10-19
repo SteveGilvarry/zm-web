@@ -128,8 +128,7 @@ export interface ZonePreset {
   type: string;
   units: string;
   check_method: string;
-  /* `ZonePresetResponse` does not carry the thresholds yet; legacy's
-   * `applyPreset` writes them, so they are read when a build sends them. */
+  /* The thresholds the preset applies (zm-api#188), as legacy's `applyPreset` writes them. */
   min_pixel_threshold?: number | null;
   max_pixel_threshold?: number | null;
   filter_x?: number | null;

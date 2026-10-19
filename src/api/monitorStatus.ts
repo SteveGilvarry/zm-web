@@ -17,6 +17,16 @@ export interface MonitorStatusRecord {
   analysis_fps: string;
   capture_bandwidth: number;
   updated_on: string;
+  /**
+   * Live alarm state from shared memory, `idle | prealarm | alarm | alert`
+   * (what `zmu -s` reports). Only on `GET /monitor-status/{id}` and only
+   * while zmc runs; absent otherwise (zm-api#139).
+   */
+  alarm_state?: string | null;
+  /** Alarms forced off (`zmu -n`); same availability. */
+  alarms_disabled?: boolean | null;
+  /** Analysing right now; same availability. */
+  analysing?: boolean | null;
 }
 
 export async function getMonitorStatuses(
@@ -26,6 +36,21 @@ export async function getMonitorStatuses(
     '/monitor-status',
     params as Record<string, string | number | undefined>,
   );
+}
+
+/** `AudioLevelResponse`: the live level on `AudioThreshold`'s 0-100 scale (zm-api#180). */
+export interface AudioLevel {
+  /** null while zmc isn't running. */
+  level?: number | null;
+  /** Over the threshold; null while zmc isn't running. */
+  alarm?: boolean | null;
+  threshold: number;
+  /** Whether audio detection scores (`AudioDetection`). */
+  detection: boolean;
+}
+
+export async function getAudioLevel(monitorId: number): Promise<AudioLevel> {
+  return apiGet<AudioLevel>(`/monitors/${monitorId}/audio-level`);
 }
 
 export async function getMonitorStatus(monitorId: number): Promise<MonitorStatusRecord> {

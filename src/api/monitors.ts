@@ -93,10 +93,12 @@ export async function deleteMonitor(id: number): Promise<void> {
 /**
  * Trigger / cancel a forced alarm on the monitor — the legacy "Force Alarm"
  * button. Backed by `PATCH /api/v3/monitors/{id}/alarm` with an action of
- * `on` (trigger), `off`/`cancel`, or `status`.
+ * `on` (trigger), `off`/`cancel`, or `status`. `disable_alarms` /
+ * `enable_alarms` are legacy's Disable/Enable Alarms (`zmu -n` / `-c`,
+ * zm-api#139); the state comes back on `/monitor-status/{id}`.
  */
 export interface AlarmControlRequest {
-  action: 'on' | 'off' | 'cancel' | 'status';
+  action: 'on' | 'off' | 'cancel' | 'status' | 'disable_alarms' | 'enable_alarms';
   cause?: string | null;
   score?: number | null;
   text?: string | null;

@@ -35,6 +35,8 @@ export interface UserAccountInput {
   home_view?: string;
   api_enabled?: number;
   max_bandwidth?: string | null;
+  /** Role (`Roles.Id`); null clears it. */
+  role_id?: number | null;
 }
 
 /** Create a user. Omitted permission levels default to `View` on the backend. */

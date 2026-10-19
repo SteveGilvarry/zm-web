@@ -96,6 +96,12 @@ export interface EventQueryParams {
    * second aggregate query.
    */
   totals?: boolean;
+  /**
+   * Free-text search over id, monitor, storage, name, cause, start/end time,
+   * length, frames, scores, archived, emailed, notes and disk space; any may
+   * match (legacy's `?search=`, the events page filter box).
+   */
+  q?: string;
   sort?: EventSortField;
   direction?: SortDirection;
 }
