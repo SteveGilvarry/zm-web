@@ -75,17 +75,31 @@ const MONITOR = {
 
 const server = setupServer();
 let calls: Array<{ method: string; path: string; body?: unknown }> = [];
+/** Query strings of the event-audit requests (the missing-files check). */
+let auditCalls: string[] = [];
 
 interface StubOptions {
   event?: Record<string, unknown> | null;
   eventData?: unknown[];
   neighbours?: unknown[];
   recommendedMode?: string;
+  /** Event ids the event audit reports with no file on disk. */
+  missing?: number[];
 }
 
 function stub(options: StubOptions = {}) {
-  const { event = EVENT, eventData = [], neighbours = [], recommendedMode = 'direct' } = options;
+  const { event = EVENT, eventData = [], neighbours = [], recommendedMode = 'direct', missing = [] } = options;
   server.use(
+    http.get('/api/v3/reports/event-audit', ({ request }) => {
+      auditCalls.push(new URL(request.url).search);
+      return HttpResponse.json({
+        start: '', end: '',
+        monitors: [{ monitor_id: 1, event_count: 1, first_event_id: 4242, last_event_id: 4242, missing_files: missing, zero_size: [] }],
+      });
+    }),
+    http.get('/api/v3/events/:id/videos', () => HttpResponse.json([
+      { name: '4242-video.mp4', format: 'mp4', size_bytes: 1024, recorded: true },
+    ])),
     http.get('/api/v3/events/:id/info', () => HttpResponse.json({
       duration_seconds: 30, codec: 'h264', recommended_mode: recommendedMode,
     })),
@@ -143,6 +157,7 @@ beforeEach(() => {
 afterEach(() => {
   server.resetHandlers();
   calls = [];
+  auditCalls = [];
   mockNavigate.mockReset();
   useEventPlaybackStore.getState().setShowStats(false);
   useEventPlaybackStore.setState({ zonesByMonitor: {} });
@@ -879,5 +894,56 @@ describe('ClassicEventDetailPage — tag shortcuts', () => {
     await user.click(document.body);
     await user.keyboard('{Control>}{ArrowDown}{/Control}');
     await waitFor(() => expect(attached).toEqual({ event_id: 4242, tag_id: 6 }));
+  });
+});
+
+describe('ClassicEventDetailPage — files, export and video', () => {
+  it('prints the Path row and links Max to the frame zm-api names', async () => {
+    stub({ event: { ...EVENT, path: '/var/cache/zoneminder/events/1/2026-08-21/4242', max_score_frame_id: 17 } });
+    await mountAndSettle();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Stats' }));
+    expect(await screen.findByTestId('event-path')).toHaveTextContent('/var/cache/zoneminder/events/1/2026-08-21/4242');
+    expect(screen.getByRole('link', { name: 'Max:44' })).toHaveAttribute('href', '/events/4242/frames/17');
+  });
+
+  it('warns, as legacy does, when the audit finds no files for the event', async () => {
+    stub({ event: { ...EVENT, path: '/var/cache/zoneminder/events/1/2026-08-21/4242' }, missing: [4242] });
+    await mountAndSettle();
+    expect(await screen.findByTestId('event-missing-files')).toHaveTextContent(
+      'Event was not found at /var/cache/zoneminder/events/1/2026-08-21/4242. It is unlikely that playback will be possible.',
+    );
+    // One audit request, over exactly the event's own window and monitor.
+    expect(auditCalls).toHaveLength(1);
+    const q = new URLSearchParams(auditCalls[0]);
+    expect(Object.fromEntries(q)).toEqual({ start: '2026-08-21T12:00:00Z', end: '2026-08-21T12:00:30Z', monitor_id: '1' });
+  });
+
+  it('says nothing when the files are there', async () => {
+    stub();
+    await mountAndSettle();
+    await waitFor(() => expect(auditCalls).toHaveLength(1));
+    expect(screen.queryByTestId('event-missing-files')).toBeNull();
+  });
+
+  it('Export opens the export dialog on this event', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Export Options' });
+    expect(dialog).toHaveTextContent('Export the following 1 event:');
+    expect(within(dialog).getByText('Front Door')).toBeInTheDocument();
+  });
+
+  it("Generate Video opens the video dialog with the event's files", async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    await user.click(screen.getByRole('button', { name: 'Generate Video' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Video' });
+    expect(await within(dialog).findByText('4242-video.mp4')).toBeInTheDocument();
+    // The footer's Close, as legacy's modal-footer has one beside the corner ×.
+    await user.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!);
+    expect(screen.queryByRole('dialog', { name: 'Video' })).toBeNull();
   });
 });

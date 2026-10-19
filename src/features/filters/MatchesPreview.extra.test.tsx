@@ -139,7 +139,7 @@ describe('MatchesPreview — export', () => {
     renderWithProviders(<MatchesPreview query={regex} monitors={monitors} actions={noActions} />);
 
     await user.click(screen.getByRole('button', { name: /export matches/i }));
-    expect(await screen.findByText('Export the following 1 events:')).toBeInTheDocument();
+    expect(await screen.findByText('Export the following 1 event:')).toBeInTheDocument();
     expect(pageSize).toBe('500');
   });
 });

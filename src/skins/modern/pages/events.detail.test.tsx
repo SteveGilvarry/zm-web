@@ -942,3 +942,45 @@ describe('EventDetailPage — overlay, status line and codec', () => {
     expect(useEventPlaybackStore.getState().codec).toBe('mp4hls');
   });
 });
+
+describe('EventDetailPage — files, export and video', () => {
+  const audit = (missing: number[]) => server.use(
+    http.get('/api/v3/reports/event-audit', () => HttpResponse.json({
+      start: '', end: '',
+      monitors: [{ monitor_id: 1, event_count: 1, first_event_id: 100, last_event_id: 100, missing_files: missing, zero_size: [] }],
+    })),
+  );
+
+  it('shows the path, links Max to the named frame and warns when the files are gone', async () => {
+    stubBase({ event: { ...makeEvent({ id: 100, monitor_id: 1 }), path: '/var/cache/zoneminder/events/1/100', max_score_frame_id: 12 } });
+    audit([100]);
+    const user = userEvent.setup();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(screen.getByTestId('event-path')).toHaveTextContent('/var/cache/zoneminder/events/1/100');
+    expect(await screen.findByTestId('event-missing-files')).toHaveTextContent(
+      'Event was not found at /var/cache/zoneminder/events/1/100. It is unlikely that playback will be possible.',
+    );
+    await user.click(screen.getByRole('button', { name: /^stats$/i }));
+    const panel = await screen.findByTestId('event-stats-panel');
+    expect(within(panel).getByRole('link', { name: '25' })).toHaveAttribute('href', '/events/100/frames/12');
+  });
+
+  it('opens Export and Generate Video from the actions panel', async () => {
+    stubBase();
+    audit([]);
+    server.use(http.get('/api/v3/events/:id/videos', () => HttpResponse.json([])));
+    const user = userEvent.setup();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(screen.queryByTestId('event-missing-files')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    expect(await screen.findByRole('dialog', { name: 'Export Options' })).toHaveTextContent('Export the following 1 event:');
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Generate Video' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Video' });
+    expect(await within(dialog).findByText('No Video Files Found')).toBeInTheDocument();
+  });
+});

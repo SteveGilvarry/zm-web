@@ -85,6 +85,8 @@ describe('MontageReviewPage (modern) — rendering', () => {
       'aria-pressed',
       'true',
     );
+    // History view offers the window's videos (legacy's Download Video).
+    expect(screen.getByRole('button', { name: 'Download Video' })).toBeEnabled();
   });
 
   it('asks for monitors when every chip is switched off', async () => {
@@ -323,6 +325,7 @@ describe('MontageReviewPage (modern) — range controls', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Zoom in' })).not.toBeInTheDocument();
     });
+    expect(screen.queryByRole('button', { name: 'Download Video' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument();
     expect(screen.queryByText('Timeline')).not.toBeInTheDocument();
     expect(within(rangeGroup()).getByRole('button', { name: 'Live' })).toHaveAttribute(
