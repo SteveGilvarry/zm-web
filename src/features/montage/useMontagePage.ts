@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMontageStore, type MontageStatusPosition } from '@/stores/montage';
@@ -147,15 +147,17 @@ export function useMontagePage(): MontagePageState {
   // streams fresh.
   const [streamGeneration, setStreamGeneration] = useState(0);
 
+  // Every monitor, paged (a box with more than 100 used to lose the rest).
   const { data: monitorsData } = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: 30_000,
   });
-  // react-query keeps `items` identity across unchanged refetches (structural
-  // sharing), so memoising on it gives the hydration effect a stable dep.
-  const monitors: Monitor[] = useMemo(() => monitorsData?.items ?? [], [monitorsData?.items]);
+  // react-query keeps the array identity across unchanged refetches
+  // (structural sharing), so memoising on it gives the hydration effect a
+  // stable dep.
+  const monitors: Monitor[] = useMemo(() => monitorsData ?? [], [monitorsData]);
   const enabledMonitors = useMemo(
     () => monitors.filter((m) => m.capturing !== 'None'),
     [monitors],
@@ -328,8 +330,8 @@ export function useMontageWallPage(): MontageWallPageState {
   const { isAuthenticated } = useAuthStore();
   useMontageGroupParam();
   const { data: monitorsData, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: 30_000,
   });
@@ -337,10 +339,7 @@ export function useMontageWallPage(): MontageWallPageState {
   // identity on each render even when the rows are unchanged, so wrap in
   // useMemo keyed on the array reference to keep downstream memoisation
   // useful.
-  const monitors: Monitor[] = useMemo(
-    () => monitorsData?.items ?? [],
-    [monitorsData?.items],
-  );
+  const monitors: Monitor[] = useMemo(() => monitorsData ?? [], [monitorsData]);
   // Legacy ZM only shows capturing monitors on the wall.
   const capturingMonitors = useMemo(
     () => monitors.filter((m) => m.capturing !== 'None'),
