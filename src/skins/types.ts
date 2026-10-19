@@ -53,7 +53,12 @@ export type PageKey =
   | 'settings.state'
   | 'settings.ptzControls'
   | 'settings.apiTokens'
-  | 'settings.ai';
+  | 'settings.ai'
+  | 'settings.roles'
+  | 'settings.roles.edit'
+  | 'settings.encoderTemplates'
+  | 'settings.menu'
+  | 'settings.privacy';
 
 /** Props a route passes into a page. Pages without params take `{}`. */
 export interface PagePropsMap {
@@ -87,6 +92,16 @@ export interface PagePropsMap {
   'settings.ptzControls': Record<never, never>;
   'settings.apiTokens': Record<never, never>;
   'settings.ai': { section: AiSection };
+  'settings.roles': Record<never, never>;
+  /** `roleId` 0 is legacy's `rid=0`: a new role. */
+  'settings.roles.edit': { roleId: number };
+  'settings.encoderTemplates': Record<never, never>;
+  'settings.menu': Record<never, never>;
+  /**
+   * `gate`: shown over whatever page the operator opened, while
+   * `ZM_SHOW_PRIVACY` is on. `page`: opened from the Options rail.
+   */
+  'settings.privacy': { variant: 'gate' | 'page' };
 }
 
 export type PageComponent<K extends PageKey> = ComponentType<PagePropsMap[K]>;

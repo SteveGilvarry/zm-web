@@ -6,7 +6,7 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import type { User } from '@/types';
-import { editPatch, useAccountForm } from './useAccountForm';
+import { editPatch, parseRoleId, useAccountForm } from './useAccountForm';
 
 const server = setupServer();
 beforeAll(() => {
@@ -75,10 +75,30 @@ describe('useAccountForm — edit', () => {
   it('editPatch: blank password is "keep", cleared language goes over as null', () => {
     const form = {
       username: 'ops', password: '', confirmPassword: '', name: 'Ops', email: 'ops@example.com', phone: '555',
-      enabled: 1, language: '', homeView: 'console', apiEnabled: 1,
+      enabled: 1, language: '', homeView: 'console', apiEnabled: 1, roleId: '',
     };
     expect(editPatch({ ...existing, language: 'fr_fr', home_view: 'console' }, form, false)).toEqual({ language: null });
     expect(editPatch({ ...existing, home_view: 'console' }, { ...form, phone: '' }, false)).toEqual({ phone: '' });
+  });
+
+  it('editPatch: role picked, changed and cleared (legacy NoRole is null)', () => {
+    const form = {
+      username: 'ops', password: '', confirmPassword: '', name: 'Ops', email: 'ops@example.com', phone: '555',
+      enabled: 1, language: '', homeView: 'console', apiEnabled: 1, roleId: '3',
+    };
+    const base = { ...existing, language: '', home_view: 'console', phone: '555' };
+    expect(editPatch({ ...base, role_id: null }, form, false)).toEqual({ role_id: 3 });
+    expect(editPatch({ ...base, role_id: 3 }, form, false)).toEqual({});
+    expect(editPatch({ ...base, role_id: 3 }, { ...form, roleId: '' }, false)).toEqual({ role_id: null });
+    // Self-edit never sends the role.
+    expect(editPatch({ ...base, role_id: null }, form, true)).toEqual({});
+  });
+
+  it('parseRoleId: only a positive integer is a role', () => {
+    expect(parseRoleId('')).toBeNull();
+    expect(parseRoleId('0')).toBeNull();
+    expect(parseRoleId('x')).toBeNull();
+    expect(parseRoleId('12')).toBe(12);
   });
 
   it('only the username is fixed on edit; every field is free on create', () => {
