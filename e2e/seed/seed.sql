@@ -470,4 +470,8 @@ INSERT INTO Config (Id, Name, Value, Type, DefaultValue, Hint, Pattern, Format, 
   (9004, 'ZM_E2E_WEB_EVENT_DISK_SPACE', '1', 'boolean', '0', 'yes|no', NULL, NULL, 'Show disk space used by each event', 'e2e seed row; mirrors ZM_WEB_EVENT_DISK_SPACE', 'web', 0, 0, 0, NULL),
   (9005, 'ZM_E2E_DIR_EVENTS', '/var/cache/zoneminder/events-e2e', 'directory', 'events', 'relative/path/to/events', NULL, NULL, 'Directory where events are stored', 'e2e seed row; mirrors ZM_DIR_EVENTS', 'paths', 0, 0, 1, NULL);
 
+-- The stock schema ships ZM_SHOW_PRIVACY=1, which puts the privacy statement over
+-- every page for a System Edit user until it is answered. The suite answers nothing.
+UPDATE Config SET Value = '0' WHERE Name = 'ZM_SHOW_PRIVACY';
+
 SET FOREIGN_KEY_CHECKS = 1;

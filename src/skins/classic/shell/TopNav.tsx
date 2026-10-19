@@ -51,8 +51,10 @@ function useNavItems(): NavItem[] {
   ];
   if (!entries || entries.length === 0) return defaults;
   const iconByRoute = new Map(defaults.map((d) => [d.to, d.icon]));
+  // A row needs somewhere to go: one of our routes or an http(s) link. A
+  // custom key with no link (legacy's `?view=<key>`) has no page here.
   return entries
-    .filter((e) => e.link != null)
+    .filter((e) => e.link != null && (e.external || e.link.startsWith('/')))
     .map((e) => ({
       icon: iconByRoute.get(e.link!) ?? <Link2 size={s} />,
       label: e.label,
@@ -110,7 +112,7 @@ export function ClassicTopNav() {
         <nav aria-label={t('Main')} className="flex-1">
           <ul className="flex items-center gap-1 flex-wrap">
             {items.map((item) => (
-              <li key={item.to}>
+              <li key={`${item.to}:${item.label}`}>
                 {item.external ? (
                   <a
                     href={item.to}

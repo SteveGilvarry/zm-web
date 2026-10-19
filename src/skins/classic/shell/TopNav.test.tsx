@@ -291,6 +291,7 @@ describe('ClassicTopNav — the operator\'s menu (Options → Menu)', () => {
       { id: 1, menu_key: 'Console', enabled: true, label: 'Home', sort_order: 20, icon: null, icon_type: 'material', link: null },
       { id: 9, menu_key: 'Wiki', enabled: true, label: null, sort_order: 30, icon: null, icon_type: 'none', link: 'https://wiki.zoneminder.com' },
       { id: 12, menu_key: 'Map', enabled: true, label: null, sort_order: 40, icon: null, icon_type: 'material', link: null },
+      { id: 13, menu_key: 'Intercom', enabled: true, label: null, sort_order: 50, icon: null, icon_type: 'none', link: null },
     ])));
     renderWithProviders(<ClassicTopNav />);
     const nav = screen.getByRole('navigation', { name: 'Main' });
@@ -301,8 +302,10 @@ describe('ClassicTopNav — the operator\'s menu (Options → Menu)', () => {
     const wiki = within(nav).getByRole('link', { name: 'Wiki' });
     expect(wiki).toHaveAttribute('href', 'https://wiki.zoneminder.com');
     expect(wiki).toHaveAttribute('target', '_blank');
-    // Groups and the rest are hidden rows; Map has no page here.
+    // Groups and the rest are hidden rows; Map has no page here; a custom
+    // key with no link would be legacy's `?view=Intercom`, which we cannot serve.
     expect(within(nav).queryByRole('link', { name: 'Groups' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: 'Intercom' })).toBeNull();
   });
 });
 

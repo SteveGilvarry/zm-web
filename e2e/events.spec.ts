@@ -158,8 +158,9 @@ test.describe('Events list', () => {
 
       // Seeded event names are "Event-<id>", so the id is a unique substring.
       const needle = `Event-${SEED.events.last}`;
-      const pending = eventsList(page, (q) => q.get('name') === needle);
-      await page.getByLabel('Name contains', { exact: true }).fill(needle);
+      // The toolbar box is free-text search now (`q`, zm-api#136), not a Name term.
+      const pending = eventsList(page, (q) => q.get('q') === needle);
+      await page.getByLabel('Search events', { exact: true }).fill(needle);
       const resp = await pending;
 
       expect(await total(resp)).toBe(1);
