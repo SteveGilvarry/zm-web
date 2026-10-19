@@ -518,3 +518,13 @@ Gates after the merges: 4,625 unit tests across 345 files, lint clean (`.claude/
 - Three options-branch commits (`a60175e`..`5a0ed25`/`0cdd578`) leave tests red in between; a bisect across them will trip.
 
 **Re-measure before claiming a number.** The table's "after" column is each agent's own estimate. The next audit should rerun the 2026-10-18 rubric against this tree; until then the measured figures remain 66 / 74.
+
+### 2026-10-19 — wave 2, first cut
+
+Started from the user's note that the classic console filters "look pretty bad". They did: native `<select multiple size=3>` list boxes where legacy renders Chosen pickers. `src/skins/classic/components/Chosen.tsx` now reproduces Chosen's multi mode (chips, search field, "All" placeholder, drop-down, ZM's corner clear button; sizes and colours from `chosen.css` plus `skin.css`'s overrides) and every place legacy uses it moved over: the monitor filter row (console, montage, cycle, watch, review), the events list's Group/Monitor/Notes/Tags terms, the Log page's Level, the monitor editor's Groups and Montage Review's Monitor/Tags/Notes terms. Also in this cut: both montage hooks fetch monitors through `getAllMonitors()` (they asked for one page of 100), and the zones page buttons take legacy's blue.
+
+Found only in a real browser: a click on a drop option was followed by a second click on the new chip's remove button and the pick vanished. The filter row wrapped each control in a `<label>`, and label activation re-targets the click; scripted clicks never showed it. The label is a sibling now, as legacy's `.term` markup has it, and a test asserts no control sits inside a label. The picker's search field also inherited the global unlayered `:focus-visible` ring, which a Tailwind utility cannot cancel; a plain `.chosen-search` rule in `index.css` does.
+
+Gates: 4,644 unit tests across 346 files, lint, `tsc`, `i18n:check`, bundle 190.5 kB gz of 200. Browser-checked on the box: console, montage and events list pickers. Not checked in a browser: logs Level, the editor's Groups box, Montage Review. The two e2e specs that drove the old selects (`events.spec.ts`, `logs.spec.ts`) were edited but the seeded suite was not run.
+
+**Still open from the wave-1 list:** logout modal; F8 blank first term; modern Deleted status chip; cycle Stream/Stills; `fid` on the event detail route; Montage Review's doubled Monitor select (R2); the rubric re-run.
