@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { ChevronDown, ChevronRight, Lock, Loader2, RotateCcw, Save } from 'lucide-react';
 import { TypedConfigInput } from '@/features/settings/TypedConfigInput';
 import { configDefaultValue, formatConfigValue, isAtDefault } from '@/features/settings/configFormat';
+import { configFileValue, isFileSet, type ConfigLock } from '@/features/settings/configRequires';
 import type { ZmConfig } from '@/types';
 
 export function ConfigRow({
@@ -18,6 +19,7 @@ export function ConfigRow({
   onReset,
   isSaving,
   dirtyValue,
+  lock,
 }: {
   config: ZmConfig;
   isEditing: boolean;
@@ -33,12 +35,21 @@ export function ConfigRow({
   isSaving: boolean;
   /** A value typed but not yet written (see "Save all"); shown in place of the stored one. */
   dirtyValue?: string;
+  /**
+   * Why the row cannot be changed (`configLock`). Omitted, the row's own
+   * `readonly` flag decides, as before.
+   */
+  lock?: ConfigLock;
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
-  const isReadonly = config.readonly === 1;
+  const effectiveLock: ConfigLock = lock !== undefined ? lock : config.readonly === 1 ? 'readonly' : null;
+  const isReadonly = effectiveLock !== null;
   // `private` rows (ZM_AUTH_HASH_SECRET, reCAPTCHA keys) and password-typed rows never render their value.
   const isSecret = config.private === 1 || config.type === 'password';
+  // Set in zm.conf or conf.d: shown with the value in effect, never editable.
+  const fileSet = isFileSet(config);
+  const shownConfig = fileSet ? { ...config, value: configFileValue(config.value, config.type) } : config;
   const canReset = !!onReset && !isReadonly && !isAtDefault(config);
   const defaultValue = configDefaultValue(config);
 
@@ -63,6 +74,18 @@ export function ConfigRow({
           </div>
           {config.prompt && (
             <p className="ps-5 mt-0.5 text-xs leading-snug text-fg-dim">{config.prompt}</p>
+          )}
+          {effectiveLock === 'file' && (
+            <p className="ps-5 mt-0.5 text-xs leading-snug text-fg-muted" data-testid="config-lock-note">
+              {isSecret
+                ? t('Set by the system owner in {{file}}. The value is not shown.', { file: config.source_file ?? '' })
+                : t('Set by the system owner in {{file}}.', { file: config.source_file ?? '' })}
+            </p>
+          )}
+          {effectiveLock === 'requires' && (
+            <p className="ps-5 mt-0.5 text-xs leading-snug text-fg-muted" data-testid="config-lock-note">
+              {t('Needs {{requires}}', { requires: (config.requires ?? '').split(';').filter((c) => c.trim()).join(', ') })}
+            </p>
           )}
         </td>
         <td className="px-4 py-2 align-top">
@@ -100,12 +123,12 @@ export function ConfigRow({
                     ? 'text-fg-dim'
                     : 'text-fg-muted cursor-pointer hover:text-fg transition-colors'
                 )}
-                title={isSecret ? undefined : (dirtyValue ?? config.value)}
+                title={isSecret ? undefined : (dirtyValue ?? shownConfig.value)}
               >
                 {dirtyValue !== undefined
                   ? (isSecret ? '••••••••' : formatConfigValue({ ...config, value: dirtyValue }))
-                  : config.value
-                    ? (isSecret ? '••••••••' : formatConfigValue(config))
+                  : shownConfig.value
+                    ? (isSecret ? '••••••••' : formatConfigValue(shownConfig))
                     : <span className="italic text-fg-dim">{t('empty')}</span>}
               </span>
               {/* Unsaved is state: this row differs from what the server holds. */}

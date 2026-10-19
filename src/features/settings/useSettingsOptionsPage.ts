@@ -20,6 +20,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useTranslation } from 'react-i18next';
 import { useToast } from '@/components/common/toastStore';
 import { configDefaultValue, configPatternError } from './configFormat';
+import { configLock, effectiveConfigValue, type ConfigLock } from './configRequires';
 import { DISPLAY_TAB, buildOptionsTabs, visibleCategories } from './optionsTabs';
 import type { ZmConfig } from '@/types';
 
@@ -292,6 +293,8 @@ export function useSettingsOptionsPage({ defaultCategory }: { defaultCategory?: 
   const editError = editingRow ? configPatternError(editingRow, editValue) : null;
   const saveEdit = (name: string) => {
     if (editError) return;
+    const row = allConfigs.find((c) => c.name === name);
+    if (row && writeBlocked(row)) return;
     configMutation.mutate({ name, value: editValue });
   };
   /** Keep the typed value as dirty without writing it. */
@@ -318,6 +321,37 @@ export function useSettingsOptionsPage({ defaultCategory }: { defaultCategory?: 
       return next;
     });
   };
+  /**
+   * The value each option has as the operator sees it right now: the row
+   * open in the editor, else its draft, else what is in effect (a conf
+   * file's value over the database's). Requires reads these, so dependents
+   * lock and unlock live as the controlling option is toggled, as legacy's
+   * page script does.
+   */
+  const storedValues = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const c of allConfigs) m.set(c.name, effectiveConfigValue(c));
+    return m;
+  }, [allConfigs]);
+  const valueOf = (name: string): string | undefined => {
+    if (editingRow && editingRow.name === name) return editValue;
+    return dirty[name] ?? storedValues.get(name);
+  };
+  /**
+   * Why a row cannot be changed (see `configLock`), or null. `canEdit` is
+   * the page's System=Edit check.
+   */
+  const lockOf = (config: ZmConfig, canEdit: boolean): ConfigLock => configLock(config, canEdit, valueOf);
+  /**
+   * Set in a conf file, or its requirement unmet: such a row is never
+   * written, even by Save all. (Permission and System rows are the pages'
+   * call, as they were before.)
+   */
+  const writeBlocked = (config: ZmConfig) => {
+    const lock = lockOf(config, true);
+    return lock === 'file' || lock === 'requires';
+  };
+
   // Only the tab on screen saves; with no tab selected ("All") every row does.
   const inTab = (row: ZmConfig) => !selectedCategory || row.category === selectedCategory;
   const dirtyEntries = Object.entries(dirty).filter(([name, value]) => {
@@ -338,6 +372,12 @@ export function useSettingsOptionsPage({ defaultCategory }: { defaultCategory?: 
     // Include the row currently open in the editor.
     const entries = new Map(dirtyEntries);
     if (editingRow && editingCounts) entries.set(editingRow.name, editValue);
+    // A disabled input is not part of a submitted form, so legacy drops the
+    // edit to a row its requirement has just locked. Same here.
+    for (const name of [...entries.keys()]) {
+      const row = allConfigs.find((c) => c.name === name);
+      if (!row || writeBlocked(row)) entries.delete(name);
+    }
     if (entries.size === 0) return;
     saveAllMutation.mutate([...entries]);
   };
@@ -360,7 +400,7 @@ export function useSettingsOptionsPage({ defaultCategory }: { defaultCategory?: 
   /** Write `default_value` back (legacy "reset" per row); no-op without one. */
   const resetToDefault = (config: ZmConfig) => {
     const value = configDefaultValue(config);
-    if (value === null) return;
+    if (value === null || writeBlocked(config)) return;
     setEditingConfig(null);
     configMutation.mutate({ name: config.name, value });
   };
@@ -419,6 +459,8 @@ export function useSettingsOptionsPage({ defaultCategory }: { defaultCategory?: 
     isConfigSaving: configMutation.isPending,
     configSaveError: configMutation.error?.message ?? null,
     savingConfig: configMutation.isPending ? configMutation.variables?.name ?? null : null,
+    // Requires / conf-file locks
+    lockOf,
     // save all dirty rows
     dirty,
     dirtyCount: pendingCount,
