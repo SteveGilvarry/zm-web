@@ -100,6 +100,10 @@ export default function ClassicSettingsPtzControlsPage() {
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Focus')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Iris')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can White Bal.')}</th>
+                          {/* `_options_controlcaps.php`: light and audio columns since 1.39 (zm-api#177). */}
+                          <th className={clsx(classicTh, 'text-center')}>{t('Can Light')}</th>
+                          <th className={clsx(classicTh, 'text-center')}>{t('Can Indicator Light')}</th>
+                          <th className={clsx(classicTh, 'text-center')}>{t('Can Play Audio')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Has Presets')}</th>
                           <th className={clsx(classicTh, 'text-end')}>{t('Monitors')}</th>
                         </tr>
@@ -129,6 +133,9 @@ export default function ClassicSettingsPtzControlsPage() {
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_focus} /></td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_iris} /></td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_white} /></td>
+                            <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_light} /></td>
+                            <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_indicator_light} /></td>
+                            <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_audio_play} /></td>
                             <td className={clsx(classicTd, 'text-center font-mono text-xs')}>{presetsCell(c)}</td>
                             <td
                               className={clsx(classicTd, 'text-end font-mono text-xs tabular-nums')}

@@ -117,5 +117,7 @@ describe('summarizeCapabilities', () => {
   it('emits just "Pan" when can_pan but not can_tilt', () => {
     const onePan: Control = { ...sample, can_tilt: 0, can_zoom: 0, can_focus: 0, has_presets: 0 };
     expect(summarizeCapabilities(onePan)).toBe('Pan');
+    const lit: Control = { ...onePan, can_pan: 0, can_light: 1, can_indicator_light: 1, can_audio_play: 1 };
+    expect(summarizeCapabilities(lit)).toBe('Light · Indicator light · Audio');
   });
 });

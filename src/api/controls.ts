@@ -174,6 +174,10 @@ export function summarizeCapabilities(c: Control): string {
   else if (c.can_tilt) tags.push(t('Tilt'));
   if (c.can_zoom) tags.push(t('Zoom'));
   if (c.can_focus) tags.push(t('Focus'));
+  // Light and audio (ZoneMinder 1.39, zm-api#177).
+  if (c.can_light) tags.push(t('Light'));
+  if (c.can_indicator_light) tags.push(t('Indicator light'));
+  if (c.can_audio_play) tags.push(t('Audio'));
   if (c.has_presets) tags.push(t('Presets ({{count}})', { count: c.num_presets }));
   return tags.length ? tags.join(' · ') : t('View only');
 }

@@ -153,7 +153,7 @@ describe('ClassicSettingsPtzControlsPage', () => {
     expect(within(row).getByText('onvif')).toBeInTheDocument();
     // Can Move / Zoom / Focus yes; Iris / White no.
     expect(within(row).getAllByText('Yes')).toHaveLength(3);   // move, zoom, focus
-    expect(within(row).getAllByText('No')).toHaveLength(2);    // iris, white
+    expect(within(row).getAllByText('No')).toHaveLength(5);    // iris, white, light, indicator light, audio
     // has_home_preset + 64 presets → legacy prints "H64".
     expect(within(row).getByText('H64')).toBeInTheDocument();
     // Two live monitors reference it; the soft-deleted one does not count.
