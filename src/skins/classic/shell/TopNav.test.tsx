@@ -106,11 +106,59 @@ describe('ClassicTopNav', () => {
     expect(within(nav).getByRole('link', { name: 'Audit Events Report' })).toHaveAttribute('href', '/audit');
   });
 
-  it('shows the signed-in user and a log-out verb', () => {
+  it('shows the signed-in user as the account link that opens the logout modal', async () => {
     signIn(undefined, 'operator');
     renderWithProviders(<ClassicTopNav />);
-    expect(screen.getByText('operator')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
+    // No stand-alone log-out verb with builtin auth: legacy logs out from the modal.
+    expect(screen.queryByRole('button', { name: 'Log out' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'operator' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText("Current login is 'operator'")).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Logout' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+  });
+
+  it('lists the other logged-in PHP sessions for a System viewer, decoded from the Sessions rows', async () => {
+    signIn(undefined, 'admin');
+    server.use(http.get('/api/v3/sessions', () => HttpResponse.json({
+      items: [
+        { id: 'a', access: Math.floor(Date.now() / 1000) - 30, data: 'remoteAddr|s:12:"192.168.0.10";username|s:3:"bob";user|a:1:{s:2:"Id";i:7;}' },
+        { id: 'b', access: Math.floor(Date.now() / 1000) - 10, data: 'username|s:3:"eve";last_time|i:1;' },
+      ],
+      total: 2, per_page: 100, current_page: 1, last_page: 1,
+    })));
+    renderWithProviders(<ClassicTopNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Other logged in users:')).toBeInTheDocument();
+    const bob = await within(dialog).findByRole('link', { name: 'bob' });
+    // The router is stubbed here; the route's `uid` search param is validated in its own test.
+    expect(bob).toHaveAttribute('href', '/settings/users');
+    expect(within(dialog).getByText('192.168.0.10')).toBeInTheDocument();
+    // A session with `last_time` is dead and left out.
+    expect(within(dialog).queryByText('eve')).toBeNull();
+  });
+
+  it('hides the sessions table and the Config button when neither applies', async () => {
+    signIn({ system: 'None' } as Partial<UserPerms>, 'viewer');
+    renderWithProviders(<ClassicTopNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'viewer' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText('Other logged in users:')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Config' })).toBeNull();
+  });
+
+  it('offers Config to the own user page when ZM_USER_SELF_EDIT is on', async () => {
+    signIn(undefined, 'admin');
+    server.use(http.get('/api/v3/configs', () => HttpResponse.json({
+      items: [{ id: 1, name: 'ZM_USER_SELF_EDIT', value: '1', type: 'boolean', category: 'system', readonly: 0, private: 0, system: 0, source: 'db' }],
+      total: 1, per_page: 1000, current_page: 1, last_page: 1,
+    })));
+    renderWithProviders(<ClassicTopNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Config' }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/settings/users' })));
   });
 
   it('omits the user chip when the token carries no name', () => {
@@ -213,7 +261,8 @@ describe('ClassicTopNav', () => {
   it('calls the backend, clears the session and routes to /login on log out', async () => {
     signIn();
     renderWithProviders(<ClassicTopNav />);
-    await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Logout' }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' }));
     expect(logoutCalls).toBe(1);
@@ -224,7 +273,8 @@ describe('ClassicTopNav', () => {
     signIn();
     server.use(http.get('/api/v3/auth/logout', () => HttpResponse.error()));
     renderWithProviders(<ClassicTopNav />);
-    await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Logout' }));
 
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(false));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' });

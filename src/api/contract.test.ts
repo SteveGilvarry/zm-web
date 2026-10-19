@@ -322,6 +322,9 @@ const CALLS: Record<string, Record<string, Call>> = {
     deleteReport: { args: [1] },
     getEventAudit: { args: [] },
   },
+  sessions: {
+    listSessions: { args: [] },
+  },
   servers: {
     listServers: { args: [] },
     createServer: {
