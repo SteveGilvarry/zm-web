@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
 import { planRootNavigation } from '@/features/nav/rootNavigation';
 import { RootComponent } from '@/features/nav/routeComponents';
+import { PrivacyGate } from '@/features/privacy/PrivacyGate';
 
 export const Route = createRootRoute({
   /**
@@ -24,6 +25,15 @@ export const Route = createRootRoute({
     if (plan.skin) useUiStore.getState().setSkin(plan.skin);
     if (plan.href) throw redirect({ href: plan.href, replace: true });
   },
-  component: RootComponent,
+  // The privacy statement sits beside every page, in both skins, until a
+  // System Edit user answers it (legacy `index.php:274`).
+  component: function Root() {
+    return (
+      <>
+        <RootComponent />
+        <PrivacyGate />
+      </>
+    );
+  },
 });
 

@@ -49,10 +49,18 @@ export interface AccountFormData {
   language: string;
   homeView: string;
   apiEnabled: number;
+  /** `Roles.Id` as select value; '' is legacy's "NoRole". */
+  roleId: string;
 }
 
 /** What an admin may edit on any account. Self-edit (below) is a subset. */
 export type AccountField = Exclude<keyof AccountFormData, 'confirmPassword'>;
+
+/** '' (no role) → null; anything else → the role id. */
+export function parseRoleId(value: string): number | null {
+  const n = Number(value);
+  return value !== '' && Number.isInteger(n) && n > 0 ? n : null;
+}
 
 /** `ZM_USER_SELF_EDIT` (legacy `actions/user.php`): password, language, home view only. */
 const SELF_EDIT_FIELDS: ReadonlySet<AccountField> = new Set(['password', 'language', 'homeView']);
@@ -83,6 +91,8 @@ export function editPatch(editing: User, form: AccountFormData, selfEdit: boolea
   if ((editing.phone ?? '') !== form.phone) patch.phone = form.phone;
   if (editing.enabled !== form.enabled) patch.enabled = form.enabled;
   if ((editing.api_enabled ?? 1) !== form.apiEnabled) patch.api_enabled = form.apiEnabled;
+  const roleId = parseRoleId(form.roleId);
+  if ((editing.role_id ?? null) !== roleId) patch.role_id = roleId;
   return patch;
 }
 
@@ -106,6 +116,7 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
     language: editing?.language ?? '',
     homeView: editing?.home_view || 'console',
     apiEnabled: editing?.api_enabled ?? 1,
+    roleId: editing?.role_id != null ? String(editing.role_id) : '',
   });
   const [error, setError] = useState<string | null>(null);
   // `ZM_PASSWORD_MIN_LENGTH` (1.39.41, `b631d2efc`): legacy puts it on the
@@ -184,6 +195,7 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
         language: formData.language || undefined,
         home_view: formData.homeView,
         api_enabled: formData.apiEnabled,
+        ...(parseRoleId(formData.roleId) != null ? { role_id: parseRoleId(formData.roleId) } : {}),
       });
     }
   };

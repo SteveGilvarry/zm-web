@@ -34,6 +34,7 @@ const PLURALS = {
   using: 'using',
   marked: 'marked',
   character: 'characters',
+  role: 'roles',
 };
 const SINGULARS = Object.fromEntries(Object.entries(PLURALS).map(([s, p]) => [p, s]));
 

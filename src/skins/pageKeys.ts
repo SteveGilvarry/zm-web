@@ -34,4 +34,9 @@ export const ALL_PAGE_KEYS: readonly PageKey[] = [
   'settings.ptzControls',
   'settings.apiTokens',
   'settings.ai',
+  'settings.roles',
+  'settings.roles.edit',
+  'settings.encoderTemplates',
+  'settings.menu',
+  'settings.privacy',
 ];

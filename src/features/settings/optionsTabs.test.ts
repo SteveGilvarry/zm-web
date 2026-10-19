@@ -28,8 +28,9 @@ describe('buildOptionsTabs', () => {
     const keys = buildOptionsTabs(DEV_BOX, true).map((t) => t.key);
     expect(keys).toEqual([
       'display', 'system', 'auth', 'config', 'api', 'servers', 'storage', 'web', 'images',
-      'logging', 'network', 'mail', 'upload', 'x10', 'users', 'groups', 'control', 'mqtt', 'telemetry',
-      'version', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'logging', 'network', 'mail', 'upload', 'x10', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'mqtt', 'telemetry', 'version', 'menu',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 

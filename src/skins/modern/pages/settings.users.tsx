@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
@@ -125,6 +126,7 @@ export default function SettingsUsersPage() {
                         <th className={th}>{t('Username')}</th>
                         <th className={th}>{t('Name')}</th>
                         <th className={th}>{t('Email')}</th>
+                        <th className={th}>{t('Role')}</th>
                         <th className={th}>{t('Enabled')}</th>
                         {permCols.map(([key, label]) => (
                           <th key={key} className={clsx(th, 'px-3')}>{label}</th>
@@ -165,6 +167,17 @@ export default function SettingsUsersPage() {
                             </td>
                             <td className="px-4 py-2 text-fg-muted">{user.name}</td>
                             <td className="px-4 py-2 font-mono text-xs text-fg-muted">{user.email}</td>
+                            <td className="px-4 py-2 text-fg-muted">
+                              {u.roleName(user) && (u.canEdit ? (
+                                <Link
+                                  to="/settings/roles/$roleId"
+                                  params={{ roleId: String(user.role_id) }}
+                                  className="hover:text-accent hover:underline"
+                                >
+                                  {u.roleName(user)}
+                                </Link>
+                              ) : u.roleName(user))}
+                            </td>
                             <td className="px-4 py-2">
                               <button
                                 onClick={() => u.toggleEnabled(user)}
@@ -272,6 +285,7 @@ export default function SettingsUsersPage() {
           mode={u.editorMode}
           onClose={u.closeEditor}
           onChangePassword={u.editingSelf ? u.openPasswordChange : undefined}
+          onEditRole={u.openRole}
         />
       )}
       {u.editorLoading && (

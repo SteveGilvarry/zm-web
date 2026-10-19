@@ -34,7 +34,11 @@ describe('optionsTabLabel — every legacy caption', () => {
       telemetry: 'Telemetry',
       version: 'Versions',
       users: 'Users',
+      roles: 'Roles',
       groups: 'Groups',
+      encoderTemplates: 'Encoder Templates',
+      privacy: 'Privacy',
+      menu: 'Menu',
       ai_datasets: 'AI Datasets',
       ai_models: 'AI Models',
       ai_classes: 'AI Classes',
@@ -77,8 +81,8 @@ describe('buildOptionsTabs — edges', () => {
     const tabs = buildOptionsTabs([], false);
     expect(tabs.every((tab) => tab.kind === 'page')).toBe(true);
     expect(tabs.map((tab) => tab.key)).toEqual([
-      'display', 'api', 'servers', 'storage', 'users', 'groups', 'control',
-      'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'display', 'api', 'servers', 'storage', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'menu', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 
@@ -87,8 +91,8 @@ describe('buildOptionsTabs — edges', () => {
     // extras land at index 0 — ahead of every page tab.
     const tabs = buildOptionsTabs([{ name: 'onvif', count: 1 }, { name: 'ai', count: 2 }], false);
     expect(tabs.map((tab) => tab.key)).toEqual([
-      'onvif', 'ai', 'display', 'api', 'servers', 'storage', 'users', 'groups', 'control',
-      'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'onvif', 'ai', 'display', 'api', 'servers', 'storage', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'menu', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
     expect(tabs[0]).toEqual({ kind: 'category', key: 'onvif', category: 'onvif' });
   });

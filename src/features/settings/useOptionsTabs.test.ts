@@ -56,8 +56,8 @@ describe('useOptionsTabs', () => {
     await waitFor(() => expect(result.current.some((tab) => tab.kind === 'category')).toBe(true));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'system', 'api', 'servers', 'storage', 'web', 'users', 'groups', 'control',
-      'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'display', 'system', 'api', 'servers', 'storage', 'web', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'menu', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
     expect(result.current.find((tab) => tab.key === 'system'))
       .toEqual({ kind: 'category', key: 'system', category: 'system' });
@@ -93,8 +93,8 @@ describe('useOptionsTabs', () => {
     await new Promise((r) => setTimeout(r, 30));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'api', 'servers', 'storage', 'users', 'groups', 'control',
-      'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'display', 'api', 'servers', 'storage', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'menu', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 

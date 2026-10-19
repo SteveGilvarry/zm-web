@@ -43,11 +43,14 @@ export type OptionsTab =
 
 /**
  * Legacy tab order (`getOptionsHTML` in 1.39.41
- * `skins/classic/includes/functions.php`), bandwidth tabs removed, and
- * Roles / Encoder Templates / Privacy / Menu left out until zm-api serves
- * them (#143, #144). Category tabs only render when the backend actually
- * has rows in that category, and unknown categories are appended before
- * the AI pages so nothing the backend serves becomes unreachable.
+ * `skins/classic/includes/functions.php`), bandwidth tabs removed.
+ * Category tabs only render when the backend actually has rows in that
+ * category, and unknown categories are appended before the AI pages so
+ * nothing the backend serves becomes unreachable.
+ *
+ * Roles, Encoder Templates, Privacy and Menu are pages: legacy renders
+ * them from `_options_roles.php`, `_options_encoderTemplates.php`,
+ * `privacy.php` (the tab redirects there) and `_options_menu.php`.
  *
  * `api` is a page, not a config category: legacy's API tab is
  * `_options_api.php`, the per-user token table. The AI tabs are pages for
@@ -73,11 +76,15 @@ const LEGACY_ORDER: ReadonlyArray<
   { key: 'upload', category: 'upload' },
   { key: 'x10', category: 'x10' },
   { key: 'users', to: '/settings/users' },
+  { key: 'roles', to: '/settings/roles' },
   { key: 'groups', to: '/groups' },
   { key: 'control', to: '/settings/ptz-controls' },
+  { key: 'encoderTemplates', to: '/settings/encoder-templates' },
+  { key: 'privacy', to: '/settings/privacy' },
   { key: 'mqtt', category: 'mqtt' },
   { key: 'telemetry', category: 'telemetry' },
   { key: 'version', category: 'version' },
+  { key: 'menu', to: '/settings/menu' },
   { key: 'ai_datasets', to: '/settings/ai/datasets' },
   { key: 'ai_models', to: '/settings/ai/models' },
   { key: 'ai_classes', to: '/settings/ai/classes' },
@@ -151,6 +158,10 @@ export function optionsTabLabel(t: TFunction, key: string): string {
     case 'version': return t('Versions');
     case 'users': return t('Users');
     case 'groups': return t('Groups');
+    case 'roles': return t('Roles');
+    case 'encoderTemplates': return t('Encoder Templates');
+    case 'privacy': return t('Privacy');
+    case 'menu': return t('Menu');
     case 'ai_datasets': return t('AI Datasets');
     case 'ai_models': return t('AI Models');
     case 'ai_classes': return t('AI Classes');
