@@ -93,9 +93,15 @@ describe('mapLegacyUrl', () => {
     expect(map('?view=options&tab=servers')).toEqual({ to: '/settings/servers', search: {} });
     expect(map('?view=options&tab=storage')).toEqual({ to: '/settings/storage', search: {} });
     expect(map('?view=options&tab=control')).toEqual({ to: '/settings/ptz-controls', search: {} });
-    expect(map('?view=options&tab=privacy')).toEqual({ to: '/settings', search: { tab: 'privacy' } });
+    expect(map('?view=options&tab=privacy')).toEqual({ to: '/settings/privacy', search: {} });
+    expect(map('?view=options&tab=roles')).toEqual({ to: '/settings/roles', search: {} });
+    expect(map('?view=options&tab=encoderTemplates')).toEqual({ to: '/settings/encoder-templates', search: {} });
+    expect(map('?view=options&tab=menu')).toEqual({ to: '/settings/menu', search: {} });
+    expect(map('?view=options&tab=mqtt')).toEqual({ to: '/settings', search: { tab: 'mqtt' } });
     expect(map('?view=state')).toEqual({ to: '/settings/state', search: {} });
     expect(map('?view=user&uid=7')).toEqual({ to: '/settings/users', search: { uid: 7 } });
+    expect(map('?view=role&rid=3')).toEqual({ to: '/settings/roles/3', search: {} });
+    expect(map('?view=role')).toEqual({ to: '/settings/roles', search: {} });
     expect(map('?view=controlcaps')).toEqual({ to: '/settings/ptz-controls', search: {} });
   });
 

@@ -23,6 +23,10 @@ const OPTIONS_TABS: Record<string, string> = {
   servers: '/settings/servers',
   storage: '/settings/storage',
   control: '/settings/ptz-controls',
+  roles: '/settings/roles',
+  encoderTemplates: '/settings/encoder-templates',
+  menu: '/settings/menu',
+  privacy: '/settings/privacy',
 };
 
 const toInt = (v: string | null): number | null => {
@@ -158,6 +162,12 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
     }
     case 'state':
       return { to: '/settings/state', search: {} };
+    case 'role': {
+      const rid = toInt(params.get('rid'));
+      return rid != null && rid > 0
+        ? { to: `/settings/roles/${rid}`, search: {} }
+        : { to: '/settings/roles', search: {} };
+    }
     case 'user':
     case 'users': {
       const uid = toInt(params.get('uid'));
