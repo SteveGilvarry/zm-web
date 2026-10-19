@@ -16,7 +16,7 @@ const UI = {
     pickError: (p: Page) =>
       p.getByRole('group', { name: /minimum level/i }).getByRole('button', { name: /^error$/i }).click(),
     errorRequest: (q: URLSearchParams) => q.get('min_level') === 'error',
-    component: (p: Page) => p.getByLabel('Component filter').first(),
+    pickComponent: (p: Page, value: string) => p.getByLabel('Component filter').first().selectOption(value),
   },
   classic: {
     // Legacy's exact-level chosen multi-select: ERR, FAT and PNC picked by
@@ -28,7 +28,11 @@ const UI = {
       }
     },
     errorRequest: (q: URLSearchParams) => q.get('level') === '-2,-3,-4',
-    component: (p: Page) => p.getByLabel(/^component$/i).first(),
+    // Component is a Chosen multi-select too (ajax/log.php:183).
+    pickComponent: async (p: Page, value: string) => {
+      await p.getByRole('combobox', { name: 'Component', exact: true }).click();
+      await p.getByRole('option', { name: value, exact: true }).click();
+    },
   },
 } satisfies Record<Skin, unknown>;
 
@@ -94,7 +98,7 @@ test.describe('Logs', () => {
       await gotoSkin(page, '/logs', skin);
 
       const pending = logsRequest(page, (q) => q.get('component') === 'zmdc');
-      await UI[skin].component(page).selectOption('zmdc');
+      await UI[skin].pickComponent(page, 'zmdc');
       const resp = await pending;
 
       expect((await resp.json()).total).toBeGreaterThan(0);
