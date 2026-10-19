@@ -273,13 +273,17 @@ describe('ClassicEventsListPage — filters', () => {
     await waitFor(() => expect(eventRequests.at(-1)?.get('archived')).toBe('true'));
   });
 
-  it('sends the name search box to the backend', async () => {
+  it('sends the table search box to the backend as free text', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    await user.type(screen.getByRole('searchbox', { name: 'Name contains' }), 'continuous');
-    await waitFor(() => expect(eventRequests.at(-1)?.get('name')).toBe('continuous'));
+    // bootstrap-table's search box (events.php:157), run server-side as `q`.
+    const box = screen.getByRole('searchbox', { name: 'Search events' });
+    expect(box).toHaveAttribute('placeholder', 'Search');
+    await user.type(box, 'continuous');
+    await waitFor(() => expect(eventRequests.at(-1)?.get('q')).toBe('continuous'));
+    expect(eventRequests.at(-1)?.has('name')).toBe(false);
     // The old "applies within this page" caveat is gone with the workaround.
     expect(screen.queryByText(/within this page/)).toBeNull();
   });

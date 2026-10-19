@@ -10,9 +10,9 @@ import { updateEvent, deleteEvent } from '@/api/events';
 import type { FilterQuery } from '@/api/filters';
 import { useToast } from '@/components/common/toastStore';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { downloadCsv } from '@/features/logs/csv';
-import type { Monitor } from '@/types';
-import { matchesToCsv } from './matchesCsv';
+import { ExportEventsModal } from '@/features/events/ExportEventsModal';
+import type { Monitor, ZmEvent } from '@/types';
+import { fetchExportMatches } from './exportMatches';
 import type { ReviewSearch } from './reviewLink';
 import { eventsSearchFromQuery } from './eventsLink';
 import { useFilterPreview, CLIENT_PREVIEW_WINDOW } from './useFilterPreview';
@@ -90,11 +90,13 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
   });
 
   const monitorName = (id: number) => monitors.find((m) => m.id === id)?.name ?? String(id);
-  const exportMatches = () => {
-    const csv = matchesToCsv(listed, monitorName, (id) => (id === 0 ? t('Default') : String(id)));
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    downloadCsv(`zm-filter-matches-${stamp}.csv`, csv);
-  };
+  // Export Matches: the whole match set (first 500) into the Export dialog.
+  const [exportSet, setExportSet] = useState<{ events: ZmEvent[]; total: number } | null>(null);
+  const exportMutation = useMutation({
+    mutationFn: () => fetchExportMatches(query, monitors),
+    onSuccess: setExportSet,
+    onError: toast.apiError,
+  });
 
   const btn = (active: boolean, tone: 'accent' | 'warn' | 'danger' = 'accent') => classic
     ? clsx(
@@ -153,14 +155,15 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
           </Link>
         )}
 
+        {/* Legacy's Export Matches (filter.js:178): the export view on these terms. */}
         <button
           type="button"
-          onClick={() => { if (!open) setOpen(true); else exportMatches(); }}
-          disabled={open && listed.length === 0}
-          title={open ? t('Download the listed matches as CSV') : t('Preview matches first, then export the page')}
+          onClick={() => exportMutation.mutate()}
+          disabled={exportMutation.isPending}
+          title={t('Export the events these conditions match')}
           className={btn(false)}
         >
-          <Download size={11} />
+          {exportMutation.isPending ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
           {t('Export matches')}
         </button>
 
@@ -196,6 +199,16 @@ export function MatchesPreview({ query, monitors, actions, reviewSearch, variant
           </span>
         )}
       </div>
+
+      <ExportEventsModal
+        isOpen={exportSet !== null}
+        onClose={() => setExportSet(null)}
+        ids={exportSet?.events.map((e) => e.id) ?? []}
+        events={exportSet?.events}
+        totalMatches={exportSet?.total}
+        monitorName={monitorName}
+        variant={variant}
+      />
 
       {open && preview.mode === 'client' && (
         <p className="text-xs text-warn">

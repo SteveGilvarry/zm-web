@@ -7,6 +7,7 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
+import { ReviewDownloadVideo } from '@/features/montagereview/ReviewDownloadVideo';
 import { averageArea, reviewCanvasWidth } from '@/features/montagereview/reviewScale';
 import {
   REVIEW_SPEEDS, reviewSpeedIndex, toLocalInputValue, useMontageReviewPage, useReviewNotesOptions,
@@ -298,6 +299,17 @@ export default function ClassicMontageReviewPage() {
               {page.fit ? t('Scale') : t('Fit')}
             </ClassicButton>
             {!isLive && <ClassicButton onClick={() => page.pan(0.5)}>{t('Pan')} &gt;</ClassicButton>}
+            {/* Legacy shows Download Video in history with monitors on screen (montagereview.php:426). */}
+            {!isLive && page.selectedMonitors.length > 0 && (
+              <ReviewDownloadVideo
+                monitors={page.selectedMonitors}
+                rangeStart={clock.rangeStart}
+                rangeEnd={clock.rangeEnd}
+                filters={page.filters}
+                variant="classic"
+                trigger={(open) => <ClassicButton onClick={open}>{t('Download Video')}</ClassicButton>}
+              />
+            )}
             {/* Legacy `#collapse`: the timeline's own toggle, last in the row. */}
             <ClassicButton
               onClick={() => setTimelineOpen(!timelineOpen)}

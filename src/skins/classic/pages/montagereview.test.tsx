@@ -230,7 +230,7 @@ describe('ClassicMontageReviewPage', () => {
 
     const bar = await screen.findByRole('toolbar', { name: 'Review range' });
     expect(within(bar).getByRole('button', { name: '1 Hour' })).toHaveAttribute('aria-pressed', 'true');
-    for (const name of ['< Pan', 'In +', 'Out -', '24 Hour', '8 Hour', 'All Events', 'Live', 'Pan >']) {
+    for (const name of ['< Pan', 'In +', 'Out -', '24 Hour', '8 Hour', 'All Events', 'Live', 'Pan >', 'Download Video']) {
       expect(within(bar).getByRole('button', { name })).toBeInTheDocument();
     }
     // Legacy's default window (montagereview.php:103-116) is the last hour.
@@ -333,7 +333,7 @@ describe('ClassicMontageReviewPage', () => {
     expect(screen.getByTestId('live-1').getAttribute('data-protocol')).toBe('hls');
     expect(screen.queryByText('Timeline')).toBeNull();
     // Legacy `redrawScreen` hides what live view has no use for…
-    for (const name of ['< Pan', 'In +', 'Out -', 'Pan >']) {
+    for (const name of ['< Pan', 'In +', 'Out -', 'Pan >', 'Download Video']) {
       expect(within(bar).queryByRole('button', { name })).toBeNull();
     }
     expect(screen.queryByRole('slider', { name: 'Speed' })).toBeNull();

@@ -224,7 +224,7 @@ describe('EventsListPage — modern skin', () => {
     // An <input list=…> is a combobox, not a textbox.
     expect(screen.getByRole('combobox', { name: 'Cause' })).toHaveValue('Forced Web');
     expect(screen.getByRole('button', { name: 'Group filter, 1 selected' })).toBeInTheDocument();
-    expect(screen.getByRole('textbox', { name: 'Name contains' })).toHaveValue('Event');
+    expect(screen.getByRole('searchbox', { name: 'Search events' })).toHaveValue('Event');
     expect(screen.getByRole('button', { name: 'Id, sorted descending' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -500,7 +500,7 @@ describe('EventsListPage — modern skin', () => {
     const { router } = renderRoute('/events');
     await rows();
 
-    await user.type(screen.getByRole('textbox', { name: 'Name contains' }), 'Event-102');
+    await user.type(screen.getByRole('searchbox', { name: 'Search events' }), 'Event-102');
     await waitFor(
       () => expect(router.state.location.search).toMatchObject({ q: 'Event-102' }),
       { timeout: 3000 },

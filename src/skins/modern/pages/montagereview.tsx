@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   Pause, Play, Radio, Calendar, FastForward, Filter,
-  ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2,
+  ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2, Download,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -11,6 +11,7 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
+import { ReviewDownloadVideo } from '@/features/montagereview/ReviewDownloadVideo';
 import { Chip, MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 import { REVIEW_ANY_TAG, REVIEW_NO_TAG } from '@/features/montagereview/useReviewEvents';
 import { useMonitorFilter } from '@/features/monitors/useMonitorFilter';
@@ -165,6 +166,25 @@ export default function MontageReviewPage() {
                   <p className="text-xs text-fg-faint">{t('Editing one end keeps the window within 24 hours.')}</p>
                 </div>
               </ToolbarDisclosure>
+              <ReviewDownloadVideo
+                monitors={page.selectedMonitors}
+                rangeStart={clock.rangeStart}
+                rangeEnd={clock.rangeEnd}
+                filters={page.filters}
+                variant="modern"
+                trigger={(open) => (
+                  <button
+                    type="button"
+                    onClick={open}
+                    disabled={page.selectedMonitors.length === 0}
+                    aria-label={t('Download Video')}
+                    title={t('Download the videos of the events in this window')}
+                    className={toolBtn}
+                  >
+                    <Download size={14} aria-hidden />
+                  </button>
+                )}
+              />
               {page.fitEventsEmpty && (
                 <span role="status" className="text-xs text-warn">
                   {t('No events to fit')}

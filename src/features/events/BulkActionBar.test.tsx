@@ -69,7 +69,7 @@ describe('BulkActionBar — visibility', () => {
     );
     const buttons = within(screen.getByRole('region', { name: 'Bulk event actions' })).getAllByRole('button');
     expect(buttons.map((b) => b.getAttribute('aria-label'))).toEqual(
-      ['View', 'Archive', 'Unarchive', 'Edit', 'Download', 'Delete'],
+      ['View', 'Archive', 'Unarchive', 'Edit', 'Export', 'Download', 'Delete'],
     );
     expect(buttons.every((b) => b.textContent === '')).toBe(true);
     expect(buttons.every((b) => (b as HTMLButtonElement).disabled)).toBe(true);
@@ -315,5 +315,126 @@ describe('BulkActionBar — unarchive', () => {
     expect(dialog).toHaveTextContent('Are you sure you wish to unarchive the selected events?');
     await user.click(within(dialog).getByRole('button', { name: /^unarchive$/i }));
     await waitFor(() => expect(patched.sort()).toEqual([1, 2]));
+  });
+});
+
+describe('BulkActionBar — export and download video', () => {
+  const zip = (name: string) => new HttpResponse(new Blob(['PK']), {
+    headers: { 'Content-Type': 'application/zip', 'Content-Disposition': `attachment; filename="${name}"` },
+  });
+  const stubDownloads = () => {
+    Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:zip'), configurable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true });
+    const saved: string[] = [];
+    const spy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      saved.push(this.download || this.href);
+    });
+    return { saved, restore: () => spy.mockRestore() };
+  };
+
+  it('Export opens the dialog on the ticked rows in table order and exports the ticked parts', async () => {
+    const user = userEvent.setup();
+    let body: unknown = null;
+    server.use(http.post('/api/v3/events/export', async ({ request }) => {
+      body = await request.json();
+      return zip('zm-events-2.zip');
+    }));
+    const dl = stubDownloads();
+    renderWithProviders(
+      <BulkActionBar
+        variant="classic"
+        selectedIds={new Set([42, 7])}
+        events={[{ ...event(7, 0), disk_space: 1024 }, { ...event(42, 1), disk_space: 2048 }]}
+        onClear={() => {}}
+        monitorName={() => 'Porch'}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Export Options' });
+    expect(dialog).toHaveTextContent('Export the following 2 events:');
+    // Archived rows carry legacy's star; the footer sums the disk space.
+    expect(within(dialog).getByText('42*')).toBeInTheDocument();
+    expect(within(dialog).getByText('3.00kB')).toBeInTheDocument();
+    // Tar is not served.
+    expect(within(dialog).getByRole('radio', { name: 'Tar' })).toBeDisabled();
+    expect(within(dialog).getByRole('radio', { name: 'Zip' })).toBeChecked();
+
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Export Image Files' }));
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Export Frame Details' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(dl.saved).toEqual(['zm-events-2.zip']));
+    expect(body).toEqual({ ids: [7, 42], include: ['details', 'video', 'misc'] });
+
+    // The Download button saves the same archive again.
+    await user.click(within(dialog).getByRole('button', { name: 'Download' }));
+    expect(dl.saved).toEqual(['zm-events-2.zip', 'zm-events-2.zip']);
+    dl.restore();
+  });
+
+  it('Export stays disabled with every part unticked and reports a failure', async () => {
+    const user = userEvent.setup();
+    server.use(http.post('/api/v3/events/export', () =>
+      HttpResponse.json({ kind: 'BAD_REQUEST', error_message: 'too many ids' }, { status: 400 })));
+    renderWithProviders(<BulkActionBar selectedIds={new Set([1])} events={[event(1, 0)]} onClear={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^export$/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'Export Options' });
+    const go = within(dialog).getByRole('button', { name: 'Export' });
+    for (const name of ['Export Event Details', 'Export Frame Details', 'Export Image Files', 'Export Video Files (if present)', 'Export Other Files (if present)']) {
+      await user.click(within(dialog).getByRole('checkbox', { name }));
+    }
+    expect(go).toBeDisabled();
+    await user.click(within(dialog).getByRole('checkbox', { name: 'Export Event Details' }));
+    await user.click(go);
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent('Export Failed');
+  });
+
+  it('Download Video packs the videos of the ticked events into a zip', async () => {
+    const user = userEvent.setup();
+    let body: unknown = null;
+    server.use(http.post('/api/v3/events/export', async ({ request }) => {
+      body = await request.json();
+      return zip('zm-events-3.zip');
+    }));
+    const dl = stubDownloads();
+    renderWithProviders(
+      <BulkActionBar
+        selectedIds={new Set([1, 2])}
+        events={[{ ...event(1, 0), disk_space: 1024 * 1024 }, { ...event(2, 0), disk_space: 1024 * 1024 }]}
+        onClear={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^download$/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'Download' });
+    expect(dialog).toHaveTextContent('Downloading 2 events. Resulting file should be approximately 2.0 MB');
+    // One mp4 out of several events would need merging, which is not served.
+    expect(within(dialog).getByRole('radio', { name: 'mp4' })).toBeDisabled();
+    await user.click(within(dialog).getByRole('button', { name: 'Generate Download' }));
+    await waitFor(() => expect(dl.saved).toEqual(['zm-events-3.zip']));
+    expect(body).toEqual({ ids: [1, 2], include: ['video'] });
+    expect(within(dialog).getByRole('button', { name: 'Download "zm-events-3.zip"' })).toBeInTheDocument();
+    dl.restore();
+  });
+
+  it('Download Video of one event can fetch its own recording as mp4', async () => {
+    const user = userEvent.setup();
+    const dl = stubDownloads();
+    renderWithProviders(
+      <BulkActionBar
+        selectedIds={new Set([5])}
+        events={[{ ...event(5, 0), default_video: '5-video.mp4', disk_space: 10 }]}
+        onClear={() => {}}
+      />,
+    );
+    await user.click(screen.getByRole('button', { name: /^download$/i }));
+    const dialog = await screen.findByRole('dialog', { name: 'Download' });
+    expect(dialog).toHaveTextContent('Downloading event 5.');
+    await user.click(within(dialog).getByRole('radio', { name: 'mp4' }));
+    await user.click(within(dialog).getByRole('button', { name: 'Generate Download' }));
+    expect(dl.saved).toHaveLength(1);
+    expect(dl.saved[0]).toContain('/api/v3/events/5/video?token=test');
+    expect(within(dialog).getByRole('link', { name: 'Download "5-video.mp4"' })).toHaveAttribute(
+      'href', expect.stringContaining('/events/5/video'),
+    );
+    dl.restore();
   });
 });

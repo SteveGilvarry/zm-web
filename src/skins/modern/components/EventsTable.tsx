@@ -12,6 +12,7 @@ import { EVENTS_COLUMNS, useEventsColumnsStore, type EventsColumnKey } from '@/s
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { EventCauseCell } from '@/features/events/EventCauseCell';
 import type { EventNavSearch } from '@/features/events/eventsSearch';
+import { maxScoreFrameParams } from '@/features/events/maxScoreLink';
 
 /**
  * The modern events list, as a table.
@@ -226,7 +227,17 @@ export function EventsTable({
       case 'avg_score':
         return event.avg_score ?? 0;
       case 'max_score':
-        return event.max_score ?? 0;
+        // The frame with the max score, as legacy's Max column links (events.js:108).
+        return (
+          <Link
+            to="/events/$eventId/frames/$frameId"
+            params={maxScoreFrameParams(event)}
+            className="hover:text-accent transition-colors"
+            title={t('Open the frame with the max score')}
+          >
+            {event.max_score ?? 0}
+          </Link>
+        );
       case 'storage':
         return storageName ? storageName(event.storage_id) : String(event.storage_id);
       case 'disk_space':

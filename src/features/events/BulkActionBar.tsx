@@ -3,9 +3,8 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { Archive, ArchiveRestore, Download, Eye, Pencil, Trash2, X, AlertTriangle } from 'lucide-react';
-import { updateEvent, deleteEvent, getEventVideoUrl } from '@/api/events';
-import { useAuthStore } from '@/stores/auth';
+import { Archive, ArchiveRestore, Download, ExternalLink, Eye, Pencil, Trash2, X, AlertTriangle } from 'lucide-react';
+import { updateEvent, deleteEvent } from '@/api/events';
 import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
@@ -14,6 +13,8 @@ import type { ZmEvent } from '@/types';
 import { EventEditForm, type EventEditValues } from './EventEditForm';
 import { bulkEditPayload } from './bulkEdit';
 import { useBulkFanOut } from './bulkFanOut';
+import { DownloadVideoModal } from './DownloadVideoModal';
+import { ExportEventsModal } from './ExportEventsModal';
 
 interface BulkActionBarProps {
   selectedIds: Set<number>;
@@ -31,6 +32,8 @@ interface BulkActionBarProps {
    * visible (legacy's toolbar icons, disabled until something is checked).
    */
   variant?: 'modern' | 'classic';
+  /** Monitor names for the Export dialog's list. */
+  monitorName?: (id: number) => string;
 }
 
 /** Which confirmation is open. Archive needs none (legacy fires it straight away). */
@@ -46,16 +49,18 @@ type Pending = 'unarchive' | 'delete' | null;
  * whole batch went through. Unarchive and Delete confirm first — Shift+click
  * skips the dialog, as in legacy.
  */
-export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'modern' }: BulkActionBarProps) {
+export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'modern', monitorName }: BulkActionBarProps) {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { progress, start, dismiss } = useBulkFanOut();
   const toast = useToast();
-  const accessToken = useAuthStore((s) => s.accessToken);
   const setNavScope = useEventPlaybackStore((s) => s.setNavScope);
   const [editOpen, setEditOpen] = useState(false);
   const [pending, setPending] = useState<Pending>(null);
+  // Legacy's Export (`?view=export&eids[]=`) and Download Video
+  // (`modals/download.php`) on the ticked rows.
+  const [mediaOpen, setMediaOpen] = useState<'export' | 'download' | null>(null);
 
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['events'] });
@@ -117,21 +122,6 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
     setPending(null);
   };
 
-  // Legacy "Download Video": one MP4 per selected event. Browsers only allow
-  // a few scripted downloads in a row, so they are spaced out slightly.
-  const downloadAll = () => {
-    ids.forEach((id, i) => {
-      setTimeout(() => {
-        const a = document.createElement('a');
-        a.href = getEventVideoUrl(id, accessToken ?? undefined);
-        a.download = `event-${id}.mp4`;
-        document.body.appendChild(a);
-        a.click();
-        document.body.removeChild(a);
-      }, i * 400);
-    });
-  };
-
   const busy = progress.running;
   const finishedWithFailures = !busy && progress.action && progress.failed.length > 0;
   const progressText = t('{{action}}: {{done}} / {{total}}', {
@@ -173,7 +163,7 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
         )}
 
         {/* Legacy order: View, Archive, Unarchive, Edit, Export, Download,
-            Delete. Export waits on zm-api#30. */}
+            Delete (events.php:134-140). */}
         <BulkBtn
           variant={variant}
           icon={<Eye size={12} />}
@@ -207,10 +197,17 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
         </RequirePerm>
         <BulkBtn
           variant={variant}
+          icon={<ExternalLink size={12} />}
+          label={t('Export')}
+          onClick={() => setMediaOpen('export')}
+          disabled={busy || ids.length === 0}
+        />
+        <BulkBtn
+          variant={variant}
           icon={<Download size={12} />}
           label={t('Download')}
           title={t('Download Video')}
-          onClick={downloadAll}
+          onClick={() => setMediaOpen('download')}
           disabled={busy || ids.length === 0}
         />
         <RequirePerm feature="events" level="Edit">
@@ -286,6 +283,22 @@ export function BulkActionBar({ selectedIds, events = [], onClear, variant = 'mo
             : t('Are you sure you wish to unarchive the selected events?')}
         confirmText={pending === 'delete' ? t('Delete') : t('Unarchive')}
         isLoading={busy}
+      />
+
+      <ExportEventsModal
+        isOpen={mediaOpen === 'export'}
+        onClose={() => setMediaOpen(null)}
+        ids={orderedIds}
+        events={onPage}
+        monitorName={monitorName}
+        variant={variant}
+      />
+      <DownloadVideoModal
+        isOpen={mediaOpen === 'download'}
+        onClose={() => setMediaOpen(null)}
+        ids={orderedIds}
+        events={onPage}
+        variant={variant}
       />
 
       {editOpen && (

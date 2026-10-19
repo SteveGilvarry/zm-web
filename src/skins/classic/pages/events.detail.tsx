@@ -1,10 +1,11 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   ArrowLeft, RefreshCw, Archive, ArchiveRestore, Pencil, ExternalLink, Download, Trash2,
   Film, Info, Layers, LayoutGrid, SkipBack, SkipForward, Rewind, FastForward, Play, Pause,
-  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight, Tag, Tv,
+  Maximize2, Volume2, VolumeX, ChevronsLeft, ChevronsRight, Tag, Tv, FileVideo,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -13,6 +14,10 @@ import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { EventKeyFrames } from '@/features/events/EventKeyFrames';
 import { EventEditForm } from '@/features/events/EventEditForm';
+import { ExportEventsModal } from '@/features/events/ExportEventsModal';
+import { GenerateVideoModal } from '@/features/events/GenerateVideoModal';
+import { maxScoreFrameParams } from '@/features/events/maxScoreLink';
+import { useEventFileCheck } from '@/features/events/useEventFileCheck';
 import { FrameScrubber } from '@/features/events/FrameScrubber';
 import { PlayerOverlayControls } from '@/features/events/PlayerOverlayControls';
 import { TagChips } from '@/features/events/TagChips';
@@ -59,6 +64,9 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
     usePinchZoom<HTMLDivElement>(true, true);
   // Pull the refs out so the remaining `s.*` reads are plain values.
   const { event, monitor, videoRef, playerRef, tagApiRef } = s;
+  // Legacy's `file_exists($Event->Path())` warning (event.php:207).
+  const { missingPath } = useEventFileCheck(event);
+  const [mediaOpen, setMediaOpen] = useState<'export' | 'video' | null>(null);
   useDocumentTitle(event ? t('Event {{id}}', { id: event.id }) : t('Event'));
 
   if (!s.isAuthenticated) return null;
@@ -115,6 +123,11 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
         <QueryState isLoading={s.eventLoading} isError={!!s.eventError} error={s.eventError} empty={!s.eventLoading && !event} emptyMessage={t('Event was not found.')}>
           {event && (
             <div className="px-3 py-2 space-y-2">
+              {missingPath && (
+                <div role="alert" data-testid="event-missing-files" className="px-3 py-2 text-sm text-[#721c24] bg-[#f8d7da] border border-[#f5c6cb] rounded-sm">
+                  {t('Event was not found at {{path}}. It is unlikely that playback will be possible.', { path: missingPath })}
+                </div>
+              )}
               {/* Toolbar */}
               <div className="flex flex-wrap items-center gap-1.5">
                 <RequirePerm feature="events" level="Edit">
@@ -132,7 +145,7 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     {t('Edit')}
                   </ClassicButton>
                 </RequirePerm>
-                <ClassicButton disabled title={t('Export needs a backend endpoint (zip of the event directory).')}>
+                <ClassicButton onClick={() => setMediaOpen('export')} title={t('Export')}>
                   <ExternalLink size={14} />
                   {t('Export')}
                 </ClassicButton>
@@ -143,6 +156,11 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                     {t('Download')}
                   </ClassicLinkButton>
                 )}
+                {/* Legacy's videoBtn: the `?view=video` page, here a dialog. */}
+                <ClassicButton onClick={() => setMediaOpen('video')} title={t('Generate Video')}>
+                  <FileVideo size={14} />
+                  {t('Generate Video')}
+                </ClassicButton>
                 <RequirePerm feature="events" level="Edit">
                   <ClassicButton
                     tone="danger"
@@ -252,8 +270,8 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                           <th scope="row">{t('Score')}</th>
                           <td data-testid="event-score">
                             {t('Total')}:{event.tot_score ?? 0}{' '}
-                            {/* Legacy links Max to `?view=frame&fid=0`, the max-score frame. */}
-                            <Link to="/events/$eventId/frames/$frameId" params={{ eventId: String(event.id), frameId: '0' }} className={classicLink}>
+                            {/* Legacy links Max to `?view=frame&fid=0`, the max-score frame; zm-api names it. */}
+                            <Link to="/events/$eventId/frames/$frameId" params={maxScoreFrameParams(event)} className={classicLink}>
                               {t('Max')}:{event.max_score ?? 0}
                             </Link>
                             {' '}{t('Avg')}:{event.avg_score ?? 0}
@@ -266,6 +284,9 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                             {t('{{size}} on {{storage}}', { size: formatBytes(event.disk_space ?? 0), storage: s.storageName ?? t('ID: {{id}}', { id: event.storage_id }) })}
                           </td>
                         </tr>
+                        {/* Legacy links the path to `?view=files`, which has no
+                            counterpart here, so it is plain text. */}
+                        <tr><th scope="row">{t('Path')}</th><td data-testid="event-path" className="break-all">{event.path ?? ''}</td></tr>
                         <tr>
                           <th scope="row">{t('Info')}</th>
                           <td>
@@ -407,6 +428,20 @@ export default function ClassicEventDetailPage({ eventId }: { eventId: number })
                 </table>
               )}
 
+              <ExportEventsModal
+                isOpen={mediaOpen === 'export'}
+                onClose={() => setMediaOpen(null)}
+                ids={[event.id]}
+                events={[event]}
+                monitorName={() => monitor?.name ?? String(event.monitor_id)}
+                variant="classic"
+              />
+              <GenerateVideoModal
+                isOpen={mediaOpen === 'video'}
+                onClose={() => setMediaOpen(null)}
+                event={event}
+                variant="classic"
+              />
               <ConfirmDialog
                 isOpen={s.deleteOpen}
                 onClose={s.cancelDelete}

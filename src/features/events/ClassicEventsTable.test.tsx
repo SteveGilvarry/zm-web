@@ -8,8 +8,8 @@ import type { ZmEvent } from '@/types';
 // a Router context. The QueryClientProvider comes from `renderWithProviders`
 // — the table reads ZoneMinder's date/time settings through `useZmConfig`.
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string }) => (
-    <a href={to ?? '#'} {...rest}>
+  Link: ({ children, to, params, ...rest }: { children: React.ReactNode; to?: string; params?: unknown }) => (
+    <a href={to ?? '#'} data-params={params ? JSON.stringify(params) : undefined} {...rest}>
       {children}
     </a>
   ),
@@ -126,19 +126,28 @@ describe('ClassicEventsTable — header', () => {
     expect(onSort).toHaveBeenLastCalledWith('disk_space');
   });
 
-  it('links Frames / Alarm Frames / Max Score cells to the frames view', () => {
+  it('links Frames / Alarm Frames to the frames view and Max Score to the max-score frame', () => {
     render(
       <ClassicEventsTable
-        events={[makeEvent({ id: 5, frames: 321, alarm_frames: 17, max_score: 99 })]}
+        events={[
+          makeEvent({ id: 5, frames: 321, alarm_frames: 17, max_score: 99, max_score_frame_id: 44 }),
+          makeEvent({ id: 6, max_score: 7, max_score_frame_id: null }),
+        ]}
         monitorLookup={noopMonitorLookup}
         selectedIds={new Set()}
         onToggleSelected={() => {}}
       />,
     );
-    for (const text of ['321', '17', '99']) {
+    // Legacy events.js:108 links Max to `?view=frame&fid=0`; zm-api names the frame.
+    const max = screen.getByRole('link', { name: '99' });
+    expect(max.getAttribute('href')).toBe('/events/$eventId/frames/$frameId');
+    expect(JSON.parse(max.getAttribute('data-params')!)).toEqual({ eventId: '5', frameId: '44' });
+    // No id from the backend: frame 0, which the frame view reads as the max.
+    expect(JSON.parse(screen.getByRole('link', { name: '7' }).getAttribute('data-params')!)).toEqual({ eventId: '6', frameId: '0' });
+    for (const text of ['321', '17']) {
       expect(screen.getByRole('link', { name: text }).getAttribute('href')).toBe('/events/$eventId/frames');
     }
-    expect(screen.getByRole('link', { name: 'Event-0001' }).getAttribute('href')).toBe('/events/$eventId');
+    expect(screen.getAllByRole('link', { name: 'Event-0001' })[0].getAttribute('href')).toBe('/events/$eventId');
   });
 
   it('shows the storage name and HH:MM:SS duration with a totals footer', () => {

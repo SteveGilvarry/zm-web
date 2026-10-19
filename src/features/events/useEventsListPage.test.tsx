@@ -10,6 +10,7 @@ import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import {
   dateInputToStartTime,
   defaultStartTimeLowerBound,
+  searchRule,
   startTimeToDateInput,
   useEventsListPage,
 } from './useEventsListPage';
@@ -169,26 +170,28 @@ describe('useEventsListPage', () => {
     expect(result.current.showDefaultHourHint).toBe(true);
   });
 
-  it('sends the name and notes boxes to the server as query params', async () => {
+  it('sends the search and notes boxes to the server as query params', async () => {
     stub();
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
-    expect(eventRequests[0].has('name')).toBe(false);
+    expect(eventRequests[0].has('q')).toBe(false);
 
     act(() => result.current.setSearchQuery('continuous'));
-    // Free text is committed to the URL after a short pause, then refetched.
-    await waitFor(() => expect(eventRequests.at(-1)!.get('name')).toBe('continuous'));
+    // Free text is committed to the URL after a short pause, then refetched
+    // as zm-api's `q` (every column, legacy's table search), not a Name match.
+    await waitFor(() => expect(eventRequests.at(-1)!.get('q')).toBe('continuous'));
+    expect(eventRequests.at(-1)!.has('name')).toBe(false);
     // Narrowing further keeps the seeded hour (legacy keeps its prefilled term too).
     expect(result.current.showDefaultHourHint).toBe(true);
     // Nothing is dropped locally: the page is whatever the server answered.
     expect(result.current.events).toHaveLength(2);
 
     act(() => result.current.setSearchQuery(''));
-    await waitFor(() => expect(eventRequests.at(-1)!.has('name')).toBe(false));
+    await waitFor(() => expect(eventRequests.at(-1)!.has('q')).toBe(false));
     // One event type is a plain `notes` substring on /events.
     act(() => result.current.setNotesFilter(['Motion']));
     await waitFor(() => expect(eventRequests.at(-1)!.get('notes')).toBe('Motion'));
-    expect(eventRequests.at(-1)!.has('name')).toBe(false);
+    expect(eventRequests.at(-1)!.has('q')).toBe(false);
   });
 
   it('ORs several event types through /filters/preview, as legacy does', async () => {
@@ -294,10 +297,32 @@ describe('useEventsListPage', () => {
     await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
     expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toEqual([
       { field: 'monitor_id', op: 'in', value: [1, 2] },
-      { field: 'name', op: 'like', value: '%door%' },
+      // The search box: any text column contains it (preview has no `q`).
+      {
+        match: 'any',
+        rules: [
+          { field: 'name', op: 'like', value: '%door%' },
+          { field: 'cause', op: 'like', value: '%door%' },
+          { field: 'notes', op: 'like', value: '%door%' },
+          { field: 'monitor_name', op: 'like', value: '%door%' },
+        ],
+      },
       { field: 'cause', op: 'like', value: '%Motion%' },
       { field: 'notes', op: 'like', value: '%parcel%' },
     ]);
+  });
+
+  it('searches the id too when the search box holds a number', () => {
+    expect(searchRule('42')).toEqual({
+      match: 'any',
+      rules: [
+        { field: 'id', op: 'eq', value: 42 },
+        { field: 'name', op: 'like', value: '%42%' },
+        { field: 'cause', op: 'like', value: '%42%' },
+        { field: 'notes', op: 'like', value: '%42%' },
+        { field: 'monitor_name', op: 'like', value: '%42%' },
+      ],
+    });
   });
 
   it('resolves a tag to event ids on the group path, where the AST has no tag field', async () => {
