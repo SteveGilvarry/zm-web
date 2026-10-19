@@ -237,7 +237,10 @@ export function termsFromEventsSearch(s: EventsSearchParams): FilterTerm[] {
  * carries `filterQuery` + `sortQuery` the same way). Same shape as the list's
  * own URL minus `group`, which `/events` cannot filter by.
  */
-export type EventNavSearch = Omit<EventsSearchParams, 'group' | 'terms' | 'filter_id'>;
+export type EventNavSearch = Omit<EventsSearchParams, 'group' | 'terms' | 'filter_id'> & {
+  /** Frame to open at (legacy `?view=event&fid=`): the timeline and Montage Review set it. */
+  fid?: number;
+};
 
 /** `validateSearch` for `/events/$eventId`. */
 export function parseEventNavSearch(search: Record<string, unknown>): EventNavSearch {
@@ -245,7 +248,8 @@ export function parseEventNavSearch(search: Record<string, unknown>): EventNavSe
   delete out.group;
   delete out.terms;
   delete out.filter_id;
-  return out;
+  const fid = int(search.fid);
+  return fid != null ? { ...out, fid } : out;
 }
 
 /**

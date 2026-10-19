@@ -277,6 +277,15 @@ describe('MontageReviewCell — click', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/events/$eventId', params: { eventId: '9' } });
   });
 
+  it('hands the frame under the playhead along when the event has a frame count', async () => {
+    stubEvents([{ ...ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:05:00Z'), frames: 3000 } as ZmEvent]);
+    const { cell } = sizedCell({ currentTime: new Date('2026-08-21T02:01:00Z') });
+    await screen.findByRole('link', { name: '#9' });
+    fireEvent.click(cell, { clientX: 200, clientY: 150 });
+    // 60 s into a 300 s, 3000-frame event: frame 601 (legacy montagereview.js:1179).
+    expect(navigate).toHaveBeenCalledWith({ to: '/events/$eventId', params: { eventId: '9' }, search: { fid: 601 } });
+  });
+
   it('opens the Watch page when the monitor recorded nothing', async () => {
     stubEvents([]);
     const { cell } = sizedCell();

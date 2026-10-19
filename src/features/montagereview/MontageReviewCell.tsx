@@ -1,4 +1,5 @@
 import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { frameAtTime } from '@/features/events/frameSeek';
 import { Link, useNavigate, useRouter } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Download, Video } from 'lucide-react';
@@ -93,8 +94,10 @@ export function MontageReviewCell({
   // one monitor, anything else opens what is under the playhead — the event
   // if the monitor was recording, its Watch page otherwise. Ctrl/⌘ opens a
   // new tab.
+  // Legacy hands the frame under the playhead along (`montagereview.js:1179`).
+  const fid = currentEvent ? frameAtTime(currentEvent, currentTime) : undefined;
   const target = currentEvent
-    ? { to: '/events/$eventId' as const, params: { eventId: String(currentEvent.id) } }
+    ? { to: '/events/$eventId' as const, params: { eventId: String(currentEvent.id) }, ...(fid && fid > 1 ? { search: { fid } } : {}) }
     : { to: '/monitors/$monitorId' as const, params: { monitorId: String(monitor.id) } };
 
   const handleClick = (e: ReactMouseEvent<HTMLDivElement>) => {

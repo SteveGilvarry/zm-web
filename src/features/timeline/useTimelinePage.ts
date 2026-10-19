@@ -85,7 +85,8 @@ export interface TimelinePageState {
   /** Search the click-through to `/events/$eventId` carries. */
   eventSearch: EventNavSearch;
   /** Navigate to the event, as clicking a bar or the readout does. */
-  openEvent: (eventId: number) => void;
+  /** Opens the event, at `frame` when the chart knows one (legacy `data-frame-id`). */
+  openEvent: (eventId: number, frame?: number | 'alarm') => void;
 }
 
 function isoOf(seconds: number): string {
@@ -292,11 +293,11 @@ export function useTimelinePage(): TimelinePageState {
   }, [go]);
 
   const eventSearch = useMemo(() => eventNavSearch(search), [search]);
-  const openEvent = useCallback((eventId: number) => {
+  const openEvent = useCallback((eventId: number, frame?: number | 'alarm') => {
     void navigate({
       to: '/events/$eventId',
       params: { eventId: String(eventId) },
-      search: eventSearch as never,
+      search: (typeof frame === 'number' && frame > 1 ? { ...eventSearch, fid: frame } : eventSearch) as never,
     });
   }, [navigate, eventSearch]);
 

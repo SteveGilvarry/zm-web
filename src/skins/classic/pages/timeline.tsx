@@ -88,7 +88,7 @@ export default function ClassicTimelinePage() {
                           alt={t('View Event')}
                           title={t('View Event')}
                           loading="lazy"
-                          onClick={() => s.openEvent(preview.event.id)}
+                          onClick={() => s.openEvent(preview.event.id, preview.frame)}
                           onError={(e) => { e.currentTarget.style.visibility = 'hidden'; }}
                           onLoad={(e) => { e.currentTarget.style.visibility = 'visible'; }}
                           className="absolute inset-0 m-auto h-full w-auto max-w-full cursor-pointer"
@@ -97,7 +97,7 @@ export default function ClassicTimelinePage() {
                     </div>
                   </div>
                   <div className={clsx('text-start', n === 1 && 'w-1/2 float-left')}>
-                    {preview && <EventData preview={preview} onOpen={() => s.openEvent(preview.event.id)} />}
+                    {preview && <EventData preview={preview} onOpen={() => s.openEvent(preview.event.id, preview.frame)} />}
                   </div>
                 </div>
               ))}
@@ -161,7 +161,7 @@ export default function ClassicTimelinePage() {
                             className="absolute bottom-0 z-[3] cursor-pointer"
                             style={{ left: slotPct(a.index), width: '0.17%', height: h, backgroundColor: colour }}
                             onMouseOver={() => s.preview(a)}
-                            onClick={() => s.openEvent(a.event.id)}
+                            onClick={() => s.openEvent(a.event.id, a.frame)}
                           />
                         );
                       })}
@@ -179,7 +179,7 @@ export default function ClassicTimelinePage() {
                             className="absolute bottom-0 z-[3] cursor-pointer"
                             style={{ left: slotPct(slot.index), width: slotPct(slot.width), height: chart.eventBarHeight, backgroundColor: row.colour }}
                             onMouseOver={() => s.preview(slot)}
-                            onClick={() => s.openEvent(slot.event.id)}
+                            onClick={() => s.openEvent(slot.event.id, slot.frame)}
                           />
                         ))}
                       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { frameSeekSeconds } from './frameSeek';
 import { useTranslation } from 'react-i18next';
 import {
   getEvent,
@@ -805,6 +806,19 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     ? Math.round((eventLength / frameCount) * 1e6) / 1e6
     : 0;
   const canStep = !isPlaying && !rewinding && secondsPerFrame > 0;
+
+  // `?fid=`: seek to that frame once per event, as soon as the player and
+  // the event's frame count are there (legacy opens the stream at `fid`).
+  const requestedFrame = listSearch.fid;
+  const seekedFor = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${event?.id ?? ''}:${requestedFrame ?? ''}`;
+    if (!event || seekedFor.current === key) return;
+    const t = frameSeekSeconds(requestedFrame, frameCount, eventLength);
+    if (t == null || !videoRef.current) return;
+    seekedFor.current = key;
+    seekTo(t);
+  }, [event, requestedFrame, frameCount, eventLength]);
   const stepForward = () => {
     const el = videoRef.current;
     if (el && secondsPerFrame > 0) seekTo(el.currentTime + secondsPerFrame);

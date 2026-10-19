@@ -145,7 +145,7 @@ function Chart({ chart, s }: { chart: TimelineChart; s: PageState }) {
                 fill={colourOf.get(a.monitorId)}
                 className="cursor-pointer"
                 onMouseEnter={() => s.preview(a)}
-                onClick={() => s.openEvent(a.event.id)}
+                onClick={() => s.openEvent(a.event.id, a.frame)}
               >
                 <title>{`${a.event.name} · ${a.value}`}</title>
               </rect>
@@ -218,7 +218,7 @@ function Row({ row, chart, s }: { row: TimelineChart['rows'][number]; chart: Tim
             fill={row.colour}
             className="cursor-pointer"
             onMouseEnter={() => s.preview(slot)}
-            onClick={() => s.openEvent(slot.event.id)}
+            onClick={() => s.openEvent(slot.event.id, slot.frame)}
           >
             <title>{`${slot.event.name} · ${startText(slot.event.start_date_time)}`}</title>
           </rect>
@@ -251,7 +251,7 @@ function Readout({ s }: { s: PageState }) {
             <tr
               key={monitorId}
               data-testid={`timeline-data-${monitorId}`}
-              onClick={() => s.openEvent(p.event.id)}
+              onClick={() => s.openEvent(p.event.id, p.frame)}
               className="border-b border-border-subtle last:border-0 hover:bg-surface-2 cursor-pointer"
             >
               <td className="px-3 py-1">
