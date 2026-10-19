@@ -12,8 +12,10 @@ import { usePerms } from '@/features/auth/usePerms';
 import type { Monitor } from '@/types';
 import {
   useMonitorTabs, visibleFields, isFieldLocked,
-  type FieldDef, type TabDef, type FieldValue, type FieldErrors,
+  type FieldDef, type TabDef, type FieldValue, type FieldErrors, type FieldContext,
 } from './fields';
+import { MonitorActionsPanel } from './MonitorActionsPanel';
+import type { MonitorActionsState } from './useMonitorActions';
 import { GroupsMembership } from './RelationSelects';
 import { FieldInput } from './FieldInput';
 import { sameValue, isUnsetSecret, storedOnly } from './editorState';
@@ -232,6 +234,8 @@ function MonitorEditorBody({ monitor, seed, onCreated, onClose, onDeleted, initi
             draft={ed.draft}
             baseline={ed.baseline}
             errors={ed.fieldErrors}
+            ctx={ed.fieldContext}
+            actions={ed.actions}
             onUpdate={ed.updateField}
             tools={activeTabDef.id === 'source' ? sourceTools : undefined}
           />
@@ -336,13 +340,15 @@ interface FormPaneProps {
   draft: Record<string, FieldValue>;
   baseline: Record<string, FieldValue>;
   errors: FieldErrors;
+  ctx: FieldContext;
+  actions: MonitorActionsState;
   onUpdate: (key: string, value: FieldValue) => void;
   /** Tab-level actions shown beside the heading (Source: Presets, ONVIF probe). */
   tools?: ReactNode;
 }
 
-function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate, tools }: FormPaneProps) {
-  const fields = visibleFields(tab, draft, baseline);
+function FormPane({ tab, monitorId, draft, baseline, errors, ctx, actions, onUpdate, tools }: FormPaneProps) {
+  const fields = visibleFields(tab, draft, baseline, ctx);
   return (
     <div className="max-w-4xl mx-auto px-6 py-5">
       <header className="mb-5 pb-3 border-b border-border-subtle flex items-start justify-between gap-4">
@@ -355,6 +361,7 @@ function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate, tools }: 
         {tools}
       </header>
 
+      {tab.panel === 'actions' ? <MonitorActionsPanel actions={actions} /> : (
       <div className="grid grid-cols-2 gap-x-6 gap-y-4">
         {fields.map((f, idx) => {
           if (f.kind === 'group') {
@@ -383,6 +390,7 @@ function FormPane({ tab, monitorId, draft, baseline, errors, onUpdate, tools }: 
           );
         })}
       </div>
+      )}
     </div>
   );
 }
@@ -405,6 +413,7 @@ function FieldRow({ field, monitorId, draft, value, stored, isDirty, error, onCh
   const { can } = usePerms();
   const locked = isFieldLocked(field, can);
   const span = field.span === 2 ? 'col-span-2' : 'col-span-2 md:col-span-1';
+  const diagnostic = field.diagnostic?.(draft);
 
   return (
     <div className={span}>
@@ -447,6 +456,7 @@ function FieldRow({ field, monitorId, draft, value, stored, isDirty, error, onCh
         onUpdate={onUpdate}
       />
 
+      {diagnostic && <p className="text-xs text-warn mt-1 leading-relaxed">{diagnostic}</p>}
       {storedOnly(field, stored) && field.storedOnlyWarning && (
         <p className="text-xs text-warn mt-1 leading-relaxed">{field.storedOnlyWarning}</p>
       )}

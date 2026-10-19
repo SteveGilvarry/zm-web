@@ -606,7 +606,8 @@ describe('MonitorEditor — record as the API returns it', () => {
     expect((screen.getByDisplayValue('1x') as HTMLSelectElement).value).toBe('100');
     // Default scale "Auto" is stored as '0'; Default event view "Auto" is the enum member.
     const autos = screen.getAllByDisplayValue('Auto') as HTMLSelectElement[];
-    expect(autos.map((s) => s.value).sort()).toEqual(['0', 'auto']);
+    // Plus Default player, whose Auto is legacy's ''.
+    expect(autos.map((s) => s.value).sort()).toEqual(['', '0', 'auto']);
 
     await user.click(screen.getByRole('button', { name: /^timestamp$/i }));
     expect((screen.getByDisplayValue('Default') as HTMLSelectElement).value).toBe('2');

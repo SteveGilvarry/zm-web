@@ -19,6 +19,7 @@
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import type { PermFeature, PermLevel } from '@/types';
+import { unknownParamKeys } from './encoderParams';
 
 export type FieldKind =
   | 'text'
@@ -59,9 +60,25 @@ export type FieldKind =
   | 'triggers'
   /** Virtual: legacy "Estimated Ram Use", computed from the buffers and the capture size. */
   | 'ram-estimate'
+  /** Virtual: legacy Encoder Template picker + Apply, writing into `encoder_parameters`. */
+  | 'encoder-template'
+  /** Virtual: legacy Current Level, the live audio meter polled from `/monitors/{id}/audio-level`. */
+  | 'audio-level'
   | 'group';
 
 export type FieldValue = string | number | null;
+
+/**
+ * What a field's visibility can depend on beyond the draft: whether the
+ * monitor exists yet, and which encoders have templates.
+ */
+export interface FieldContext {
+  isNew: boolean;
+  /** Encoders with at least one template; empty until the list loads. */
+  templateEncoders: ReadonlySet<string>;
+}
+
+export const NO_FIELD_CONTEXT: FieldContext = { isNew: false, templateEncoders: new Set() };
 
 /**
  * When a field is shown. The legacy form renders a different Source tab per
@@ -112,7 +129,15 @@ export interface FieldDef {
    * and the stored values (legacy hides the secondary-source selects until
    * a second path exists, the Janus extras until Janus is on, …).
    */
-  visibleIf?: (draft: Record<string, FieldValue>, stored: Record<string, FieldValue>) => boolean;
+  visibleIf?: (draft: Record<string, FieldValue>, stored: Record<string, FieldValue>, ctx: FieldContext) => boolean;
+  /**
+   * For 'select': options offered only while this returns true (legacy
+   * `update_players` drops the Go2RTC / RTSP2Web / Janus players while that
+   * server is off). The current value is always kept so it stays visible.
+   */
+  optionShown?: (value: string | number, draft: Record<string, FieldValue>) => boolean;
+  /** A note under the input computed from the draft (legacy's encoder-parameter lint). */
+  diagnostic?: (draft: Record<string, FieldValue>) => string | null;
   /** Option values greyed out for the current draft (legacy filters Encoder by Output Codec). */
   disabledOption?: (value: string | number, draft: Record<string, FieldValue>) => boolean;
   /** Unit text after the input (legacy "seconds", "frames"). */
@@ -151,6 +176,8 @@ export interface TabDef {
   visibleIf?: (draft: Record<string, FieldValue>, can: (feature: PermFeature, level: PermLevel) => boolean) => boolean;
   /** The tab is a link to another page rather than a form (legacy Zones). */
   navigatesTo?: 'zones';
+  /** The tab is a panel of its own rather than monitor fields (legacy Actions: rows saved per action). */
+  panel?: 'actions';
 }
 
 /** Minimal shape of `t` the builder needs — keeps this module usable without React. */
@@ -646,6 +673,9 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'number', key: 'audio_threshold',     label: t('Audio threshold'), min: 0, max: 100, integer: true,
           show: { types: ['Ffmpeg'] },
           help: t('Level, 0-100, at or above which the monitor alarms. 0 turns audio detection off. Measure the device’s quiet level first and set this above it.') },
+        { kind: 'audio-level', key: '_audio_level',   label: t('Current level'), virtual: true,
+          show: { types: ['Ffmpeg'] }, visibleIf: monitorExists,
+          help: t('Live reading from the capture process, on the same 0-100 scale as the threshold. Watch it while the room is quiet to find the floor, then make some noise to see the range.') },
         { kind: 'number', key: 'audio_alarm_score',   label: t('Audio alarm score'), min: 0, max: 255, integer: true,
           show: { types: ['Ffmpeg'] },
           help: t('Score contributed to a frame while the audio level is over the threshold.') },
@@ -670,9 +700,19 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'select', key: 'encoder',            label: t('Encoder'), options: ENCODER_OPTIONS, nullOption: t('Default'),
           visibleIf: encodes, disabledOption: (v, d) => !encoderFitsCodec(v, d.output_codec),
           help: t('Only the encoders that produce the chosen output codec can be picked.') },
-        { kind: 'select', key: 'output_container',   label: t('Output container'),  options: OUTPUT_CONTAINER_OPTIONS },
+        { kind: 'encoder-template', key: '_encoder_template', label: t('Encoder template'), virtual: true, span: 2,
+          visibleIf: (d, s, ctx) => encodes(d) && encoderHasTemplates(d, s, ctx),
+          help: t('Merges the template’s settings into the encoder parameters; keys already there take the template’s value.') },
         { kind: 'textarea', key: 'encoder_parameters', label: t('Encoder parameters'), span: 2,
-          placeholder: 'crf=23\npreset=veryfast' },
+          placeholder: 'crf=23\npreset=veryfast', diagnostic: encoderParamsDiagnostic(t) },
+        { kind: 'text',   key: 'encoder_hw_accel_name',   label: t('Encoder hardware acceleration'), visibleIf: encodes,
+          placeholder: 'vaapi', help: t('ffmpeg -hwaccel: vaapi for Intel graphics, cuda for NVIDIA.') },
+        { kind: 'text',   key: 'encoder_hw_accel_device', label: t('Encoder hardware device'), visibleIf: encodes,
+          placeholder: '/dev/dri/renderD128', help: t('ffmpeg -hwaccel_device. Only needed with several GPUs.') },
+        { kind: 'select', key: 'output_container',   label: t('Output container'),  options: OUTPUT_CONTAINER_OPTIONS },
+        { kind: 'toggle', key: 'wall_clock_timestamps', label: t('Wall-clock timestamps'),
+          visibleIf: (d) => !encodes(d),
+          help: t('Stamp recorded packets with the time they arrived instead of the camera’s own timestamps.') },
         { kind: 'select', key: 'event_close_mode',   label: t('Event close mode'),  options: EVENT_CLOSE_MODE_OPTIONS },
         { kind: 'text',   key: 'event_prefix',       label: t('Event prefix') },
         { kind: 'number', key: 'section_length',     label: t('Section length (s)'), min: 0, integer: true,
@@ -714,8 +754,12 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'toggle', key: 'janus_audio_enabled', label: t('Janus audio'), visibleIf: janusOn },
         { kind: 'toggle', key: 'restream',            label: t('Janus RTSP restream'),
           help: t('Janus pulls from ZoneMinder’s RTSP server instead of opening a second connection to the camera.') },
+        { kind: 'toggle', key: 'go2rtc_enabled',      label: t('Go2RTC') },
         { kind: 'toggle', key: 'rtsp2_web_enabled',   label: t('RTSP-to-Web') },
         { kind: 'select', key: 'rtsp2_web_type',      label: t('RTSP-to-Web type'), options: RTSP2WEB_TYPE_OPTIONS },
+        { kind: 'select', key: 'stream_channel',      label: t('Stream source'), options: streamChannelOptions(t),
+          visibleIf: streamsThroughServer,
+          help: t('What Go2RTC and RTSP-to-Web pull from: ZoneMinder’s restream or the camera directly.') },
         { kind: 'text',   key: 'janus_profile_override', label: t('Janus profile-ID override'), visibleIf: janusOn,
           placeholder: '42e01f',
           help: t('H.264 profile-level-id Janus advertises. Safari needs a baseline/main profile here when the camera sends something exotic.') },
@@ -724,6 +768,11 @@ export function buildTabs(t: Translate): TabDef[] {
         { kind: 'user-select', key: 'rtsp_user',      label: t('RTSP server auth user'),
           visibleIf: (d) => Number(d.restream) === 1,
           help: t('The ZoneMinder user the streaming services authenticate to the RTSP restream as.') },
+        { kind: 'select', key: 'default_player',      label: t('Default player'), options: defaultPlayerOptions(t),
+          optionShown: playerOffered,
+          help: t('Go2RTC, RTSP-to-Web and Janus players are offered once that server is on.') },
+        { kind: 'select', key: 'what_display',        label: t('Show'), options: whatDisplayOptions(t),
+          help: t('Video, an audio visualization, or both. This interface does not draw the visualization yet; the setting is kept for the PHP views.') },
         { kind: 'select', key: 'default_rate',        label: t('Default rate'), options: DEFAULT_RATE_OPTIONS },
         { kind: 'select', key: 'default_scale',       label: t('Default scale'), options: DEFAULT_SCALE_OPTIONS },
         { kind: 'select', key: 'default_codec',       label: t('Default event view'), options: DEFAULT_CODEC_OPTIONS },
@@ -804,6 +853,14 @@ export function buildTabs(t: Translate): TabDef[] {
       ],
     },
     {
+      id: 'actions',
+      visibleIf: notWebSite,
+      label: t('Actions'),
+      description: t('Lights and sounds this monitor drives on another device when an event or alarm starts or ends.'),
+      panel: 'actions',
+      fields: [],
+    },
+    {
       id: 'mqtt',
       visibleIf: notWebSite,
       label: t('MQTT'),
@@ -864,9 +921,10 @@ export function isFieldVisible(
   f: FieldDef,
   draft: Record<string, FieldValue>,
   stored: Record<string, FieldValue> = draft,
+  ctx: FieldContext = NO_FIELD_CONTEXT,
 ): boolean {
   const s = f.show;
-  if (f.visibleIf && !f.visibleIf(draft, stored)) return false;
+  if (f.visibleIf && !f.visibleIf(draft, stored, ctx)) return false;
   if (!s) return true;
   const type = String(draft.type ?? '');
   if (s.types && !s.types.includes(type)) return false;
@@ -890,6 +948,79 @@ export function encoderFitsCodec(encoder: string | number, codec: FieldValue | u
     case 226: return e.includes('av1');
     default: return true;
   }
+}
+
+/** Legacy `update_players`: a player is offered only while its streaming server is on. */
+export function playerOffered(player: string | number, draft: Record<string, FieldValue>): boolean {
+  const p = String(player);
+  if (p.includes('go2rtc')) return Number(draft.go2rtc_enabled) === 1;
+  if (p.includes('rtsp2web')) return Number(draft.rtsp2_web_enabled) === 1;
+  if (p.includes('janus')) return Number(draft.janus_enabled) === 1;
+  return true;
+}
+
+/** The toggles that change which players are offered. */
+export const PLAYER_SERVER_KEYS: readonly string[] = ['go2rtc_enabled', 'rtsp2_web_enabled', 'janus_enabled'];
+
+/** Legacy `$players` (`monitor.php:1443`), in its order; `''` is Auto. */
+export function defaultPlayerOptions(t: Translate): Array<{ value: string; label: string }> {
+  return [
+    { value: '', label: t('Auto') },
+    { value: 'zms', label: 'ZMS MJPEG' },
+    { value: 'go2rtc', label: 'Go2RTC Auto' },
+    { value: 'go2rtc_webrtc', label: 'Go2RTC WEBRTC' },
+    { value: 'go2rtc_mse', label: 'Go2RTC MSE' },
+    { value: 'go2rtc_hls', label: 'Go2RTC HLS' },
+    { value: 'rtsp2web_webrtc', label: 'RTSP2Web WEBRTC' },
+    { value: 'rtsp2web_mse', label: 'RTSP2Web MSE' },
+    { value: 'rtsp2web_hls', label: 'RTSP2Web HLS' },
+    { value: 'janus', label: 'Janus' },
+  ];
+}
+
+/** `Monitor::getStreamChannelOptions()`. */
+export function streamChannelOptions(t: Translate): Array<{ value: string; label: string }> {
+  return [
+    { value: 'Restream', label: t('Restream') },
+    { value: 'CameraDirectPrimary', label: t('Camera Direct Primary') },
+    { value: 'CameraDirectSecondary', label: t('Camera Direct Secondary') },
+  ];
+}
+
+/** `skins/classic/includes/config.php` `$whatDisplay`. */
+export function whatDisplayOptions(t: Translate): Array<{ value: string; label: string }> {
+  return [
+    { value: 'OnlyVideo', label: t('Only video') },
+    { value: 'OnlyAudioVisualization', label: t('Only audio visualization') },
+    { value: 'VideoAudioVisualization', label: t('Video and audio visualization') },
+  ];
+}
+
+/** Legacy shows Stream source only while Go2RTC or RTSP2Web is on (`monitor.js`). */
+export function streamsThroughServer(d: Record<string, FieldValue>): boolean {
+  return Number(d.go2rtc_enabled) === 1 || Number(d.rtsp2_web_enabled) === 1;
+}
+
+/** The Encoder Template row shows only when the chosen encoder has templates. */
+export function encoderHasTemplates(d: Record<string, FieldValue>, _s: Record<string, FieldValue>, ctx: FieldContext): boolean {
+  return ctx.templateEncoders.has(String(d.encoder ?? ''));
+}
+
+/** The audio meter reads a running monitor's shared memory, so a new monitor has none. */
+export function monitorExists(_d: Record<string, FieldValue>, _s: Record<string, FieldValue>, ctx: FieldContext): boolean {
+  return !ctx.isNew;
+}
+
+/** Legacy's lint under Encoder Parameters (`runLint`): keys the chosen encoder ignores. */
+export function encoderParamsDiagnostic(t: Translate) {
+  return (d: Record<string, FieldValue>): string | null => {
+    const encoder = String(d.encoder ?? '');
+    const keys = unknownParamKeys(d.encoder_parameters == null ? '' : String(d.encoder_parameters), encoder);
+    if (!keys.length) return null;
+    return t('Note: {{keys}} are not recognised options for {{encoder}} and will be ignored at runtime.')
+      .replace('{{keys}}', keys.map((k) => `\`${k}\``).join(', '))
+      .replace('{{encoder}}', `\`${encoder}\``);
+  };
 }
 
 /** The tabs offered for this draft and user. */
@@ -927,6 +1058,7 @@ export function visibleFields(
   tab: TabDef,
   draft: Record<string, FieldValue>,
   stored: Record<string, FieldValue> = draft,
+  ctx: FieldContext = NO_FIELD_CONTEXT,
 ): FieldDef[] {
   const out: FieldDef[] = [];
   for (let i = 0; i < tab.fields.length; i++) {
@@ -934,10 +1066,10 @@ export function visibleFields(
     if (f.kind === 'group') {
       let hasVisible = false;
       for (let j = i + 1; j < tab.fields.length && tab.fields[j].kind !== 'group'; j++) {
-        if (isFieldVisible(tab.fields[j], draft, stored)) { hasVisible = true; break; }
+        if (isFieldVisible(tab.fields[j], draft, stored, ctx)) { hasVisible = true; break; }
       }
       if (hasVisible) out.push(f);
-    } else if (isFieldVisible(f, draft, stored)) {
+    } else if (isFieldVisible(f, draft, stored, ctx)) {
       out.push(f);
     }
   }

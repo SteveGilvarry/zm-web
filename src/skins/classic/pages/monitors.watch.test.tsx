@@ -586,7 +586,7 @@ describe('ClassicMonitorWatchPage', () => {
     // monitor.php's tab order.
     const rail = within(screen.getByRole('navigation', { name: 'Monitor tabs' }));
     expect(rail.getAllByRole('button').map((b) => b.textContent)).toEqual([
-      'General', 'Source', 'Analysis', 'Recording', 'Viewing', 'ONVIF', 'Timestamp', 'Buffers', 'Control', 'Misc', 'Zones', 'MQTT',
+      'General', 'Source', 'Analysis', 'Recording', 'Viewing', 'ONVIF', 'Timestamp', 'Buffers', 'Control', 'Actions', 'Misc', 'Zones', 'MQTT',
     ]);
     // Back returns to the watch page.
     await user.click(within(editor).getByRole('button', { name: 'Back' }));
