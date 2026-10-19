@@ -5,6 +5,7 @@ import { ChevronDown, Filter, X } from 'lucide-react';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import type { Monitor } from '@/types';
 import { useMonitorFilter } from './useMonitorFilter';
+import { DELETED_TOKEN } from './filterMonitors';
 
 /* -------------------------------------------------------------------------- */
 /*  Enum option sets                                                          */
@@ -23,7 +24,9 @@ const RECORDING_OPTS = ['None', 'OnMotion', 'Always'] as const;
 const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'cURL', 'WebSite', 'VNC'] as const;
 
 // "Status" in legacy ZM is a derived boolean: capturing != None ⇒ Active.
-const STATUS_OPTS = ['active', 'disabled'] as const;
+// `Deleted` is legacy's pseudo-status for soft-deleted monitors, which are
+// fetched only while it is picked (`GET /monitors?include_deleted`).
+const STATUS_OPTS = ['active', 'disabled', DELETED_TOKEN] as const;
 
 /**
  * Display labels for the enum wire values above. Mode values get translated;
@@ -41,6 +44,7 @@ function useEnumLabel(): (value: string) => string {
     File: t('File'),
     active: t('Active'),
     disabled: t('Disabled'),
+    deleted: t('Deleted'),
   };
   return (value) => labels[value] ?? value;
 }

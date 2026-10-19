@@ -1,4 +1,7 @@
-import type { Monitor } from '@/types';
+import { isDeleted, type Monitor } from '@/types';
+
+/** The Status chip's token for soft-deleted monitors (legacy's `Deleted` pseudo-status). */
+export const DELETED_TOKEN = 'deleted';
 
 export interface MonitorFilterSelections {
   groupIds: number[];
@@ -46,10 +49,18 @@ export function filterMonitors(
     if (monitorIds.length && !monitorIds.includes(m.id))           return false;
 
     if (status.length) {
-      const isActive = m.capturing !== 'None';
-      const token = isActive ? 'active' : 'disabled';
-      if (!status.includes(token)) return false;
+      // Legacy: `(… AND Status IN …) OR Deleted=true`. A deleted monitor
+      // shows only while Deleted is picked, whatever else is; a live one
+      // needs one of the other tokens.
+      if (isDeleted(m)) return status.includes(DELETED_TOKEN);
+      const live = status.filter((s) => s !== DELETED_TOKEN);
+      if (live.length === 0) return false;
+      const token = m.capturing !== 'None' ? 'active' : 'disabled';
+      if (!live.includes(token)) return false;
     }
+    // With no status picked, deleted rows pass like any other: the classic
+    // row runs its own `Deleted` logic after this, and the modern hook only
+    // puts deleted rows in the pool while Deleted is picked.
     return true;
   });
 }
