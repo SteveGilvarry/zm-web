@@ -4,8 +4,7 @@ import { Modal } from '@/components/common/Modal';
 import type { Group } from '@/api/groups';
 import type { Monitor } from '@/types';
 import { getValidParentOptions } from '@/features/groups/tree';
-import { ClassicButton, classicInputClass } from '@/skins/classic/components';
-import { ChosenMultiSelect } from './ChosenMultiSelect';
+import { ClassicButton, ClassicChosen, classicInputClass } from '@/skins/classic/components';
 
 interface ClassicGroupModalProps {
   open: boolean;
@@ -100,12 +99,17 @@ function GroupModalForm({
                 <label htmlFor="classic-group-monitors">{t('Monitor')}</label>
               </th>
               <td className="py-1">
-                <ChosenMultiSelect
+                {/* `$j('#newGroupMonitorIds').chosen()` (groups.js:7): Chosen's
+                    default placeholder, no clear-all button. */}
+                <ClassicChosen
                   id="classic-group-monitors"
                   label={t('Monitor')}
-                  options={monitors.map((m) => ({ value: m.id, label: m.name }))}
-                  value={monitorIds}
-                  onChange={setMonitorIds}
+                  options={monitors.map((m) => ({ value: String(m.id), label: m.name }))}
+                  value={monitorIds.map(String)}
+                  onChange={(next) => setMonitorIds(next.map(Number))}
+                  placeholder={t('Select Some Options')}
+                  clearButton={false}
+                  className="w-full"
                 />
               </td>
             </tr>
