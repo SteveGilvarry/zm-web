@@ -75,6 +75,21 @@ for (const key of Object.keys(cat)) {
 }
 writeFileSync(FILE, JSON.stringify(cat, null, 2) + '\n');
 console.log(`i18n-plurals: ${changed} plural form(s) filled`);
+
+/**
+ * The slice of `en` the app actually bundles. Keys are the English text, so
+ * an entry whose value equals its key adds nothing at runtime: i18next
+ * returns the key. Only the plural forms (and any value a human changed
+ * away from the key) carry information, and they are a few kB where the
+ * whole table is thirty. `src/i18n/index.ts` imports this file; the full
+ * table stays the source for extraction and the other catalogues.
+ */
+const PLURALS_FILE = 'src/locales/en/plurals.json';
+const bundled = Object.fromEntries(
+  Object.entries(cat).filter(([key, value]) => PLURAL_SUFFIX.test(key) || value !== key),
+);
+writeFileSync(PLURALS_FILE, JSON.stringify(bundled, null, 2) + '\n');
+console.log(`i18n-plurals: ${Object.keys(bundled).length} entr(ies) bundled from en`);
 if (unknown.size) {
   console.log(`i18n-plurals: nouns not in the dictionary (add to scripts/i18n-plurals.mjs): ${[...unknown].join(', ')}`);
 }
