@@ -14,12 +14,16 @@ import { getVersion } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import type { DaemonStatus } from '@/types';
 import type { SystemStats } from '@/api/system';
+import { storageTone, type StorageArea } from '@/features/storage/useStorageAreas';
+import { storageUsageTitle } from '@/features/storage/storageUsage';
 
 interface SystemStatusProps {
   daemons?: DaemonStatus[];
   isRunning?: boolean;
   stats?: SystemStats;
   isLoading?: boolean;
+  /** Enabled storage areas with their fill level; the host disk stands in when none is measured. */
+  storageAreas?: StorageArea[];
 }
 
 /**
@@ -40,7 +44,11 @@ export function SystemStatus({
   isRunning,
   stats,
   isLoading,
+  storageAreas: allAreas = [],
 }: SystemStatusProps) {
+  // Without zm-api#145's filesystem figures no area can be measured, and the
+  // host disk from `/system/status` is the better reading.
+  const storageAreas = allAreas.some((a) => a.usage.measured) ? allAreas : [];
   const { t } = useTranslation();
   const { isAuthenticated } = useAuthStore();
   const { data: version } = useQuery({
@@ -158,8 +166,9 @@ export function SystemStatus({
         )}
       </section>
 
-      {/* Storage */}
-      {stats && (
+      {/* Storage: one line per enabled area (legacy `getStorageHTML`), the
+          host disk when the backend has no per-area figures. */}
+      {(storageAreas.length > 0 || stats) && (
         <section>
           <header className="flex items-baseline justify-between mb-1.5">
             <h4 className="text-xs text-fg-dim">{t('Storage')}</h4>
@@ -170,26 +179,49 @@ export function SystemStatus({
               {t('manage →')}
             </Link>
           </header>
-          <div className="flex items-center gap-2 text-xs">
-            <HardDrive size={12} className="text-fg-dim" aria-hidden />
-            <span className="font-mono tabular-nums text-fg-muted">
-              {formatBytes(stats.used_disk)} / {formatBytes(stats.total_disk)}
-            </span>
-            <span
-              className={clsx(
-                'ms-auto font-mono tabular-nums',
-                stats.disk_usage_percent > 90
-                  ? 'text-danger'
-                  : stats.disk_usage_percent > 75
-                    ? 'text-warn'
-                    : 'text-fg-dim',
-              )}
-            >
-              {stats.disk_usage_percent != null
-                ? t('{{percent}}% used', { percent: stats.disk_usage_percent.toFixed(0) })
-                : ''}
-            </span>
-          </div>
+          {storageAreas.length > 0 ? (
+            <ul className="space-y-1">
+              {storageAreas.map((area) => (
+                <li
+                  key={area.storage.id}
+                  className="flex items-center gap-2 text-xs"
+                  title={storageUsageTitle(area.usage, t)}
+                >
+                  <HardDrive size={12} className="text-fg-dim shrink-0" aria-hidden />
+                  <span className="text-fg-muted truncate">{area.storage.name}</span>
+                  <span className="font-mono tabular-nums text-fg-dim truncate">
+                    {area.usage.measured
+                      ? `${formatBytes(area.usage.usedBytes)} / ${formatBytes(area.usage.totalBytes)}`
+                      : '—'}
+                  </span>
+                  <span
+                    className={clsx(
+                      'ms-auto font-mono tabular-nums',
+                      area.tone === 'danger' ? 'text-danger' : area.tone === 'warn' ? 'text-warn' : 'text-fg-dim',
+                    )}
+                  >
+                    {area.usage.measured ? t('{{percent}}% used', { percent: area.usage.percent }) : ''}
+                  </span>
+                </li>
+              ))}
+            </ul>
+          ) : stats ? (
+            <div className="flex items-center gap-2 text-xs">
+              <HardDrive size={12} className="text-fg-dim" aria-hidden />
+              <span className="font-mono tabular-nums text-fg-muted">
+                {formatBytes(stats.used_disk)} / {formatBytes(stats.total_disk)}
+              </span>
+              <span
+                className={clsx('ms-auto font-mono tabular-nums', {
+                  normal: 'text-fg-dim', warn: 'text-warn', danger: 'text-danger',
+                }[storageTone(stats.disk_usage_percent ?? 0)])}
+              >
+                {stats.disk_usage_percent != null
+                  ? t('{{percent}}% used', { percent: stats.disk_usage_percent.toFixed(0) })
+                  : ''}
+              </span>
+            </div>
+          ) : null}
         </section>
       )}
     </div>

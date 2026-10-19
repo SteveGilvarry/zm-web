@@ -12,7 +12,8 @@ export type StatTone = 'normal' | 'warn' | 'danger';
 
 export const RAM_THRESHOLDS = { warn: 90, danger: 95 } as const;
 export const DB_THRESHOLDS = { warn: 90, danger: Infinity } as const;
-export const STORAGE_THRESHOLDS = { warn: 95, danger: 98 } as const;
+// Shared with the modern strip, so it lives with the storage data hook.
+export { STORAGE_THRESHOLDS } from '@/features/storage/useStorageAreas';
 
 export function statTone(
   percent: number | null | undefined,

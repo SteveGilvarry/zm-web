@@ -10,6 +10,7 @@ import { getDaemons, getSystemStatus } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorStatuses, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import { useZmConfigTable } from '@/features/config/useZmConfig';
+import { useStorageAreas, type StorageArea } from '@/features/storage/useStorageAreas';
 import { bucketEventsByHour } from './bucketEvents';
 import { CONSOLE_REFRESH_CONFIG, consoleRefreshInterval } from './refreshInterval';
 import type { Monitor, ZmEvent, DaemonStatus } from '@/types';
@@ -23,6 +24,8 @@ export interface ConsoleData {
   daemons: DaemonStatus[];
   isSystemRunning: boolean | undefined;
   systemStats: SystemStats | undefined;
+  /** Enabled storage areas and how full each is (legacy `getStorageHTML`). */
+  storageAreas: StorageArea[];
   /**
    * Per-monitor event summaries — event counts AND disk_space for each of
    * total / hour / day / week / month / archived. Sourced from a single
@@ -139,6 +142,7 @@ export function useConsoleData(): ConsoleData {
   });
 
   const { byId: runtimeById } = useMonitorStatuses();
+  const { areas: storageAreas } = useStorageAreas({ enabled: isAuthenticated, refetchInterval: 60_000 });
 
   // Bucket the last-24h events into a per-monitor × per-hour histogram.
   // Pure logic lives in bucketEventsByHour for testability.
@@ -156,6 +160,7 @@ export function useConsoleData(): ConsoleData {
     daemons: daemonsQ.data?.daemons ?? [],
     isSystemRunning: systemQ.data?.running,
     systemStats: systemQ.data?.stats,
+    storageAreas,
     summariesByMonitor: summariesQ.data?.items ?? [],
     hourlyByMonitor,
     runtimeById,
