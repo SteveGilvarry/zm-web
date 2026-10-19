@@ -580,6 +580,28 @@ describe('monitor editor fields match UpdateMonitorRequest', () => {
     expect(unknown).toEqual([]);
   });
 
+  // Request properties neither editor offers, each for a reason, so a new
+  // column the request starts accepting fails here until someone places it.
+  const NOT_EDITED: Record<string, string> = {
+    analysis_image_opacity: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection_model: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection_nms_threshold: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection_object_threshold: 'in no legacy form and read by no 1.39.41 daemon',
+    enabled: 'monitor.php has no Enabled row since Capturing replaced it; the console toggles it',
+    rtsp_describe: 'gone from monitor.php in 1.39',
+    sequence: 'set by the console’s drag-to-sort',
+    triggers: 'X10 only, which is not built',
+    zone_count: 'kept by the zone editor',
+  };
+
+  it('every request property is edited by a catalogue or listed as not edited', () => {
+    const edited = new Set(fields.map((f) => f.key));
+    const missing = Object.keys(update).filter((k) => !edited.has(k) && !(k in NOT_EDITED));
+    expect(missing).toEqual([]);
+    expect(Object.keys(NOT_EDITED).filter((k) => edited.has(k) || !(k in update))).toEqual([]);
+  });
+
   for (const f of fields.filter((f) => (f.kind === 'select' || f.kind === 'radio') && f.options)) {
     it(`${f.key} (${f.label}) options are members of the request schema`, () => {
       const schema = resolve(update[f.key]);

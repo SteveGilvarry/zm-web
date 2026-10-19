@@ -100,7 +100,9 @@ export function updateRow(row: ActionRow, patch: Partial<ActionRow>, targets: Mo
   const target = targets.find((x) => x.id === next.target_monitor_id);
   const types = typesFor(target);
   if (target && (next.action_type == null || !types.includes(next.action_type))) next.action_type = types[0] ?? null;
-  if (next.action_type === 'AudioPlay' && next.audio_file == null && target?.min_audio_file != null) {
+  // Only a device or type change fills the file in (legacy reacts to the selects), so clearing it to type stays clear.
+  const reselected = 'target_monitor_id' in patch || 'action_type' in patch;
+  if (reselected && next.action_type === 'AudioPlay' && next.audio_file == null && target?.min_audio_file != null) {
     next.audio_file = target.min_audio_file;
   }
   return next;
