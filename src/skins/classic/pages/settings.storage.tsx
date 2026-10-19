@@ -174,12 +174,8 @@ export default function ClassicSettingsStoragePage() {
               name="cst-dodelete"
               labelledBy="cst-dodelete"
               value={formData.do_delete}
-              disabled={st.doDeleteLocked}
               onChange={(v) => { if (v !== formData.do_delete) st.toggleFormDoDelete(); }}
             />
-            {st.doDeleteLocked && (
-              <span className="block text-xs text-zinc-500">{t('Fixed at creation; the API cannot change it.')}</span>
-            )}
           </span>
           <span id="cst-enabled" className="text-end font-semibold text-zinc-800">{t('Enabled')}</span>
           <YesNoRadios

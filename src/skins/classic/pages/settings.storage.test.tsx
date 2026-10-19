@@ -258,11 +258,11 @@ describe('ClassicSettingsStoragePage', () => {
     expect(sent[0].path).toBe('/storage/2');
     expect(sent[0].body).toEqual({
       name: 'Cold archive', path: '/mnt/cold', type: 's3fs', enabled: 1,
-      scheme: 'Deep', server_id: 3, url: 's3://bucket/zm',
+      scheme: 'Deep', server_id: 3, url: 's3://bucket/zm', do_delete: 0,
     });
   });
 
-  it('shows DoDelete as stored and locked while editing', async () => {
+  it('shows DoDelete as stored and lets an edit change it (zm-api#185)', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
@@ -272,9 +272,8 @@ describe('ClassicSettingsStoragePage', () => {
     const dialog = await screen.findByRole('dialog');
     const doDelete = within(dialog).getByRole('radiogroup', { name: 'Do Deletes' });
     expect(within(doDelete).getByRole('radio', { name: 'No' })).toBeChecked();
-    // `UpdateStorageRequest` has no `do_delete`, so an edit cannot change it.
-    expect(within(doDelete).getByRole('radio', { name: 'Yes' })).toBeDisabled();
-    expect(within(dialog).getByText('Fixed at creation; the API cannot change it.')).toBeInTheDocument();
+    expect(within(doDelete).getByRole('radio', { name: 'Yes' })).toBeEnabled();
+    expect(within(dialog).queryByText(/Fixed at creation/)).toBeNull();
   });
 
   it('offers DoDelete on create, and sends it', async () => {

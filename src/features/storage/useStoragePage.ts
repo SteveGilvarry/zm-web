@@ -21,7 +21,7 @@ export interface StorageFormData {
   scheme: string;
   server_id: number | null;
   url: string;
-  /** Legacy's StorageDoDelete radio. Create-time only — see `toStorageCreatePayload`. */
+  /** Legacy's StorageDoDelete radio; sent on create and update (zm-api#185). */
   do_delete: number;
 }
 
@@ -76,11 +76,7 @@ export function toStoragePayload(form: StorageFormData) {
   };
 }
 
-/**
- * Create body: everything above plus `do_delete`, which only
- * `CreateStorageRequest` carries. A PATCH that includes it answers 200 and
- * leaves the column alone, so the update path deliberately never sends it.
- */
+/** The write body with `do_delete`; create and update both take it (zm-api#185). */
 export function toStorageCreatePayload(form: StorageFormData) {
   return { ...toStoragePayload(form), do_delete: form.do_delete };
 }
@@ -283,7 +279,7 @@ export function useStoragePage() {
 
   const submitForm = () => {
     if (editingStorage) {
-      updateMutation.mutate({ id: editingStorage.id, data: toStoragePayload(formData) });
+      updateMutation.mutate({ id: editingStorage.id, data: toStorageCreatePayload(formData) });
     } else {
       createMutation.mutate(toStorageCreatePayload(formData));
     }
@@ -336,8 +332,6 @@ export function useStoragePage() {
     setField,
     toggleFormEnabled,
     toggleFormDoDelete,
-    /** True while editing: `UpdateStorageRequest` has no `do_delete`. */
-    doDeleteLocked: editingStorage !== null,
     openCreate,
     openEdit,
     closeModal,

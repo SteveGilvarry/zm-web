@@ -246,11 +246,11 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     await waitFor(() => expect(body).not.toBeNull());
     expect(body).toEqual({
       name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 0,
-      scheme: 'Deep', server_id: 4, url: 's3://bucket/zm',
+      scheme: 'Deep', server_id: 4, url: 's3://bucket/zm', do_delete: 0,
     });
   });
 
-  it('shows DoDelete as stored and locked while editing', async () => {
+  it('shows DoDelete as stored and lets an edit change it (zm-api#185)', async () => {
     seedStorage();
     const user = userEvent.setup();
     renderWithProviders(<StoragePage />);
@@ -260,11 +260,8 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     const dialog = screen.getByRole('dialog');
     const doDelete = within(dialog).getByRole('switch', { name: 'Delete events' });
     expect(doDelete).toHaveAttribute('aria-checked', 'false');
-    // `UpdateStorageRequest` has no `do_delete`; the PATCH would be ignored.
-    expect(doDelete).toBeDisabled();
-    expect(within(dialog).getByText(
-      'Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.',
-    )).toBeInTheDocument();
+    expect(doDelete).toBeEnabled();
+    expect(within(dialog).getByText('Deleting an event may remove its media from here.')).toBeInTheDocument();
   });
 
   it('lets create choose DoDelete and sends it', async () => {
