@@ -1,7 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import { getEvents } from '@/api/events';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import { listServers } from '@/api/servers';
 import { useAuthStore } from '@/stores/auth';
 import type { Monitor, ZmEvent } from '@/types';
@@ -113,13 +113,13 @@ export function useAuditData(monitors: Monitor[], min: string, max: string): Aud
 export function useAuditMonitors(): { monitors: Monitor[]; isLoading: boolean; error: Error | null; refetch: () => void } {
   const { isAuthenticated } = useAuthStore();
   const q = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 200 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: 60_000,
   });
   return {
-    monitors: useMemo(() => q.data?.items ?? [], [q.data]),
+    monitors: useMemo(() => q.data ?? [], [q.data]),
     isLoading: q.isLoading,
     error: (q.error as Error | null) ?? null,
     refetch: () => { q.refetch(); },

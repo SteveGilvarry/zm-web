@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import {
   listGroups,
   listGroupMonitors,
@@ -96,14 +96,14 @@ export function useGroupsPage(): GroupsPageState {
     enabled: isAuthenticated,
   });
   const monitorsQ = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 200 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
   });
 
   const groups = useMemo(() => groupsQ.data?.items ?? [], [groupsQ.data]);
   const groupMonitors = useMemo(() => groupMonitorsQ.data?.items ?? [], [groupMonitorsQ.data]);
-  const monitors = monitorsQ.data?.items ?? [];
+  const monitors = monitorsQ.data ?? [];
 
   // Tree-flattened groups for indented rendering.
   const tree = useMemo(() => buildGroupTree(groups), [groups]);

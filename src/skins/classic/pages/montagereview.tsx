@@ -45,16 +45,17 @@ function Term({ label, op, children }: { label: string; op: string; children: Re
  * button over its corner. An empty selection means "all".
  */
 function MultiSelect({
-  label, value, options, onChange,
+  label, placeholder, value, options, onChange,
 }: {
   label: string;
+  /** Legacy's `data-placeholder` from Filter.php's widget. */
+  placeholder: string;
   value: string[];
   options: Array<{ value: string; label: string }>;
   onChange: (next: string[]) => void;
 }) {
-  const { t } = useTranslation();
   return (
-    <ClassicChosen label={label} value={value} options={options} onChange={onChange} placeholder={t('All')} className="w-44" />
+    <ClassicChosen label={label} value={value} options={options} onChange={onChange} placeholder={placeholder} className="w-44" />
   );
 }
 
@@ -170,6 +171,7 @@ export default function ClassicMontageReviewPage() {
             <Term label={t('Monitor')} op="">
               <MultiSelect
                 label={t('Monitor')}
+                placeholder={t('All Monitors')}
                 value={filter.valuesMulti.monitorId}
                 options={page.allMonitors.map((m) => ({ value: String(m.id), label: `${m.id} ${m.name}` }))}
                 onChange={(next) => filter.setMulti('monitorId', next)}
@@ -210,6 +212,7 @@ export default function ClassicMontageReviewPage() {
             <Term label={t('Tags')} op="=">
               <MultiSelect
                 label={t('Tags')}
+                placeholder={t('All Tags')}
                 value={page.filters.tagIds.map(String)}
                 options={[
                   { value: String(REVIEW_NO_TAG), label: t('No Tag') },
@@ -222,6 +225,7 @@ export default function ClassicMontageReviewPage() {
             <Term label={t('Notes')} op="LIKE">
               <MultiSelect
                 label={t('Notes')}
+                placeholder={t('Event Type')}
                 value={page.filters.notes}
                 options={notesOptions}
                 onChange={(next) => page.setFilters({ notes: next })}

@@ -47,11 +47,26 @@ describe('ClassicChosen', () => {
     expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
   });
 
-  it('clicking an already picked option removes it', async () => {
+  it('clicking an already picked option does nothing, as in Chosen', async () => {
     mount(['None', 'Always']);
     await userEvent.click(box());
     await userEvent.click(screen.getByRole('option', { name: 'None' }));
-    expect(onChange).toHaveBeenCalledWith(['Always']);
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+  });
+
+  it('closes when focus leaves it by keyboard', async () => {
+    renderWithProviders(
+      <>
+        <ClassicChosen label="Capturing" options={options} value={[]} onChange={onChange} />
+        <button type="button">after</button>
+      </>,
+    );
+    await userEvent.click(box());
+    expect(screen.getByRole('listbox')).toBeInTheDocument();
+    await userEvent.tab();
+    expect(screen.queryByRole('listbox')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'after' })).toHaveFocus();
   });
 
   it('renders a chip per picked value with its own remove button, and hides the placeholder', async () => {

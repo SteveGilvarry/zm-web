@@ -1,6 +1,6 @@
 import {
   useEffect, useId, useMemo, useRef, useState,
-  type KeyboardEvent,
+  type FocusEvent, type KeyboardEvent,
 } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -55,8 +55,10 @@ export function ClassicChosen({
     () => value.map((v) => ({ value: v, label: (options.find((o) => o.value === v)?.label ?? v).trim() })),
     [value, options],
   );
-  // Chosen hides nothing: a picked option stays listed, greyed. The search
-  // is a case-insensitive substring match (`search_contains: true`).
+  // Chosen hides nothing: a picked option stays listed, greyed, and a click
+  // on it does nothing (`result-selected` loses `active-result`); only the
+  // chip's × or Backspace removes it. The search is a case-insensitive
+  // substring match (`search_contains: true`).
   const results = useMemo(() => {
     const q = search.trim().toLowerCase();
     return options.filter((o) => !q || o.label.toLowerCase().includes(q));
@@ -121,10 +123,17 @@ export function ClassicChosen({
   };
 
   const highlighted = pickable[highlight];
-  const optionId = (v: string) => `${autoId}-opt-${v.replace(/[^\w-]/g, '_')}`;
+  const optionId = (o: ChosenOption) => `${autoId}-opt-${options.indexOf(o)}`;
+  // Focus leaving the picker (Tab, or a click elsewhere that moves focus)
+  // closes it; the document mousedown below covers clicks on nothing.
+  const onBlur = (e: FocusEvent<HTMLSpanElement>) => {
+    if (rootRef.current?.contains(e.relatedTarget as Node | null)) return;
+    setOpen(false);
+    setSearch('');
+  };
 
   return (
-    <span ref={rootRef} className={clsx('relative inline-block text-start align-top', className)}>
+    <span ref={rootRef} onBlur={onBlur} className={clsx('relative inline-block text-start align-top', className)}>
       {/* The box: `.chosen-container-multi .chosen-choices`. */}
       <span
         onMouseDown={(e) => {
@@ -166,9 +175,9 @@ export function ClassicChosen({
           aria-label={label}
           aria-expanded={open}
           aria-haspopup="listbox"
-          aria-controls={listId}
+          aria-controls={open ? listId : undefined}
           aria-autocomplete="list"
-          aria-activedescendant={open && highlighted ? optionId(highlighted.value) : undefined}
+          aria-activedescendant={open && highlighted ? optionId(highlighted) : undefined}
           autoComplete="off"
           value={search}
           placeholder={chips.length === 0 ? placeholder : undefined}
@@ -215,7 +224,7 @@ export function ClassicChosen({
             return (
               <li
                 key={o.value}
-                id={optionId(o.value)}
+                id={optionId(o)}
                 role="option"
                 aria-selected={isSelected}
                 aria-disabled={o.disabled || undefined}
@@ -226,9 +235,8 @@ export function ClassicChosen({
                   if (i >= 0) setHighlight(i);
                 }}
                 onClick={() => {
-                  if (o.disabled) return;
-                  if (isSelected) remove(o.value);
-                  else pick(o.value);
+                  if (o.disabled || isSelected) return;
+                  pick(o.value);
                 }}
                 className={clsx(
                   'whitespace-pre px-1.5 py-[5px] leading-[15px]',
