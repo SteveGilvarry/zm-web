@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query';
 import { useNavigate } from '@tanstack/react-router';
 
 import { getEvent } from '@/api/events';
-import { getEventFrameImageUrl, getFrameImageUrl, type Frame } from '@/api/frames';
+import { getEventFrameImageUrl, type Frame } from '@/api/frames';
 import { getMonitor } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import {
@@ -68,9 +68,7 @@ export function useEventFramePage(eventId: number, requestedFrameId: number): Ev
   const framesQ = useEventFrames(eventId);
   const frameId = requestedFrameId > 0 ? requestedFrameId : (framesQ.maxFrame?.frame_id ?? null);
   const frame = frameId != null ? (framesQ.frames.find((f) => f.frame_id === frameId) ?? null) : null;
-  const imageUrl = frame
-    ? getFrameImageUrl(frame.id, accessToken)
-    : frameId != null ? getEventFrameImageUrl(eventId, frameId, accessToken) : null;
+  const imageUrl = frameId != null ? getEventFrameImageUrl(eventId, frameId, accessToken) : null;
   const neighbours = frameNeighbours(framesQ.frames, frameId ?? 0, event?.frames);
 
   const stats = useFrameStats(event, frameId, 1);

@@ -5,6 +5,28 @@
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * @description A monitor an action can drive, and what it can do (ZoneMinder's
+         *     `MonitorAction::targetCandidates`).
+         */
+        ActionTargetResponse: {
+            /** @description `Camera` or `Speaker`. */
+            device_class: string;
+            /** Format: int32 */
+            id: number;
+            /** Format: int32 */
+            max_audio_file?: number | null;
+            /** Format: int32 */
+            min_audio_file?: number | null;
+            name: string;
+            /** @description The action types its control can perform. */
+            types: components["schemas"]["ActionType"][];
+        };
+        /**
+         * @description What the action does to the target monitor's device.
+         * @enum {string}
+         */
+        ActionType: "LightOn" | "LightOff" | "IndicatorLightOn" | "IndicatorLightOff" | "AudioPlay" | "AudioStop";
         AiDatasetResponse: {
             description?: string | null;
             /** Format: int32 */
@@ -41,7 +63,11 @@ export interface components {
             id: number;
         };
         AlarmControlRequest: {
-            /** @description Action to perform: "on" (trigger), "off"/"cancel" (cancel), "status" (get status) */
+            /**
+             * @description Action to perform: "on" (force an alarm), "off"/"cancel" (cancel a
+             *     forced alarm), "disable_alarms" (force alarms off until
+             *     "enable_alarms", ZoneMinder's `zmu -n` / `zmu -c`), "status"
+             */
             action: string;
             /** @description Short cause string (max 31 chars). Only used when action is "on". Default: "API" */
             cause?: string | null;
@@ -147,6 +173,37 @@ export interface components {
         ApplyStateRequest: {
             /** @description Name of the state to apply */
             state_name: string;
+        };
+        /** @description Audio capabilities (#190) */
+        AudioCapabilities: {
+            /** @description `POST .../audio/play/{file}` and `.../audio/stop` */
+            can_play: boolean;
+            /** @description `POST .../audio/volume/{up|down}` */
+            can_volume: boolean;
+            /** Format: int32 */
+            max_file?: number | null;
+            /**
+             * Format: int32
+             * @description The sound numbers `audio/play` accepts.
+             */
+            min_file?: number | null;
+        };
+        /** @description A monitor's live audio level, for the monitor editor's meter (#180). */
+        AudioLevelResponse: {
+            /** @description Whether the level is over the threshold; null while zmc isn't running. */
+            alarm?: boolean | null;
+            /** @description Whether audio detection scores (`AudioDetection`). */
+            detection: boolean;
+            /**
+             * Format: int32
+             * @description 0-100, the scale `audio_threshold` uses; null while zmc isn't running.
+             */
+            level?: number | null;
+            /**
+             * Format: int32
+             * @description The monitor's `AudioThreshold`.
+             */
+            threshold: number;
         };
         /** @description Capability flags for an axis (zoom, focus, iris, gain, white balance) */
         AxisCapabilities: {
@@ -267,6 +324,19 @@ export interface components {
             prompt?: string | null;
             /** Format: int32 */
             readonly: number;
+            /**
+             * @description `Config.Requires`, raw: clauses like `ZM_OPT_USE_AUTH=1;ZM_AUTH_RELAY=hashed`
+             *     that must all hold for the option to apply (#183).
+             */
+            requires?: string | null;
+            /**
+             * @description `db`, or `file` when zm.conf or a conf.d file sets the option. A file
+             *     wins everywhere, so `value` is then the file's (blank for a private
+             *     one) and the option can't be changed through the API.
+             */
+            source: string;
+            /** @description The file that sets it, for `source: "file"`. */
+            source_file?: string | null;
             /** Format: int32 */
             system: number;
             type: string;
@@ -280,6 +350,10 @@ export interface components {
             preset: number;
         };
         ControlResponse: {
+            /** Format: int32 */
+            can_audio_play: number;
+            /** Format: int32 */
+            can_audio_volume: number;
             /** Format: int32 */
             can_auto_focus: number;
             /** Format: int32 */
@@ -309,6 +383,8 @@ export interface components {
             /** Format: int32 */
             can_gain_rel: number;
             /** Format: int32 */
+            can_indicator_light: number;
+            /** Format: int32 */
             can_iris: number;
             /** Format: int32 */
             can_iris_abs: number;
@@ -316,6 +392,8 @@ export interface components {
             can_iris_con: number;
             /** Format: int32 */
             can_iris_rel: number;
+            /** Format: int32 */
+            can_light: number;
             /** Format: int32 */
             can_move: number;
             /** Format: int32 */
@@ -383,6 +461,8 @@ export interface components {
             /** Format: int32 */
             id: number;
             /** Format: int32 */
+            max_audio_file?: number | null;
+            /** Format: int32 */
             max_focus_range?: number | null;
             /** Format: int32 */
             max_focus_speed?: number | null;
@@ -424,6 +504,8 @@ export interface components {
             max_zoom_speed?: number | null;
             /** Format: int32 */
             max_zoom_step?: number | null;
+            /** Format: int32 */
+            min_audio_file?: number | null;
             /** Format: int32 */
             min_focus_range?: number | null;
             /** Format: int32 */
@@ -476,7 +558,7 @@ export interface components {
             turbo_pan_speed?: number | null;
             /** Format: int32 */
             turbo_tilt_speed?: number | null;
-            type: components["schemas"]["MonitorType"];
+            type?: components["schemas"]["MonitorType"] | null;
         };
         CreateAiDatasetRequest: {
             description?: string | null;
@@ -523,6 +605,10 @@ export interface components {
         };
         CreateControlRequest: {
             /** Format: int32 */
+            can_audio_play?: number | null;
+            /** Format: int32 */
+            can_audio_volume?: number | null;
+            /** Format: int32 */
             can_auto_focus?: number | null;
             /** Format: int32 */
             can_auto_gain?: number | null;
@@ -551,6 +637,8 @@ export interface components {
             /** Format: int32 */
             can_gain_rel?: number | null;
             /** Format: int32 */
+            can_indicator_light?: number | null;
+            /** Format: int32 */
             can_iris?: number | null;
             /** Format: int32 */
             can_iris_abs?: number | null;
@@ -558,6 +646,8 @@ export interface components {
             can_iris_con?: number | null;
             /** Format: int32 */
             can_iris_rel?: number | null;
+            /** Format: int32 */
+            can_light?: number | null;
             /** Format: int32 */
             can_move?: number | null;
             /** Format: int32 */
@@ -623,6 +713,8 @@ export interface components {
             /** Format: int32 */
             has_zoom_speed?: number | null;
             /** Format: int32 */
+            max_audio_file?: number | null;
+            /** Format: int32 */
             max_focus_range?: number | null;
             /** Format: int32 */
             max_focus_speed?: number | null;
@@ -664,6 +756,8 @@ export interface components {
             max_zoom_speed?: number | null;
             /** Format: int32 */
             max_zoom_step?: number | null;
+            /** Format: int32 */
+            min_audio_file?: number | null;
             /** Format: int32 */
             min_focus_range?: number | null;
             /** Format: int32 */
@@ -716,12 +810,20 @@ export interface components {
             turbo_pan_speed?: number | null;
             /** Format: int32 */
             turbo_tilt_speed?: number | null;
-            type: components["schemas"]["MonitorType"];
+            type?: components["schemas"]["MonitorType"] | null;
         };
         CreateDeviceRequest: {
             key_string: string;
             name: string;
             type: components["schemas"]["DeviceType"];
+        };
+        CreateEncoderTemplateRequest: {
+            description?: string | null;
+            /** @description The encoder the parameters are for, e.g. `libx264`. */
+            encoder: string;
+            name: string;
+            /** @description `key=value` lines handed to the encoder. */
+            params: string;
         };
         CreateEventDataRequest: {
             /** @example {"detections": []} */
@@ -882,10 +984,50 @@ export interface components {
         CreateManufacturerRequest: {
             name: string;
         };
+        /** @description Mint a signed playlist link. */
+        CreateMediaLinkRequest: {
+            /**
+             * Format: int64
+             * @description Lifetime in seconds, 60 to 31536000 (365 days). Default 2592000
+             *     (30 days).
+             */
+            ttl_seconds?: number | null;
+        };
+        CreateMenuItemRequest: {
+            enabled?: boolean | null;
+            icon?: string | null;
+            icon_type?: string | null;
+            label?: string | null;
+            link?: string | null;
+            /** @description The navbar entry this row configures, e.g. `Console`. */
+            menu_key: string;
+            /** Format: int32 */
+            sort_order?: number | null;
+        };
         CreateModelRequest: {
             /** Format: int32 */
             manufacturer_id?: number | null;
             name: string;
+        };
+        CreateMonitorActionRequest: {
+            action_type: components["schemas"]["ActionType"];
+            /**
+             * Format: int32
+             * @description The sound to play, for `AudioPlay`; within the target control's
+             *     `min_audio_file..=max_audio_file`.
+             */
+            audio_file?: number | null;
+            /** @description Defaults to true. */
+            enabled?: boolean | null;
+            label?: string | null;
+            /** Format: int32 */
+            sequence?: number | null;
+            /**
+             * Format: int32
+             * @description The monitor whose device is driven; often not this one.
+             */
+            target_monitor_id: number;
+            trigger_on?: components["schemas"]["TriggerOn"] | null;
         };
         CreateMonitorPermissionRequest: {
             /**
@@ -936,18 +1078,23 @@ export interface components {
         };
         CreateMonitorRequest: {
             /** Format: int32 */
-            alarm_frame_count: number;
+            alarm_frame_count?: number | null;
             /** Format: double */
             alarm_max_fps?: number | null;
             /** Format: int32 */
-            alarm_ref_blend_perc: number;
-            analysing: components["schemas"]["Analysing"];
+            alarm_ref_blend_perc?: number | null;
+            analysing?: components["schemas"]["Analysing"] | null;
             /** Format: double */
             analysis_fps_limit?: number | null;
-            analysis_image: components["schemas"]["AnalysisImage"];
-            analysis_source: components["schemas"]["AnalysisSource"];
+            analysis_image?: components["schemas"]["AnalysisImage"] | null;
+            /**
+             * Format: int32
+             * @description Alpha applied when compositing the analysis image over the frame.
+             */
+            analysis_image_opacity?: number | null;
+            analysis_source?: components["schemas"]["AnalysisSource"] | null;
             /** Format: int32 */
-            analysis_update_delay: number;
+            analysis_update_delay?: number | null;
             /**
              * Format: int32
              * @description Score an audio alarm contributes; upstream default 9.
@@ -966,36 +1113,38 @@ export interface components {
             /** Format: double */
             auto_stop_timeout?: number | null;
             /** Format: int32 */
-            brightness: number;
-            capturing: components["schemas"]["Capturing"];
+            brightness?: number | null;
+            capturing?: components["schemas"]["Capturing"] | null;
             /** Format: int32 */
-            channel: number;
+            channel?: number | null;
             /** Format: int32 */
-            colour: number;
+            colour?: number | null;
             /** Format: int32 */
-            colours: number;
+            colours?: number | null;
             /** Format: int32 */
-            contrast: number;
+            contrast?: number | null;
             control_address?: string | null;
             control_device?: string | null;
             /** Format: int32 */
             control_id?: number | null;
             /** Format: int32 */
-            controllable: number;
+            controllable?: number | null;
             decoder?: string | null;
             decoder_hw_accel_device?: string | null;
             decoder_hw_accel_name?: string | null;
-            decoding: components["schemas"]["Decoding"];
+            decoding?: components["schemas"]["Decoding"] | null;
             /** Format: int32 */
-            decoding_enabled: number;
-            default_codec: components["schemas"]["DefaultCodec"];
+            decoding_enabled?: number | null;
+            default_codec?: components["schemas"]["DefaultCodec"] | null;
+            /** @description Player the web UI uses for this monitor by default. */
+            default_player?: string | null;
             /** Format: int32 */
-            default_rate: number;
-            default_scale: string;
+            default_rate?: number | null;
+            default_scale?: string | null;
             /** Format: int32 */
-            deinterlacing: number;
-            deleted: boolean;
-            device: string;
+            deinterlacing?: number | null;
+            deleted?: boolean | null;
+            device?: string | null;
             device_class?: components["schemas"]["DeviceClass"] | null;
             /**
              * Format: int32
@@ -1004,40 +1153,49 @@ export interface components {
              */
             enabled?: number | null;
             encoder?: string | null;
+            /** @description Hardware encoder device (`EncoderHWAccelDevice`). */
+            encoder_hw_accel_device?: string | null;
+            /** @description Hardware encoder (`EncoderHWAccelName`). */
+            encoder_hw_accel_name?: string | null;
             encoder_parameters?: string | null;
-            event_close_mode: components["schemas"]["EventCloseMode"];
-            event_end_command: string;
-            event_prefix: string;
-            event_start_command: string;
+            event_close_mode?: components["schemas"]["EventCloseMode"] | null;
+            event_end_command?: string | null;
+            event_prefix?: string | null;
+            event_start_command?: string | null;
             /** Format: int32 */
-            exif: number;
+            exif?: number | null;
             /** Format: int32 */
-            format: number;
+            format?: number | null;
             /** Format: int32 */
-            fps_report_interval: number;
-            function: components["schemas"]["Function"];
+            fps_report_interval?: number | null;
+            function?: components["schemas"]["Function"] | null;
+            /**
+             * Format: int32
+             * @description Serve the monitor through go2rtc.
+             */
+            go2rtc_enabled?: number | null;
             /** Format: int32 */
-            height: number;
+            height?: number | null;
             host?: string | null;
             /** Format: int32 */
-            hue: number;
+            hue?: number | null;
             /** Format: int32 */
-            image_buffer_count: number;
-            importance: components["schemas"]["Importance"];
+            image_buffer_count?: number | null;
+            importance?: components["schemas"]["Importance"] | null;
             /** Format: int32 */
-            janus_audio_enabled: number;
+            janus_audio_enabled?: number | null;
             /** Format: int32 */
-            janus_enabled: number;
+            janus_enabled?: number | null;
             janus_profile_override?: string | null;
             /** Format: int32 */
             janus_rtsp_session_timeout?: number | null;
             label_format?: string | null;
             /** Format: int32 */
-            label_size: number;
+            label_size?: number | null;
             /** Format: int32 */
-            label_x: number;
+            label_x?: number | null;
             /** Format: int32 */
-            label_y: number;
+            label_y?: number | null;
             /** Format: double */
             latitude?: number | null;
             linked_monitors?: string | null;
@@ -1048,72 +1206,86 @@ export interface components {
             /** Format: double */
             max_fps?: number | null;
             /** Format: int32 */
-            max_image_buffer_count: number;
+            max_image_buffer_count?: number | null;
             method?: string | null;
             /** Format: int32 */
-            min_section_length: number;
+            min_section_length?: number | null;
             /** Format: int32 */
-            modect_during_ptz: number;
+            modect_during_ptz?: number | null;
             /** Format: int32 */
             model_id?: number | null;
             /** Format: int32 */
-            motion_frame_skip: number;
+            motion_frame_skip?: number | null;
             /** Format: int32 */
-            mqtt_enabled: number;
-            mqtt_subscriptions: string;
+            mqtt_enabled?: number | null;
+            mqtt_subscriptions?: string | null;
             name: string;
             notes?: string | null;
+            /** @description Detector to use, or `none` to disable object detection. */
+            object_detection?: string | null;
+            /** @description Name of the AI model used for object detection. */
+            object_detection_model?: string | null;
+            /**
+             * Format: float
+             * @description Non-maximum-suppression threshold (0.0-1.0).
+             */
+            object_detection_nms_threshold?: number | null;
+            /**
+             * Format: float
+             * @description Object confidence threshold (0.0-1.0).
+             */
+            object_detection_object_threshold?: number | null;
             onvif_alarm_text?: string | null;
             /** Format: int32 */
-            onvif_event_listener: number;
-            onvif_events_path: string;
-            onvif_options: string;
-            onvif_password: string;
-            onvif_url: string;
-            onvif_username: string;
+            onvif_event_listener?: number | null;
+            onvif_events_path?: string | null;
+            onvif_options?: string | null;
+            onvif_password?: string | null;
+            onvif_url?: string | null;
+            onvif_username?: string | null;
             options?: string | null;
-            orientation: components["schemas"]["Orientation"];
+            orientation?: components["schemas"]["Orientation"] | null;
             /** Format: int32 */
             output_codec?: number | null;
             output_container?: components["schemas"]["OutputContainer"] | null;
             /** Format: int32 */
-            palette: number;
+            palette?: number | null;
             pass?: string | null;
             path?: string | null;
-            port: string;
+            port?: string | null;
             /** Format: int32 */
-            post_event_count: number;
+            post_event_count?: number | null;
             /** Format: int32 */
-            pre_event_count: number;
+            pre_event_count?: number | null;
             protocol?: string | null;
             /**
              * Format: int32
              * @description Boolean. The old `min = -1` accepted a value the column has no meaning for.
              */
-            record_audio: number;
-            recording: components["schemas"]["Recording"];
-            recording_source: components["schemas"]["RecordingSource"];
+            record_audio?: number | null;
+            recording?: components["schemas"]["Recording"] | null;
+            recording_source?: components["schemas"]["RecordingSource"] | null;
             /** Format: int32 */
-            ref_blend_perc: number;
+            ref_blend_perc?: number | null;
             /** Format: int32 */
             refresh?: number | null;
             /** Format: int32 */
-            restream: number;
+            restream?: number | null;
             /** Format: int32 */
             return_delay?: number | null;
             /** Format: int32 */
-            return_location: number;
+            return_location?: number | null;
             /** Format: int32 */
-            rtsp2_web_enabled: number;
-            rtsp2_web_type: components["schemas"]["Rtsp2WebType"];
+            rtsp2_web_enabled?: number | null;
+            rtsp2_web_type?: components["schemas"]["Rtsp2WebType"] | null;
             /**
              * Format: int32
              * @description Accepted and ignored: ZoneMinder 1.39.37 removed `RTSPDescribe`.
              */
             rtsp_describe?: number | null;
             /** Format: int32 */
-            rtsp_server: number;
-            rtsp_stream_name: string;
+            rtsp_server?: number | null;
+            rtsp_stream_name?: string | null;
             /** Format: int32 */
             rtsp_user?: number | null;
             /**
@@ -1122,36 +1294,37 @@ export interface components {
              *     captured frames and bit 1 saves analysis images, so 3 means both — and
              *     3 is the column default, which the old `max = 1` rejected (GH #39).
              */
-            save_jpe_gs: number;
+            save_jpe_gs?: number | null;
             second_path?: string | null;
             /** Format: int32 */
-            section_length: number;
+            section_length?: number | null;
             /** Format: int32 */
-            section_length_warn: number;
+            section_length_warn?: number | null;
             /** Format: int32 */
             sequence?: number | null;
             /** Format: int32 */
             server_id?: number | null;
-            signal_check_colour: string;
+            signal_check_colour?: string | null;
             /** Format: int32 */
-            signal_check_points: number;
+            signal_check_points?: number | null;
             /** Format: int32 */
-            soap_wsa_compl: number;
+            soap_wsa_compl?: number | null;
             /** Format: int32 */
-            startup_delay: number;
+            startup_delay?: number | null;
             /** Format: int32 */
-            storage_id: number;
+            storage_id?: number | null;
+            stream_channel?: components["schemas"]["StreamChannel"] | null;
             /** Format: int32 */
-            stream_replay_buffer: number;
-            sub_path: string;
+            stream_replay_buffer?: number | null;
+            sub_path?: string | null;
             /** Format: int32 */
             track_delay?: number | null;
             /** Format: int32 */
-            track_motion: number;
-            triggers: string;
+            track_motion?: number | null;
+            triggers?: string | null;
             type: components["schemas"]["MonitorType"];
             /** Format: int32 */
-            use_amcrest_api: number;
+            use_amcrest_api?: number | null;
             user?: string | null;
             /** Format: int32 */
             v4l_captures_per_frame?: number | null;
@@ -1161,20 +1334,56 @@ export interface components {
              * Format: int32
              * @description 0 disabled, 1 encode, 2 camera passthrough.
              */
-            video_writer: number;
+            video_writer?: number | null;
+            /**
+             * Format: int32
+             * @description Stamp events with wall-clock rather than stream timestamps.
+             */
+            wall_clock_timestamps?: number | null;
             /** Format: int32 */
-            warmup_count: number;
-            web_colour: string;
+            warmup_count?: number | null;
+            web_colour?: string | null;
+            what_display?: components["schemas"]["WhatDisplay"] | null;
             /** Format: int32 */
-            width: number;
+            width?: number | null;
             /** Format: int32 */
-            zone_count: number;
+            zone_count?: number | null;
         };
         CreateMontageLayoutRequest: {
             name: string;
             positions?: string | null;
             /** Format: int32 */
             user_id: number;
+        };
+        /**
+         * @description Register a push token. A token already registered is updated in place,
+         *     as ZoneMinder's `notifications.json` does.
+         */
+        CreateNotificationRequest: {
+            app_version?: string | null;
+            /** Format: int32 */
+            badge_count?: number | null;
+            /**
+             * Format: int32
+             * @description Minimum seconds between pushes.
+             */
+            interval?: number | null;
+            /**
+             * Format: date-time
+             * @description RFC 3339.
+             */
+            last_notified_at?: string | null;
+            /** @description Comma-separated monitor ids to notify for; empty or absent for all. */
+            monitor_list?: string | null;
+            platform: components["schemas"]["PushPlatform"];
+            profile?: string | null;
+            push_state?: components["schemas"]["PushState"] | null;
+            token: string;
+            /**
+             * Format: int32
+             * @description The owner. Only a System editor may set it; otherwise it is the caller.
+             */
+            user_id?: number | null;
         };
         CreateObjectTypeRequest: {
             /** @example Person */
@@ -1200,6 +1409,15 @@ export interface components {
             name?: string | null;
             /** @example 2025-01-01T00:00:00Z */
             start_date_time: string;
+        };
+        /**
+         * @description Create a role: a named permission set users hold through `role_id`.
+         *     Omitted permission levels default to `None` (a role grants only what it
+         *     names).
+         */
+        CreateRoleRequest: components["schemas"]["UserPermissionsInput"] & {
+            description?: string | null;
+            name: string;
         };
         CreateServerRequest: {
             hostname?: string | null;
@@ -1383,9 +1601,15 @@ export interface components {
             name?: string | null;
             password: string;
             phone?: string | null;
+            /**
+             * Format: int32
+             * @description The user's role (`GET /api/v3/roles`); its permissions add to the
+             *     user's own.
+             */
+            role_id?: number | null;
             username: string;
         };
-        CreateZonePresetRequest: {
+        CreateZonePresetRequest: components["schemas"]["ZonePresetThresholds"] & {
             check_method: string;
             name: string;
             type: string;
@@ -1546,6 +1770,25 @@ export interface components {
         };
         /** @enum {string} */
         DeviceType: "X10";
+        EncoderTemplateResponse: {
+            description?: string | null;
+            encoder: string;
+            /** Format: int32 */
+            id: number;
+            name: string;
+            params: string;
+        };
+        /**
+         * @description Legacy's "Audit Events Report": per monitor, the events overlapping a
+         *     window, the gaps between them, and those whose media is missing or empty.
+         */
+        EventAuditResponse: {
+            /** @example 2026-10-18T10:00:00Z */
+            end: string;
+            monitors: components["schemas"]["MonitorEventAudit"][];
+            /** @example 2026-10-18T09:00:00Z */
+            start: string;
+        };
         /** @enum {string} */
         EventCloseMode: "system" | "time" | "duration" | "idle" | "alarm";
         EventCountResponse: {
@@ -1613,6 +1856,12 @@ export interface components {
             monitor_id?: number | null;
             timestamp?: string | null;
         };
+        EventExportRequest: {
+            /** @description The events to export, at most 500. */
+            ids: number[];
+            /** @description Defaults to `details` and `video`. */
+            include?: components["schemas"]["ExportPart"][] | null;
+        };
         EventQueryParams: {
             /**
              * Format: int32
@@ -1654,6 +1903,15 @@ export interface components {
              * @example 20
              */
             page_size?: number | null;
+            /**
+             * @description Free-text search, as legacy's events search box: a substring match
+             *     over Id, MonitorId, StorageId, Name, Cause, StartDateTime,
+             *     EndDateTime, Length, Frames, AlarmFrames, TotScore, AvgScore,
+             *     MaxScore, Archived, Emailed, Notes and DiskSpace, any of which may
+             *     match (#136).
+             * @example Front
+             */
+            q?: string | null;
             sort?: components["schemas"]["EventSortField"] | null;
             start_time?: components["schemas"]["DateTimeWrapper"] | null;
             /**
@@ -1744,6 +2002,13 @@ export interface components {
             max_score?: number | null;
             /**
              * Format: int32
+             * @description The frame with the highest score (`MaxScoreFrameId`): what a client
+             *     reports as the matching frame (#176).
+             * @example 42
+             */
+            max_score_frame_id?: number | null;
+            /**
+             * Format: int32
              * @example 0
              */
             messaged: number;
@@ -1757,6 +2022,13 @@ export interface components {
             /** @example Important security event */
             notes?: string | null;
             orientation: components["schemas"]["Orientation"];
+            /**
+             * @description The event's directory, as the server resolves it from its storage and
+             *     scheme (what ZoneMinder's event page shows as Path). Only on
+             *     `GET /events/{id}`; whether the media is still there is what
+             *     `GET /events/{id}/info` answers (#140).
+             */
+            path?: string | null;
             /**
              * Format: int32
              * @example 1
@@ -1992,6 +2264,32 @@ export interface components {
             /** Format: int32 */
             width: number;
         };
+        /** @description A video file in an event's directory. */
+        EventVideoResponse: {
+            /** @description The file's extension. */
+            format: string;
+            /** Format: double */
+            fps?: number | null;
+            name: string;
+            /**
+             * Format: double
+             * @description From a generated file's name (zmvideo.pl's `-r`, `-R`, `-s` and `-S`
+             *     parts), when present.
+             */
+            rate?: number | null;
+            /** @description The event's own recording (`DefaultVideo`); it can't be deleted here. */
+            recorded: boolean;
+            /** Format: double */
+            scale?: number | null;
+            size?: string | null;
+            /** Format: int64 */
+            size_bytes: number;
+        };
+        /**
+         * @description What goes into each event's folder in the zip.
+         * @enum {string}
+         */
+        ExportPart: "details" | "frames" | "images" | "video" | "misc";
         /**
          * @description One node of the filter tree: either a bracketed group of sub-expressions
          *     joined by AND/OR, or a single leaf condition.
@@ -2097,25 +2395,26 @@ export interface components {
         };
         FrameResponse: {
             /**
+             * Format: int32
+             * @description Peak audio level since the previous frame row, 0-100 on the scale
+             *     `Monitors.AudioThreshold` uses; 0 means silence or no audio
+             */
+            audio_level: number;
+            /**
              * @description Time delta from previous frame
              * @example 0.05
              */
             delta: string;
             /**
              * Format: int64
-             * @description Event ID this frame belongs to
+             * @description Event ID this frame belongs to; with `frame_id`, the frame's key
              */
             event_id: number;
             /**
              * Format: int32
-             * @description Frame sequence number within the event
+             * @description Frame number within the event
              */
             frame_id: number;
-            /**
-             * Format: int64
-             * @description Frame ID
-             */
-            id: number;
             /**
              * Format: int32
              * @description Motion detection score
@@ -2133,6 +2432,32 @@ export interface components {
         Framework: "TensorFlow" | "PyTorch" | "ONNX" | "OpenVINO" | "TensorRT" | "Other";
         /** @enum {string} */
         Function: "None" | "Monitor" | "Modect" | "Record" | "Mocord" | "Nodect";
+        /** @description `POST /api/v3/events/{id}/videos`: what zmvideo.pl's options set. */
+        GenerateVideoRequest: {
+            /** @description One of `ZM_FFMPEG_FORMATS`; defaults to its starred entry. */
+            format?: string | null;
+            /**
+             * Format: double
+             * @description A fixed output frame rate. Exclusive with `rate`.
+             */
+            fps?: number | null;
+            /** @description Replace a file of the same name; otherwise an existing one is the result. */
+            overwrite?: boolean;
+            /**
+             * Format: double
+             * @description Playback speed relative to real time (2 is twice as fast). Exclusive
+             *     with `fps`.
+             */
+            rate?: number | null;
+            /**
+             * Format: double
+             * @description Scale relative to the event's size. Exclusive with `size`.
+             */
+            scale?: number | null;
+            /** @description An exact `WIDTHxHEIGHT`. Exclusive with `scale`. */
+            size?: string | null;
+            transform?: components["schemas"]["VideoTransform"];
+        };
         GroupMonitorResponse: {
             /** Format: int32 */
             group_id: number;
@@ -2236,6 +2561,23 @@ export interface components {
          * @enum {string}
          */
         Level: "None" | "View" | "Edit";
+        /** @description Light capabilities (#190) */
+        LightCapabilities: {
+            /** @description `POST .../indicator-light/{on|off}` */
+            can_indicator_light: boolean;
+            /** @description `POST .../light/{on|off}` */
+            can_light: boolean;
+        };
+        /**
+         * @description The lights' state as the camera reports it (#190); null where the control
+         *     has no such light or the daemon gave no answer.
+         */
+        LightStatusResponse: {
+            /** @description `on` or `off`. */
+            indicator_light?: string | null;
+            /** @description `on` or `off`. */
+            light?: string | null;
+        };
         /** @description Protocol status in live stats */
         LiveProtocolStatus: {
             hls: boolean;
@@ -2298,8 +2640,8 @@ export interface components {
         /** @description Query parameters for listing (and clearing) logs. */
         LogQueryParams: {
             /**
-             * @description Filter by component name (e.g., "zmc", "zma", "zmdc", "web")
-             * @example zmc
+             * @description Exact component name, or a comma list of them (`zmc,zma`).
+             * @example zmc,zma
              */
             component?: string | null;
             /**
@@ -2428,6 +2770,11 @@ export interface components {
          */
         LogSortField: "time" | "id" | "component" | "server_id" | "pid" | "level" | "code" | "message" | "file" | "line";
         LoginRequest: {
+            /**
+             * @description Whatever the account's password is. ZoneMinder sets no minimum (its
+             *     default login is `admin`/`admin`), so a minimum here only locked
+             *     existing users out (#174); setting a password still enforces one.
+             */
             password: string;
             username: string;
         };
@@ -2472,6 +2819,61 @@ export interface components {
             /** @description The caller's user record (permissions, profile). */
             user: components["schemas"]["UserResponse"];
         };
+        MediaJobResponse: {
+            created_at: components["schemas"]["DateTimeWrapper"];
+            /** Format: int32 */
+            created_by?: number | null;
+            error?: string | null;
+            /** Format: int64 */
+            event_id: number;
+            finished_at?: components["schemas"]["DateTimeWrapper"] | null;
+            /** Format: int32 */
+            id: number;
+            /** @description `video` for now. */
+            kind: string;
+            /** Format: int32 */
+            monitor_id: number;
+            /** @description For a video, the file name in the event's directory. */
+            output?: string | null;
+            /** @description The parameters the job was queued with. */
+            params: Record<string, never>;
+            started_at?: components["schemas"]["DateTimeWrapper"] | null;
+            /** @description `queued`, `running`, `done`, `failed` or `cancelled`. */
+            status: string;
+        };
+        /** @description A signed playlist link for a player that can only authenticate in the URL. */
+        MediaLinkResponse: {
+            /**
+             * Format: int64
+             * @description Unix time the link stops working.
+             */
+            expires_at: number;
+            /**
+             * @description The playlist path with its signature, ready for a player: prefix it
+             *     with the server's origin. The playlist signs every URI it lists.
+             * @example /api/v3/live/1/hls/master.m3u8?st=1.m.1.3.1760000000.1762592000.Q2…
+             */
+            playlist_url: string;
+            /**
+             * @description The signature alone (`st`), for building other URLs of the same
+             *     monitor or event.
+             */
+            token: string;
+        };
+        MenuItemResponse: {
+            enabled: boolean;
+            icon?: string | null;
+            /** @description `material`, `fontawesome`, `image` or `none`. */
+            icon_type: string;
+            /** Format: int32 */
+            id: number;
+            /** @description Label to show instead of the entry's default one. */
+            label?: string | null;
+            link?: string | null;
+            menu_key: string;
+            /** Format: int32 */
+            sort_order: number;
+        };
         MessageResponse: {
             message: string;
         };
@@ -2481,6 +2883,49 @@ export interface components {
             /** Format: int32 */
             manufacturer_id?: number | null;
             name: string;
+        };
+        MonitorActionResponse: {
+            action_type?: components["schemas"]["ActionType"] | null;
+            /** Format: int32 */
+            audio_file?: number | null;
+            enabled: boolean;
+            /** Format: int32 */
+            id: number;
+            label: string;
+            /** Format: int32 */
+            monitor_id: number;
+            /** Format: int32 */
+            sequence: number;
+            /** Format: int32 */
+            target_monitor_id: number;
+            trigger_on?: components["schemas"]["TriggerOn"] | null;
+        };
+        MonitorEventAudit: {
+            /** Format: int64 */
+            event_count: number;
+            /** Format: int64 */
+            first_event_id: number;
+            /** @description Start of the first event in the window. */
+            first_start?: string | null;
+            /** @description End of the last event in the window. */
+            last_end?: string | null;
+            /** Format: int64 */
+            last_event_id: number;
+            /** Format: int64 */
+            max_gap_seconds?: number | null;
+            /**
+             * Format: int64
+             * @description Smallest and largest gap, in seconds, from one event's end to the
+             *     next one's start: negative where events overlap. Null with fewer than
+             *     two events.
+             */
+            min_gap_seconds?: number | null;
+            /** @description Events whose video (or, without one, whose directory) isn't on disk. */
+            missing_files: number[];
+            /** Format: int32 */
+            monitor_id: number;
+            /** @description Events whose video file is empty. */
+            zero_size: number[];
         };
         /** @description Event count per monitor (for console view) */
         MonitorEventCount: {
@@ -2800,7 +3245,28 @@ export interface components {
             /** Format: int32 */
             zone_count: number;
         };
+        /**
+         * @description Body of `PATCH /monitors/{id}/state`. Distinct from the run-state
+         *     `UpdateStateRequest` in `dto::request::states`: the two shared a name, and
+         *     the OpenAPI spec documented this endpoint with the other one's body (#158).
+         */
+        MonitorStateRequest: {
+            state: string;
+        };
         MonitorStatusResponse: {
+            /**
+             * @description Live alarm state from the monitor's shared memory: `idle`,
+             *     `prealarm`, `alarm` or `alert` (what `zmu -s` reports). Only on
+             *     `GET /monitor-status/{id}`, and only while zmc is running.
+             */
+            alarm_state?: string | null;
+            /**
+             * @description Whether alarms are forced off (`zmu -n`, or `disable_alarms` on the
+             *     alarm endpoint). Same availability as `alarm_state`.
+             */
+            alarms_disabled?: boolean | null;
+            /** @description Whether the monitor is analysing right now. Same availability. */
+            analysing?: boolean | null;
             analysis_fps: string;
             /** Format: int32 */
             capture_bandwidth: number;
@@ -2811,7 +3277,7 @@ export interface components {
             updated_on: string;
         };
         /** @enum {string} */
-        MonitorType: "Local" | "Remote" | "File" | "Ffmpeg" | "Libvlc" | "cURL" | "WebSite" | "VNC";
+        MonitorType: "Local" | "Remote" | "File" | "Ffmpeg" | "cURL" | "WebSite" | "VNC";
         MontageLayoutResponse: {
             /** Format: int32 */
             id: number;
@@ -2825,6 +3291,25 @@ export interface components {
          * @example 2025-04-24T12:34:56
          */
         NaiveDateTimeWrapper: string;
+        NotificationResponse: {
+            app_version?: string | null;
+            /** Format: int32 */
+            badge_count: number;
+            created_on?: components["schemas"]["DateTimeWrapper"] | null;
+            /** Format: int32 */
+            id: number;
+            /** Format: int32 */
+            interval: number;
+            last_notified_at?: components["schemas"]["DateTimeWrapper"] | null;
+            monitor_list?: string | null;
+            platform?: components["schemas"]["PushPlatform"] | null;
+            profile?: string | null;
+            push_state?: components["schemas"]["PushState"] | null;
+            token: string;
+            updated_on: components["schemas"]["DateTimeWrapper"];
+            /** Format: int32 */
+            user_id?: number | null;
+        };
         ObjectTypeResponse: {
             human?: string | null;
             /** Format: int32 */
@@ -3199,6 +3684,17 @@ export interface components {
             /** Format: int64 */
             total: number;
         };
+        PaginatedRolesResponse: {
+            /** Format: int64 */
+            current_page: number;
+            items: components["schemas"]["RoleResponse"][];
+            /** Format: int64 */
+            last_page: number;
+            /** Format: int64 */
+            per_page: number;
+            /** Format: int64 */
+            total: number;
+        };
         /** @description Paginated response for server stats */
         PaginatedServerStatsResponse: {
             /** Format: int64 */
@@ -3441,6 +3937,18 @@ export interface components {
              */
             num_presets: number;
         };
+        /** @description Record the answer to the privacy statement (#189). */
+        PrivacyRequest: {
+            /** @description Accept (send telemetry) or decline. */
+            accept: boolean;
+        };
+        /** @description The privacy settings after recording an answer. */
+        PrivacyResponse: {
+            /** @description `ZM_SHOW_PRIVACY`: whether the statement is still to be shown. */
+            show_privacy?: boolean | null;
+            /** @description `ZM_TELEMETRY_DATA`: whether telemetry is sent. */
+            telemetry?: boolean | null;
+        };
         /**
          * @description Request to run a WS-Discovery multicast probe for ONVIF devices on the local
          *     network.
@@ -3479,6 +3987,8 @@ export interface components {
         };
         /** @description Complete PTZ capabilities for a camera */
         PtzCapabilities: {
+            /** @description Audio capabilities */
+            audio?: components["schemas"]["AudioCapabilities"];
             /**
              * Format: int32
              * @description Control ID from database
@@ -3490,6 +4000,8 @@ export interface components {
             gain: components["schemas"]["AxisCapabilities"];
             /** @description Iris capabilities */
             iris: components["schemas"]["AxisCapabilities"];
+            /** @description Light capabilities */
+            light?: components["schemas"]["LightCapabilities"];
             /** @description Control name */
             name: string;
             /** @description Pan/Tilt capabilities */
@@ -3662,6 +4174,10 @@ export interface components {
             speed?: number | null;
         };
         /** @enum {string} */
+        PushPlatform: "android" | "ios" | "web";
+        /** @enum {string} */
+        PushState: "enabled" | "disabled";
+        /** @enum {string} */
         Recording: "None" | "OnMotion" | "Always";
         /** @enum {string} */
         RecordingSource: "Primary" | "Secondary" | "Both";
@@ -3697,6 +4213,24 @@ export interface components {
         };
         /** @enum {string} */
         ResourceType: "User" | "File" | "Session" | "Message" | "Monitor" | "Config" | "EventTag" | "EventSummary" | "Event";
+        /**
+         * @description A ZoneMinder 1.39 role. A user holding it (`role_id`) gets, per feature,
+         *     the higher of their own level and the role's.
+         */
+        RoleResponse: {
+            control: string;
+            description?: string | null;
+            devices: string;
+            events: string;
+            groups: string;
+            /** Format: int32 */
+            id: number;
+            monitors: string;
+            name: string;
+            snapshots: string;
+            stream: string;
+            system: string;
+        };
         /** @enum {string} */
         Rtsp2WebType: "HLS" | "MSE" | "WebRTC";
         /** @description Auto-scan capabilities */
@@ -3963,6 +4497,16 @@ export interface components {
             /** Format: int32 */
             monitor_id: number;
         };
+        StorageFilesystem: {
+            /** Format: int64 */
+            available_bytes: number;
+            /** Format: int64 */
+            total_bytes: number;
+            /** Format: double */
+            usage_percent: number;
+            /** Format: int64 */
+            used_bytes: number;
+        };
         StorageResponse: {
             /**
              * Format: int64
@@ -3973,6 +4517,7 @@ export interface components {
             do_delete: number;
             /** Format: int32 */
             enabled: number;
+            filesystem?: components["schemas"]["StorageFilesystem"] | null;
             /** Format: int32 */
             id: number;
             name: string;
@@ -3983,6 +4528,8 @@ export interface components {
             type: string;
             url?: string | null;
         };
+        /** @enum {string} */
+        StreamChannel: "Restream" | "CameraDirectPrimary" | "CameraDirectSecondary";
         StreamEndpoints: {
             hls: string;
             mjpeg: string;
@@ -4161,6 +4708,12 @@ export interface components {
          * @enum {string}
          */
         TokenType: "access" | "refresh";
+        /**
+         * @description When an action fires. zmc fires all but `Manual`, which a client runs
+         *     with `POST /monitors/{id}/actions/{action_id}/run`.
+         * @enum {string}
+         */
+        TriggerOn: "EventStart" | "EventEnd" | "Alarm" | "AlarmEnd" | "Manual";
         TriggerX10Response: {
             activation?: string | null;
             alarm_input?: string | null;
@@ -4211,6 +4764,10 @@ export interface components {
         };
         UpdateControlRequest: {
             /** Format: int32 */
+            can_audio_play?: number | null;
+            /** Format: int32 */
+            can_audio_volume?: number | null;
+            /** Format: int32 */
             can_auto_focus?: number | null;
             /** Format: int32 */
             can_auto_gain?: number | null;
@@ -4239,6 +4796,8 @@ export interface components {
             /** Format: int32 */
             can_gain_rel?: number | null;
             /** Format: int32 */
+            can_indicator_light?: number | null;
+            /** Format: int32 */
             can_iris?: number | null;
             /** Format: int32 */
             can_iris_abs?: number | null;
@@ -4246,6 +4805,8 @@ export interface components {
             can_iris_con?: number | null;
             /** Format: int32 */
             can_iris_rel?: number | null;
+            /** Format: int32 */
+            can_light?: number | null;
             /** Format: int32 */
             can_move?: number | null;
             /** Format: int32 */
@@ -4311,6 +4872,8 @@ export interface components {
             /** Format: int32 */
             has_zoom_speed?: number | null;
             /** Format: int32 */
+            max_audio_file?: number | null;
+            /** Format: int32 */
             max_focus_range?: number | null;
             /** Format: int32 */
             max_focus_speed?: number | null;
@@ -4352,6 +4915,8 @@ export interface components {
             max_zoom_speed?: number | null;
             /** Format: int32 */
             max_zoom_step?: number | null;
+            /** Format: int32 */
+            min_audio_file?: number | null;
             /** Format: int32 */
             min_focus_range?: number | null;
             /** Format: int32 */
@@ -4410,6 +4975,13 @@ export interface components {
             key_string?: string | null;
             name?: string | null;
             type?: components["schemas"]["DeviceType"] | null;
+        };
+        UpdateEncoderTemplateRequest: {
+            /** @description `null` clears it; omit to leave it unchanged. */
+            description?: string | null;
+            encoder?: string | null;
+            name?: string | null;
+            params?: string | null;
         };
         UpdateEventDataRequest: {
             /** @example {"detections": []} */
@@ -4493,10 +5065,35 @@ export interface components {
         UpdateManufacturerRequest: {
             name?: string | null;
         };
+        /** @description Partial update. For `label`, `icon` and `link`, `null` clears the value. */
+        UpdateMenuItemRequest: {
+            enabled?: boolean | null;
+            icon?: string | null;
+            icon_type?: string | null;
+            label?: string | null;
+            link?: string | null;
+            /** Format: int32 */
+            sort_order?: number | null;
+        };
         UpdateModelRequest: {
             /** Format: int32 */
             manufacturer_id?: number | null;
             name?: string | null;
+        };
+        UpdateMonitorActionRequest: {
+            action_type?: components["schemas"]["ActionType"] | null;
+            /**
+             * Format: int32
+             * @description `null` clears it; omit to leave it unchanged.
+             */
+            audio_file?: number | null;
+            enabled?: boolean | null;
+            label?: string | null;
+            /** Format: int32 */
+            sequence?: number | null;
+            /** Format: int32 */
+            target_monitor_id?: number | null;
+            trigger_on?: components["schemas"]["TriggerOn"] | null;
         };
         UpdateMonitorPermissionRequest: {
             /** @example Edit */
@@ -4586,6 +5183,8 @@ export interface components {
             /** Format: int32 */
             decoding_enabled?: number | null;
             default_codec?: components["schemas"]["DefaultCodec"] | null;
+            /** @description Player the web UI uses for this monitor by default. */
+            default_player?: string | null;
             /** Format: int32 */
             default_rate?: number | null;
             default_scale?: string | null;
@@ -4600,6 +5199,10 @@ export interface components {
              */
             enabled?: number | null;
             encoder?: string | null;
+            /** @description Hardware encoder device (`EncoderHWAccelDevice`). */
+            encoder_hw_accel_device?: string | null;
+            /** @description Hardware encoder (`EncoderHWAccelName`). */
+            encoder_hw_accel_name?: string | null;
             encoder_parameters?: string | null;
             event_close_mode?: components["schemas"]["EventCloseMode"] | null;
             event_end_command?: string | null;
@@ -4612,6 +5215,11 @@ export interface components {
             /** Format: int32 */
             fps_report_interval?: number | null;
             function?: components["schemas"]["Function"] | null;
+            /**
+             * Format: int32
+             * @description Serve the monitor through go2rtc.
+             */
+            go2rtc_enabled?: number | null;
             /** Format: int32 */
             height?: number | null;
             host?: string | null;
@@ -4751,6 +5359,7 @@ export interface components {
             startup_delay?: number | null;
             /** Format: int32 */
             storage_id?: number | null;
+            stream_channel?: components["schemas"]["StreamChannel"] | null;
             /** Format: int32 */
             stream_replay_buffer?: number | null;
             sub_path?: string | null;
@@ -4772,9 +5381,15 @@ export interface components {
              * @description 0 disabled, 1 encode, 2 camera passthrough.
              */
             video_writer?: number | null;
+            /**
+             * Format: int32
+             * @description Stamp events with wall-clock rather than stream timestamps.
+             */
+            wall_clock_timestamps?: number | null;
             /** Format: int32 */
             warmup_count?: number | null;
             web_colour?: string | null;
+            what_display?: components["schemas"]["WhatDisplay"] | null;
             /** Format: int32 */
             width?: number | null;
             /** Format: int32 */
@@ -4797,6 +5412,26 @@ export interface components {
             name?: string | null;
             positions?: string | null;
             /** Format: int32 */
+            user_id?: number | null;
+        };
+        UpdateNotificationRequest: {
+            app_version?: string | null;
+            /** Format: int32 */
+            badge_count?: number | null;
+            /** Format: int32 */
+            interval?: number | null;
+            /** Format: date-time */
+            last_notified_at?: string | null;
+            /** @description `null` clears it; omit to leave it unchanged. */
+            monitor_list?: string | null;
+            platform?: components["schemas"]["PushPlatform"] | null;
+            profile?: string | null;
+            push_state?: components["schemas"]["PushState"] | null;
+            token?: string | null;
+            /**
+             * Format: int32
+             * @description System editors only.
+             */
             user_id?: number | null;
         };
         UpdateObjectTypeRequest: {
@@ -4823,6 +5458,12 @@ export interface components {
             name?: string | null;
             /** @example 2025-01-01T00:00:00Z */
             start_date_time: string;
+        };
+        /** @description Partial update of a role. */
+        UpdateRoleRequest: components["schemas"]["UserPermissionsInput"] & {
+            /** @description `null` clears it; omit to leave it unchanged. */
+            description?: string | null;
+            name?: string | null;
         };
         /** @description Partial update: a field left out is unchanged; `null` clears a nullable one. */
         UpdateServerRequest: {
@@ -4898,6 +5539,12 @@ export interface components {
             name?: string | null;
         };
         UpdateStorageRequest: {
+            /**
+             * Format: int32
+             * @description Whether ZoneMinder may delete media from this area (`DoDelete`, 0/1);
+             *     the reaper and event deletes honour it (#185).
+             */
+            do_delete?: number | null;
             /** Format: int32 */
             enabled?: number | null;
             name?: string | null;
@@ -4939,13 +5586,18 @@ export interface components {
             password?: string | null;
             phone?: string | null;
             /**
+             * Format: int32
+             * @description The user's role; `null` removes it. Omit to leave it unchanged.
+             */
+            role_id?: number | null;
+            /**
              * Format: int64
              * @description Set the token-revocation floor (unix seconds). Setting it to "now"
              *     revokes all of the user's outstanding tokens (admin revoke-all).
              */
             token_min_expiry?: number | null;
         };
-        UpdateZonePresetRequest: {
+        UpdateZonePresetRequest: components["schemas"]["ZonePresetThresholds"] & {
             check_method?: string | null;
             name?: string | null;
             type?: string | null;
@@ -5061,6 +5713,11 @@ export interface components {
             monitors: string;
             name: string;
             phone: string;
+            /**
+             * Format: int32
+             * @description The user's role, whose permissions add to the levels above.
+             */
+            role_id?: number | null;
             snapshots: string;
             stream: string;
             system: string;
@@ -5074,6 +5731,11 @@ export interface components {
             /** @description ZoneMinder version */
             version: string;
         };
+        /**
+         * @description A filter for the generated video, as ZoneMinder's Generate Video offers.
+         * @enum {string}
+         */
+        VideoTransform: "none" | "greyscale";
         /**
          * @description WebRTC signaling message types.
          *
@@ -5158,6 +5820,8 @@ export interface components {
             /** @description Reader was already hot at connect (no reader spin-up on the offer path). */
             warm_start: boolean;
         };
+        /** @enum {string} */
+        WhatDisplay: "OnlyVideo" | "OnlyAudioVisualization" | "VideoAudioVisualization";
         /** @description What zm-api knows about a worker right now. */
         WorkerStatus: {
             control_peer: boolean;
@@ -5199,10 +5863,75 @@ export interface components {
         ZonePresetResponse: {
             check_method: string;
             /** Format: int32 */
+            extend_alarm_frames: number;
+            /** Format: int32 */
+            filter_x?: number | null;
+            /** Format: int32 */
+            filter_y?: number | null;
+            /** Format: int32 */
             id: number;
+            /** Format: double */
+            max_alarm_pixels?: number | null;
+            /** Format: double */
+            max_blob_pixels?: number | null;
+            /** Format: int32 */
+            max_blobs?: number | null;
+            /** Format: double */
+            max_filter_pixels?: number | null;
+            /** Format: int32 */
+            max_pixel_threshold?: number | null;
+            /** Format: double */
+            min_alarm_pixels?: number | null;
+            /** Format: double */
+            min_blob_pixels?: number | null;
+            /** Format: int32 */
+            min_blobs?: number | null;
+            /** Format: double */
+            min_filter_pixels?: number | null;
+            /**
+             * Format: int32
+             * @description The thresholds the preset applies, named as on `ZoneResponse` (#188).
+             */
+            min_pixel_threshold?: number | null;
             name: string;
+            /** Format: int32 */
+            overload_frames: number;
             type: string;
             units: string;
+        };
+        /**
+         * @description A zone preset's thresholds, named as on `ZoneResponse` so a client can copy
+         *     them to a zone one to one. On update, an omitted field is left alone.
+         */
+        ZonePresetThresholds: {
+            /** Format: int32 */
+            extend_alarm_frames?: number | null;
+            /** Format: int32 */
+            filter_x?: number | null;
+            /** Format: int32 */
+            filter_y?: number | null;
+            /** Format: double */
+            max_alarm_pixels?: number | null;
+            /** Format: double */
+            max_blob_pixels?: number | null;
+            /** Format: int32 */
+            max_blobs?: number | null;
+            /** Format: double */
+            max_filter_pixels?: number | null;
+            /** Format: int32 */
+            max_pixel_threshold?: number | null;
+            /** Format: double */
+            min_alarm_pixels?: number | null;
+            /** Format: double */
+            min_blob_pixels?: number | null;
+            /** Format: int32 */
+            min_blobs?: number | null;
+            /** Format: double */
+            min_filter_pixels?: number | null;
+            /** Format: int32 */
+            min_pixel_threshold?: number | null;
+            /** Format: int32 */
+            overload_frames?: number | null;
         };
         ZoneResponse: {
             /** Format: int32 */

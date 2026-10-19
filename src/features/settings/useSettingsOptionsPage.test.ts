@@ -26,7 +26,7 @@ const { useSettingsOptionsPage, CONFIG_PAGE_SIZE, formatBytes } =
 /* ----- fixtures --------------------------------------------------------- */
 
 const cfg = (over: Partial<ZmConfig> & { name: string; category: string }): ZmConfig => ({
-  id: 1, value: '', type: 'string', readonly: 0, private: 0, system: 1, ...over,
+  id: 1, value: '', type: 'string', readonly: 0, private: 0, system: 1, source: 'db', ...over,
 });
 
 const CONFIGS: ZmConfig[] = [

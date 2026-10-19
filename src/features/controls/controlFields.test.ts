@@ -16,6 +16,7 @@ const t = i18next.t.bind(i18next);
 
 const sample: Control = {
   id: 3, name: 'Pelco-P', type: 'Local', protocol: 'PelcoP',
+  can_light: 0, can_indicator_light: 0, can_audio_play: 0, can_audio_volume: 0, min_audio_file: null, max_audio_file: null,
   can_pan: 1, can_tilt: 1, can_zoom: 0, can_move: 1, can_move_abs: 0, can_move_rel: 1, can_move_con: 1, can_move_diag: 1, can_move_map: 0,
   can_auto_zoom: 0, can_zoom_abs: 0, can_zoom_rel: 0, can_zoom_con: 0, has_zoom_speed: 0,
   can_focus: 0, can_auto_focus: 0, can_focus_abs: 0, can_focus_rel: 0, can_focus_con: 0, has_focus_speed: 0,
@@ -42,13 +43,15 @@ describe('CONTROL_TABS', () => {
     expect(CONTROL_TABS.find((tab) => tab.key === 'pan')!.fields).toHaveLength(10);
     expect(CONTROL_TABS.find((tab) => tab.key === 'zoom')!.fields).toHaveLength(12);
     expect(CONTROL_TABS.find((tab) => tab.key === 'focus')!.fields).toHaveLength(12);
-    expect(CONTROL_FIELD_KEYS).toHaveLength(96);
+    expect(CONTROL_FIELD_KEYS).toHaveLength(102);
   });
 
   it('offers no Type field (dropped in 1.39.39) and no Misc tab', () => {
     expect(CONTROL_FIELD_KEYS).not.toContain('type' as never);
     expect(CONTROL_TABS.find((tab) => tab.key === 'main')!.fields.map((f) => f.key)).toEqual(
-      ['name', 'protocol', 'can_wake', 'can_sleep', 'can_reset', 'can_reboot'],
+      ['name', 'protocol', 'can_wake', 'can_sleep',
+        'can_light', 'can_indicator_light', 'can_audio_play', 'min_audio_file', 'max_audio_file', 'can_audio_volume',
+        'can_reset', 'can_reboot'],
     );
     expect(CONTROL_TABS.some((tab) => (tab.key as string) === 'misc')).toBe(false);
   });

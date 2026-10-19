@@ -60,7 +60,7 @@ async function mount() {
 
 function frame(frame_id: number, over: Record<string, unknown> = {}) {
   return {
-    id: 1000 + frame_id, event_id: 42, frame_id, type: 'Normal', score: 0,
+    event_id: 42, frame_id, type: 'Normal', score: 0, audio_level: 0,
     time_stamp: `2026-06-03T12:00:${String(frame_id).padStart(2, '0')}Z`,
     delta: (frame_id * 0.5).toFixed(3), ...over,
   };
@@ -131,11 +131,11 @@ describe('EventFramesPage — classic skin', () => {
     await mount();
     await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
 
-    // Legacy keys the image off the `Frames` row id, not the frame number.
+    // Fetched by event and frame number (`Frames.Id` is gone in 1.39.36).
     const thumbs = screen.getAllByTestId(/^frame-thumb-/);
     expect(thumbs).toHaveLength(3);
     expect(thumbs[0]).toHaveAttribute(
-      'src', '/api/v3/frames/1001/image?token=test',
+      'src', '/api/v3/events/42/frames/1/image?token=test',
     );
     expect(thumbs[0]).toHaveAttribute('alt', 'Frame 1');
   });

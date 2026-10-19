@@ -59,7 +59,7 @@ export function buildClassicTabs(t: Translate): TabDef[] {
     { value: 1, label: t('Enabled') },
     { value: 0, label: t('Disabled') },
   ];
-  const STREAMING: FieldVisibility = { types: ['Ffmpeg', 'Libvlc'] };
+  const STREAMING: FieldVisibility = { types: ['Ffmpeg'] };
   const SECONDS = t('seconds');
   const FRAMES = t('frames');
 
@@ -137,7 +137,6 @@ export function buildClassicTabs(t: Translate): TabDef[] {
             { value: 'WebSite', label: t('Web Site') }, { value: 'VNC', label: t('VNC') },
           ],
           storedOnlyOptions: [
-            { value: 'Libvlc', label: t('Libvlc (removed)') },
             { value: 'cURL', label: t('cURL (removed)') },
           ] },
         { kind: 'groups', key: '_groups', label: t('Groups'), virtual: true },
@@ -207,7 +206,7 @@ export function buildClassicTabs(t: Translate): TabDef[] {
         { kind: 'number', key: 'refresh', label: t('Web Site Refresh (Optional)'), show: { types: ['WebSite'] },
           min: 1, integer: true },
 
-        // Ffmpeg (Libvlc kept for monitors still stored with it)
+        // Ffmpeg
         { kind: 'text', key: 'path', label: t('Source Path'), show: STREAMING },
         { kind: 'text', key: 'user', label: t('Username'), show: STREAMING },
         { kind: 'password', key: 'pass', label: t('Password'), show: STREAMING },

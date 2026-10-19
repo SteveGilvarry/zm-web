@@ -22,9 +22,9 @@ const stat = {
 function seed() {
   db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101', width: 640, height: 480, frames: 3 })];
   db.frames = [
-    makeFrame({ id: 11, event_id: 101, frame_id: 1, delta: '0.00' }),
-    makeFrame({ id: 12, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
-    makeFrame({ id: 13, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+    makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+    makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+    makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
   ];
   db.zones = [makeZone({ id: 3, monitor_id: 1, name: 'Driveway', area: 5000, coords: '0,0 50,0 50,100 0,100' })];
   server.use(http.get('/api/v3/stats', () => HttpResponse.json(paginated([stat]))));
@@ -47,7 +47,7 @@ describe('frame viewer — modern', () => {
     seed();
     const user = userEvent.setup();
     const { router } = renderRoute('/events/101/frames/2');
-    expect(await screen.findByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/frames\/12\/image/));
+    expect(await screen.findByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/events\/101\/frames\/2\/image/));
     expect(screen.getByTestId('frame-score')).toHaveTextContent('score 88');
     expect(within(await screen.findByTestId('frame-stats-table')).getByText('10000 (6.5%)')).toBeVisible();
 

@@ -22,6 +22,7 @@ afterAll(() => {
 
 const sample: Control = {
   id: 1, name: 'Hikvision PTZ', type: 'Local', protocol: 'hikvision',
+  can_light: 0, can_indicator_light: 0, can_audio_play: 0, can_audio_volume: 0, min_audio_file: null, max_audio_file: null,
   can_pan: 1, can_tilt: 1, can_zoom: 1, can_move: 1, can_move_abs: 1, can_move_rel: 1, can_move_con: 1, can_move_diag: 0, can_move_map: 0,
   can_auto_zoom: 0, can_zoom_abs: 1, can_zoom_rel: 1, can_zoom_con: 1, has_zoom_speed: 1,
   can_focus: 1, can_auto_focus: 1, can_focus_abs: 0, can_focus_rel: 1, can_focus_con: 1, has_focus_speed: 0,

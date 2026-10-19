@@ -5,7 +5,7 @@ import {
 } from './levelGraph';
 
 function frame(frame_id: number, delta: string, score: number, type = 'Normal'): Frame {
-  return { id: frame_id, event_id: 1, frame_id, type, score, time_stamp: '', delta };
+  return { event_id: 1, frame_id, type, score, time_stamp: '', delta, audio_level: 0 };
 }
 
 describe('levelGraphSeries', () => {

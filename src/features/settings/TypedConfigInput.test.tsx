@@ -8,7 +8,7 @@ import { formatConfigValue, enumOptionsFromHint, humanizeIdent } from './configF
 function cfg(over: Partial<ZmConfig>): ZmConfig {
   return {
     id: 1, name: 'ZM_SAMPLE', value: '', type: 'string',
-    category: 'system', readonly: 0, private: 0, system: 1,
+    category: 'system', readonly: 0, private: 0, system: 1, source: 'db',
     ...over,
   };
 }

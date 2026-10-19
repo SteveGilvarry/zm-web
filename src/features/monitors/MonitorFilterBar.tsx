@@ -20,14 +20,14 @@ const RECORDING_OPTS = ['None', 'OnMotion', 'Always'] as const;
 
 // Monitor.type values come from the legacy ZM source-camera-driver list.
 // Anything else (newer backend additions) shows up as a freeform string.
-const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'cURL', 'WebSite', 'VNC'] as const;
+const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'cURL', 'WebSite', 'VNC'] as const;
 
 // "Status" in legacy ZM is a derived boolean: capturing != None ⇒ Active.
 const STATUS_OPTS = ['active', 'disabled'] as const;
 
 /**
  * Display labels for the enum wire values above. Mode values get translated;
- * source-driver names (Ffmpeg, Libvlc, …) are product names and stay as-is.
+ * source-driver names (Ffmpeg, cURL, …) are product names and stay as-is.
  */
 function useEnumLabel(): (value: string) => string {
   const { t } = useTranslation();

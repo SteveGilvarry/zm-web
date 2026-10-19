@@ -479,6 +479,12 @@ export interface ZmConfig {
   pattern?: string | null;
   /** Perl snippet that normalises the value (`($1 =~ /^y/) ? 'yes' : 'no'`); display only. */
   format?: string | null;
+  /** `Config.Requires`, raw clauses like `ZM_OPT_USE_AUTH=1;ZM_AUTH_RELAY=hashed`. */
+  requires?: string | null;
+  /** `db`, or `file` when zm.conf or a conf.d file sets the option. */
+  source: string;
+  /** The file that sets it, for `source: "file"`. */
+  source_file?: string | null;
 }
 
 // ============================================

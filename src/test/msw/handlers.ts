@@ -133,8 +133,8 @@ function seed(): MockDb {
       makeEvent({ id: 103, monitor_id: 1, name: 'Event-103', notes: 'delivery van' }),
     ],
     frames: [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.00' }),
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.00' }),
     ],
     tags: [makeTag({ id: 1, name: 'Important' })],
     eventTags: [],
@@ -477,16 +477,9 @@ const events: HttpHandler[] = [
       status: 200,
       headers: { 'Content-Type': 'image/jpeg' },
     })),
-  // Per-frame JPEGs: `/frames/{id}/image` and `/events/{id}/frames/{fid}/image`.
-  // `fid` is a frame number or one of ZoneMinder's names (`alarm`, `snapshot`);
-  // an unknown one 404s, which is what an event with no alarm frame answers.
-  http.get(`${API}/frames/:id/image`, ({ params }) =>
-    db.frames.some((f) => f.id === Number(params.id))
-      ? HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
-        status: 200,
-        headers: { 'Content-Type': 'image/jpeg' },
-      })
-      : notFound()),
+  // Per-frame JPEGs: `/events/{id}/frames/{fid}/image` (the only route since
+  // `Frames.Id` went). `fid` is a frame number or one of ZoneMinder's names
+  // (`alarm`, `snapshot`); an unknown one 404s, as an event with no alarm frame answers.
   http.get(`${API}/events/:id/frames/:fid/image`, ({ params }) => {
     const fid = String(params.fid);
     const frames = db.frames.filter((f) => f.event_id === Number(params.id));

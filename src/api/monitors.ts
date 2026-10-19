@@ -14,7 +14,7 @@ import type { Monitor, PaginatedResponse, StartLiveRequest, StartLiveResponse, L
  * checks these lists against the OpenAPI snapshot.
  */
 export const MONITOR_ENUMS = {
-  type: ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'cURL', 'WebSite', 'VNC'],
+  type: ['Local', 'Remote', 'File', 'Ffmpeg', 'cURL', 'WebSite', 'VNC'],
   function: ['None', 'Monitor', 'Modect', 'Record', 'Mocord', 'Nodect'],
   capturing: ['None', 'Ondemand', 'Always'],
   decoding: ['None', 'Ondemand', 'KeyFrames', 'KeyFrames+Ondemand', 'Always'],

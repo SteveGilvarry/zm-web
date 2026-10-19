@@ -10,7 +10,7 @@ import { TypedConfigInput } from './TypedConfigInput';
 
 const t = i18n.t.bind(i18n);
 const cfg = (over: Partial<ZmConfig> & { name: string }): ZmConfig => ({
-  id: 1, value: '', type: 'string', category: 'web', readonly: 0, private: 0, system: 0, ...over,
+  id: 1, value: '', type: 'string', category: 'web', readonly: 0, private: 0, system: 0, source: 'db', ...over,
 });
 
 describe('timezone list', () => {

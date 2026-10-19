@@ -210,6 +210,12 @@ export function makeControl(overrides: Partial<Control> = {}): Control {
     can_set_presets: 1,
     num_presets: 8,
     num_scan_paths: 0,
+    can_light: 0,
+    can_indicator_light: 0,
+    can_audio_play: 0,
+    can_audio_volume: 0,
+    min_audio_file: null,
+    max_audio_file: null,
     ...overrides,
   };
 }

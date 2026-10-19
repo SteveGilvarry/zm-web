@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import {
-  listFrames, getAllFramesForEvent, getFrameImageUrl, getEventFrameImageUrl, type Frame,
+  listFrames, getAllFramesForEvent, getEventFrameImageUrl, type Frame,
 } from './frames';
 import { useAuthStore } from '@/stores/auth';
 
@@ -20,8 +20,8 @@ afterAll(() => {
 });
 
 const sampleFrame = (id: number): Frame => ({
-  id, event_id: 1, frame_id: id, type: 'Normal',
-  score: 0, time_stamp: '2026-06-02T00:00:00Z', delta: '0.0',
+  event_id: 1, frame_id: id, type: 'Normal',
+  score: 0, time_stamp: '2026-06-02T00:00:00Z', delta: '0.0', audio_level: 0,
 });
 
 describe('listFrames', () => {
@@ -96,14 +96,10 @@ describe('getAllFramesForEvent', () => {
 });
 
 describe('frame image URLs', () => {
-  it('addresses a frame by its Frames row id, like legacy\'s ?view=image&fid=', () => {
-    expect(getFrameImageUrl(2068973)).toBe('/api/v3/frames/2068973/image');
-  });
-
   it('carries the token in the query, since an <img> cannot send a header', () => {
-    expect(getFrameImageUrl(5, 'abc.def')).toBe('/api/v3/frames/5/image?token=abc.def');
+    expect(getEventFrameImageUrl(5, 2, 'abc.def')).toBe('/api/v3/events/5/frames/2/image?token=abc.def');
     // A raw token stays readable; only the characters that need it are escaped.
-    expect(getFrameImageUrl(5, 'a/b')).toBe('/api/v3/frames/5/image?token=a%2Fb');
+    expect(getEventFrameImageUrl(5, 2, 'a/b')).toBe('/api/v3/events/5/frames/2/image?token=a%2Fb');
   });
 
   it('takes a frame number or one of ZoneMinder\'s names for the event route', () => {

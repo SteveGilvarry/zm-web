@@ -6,9 +6,9 @@ import {
 } from './framesTable';
 
 const frame = (frameId: number, type: string, delta: number, score: number): Frame => ({
-  id: frameId,
   event_id: 42,
   frame_id: frameId,
+  audio_level: 0,
   type,
   score,
   time_stamp: `2026-09-17T12:00:0${frameId}Z`,

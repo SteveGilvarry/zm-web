@@ -231,7 +231,7 @@ export function toCreatePayload(
 export type MonitorCreateInput =
   Partial<Omit<MonitorCreatePayload, 'name' | 'type' | 'function' | 'storage_id'>> & {
     name: string;
-    type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'Libvlc' | 'cURL' | 'WebSite' | 'VNC';
+    type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'cURL' | 'WebSite' | 'VNC';
     function?: 'None' | 'Monitor' | 'Modect' | 'Record' | 'Mocord' | 'Nodect';
     /** Defaults to 0 — ZoneMinder's "Default" storage area. */
     storage_id?: number;

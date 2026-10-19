@@ -23,10 +23,10 @@ const stat = {
 function seed(stats = [stat]) {
   db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101', width: 640, height: 480, frames: 4 })];
   db.frames = [
-    makeFrame({ id: 11, event_id: 101, frame_id: 1, delta: '0.00' }),
-    makeFrame({ id: 12, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
-    makeFrame({ id: 13, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
-    makeFrame({ id: 14, event_id: 101, frame_id: 4, score: 88, delta: '3.00' }),
+    makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+    makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+    makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+    makeFrame({ event_id: 101, frame_id: 4, score: 88, delta: '3.00' }),
   ];
   db.zones = [makeZone({ id: 3, monitor_id: 1, name: 'Driveway', area: 5000, coords: '0,0 50,0 50,100 0,100' })];
   const asked: Array<string | null> = [];
@@ -78,7 +78,7 @@ describe('frame viewer — classic', () => {
 
     const title = await screen.findByTestId('frame-title');
     await waitFor(() => expect(title.textContent).toBe('Frame 101-2 (88)'));
-    expect(screen.getByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/^\/api\/v3\/frames\/12\/image/));
+    expect(screen.getByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/^\/api\/v3\/events\/101\/frames\/2\/image/));
 
     const stats = await screen.findByTestId('frame-stats-table');
     // One decimal on the shares, as ajax/stats.php's raw rows print them.

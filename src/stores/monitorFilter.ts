@@ -23,7 +23,7 @@ export interface MonitorFilterState {
   recording: string[];
   /** Selected status tokens — currently `'active' | 'disabled'`. */
   status: string[];
-  /** Selected `Monitor.type` values (Ffmpeg / Libvlc / …). */
+  /** Selected `Monitor.type` values (Ffmpeg / Remote / …). */
   source: string[];
   /** Selected monitor ids (rare — usually narrowed by attribute instead). */
   monitorIds: number[];

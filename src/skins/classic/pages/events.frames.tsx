@@ -147,7 +147,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
               </ClassicThead>}
               <ClassicTbody>
                 {s.frames.map((f) => (
-                  <Fragment key={f.id}>
+                  <Fragment key={f.frame_id}>
                     <FrameRow
                       frame={f}
                       maxScore={s.maxScore}
@@ -254,7 +254,7 @@ function FrameRow({
       </span>
     ),
     thumbnail: showThumbs ? (
-      <FrameThumbnail frameId={f.id} frameNumber={f.frame_id} token={token} width={thumbWidth} animate={animate} />
+      <FrameThumbnail eventId={f.event_id} frameNumber={f.frame_id} token={token} width={thumbWidth} animate={animate} />
     ) : null,
   };
   const keys = FRAMES_COLUMNS.map((c) => c.key).filter(isVisible);

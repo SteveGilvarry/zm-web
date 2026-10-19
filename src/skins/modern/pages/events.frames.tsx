@@ -143,7 +143,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
               <div data-testid="frames-cards" className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]">
                 {s.frames.map((f) => (
                   <FrameCard
-                    key={f.id}
+                    key={f.frame_id}
                     frame={f}
                     showThumbs={s.showThumbs}
                     token={s.token}
@@ -172,7 +172,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                 </thead>
                 <tbody>
                   {s.frames.map((f) => (
-                    <Fragment key={f.id}>
+                    <Fragment key={f.frame_id}>
                       <FrameRow
                         frame={f}
                         maxScore={s.maxScore}
@@ -389,7 +389,7 @@ function FrameRow({
         <td className="px-3 py-1 whitespace-nowrap">
           {showThumbs && (
             <FrameThumbnail
-              frameId={f.id}
+              eventId={f.event_id}
               frameNumber={f.frame_id}
               token={token}
               width={thumbWidth}
@@ -423,7 +423,7 @@ function FrameCard({
     >
       {showThumbs && (
         <div className="bg-black">
-          <FrameThumbnail frameId={f.id} frameNumber={f.frame_id} token={token} width={192} className="w-full!" />
+          <FrameThumbnail eventId={f.event_id} frameNumber={f.frame_id} token={token} width={192} className="w-full!" />
         </div>
       )}
       <div className="flex items-center gap-2 px-2 py-1 text-xs">

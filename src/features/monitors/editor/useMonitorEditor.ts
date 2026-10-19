@@ -288,7 +288,7 @@ export function useMonitorEditor({
     setDraft((d) => {
       const next = { ...d, [key]: value };
       // Legacy `change_Path`: credentials in an FFmpeg URL move into Username / Password.
-      if (key === 'path' && (d.type === 'Ffmpeg' || d.type === 'Libvlc') && typeof value === 'string') {
+      if (key === 'path' && d.type === 'Ffmpeg' && typeof value === 'string') {
         const split = splitPathCredentials(value);
         if (split && !locked.has('user')) {
           next.path = split.path;

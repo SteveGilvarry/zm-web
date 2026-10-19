@@ -213,7 +213,7 @@ interface EventBarProps {
   colour: string;
   rangeStart: Date;
   durationMs: number;
-  frames?: Array<{ id: number; score: number; time_stamp: string }>;
+  frames?: Array<{ frame_id: number; score: number; time_stamp: string }>;
   maxScore: number;
 }
 
@@ -252,8 +252,8 @@ function EventBar({ event, colour, rangeStart, durationMs, frames, maxScore }: E
         if (pct < 0 || pct > 100) return null;
         return (
           <div
-            key={frame.id}
-            data-testid={`review-frame-${frame.id}`}
+            key={frame.frame_id}
+            data-testid={`review-frame-${frame.frame_id}`}
             className="absolute top-1/2 -translate-y-1/2 h-3 pointer-events-none"
             style={{
               left: `${pct}%`,

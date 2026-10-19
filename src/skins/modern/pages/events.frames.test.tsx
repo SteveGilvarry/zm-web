@@ -33,9 +33,9 @@ describe('EventFramesPage — modern skin', () => {
   it('renders the legacy column set and one row per frame', async () => {
     db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
     db.frames = [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
-      makeFrame({ id: 3, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
     ];
 
     renderRoute('/events/101/frames');
@@ -67,7 +67,7 @@ describe('EventFramesPage — modern skin', () => {
     // One thumbnail per row, keyed off the `Frames` row id like legacy.
     const thumbs = table.getAllByTestId(/^frame-thumb-/);
     expect(thumbs).toHaveLength(3);
-    expect(thumbs[0].getAttribute('src')).toMatch(/^\/api\/v3\/frames\/\d+\/image\?token=/);
+    expect(thumbs[0].getAttribute('src')).toMatch(/^\/api\/v3\/events\/101\/frames\/\d+\/image\?token=/);
   });
 
   it('asks the API only for this event, one page at a time', async () => {
@@ -213,9 +213,9 @@ describe('EventFramesPage — client-side table controls', () => {
   function seed() {
     db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
     db.frames = [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, score: 0, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
-      makeFrame({ id: 3, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+      makeFrame({ event_id: 101, frame_id: 1, score: 0, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
     ];
   }
 
@@ -273,9 +273,9 @@ describe('EventFramesPage — modern stats and frame links', () => {
   function seed() {
     db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101', width: 640, height: 480, frames: 3 })];
     db.frames = [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
-      makeFrame({ id: 3, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
     ];
     db.zones = [makeZone({ id: 3, monitor_id: 1, name: 'Driveway', area: 5000, coords: '0,0 50,0 50,100 0,100' })];
     server.use(http.get('/api/v3/stats', () => HttpResponse.json(paginated([stat]))));
@@ -310,7 +310,7 @@ describe('EventFramesPage — modern stats and frame links', () => {
     const { router } = renderRoute('/events/101/frames');
     await user.click(within(await screen.findByTestId('frame-row-3')).getByText('2.25'));
     await waitFor(() => expect(router.state.location.pathname).toBe('/events/101/frames/3'));
-    expect(await screen.findByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/^\/api\/v3\/frames\/3\/image/));
+    expect(await screen.findByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/^\/api\/v3\/events\/101\/frames\/3\/image/));
   });
 });
 
@@ -318,8 +318,8 @@ describe('EventFramesPage — modern card view and paging', () => {
   it('shows each frame as a tile that opens the frame', async () => {
     db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
     db.frames = [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
     ];
     const user = userEvent.setup();
     const { router } = renderRoute('/events/101/frames');
@@ -336,7 +336,7 @@ describe('EventFramesPage — modern card view and paging', () => {
   it('jumps to a page typed into the pager', async () => {
     db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
     db.frames = Array.from({ length: 30 }, (_, i) =>
-      makeFrame({ id: i + 1, event_id: 101, frame_id: i + 1, delta: String(i) }));
+      makeFrame({ event_id: 101, frame_id: i + 1, delta: String(i) }));
     const user = userEvent.setup();
     const { router } = renderRoute('/events/101/frames?page_size=10');
     await screen.findByTestId('frame-row-1');

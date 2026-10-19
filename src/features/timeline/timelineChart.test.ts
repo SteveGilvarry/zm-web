@@ -138,8 +138,8 @@ describe('buildChart', () => {
   const long = makeEvent({ id: 11, monitor_id: 1, start_date_time: iso(at(15, 0)), end_date_time: iso(at(15, 2)), max_score: 80, frames: 121 });
   const blip = makeEvent({ id: 12, monitor_id: 2, start_date_time: iso(at(14, 30, 5)), end_date_time: iso(at(14, 30, 8)), max_score: 40 });
   const frames: Frame[] = [
-    { id: 1, event_id: 11, frame_id: 10, type: 'Alarm', score: 80, time_stamp: iso(at(15, 0, 10)), delta: '10' },
-    { id: 2, event_id: 11, frame_id: 60, type: 'Alarm', score: 20, time_stamp: iso(at(15, 1)), delta: '60' },
+    { event_id: 11, frame_id: 10, type: 'Alarm', score: 80, time_stamp: iso(at(15, 0, 10)), delta: '10', audio_level: 0 },
+    { event_id: 11, frame_id: 60, type: 'Alarm', score: 20, time_stamp: iso(at(15, 1)), delta: '60', audio_level: 0 },
   ];
   const chart = buildChart({
     window: win, events: [long, blip, short], framesByEvent: new Map([[11, frames]]), monitors, nowT: at(23, 0),

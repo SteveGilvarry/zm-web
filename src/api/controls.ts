@@ -123,6 +123,13 @@ export interface Control {
   max_iris_step?: number | null;
   min_iris_speed?: number | null;
   max_iris_speed?: number | null;
+  /** Light and audio capabilities (ZoneMinder 1.39, zm-api #177). */
+  can_light: number;
+  can_indicator_light: number;
+  can_audio_play: number;
+  can_audio_volume: number;
+  min_audio_file?: number | null;
+  max_audio_file?: number | null;
 }
 
 /** `CreateControlRequest`: only `name` and `type` are required; the rest default server-side. */

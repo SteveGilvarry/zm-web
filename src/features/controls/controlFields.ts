@@ -62,7 +62,11 @@ export const CONTROL_TABS: readonly ControlTab[] = [
     fields: [
       { key: 'name', kind: 'text', required: true },
       { key: 'protocol', kind: 'text' },
-      flag('can_wake'), flag('can_sleep'), flag('can_reset'), flag('can_reboot'),
+      flag('can_wake'), flag('can_sleep'),
+      // Light and audio sit between Sleep and Reset on legacy's Main tab (controlcap.php:227-250).
+      flag('can_light'), flag('can_indicator_light'),
+      flag('can_audio_play'), num('min_audio_file'), num('max_audio_file'), flag('can_audio_volume'),
+      flag('can_reset'), flag('can_reboot'),
     ],
   },
   {
@@ -129,6 +133,12 @@ export function controlFieldLabel(t: TFunction, key: ControlFieldKey): string {
     case 'can_sleep': return t('Can Sleep');
     case 'can_reset': return t('Can Reset');
     case 'can_reboot': return t('Can Reboot');
+    case 'can_light': return t('Can Light');
+    case 'can_indicator_light': return t('Can Indicator Light');
+    case 'can_audio_play': return t('Can Play Audio');
+    case 'can_audio_volume': return t('Can Set Audio Volume');
+    case 'min_audio_file': return t('Min Audio File Id');
+    case 'max_audio_file': return t('Max Audio File Id');
     case 'can_move_diag': return t('Can Move Diag');
     case 'can_move_map': return t('Can Move Map');
     case 'has_presets': return t('Has Presets');

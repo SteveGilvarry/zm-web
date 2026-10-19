@@ -15,7 +15,7 @@ function stat(over: Partial<Stat> = {}): Stat {
 }
 
 function frame(frame_id: number, score: number): Frame {
-  return { id: 100 + frame_id, event_id: 42, frame_id, type: 'Normal', score, time_stamp: '', delta: '0' };
+  return { event_id: 42, frame_id, type: 'Normal', score, time_stamp: '', delta: '0', audio_level: 0 };
 }
 
 /** The left half of the picture in percent space: shoelace area 50 × 100 = 5000. */

@@ -161,7 +161,6 @@ const CALLS: Record<string, Record<string, Call>> = {
   frames: {
     listFrames: { args: [{ event_id: 1 }] },
     getAllFramesForEvent: { args: [1] },
-    getFrameImageUrl: { url: [1] },
     getEventFrameImageUrl: { url: [1, 'alarm'] },
   },
   groups: {
@@ -580,7 +579,8 @@ describe('MONITOR_CREATE_DEFAULTS match CreateMonitorRequest', () => {
   });
 
   it('deleted is the boolean the request schema wants', () => {
-    expect(resolve(props.deleted)?.type).toBe('boolean');
+    // Nullable since the 2026-10-19 build; the default is still a boolean.
+    expect(resolve(props.deleted)?.type).toContain('boolean');
     expect(typeof MONITOR_CREATE_DEFAULTS.deleted).toBe('boolean');
   });
 });

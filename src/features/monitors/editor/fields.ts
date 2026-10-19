@@ -265,7 +265,6 @@ export function buildTabs(t: Translate): TabDef[] {
 
   /** Types a monitor may still be stored as, but that nobody can pick any more. */
   const MONITOR_TYPE_REMOVED = [
-    { value: 'Libvlc', label: t('Libvlc (removed)') },
     { value: 'cURL',   label: t('cURL (removed)') },
   ];
 
@@ -483,9 +482,8 @@ export function buildTabs(t: Translate): TabDef[] {
     { value: '1600px',       label: t('Max 1600px') },
   ];
 
-  // Libvlc stays in the visibility lists so a monitor stored with it still
-  // shows its path; it is no longer offered as a type.
-  const STREAMING: FieldVisibility = { types: ['Ffmpeg', 'Libvlc'] };
+  // Libvlc left `MonitorType` in 1.39.41; the editor no longer knows it.
+  const STREAMING: FieldVisibility = { types: ['Ffmpeg'] };
   const REMOTE: FieldVisibility = { types: ['Remote'] };
   const LOCAL: FieldVisibility = { types: ['Local'] };
   const NOT_WEBSITE: FieldVisibility = { notTypes: ['WebSite'] };
@@ -601,8 +599,8 @@ export function buildTabs(t: Translate): TabDef[] {
           placeholder: 'https://example.net/dashboard' },
 
         // Credentials (every type that authenticates)
-        { kind: 'text',      key: 'user',         label: t('Username'), show: { types: ['Ffmpeg', 'Libvlc', 'Remote', 'cURL', 'VNC'] } },
-        { kind: 'password',  key: 'pass',         label: t('Password'), show: { types: ['Ffmpeg', 'Libvlc', 'Remote', 'cURL', 'VNC'] } },
+        { kind: 'text',      key: 'user',         label: t('Username'), show: { types: ['Ffmpeg', 'Remote', 'cURL', 'VNC'] } },
+        { kind: 'password',  key: 'pass',         label: t('Password'), show: { types: ['Ffmpeg', 'Remote', 'cURL', 'VNC'] } },
 
         { kind: 'group',     key: '_image',       label: t('Image') },
         { kind: 'select',    key: 'colours',      label: t('Target colourspace'), show: NOT_WEBSITE, options: COLOURS_OPTIONS },
