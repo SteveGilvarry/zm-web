@@ -5,23 +5,25 @@
  * operator moving from the PHP UI finds every control where it was.
  *
  * Same field keys as the modern catalogue in `fields.ts` (both edit one
- * draft); only the presentation differs. Rows the backend cannot serve yet
- * are left out and listed at the end of this comment, so the gap is
+ * draft); only the presentation differs. Rows left out, so the gap is
  * visible rather than faked:
  *
- *  - Encoder Template + Apply (zm-api#144)
- *  - Encoder HW Accel Name / Device, Use Wallclock Timestamps, Show,
- *    Go2RTC Live Stream, Stream source, Default Player (zm-api#159: the
- *    response has them, no request accepts them)
- *  - Current Level audio meter, Actions tab, Probe (no endpoint)
+ *  - Probe (no endpoint)
  *  - Id on a new monitor (`CreateMonitorRequest` has no `id`)
+ *  - the Actions tab on a new monitor (actions are rows on a monitor that
+ *    must exist first; legacy saves them in the same POST)
+ *
+ * Analysis Image Opacity and the Object Detection columns are in the
+ * request but in no legacy form and read by no 1.39.41 daemon, so neither
+ * editor offers them.
  *
  * Labels are built through `t` with literal keys like `buildTabs`.
  */
 import { useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
-  isSet, encoderFitsCodec,
+  isSet, encoderFitsCodec, defaultPlayerOptions, playerOffered, streamChannelOptions, whatDisplayOptions,
+  streamsThroughServer, encoderHasTemplates, monitorExists, encoderParamsDiagnostic,
   type FieldDef, type FieldValue, type FieldVisibility, type TabDef, type Translate,
 } from './fields';
 
@@ -283,6 +285,10 @@ export function buildClassicTabs(t: Translate): TabDef[] {
           help: t('Score the monitor on how loud its audio is, alongside motion.') },
         { kind: 'number', key: 'audio_threshold', label: t('Audio Threshold'), min: 0, max: 100, integer: true,
           help: t('Level, 0-100, at or above which the monitor alarms. 0 turns audio detection off. Measure the device’s quiet level first and set this above it.') },
+        // Shown whether or not detection is on: the level is what you need to choose a threshold.
+        { kind: 'audio-level', key: '_audio_level', label: t('Current Level'), virtual: true,
+          show: { types: ['Ffmpeg'] }, visibleIf: monitorExists,
+          help: t('Live reading from the capture process, on the same 0-100 scale as the threshold. Watch it while the room is quiet to find the floor, then make some noise to see the range. Measuring only runs while this page is open, so it costs nothing the rest of the time.') },
         { kind: 'number', key: 'audio_alarm_score', label: t('Audio Alarm Score'), min: 0, max: 255, integer: true,
           help: t('Score contributed to a frame while the audio level is over the threshold.') },
         { kind: 'group', key: '_other', label: t('Other') },
@@ -328,14 +334,25 @@ export function buildClassicTabs(t: Translate): TabDef[] {
         { kind: 'select', key: 'encoder', label: t('Encoder'), visibleIf: encodes,
           options: [{ value: 'auto', label: t('Auto') }, ...ENCODERS.map((e) => ({ value: e, label: e }))],
           disabledOption: (v, d) => !encoderFitsCodec(v, d.output_codec) },
+        // Legacy leaves this row to the template list, not to Video Writer: it shows whenever the encoder has templates.
+        { kind: 'encoder-template', key: '_encoder_template', label: t('Encoder Template'), virtual: true,
+          visibleIf: encoderHasTemplates },
         { kind: 'textarea', key: 'encoder_parameters', label: t('Optional Encoder Parameters'), helpLink: true,
           rows: (v) => Math.max(1, String(v ?? '').split('\n').length),
-          help: t('Passed to the encoder as name=value, separated by commas or newlines. For quality use crf: 1 is best, 51 worst, 23 the default.') },
+          help: t('Passed to the encoder as name=value, separated by commas or newlines. For quality use crf: 1 is best, 51 worst, 23 the default.'),
+          diagnostic: encoderParamsDiagnostic(t) },
+        { kind: 'text', key: 'encoder_hw_accel_name', label: t('Encoder HW Accel Name'), helpLink: true,
+          help: t('The ffmpeg -hwaccel option: vaapi for Intel graphics, cuda for NVIDIA. Run ffmpeg -hwaccels to see what is supported.') },
+        { kind: 'text', key: 'encoder_hw_accel_device', label: t('Encoder HW Accel Device'), helpLink: true,
+          help: t('The ffmpeg -hwaccel_device option. Only needed with several GPUs; Intel VAAPI is typically /dev/dri/renderD128.') },
         { kind: 'select', key: 'output_container', label: t('Output Container'),
           options: [
             { value: 'auto', label: t('Auto') }, { value: 'mp4', label: 'mp4' },
             { value: 'mkv', label: 'mkv' }, { value: 'webm', label: 'webm' },
           ] },
+        // monitor.js hides this while Video Writer is Encode.
+        { kind: 'checkbox', key: 'wall_clock_timestamps', label: t('Use Wallclock Timestamps'),
+          visibleIf: (d) => !encodes(d) },
         { kind: 'checkbox', key: 'record_audio', label: t('Record Audio'), show: { types: ['Ffmpeg'] } },
         { kind: 'text', key: 'event_start_command', label: t('Event Start Command'), requires: SYSTEM_EDIT },
         { kind: 'text', key: 'event_end_command', label: t('Event End Command'), requires: SYSTEM_EDIT },
@@ -346,12 +363,18 @@ export function buildClassicTabs(t: Translate): TabDef[] {
       label: t('Viewing'),
       visibleIf: notWebSite,
       fields: [
+        { kind: 'select', key: 'what_display', label: t('Show'), helpLink: true, options: whatDisplayOptions(t),
+          help: t('Show a video stream, an audio visualization, or both on the Watch, Montage and Event pages. The visualization is drawn by the audioMotion-analyzer library, which ZoneMinder does not ship.'),
+          note: t('Requires installation of the file "skins/classic/assets/audioMotion-analyzer/src/audioMotion-analyzer.js"') },
         { kind: 'checkbox', key: 'rtsp_server', label: t('RTSPServer'), helpLink: true,
           help: t('Re-stream this monitor from ZoneMinder’s own RTSP server, so clients do not each pull from the camera. Ports start at Options > Network > MIN_RTSP_PORT.') },
         { kind: 'text', key: 'rtsp_stream_name', label: t('RTSP Stream Name'), helpLink: true,
           help: t('The endpoint the RTSP server publishes this monitor at: monitor 6 with MIN_RTSP_PORT 20000 and the name my_camera is rtsp://ZM_HOST:20006/my_camera.') },
+        { kind: 'checkbox', key: 'go2rtc_enabled', label: t('Go2RTC Live Stream') },
         { kind: 'checkbox', key: 'rtsp2_web_enabled', label: t('RTSP2Web Live Stream'),
           help: t('Attempt to use RTSP2Web streaming server for h264/h265 live view. Experimental, but allows for significantly better performance.') },
+        { kind: 'select', key: 'stream_channel', label: t('Stream source'), options: streamChannelOptions(t),
+          visibleIf: streamsThroughServer },
         { kind: 'checkbox', key: 'janus_enabled', label: t('Janus Live Stream'),
           help: t('Attempt to use Janus streaming server for h264/h265 live view. Experimental, but allows for significantly better performance.') },
         { kind: 'checkbox', key: 'janus_audio_enabled', label: t('Janus Live Stream Audio'), visibleIf: janusOn,
@@ -365,6 +388,8 @@ export function buildClassicTabs(t: Translate): TabDef[] {
           help: t('Enable this to use the ZoneMinder RTSP restream as the source for streaming services (Janus, Go2RTC, RTSP2Web) instead of the camera directly.') },
         { kind: 'user-select', key: 'rtsp_user', label: t('User for RTSP Server Auth'),
           visibleIf: (d) => Number(d.restream) === 1 },
+        { kind: 'select', key: 'default_player', label: t('Default Player'), options: defaultPlayerOptions(t),
+          optionShown: playerOffered },
         { kind: 'select', key: 'default_rate', label: t('Default Rate'),
           options: [
             { value: 0, label: t('Stop') }, { value: 25, label: '1/4x' }, { value: 50, label: '1/2x' },
@@ -452,6 +477,14 @@ export function buildClassicTabs(t: Translate): TabDef[] {
         { kind: 'return-location-select', key: 'return_location', label: t('Return Location') },
         { kind: 'number', key: 'return_delay', label: t('Return Delay'), min: 0, integer: true },
       ],
+    },
+    {
+      // Offered whether or not this monitor is controllable: actions drive other monitors.
+      id: 'actions',
+      label: t('Actions'),
+      visibleIf: notWebSite,
+      panel: 'actions',
+      fields: [],
     },
     {
       id: 'misc',

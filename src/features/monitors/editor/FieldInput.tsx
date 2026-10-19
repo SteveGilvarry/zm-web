@@ -11,6 +11,8 @@ import {
 } from './RelationSelects';
 import { randomHexColour, HEX_COLOUR, storedOnly } from './editorState';
 import { estimatedRamUse } from './classicFields';
+import { AudioLevelMeter } from './AudioLevelMeter';
+import { EncoderTemplatePicker } from './EncoderTemplatePicker';
 
 /**
  * One editor field's input, by `kind`. Shared by both skins' editors:
@@ -26,6 +28,7 @@ export function FieldInput({
   invalid,
   locked = false,
   inputClass,
+  buttonClass,
   onChange,
   onUpdate,
 }: {
@@ -39,6 +42,8 @@ export function FieldInput({
   locked?: boolean;
   /** Field recipe; defaults to the modern one. */
   inputClass?: (invalid: boolean) => string;
+  /** Button recipe for in-field buttons (Apply template); defaults to the modern one. */
+  buttonClass?: string;
   onChange: (v: FieldValue) => void;
   onUpdate: (key: string, value: FieldValue) => void;
 }) {
@@ -137,6 +142,22 @@ export function FieldInput({
     );
   }
 
+  if (field.kind === 'encoder-template') {
+    return (
+      <EncoderTemplatePicker
+        encoder={draft.encoder}
+        params={draft.encoder_parameters}
+        onApply={(text) => onUpdate('encoder_parameters', text)}
+        selectClass={baseInput}
+        buttonClass={buttonClass}
+      />
+    );
+  }
+
+  if (field.kind === 'audio-level') {
+    return <AudioLevelMeter monitorId={monitorId} threshold={draft.audio_threshold} />;
+  }
+
   if (field.kind === 'checkbox') {
     return (
       <input
@@ -191,9 +212,10 @@ export function FieldInput({
     // Coerce back to number when the option values are numeric — keeps the
     // PATCH body's types matching the backend schema (e.g. label_size:int,
     // return_location:int) instead of stringifying them.
-    const options = [...field.options, ...(storedOnly(field, stored) ? field.storedOnlyOptions! : [])];
-    const optionsAreNumeric = options.every((o) => typeof o.value === 'number');
     const current = value == null ? '' : String(value);
+    const options = [...field.options, ...(storedOnly(field, stored) ? field.storedOnlyOptions! : [])]
+      .filter((o) => !field.optionShown || field.optionShown(o.value, draft) || String(o.value) === current);
+    const optionsAreNumeric = options.every((o) => typeof o.value === 'number');
     const known = options.some((o) => String(o.value) === current);
     return (
       <select

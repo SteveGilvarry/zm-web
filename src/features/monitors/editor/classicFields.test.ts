@@ -11,9 +11,9 @@ const labelsOf = (tabId: string, draft: Record<string, FieldValue>, stored: Reco
 /**
  * Labels per tab as `monitor.php` renders them for an Ffmpeg camera
  * (captured `monitor_mid_2.html` from the 1.39.41 box), group headings
- * included, minus the rows no zm-api request accepts yet: Current Level,
- * Encoder Template, Encoder HW Accel Name/Device, Use Wallclock Timestamps,
- * Show, Go2RTC Live Stream, Stream source, Default Player.
+ * included. Encoder Template is missing because it shows only when the
+ * encoder has templates (none are loaded here), Stream source because
+ * neither Go2RTC nor RTSP2Web is on.
  */
 const LEGACY_FFMPEG: Record<string, string[]> = {
   general: ['Name', 'Notes', 'Device Class', 'Manufacturer', 'Model', 'Server', 'Source Type', 'Groups', 'Triggers'],
@@ -24,16 +24,18 @@ const LEGACY_FFMPEG: Record<string, string[]> = {
   ],
   analysis: [
     'Motion detection', 'Motion Detection', 'Analysis Image', 'Analysis FPS', 'Reference Image Blend %ge',
-    'Alarm Reference Image Blend %ge', 'Audio detection', 'Audio Detection', 'Audio Threshold', 'Audio Alarm Score',
+    'Alarm Reference Image Blend %ge', 'Audio detection', 'Audio Detection', 'Audio Threshold', 'Current Level',
+    'Audio Alarm Score',
     'Other', 'Linked Monitors', 'Use Amcrest API',
   ],
   recording: [
-    'Recording', 'Storage Area', 'Save JPEGs', 'Video Writer', 'Optional Encoder Parameters', 'Output Container',
+    'Recording', 'Storage Area', 'Save JPEGs', 'Video Writer', 'Optional Encoder Parameters',
+    'Encoder HW Accel Name', 'Encoder HW Accel Device', 'Output Container', 'Use Wallclock Timestamps',
     'Record Audio', 'Event Start Command', 'Event End Command',
   ],
   viewing: [
-    'RTSPServer', 'RTSP Stream Name', 'RTSP2Web Live Stream', 'Janus Live Stream', 'Use RTSP Restream',
-    'Default Rate', 'Default Scale', 'Default Method For Event View',
+    'Show', 'RTSPServer', 'RTSP Stream Name', 'Go2RTC Live Stream', 'RTSP2Web Live Stream', 'Janus Live Stream',
+    'Use RTSP Restream', 'Default Player', 'Default Rate', 'Default Scale', 'Default Method For Event View',
   ],
   onvif: [
     'ONVIF URL', 'ONVIF Events Path', 'Username', 'Password', 'ONVIF Options', 'ONVIF Alarm Text',
@@ -62,7 +64,7 @@ const ffmpeg: Record<string, FieldValue> = { type: 'Ffmpeg', device_class: 'Came
 describe('classic catalogue follows monitor.php', () => {
   it('has the legacy tabs in the legacy order', () => {
     expect(visibleTabs(CLASSIC_TABS, ffmpeg, allow).map((t) => t.label)).toEqual([
-      'General', 'Source', 'Analysis', 'Recording', 'Viewing', 'ONVIF', 'Timestamp', 'Buffers', 'Control', 'Misc', 'Zones', 'MQTT',
+      'General', 'Source', 'Analysis', 'Recording', 'Viewing', 'ONVIF', 'Timestamp', 'Buffers', 'Control', 'Actions', 'Misc', 'Zones', 'MQTT',
     ]);
   });
 

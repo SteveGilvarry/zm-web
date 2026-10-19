@@ -9,10 +9,13 @@ import { useToast } from '@/components/common/toastStore';
 import { usePerms } from '@/features/auth/usePerms';
 import type { Monitor } from '@/types';
 import {
-  validateDraft, fieldErrorsFromDetails, tabForField, lockedKeys, visibleTabs, columnFields,
-  type TabDef, type FieldValue, type FieldErrors,
+  validateDraft, fieldErrorsFromDetails, tabForField, lockedKeys, visibleTabs, columnFields, playerOffered,
+  PLAYER_SERVER_KEYS,
+  type TabDef, type FieldValue, type FieldErrors, type FieldContext,
 } from './fields';
 import { useGroupMembership } from './useGroupMembership';
+import { useMonitorActions } from './useMonitorActions';
+import { useEncoderTemplates } from './useEncoderTemplates';
 import { extractEditableFields, sameValue, sameIdSet, isUnsetSecret } from './editorState';
 import { legacyErrors, legacyWarnings, splitPathCredentials, type OtherMonitors } from './legacyValidation';
 
@@ -96,6 +99,18 @@ export function useMonitorEditor({
   const groupsValue = groupsDraft ?? groupsBaseline;
   const groupsDirty = groupsDraft != null && !sameIdSet(groupsDraft, groupsBaseline);
 
+  // The Actions tab's rows load the first time the tab opens.
+  const actionsTab = tabs.find((tab) => tab.panel === 'actions')?.id;
+  const [actionsOpened, setActionsOpened] = useState(false);
+  if (!actionsOpened && actionsTab && activeTab === actionsTab) setActionsOpened(true);
+  const actions = useMonitorActions(monitor?.id ?? null, actionsOpened);
+
+  const templates = useEncoderTemplates();
+  const fieldContext = useMemo<FieldContext>(
+    () => ({ isNew, templateEncoders: new Set(templates.keys()) }),
+    [isNew, templates],
+  );
+
   // Every other monitor's name and RTSP stream name, for legacy's duplicate checks.
   const othersQ = useQuery({
     queryKey: ['monitors', 'editor-names'],
@@ -131,10 +146,11 @@ export function useMonitorEditor({
     const counts: Record<string, number> = {};
     for (const tab of tabs) {
       const keys = new Set(columnFields([tab]).filter((f) => f.key in diff).map((f) => f.key));
-      counts[tab.id] = keys.size + (tab.id === 'general' && groupsDirty ? 1 : 0);
+      counts[tab.id] = keys.size + (tab.id === 'general' && groupsDirty ? 1 : 0)
+        + (tab.panel === 'actions' ? actions.changeCount : 0);
     }
     return counts;
-  }, [diff, tabs, groupsDirty]);
+  }, [diff, tabs, groupsDirty, actions.changeCount]);
 
   const tabErrorCount = useMemo(() => {
     const counts: Record<string, number> = {};
@@ -145,7 +161,7 @@ export function useMonitorEditor({
     return counts;
   }, [fieldErrors, tabs]);
 
-  const diffCount = Object.keys(diff).length + (groupsDirty ? 1 : 0);
+  const diffCount = Object.keys(diff).length + (groupsDirty ? 1 : 0) + actions.changeCount;
 
   // Re-validate live once the operator has seen errors, so fixing a field
   // clears its message without another Save click. Adjusting state during
@@ -194,6 +210,8 @@ export function useMonitorEditor({
         for (const id of want) if (!have.has(id)) await attachMonitorToGroup(id, monitor.id);
         for (const id of have) if (!want.has(id)) await detachMonitorFromGroup(membership.rowIds[id]);
       }
+      // Actions are rows of their own, saved one call per changed row.
+      if (actions.changeCount > 0) await actions.persist(monitor.id);
       return closeAfter;
     },
     onSuccess: (closeAfter, { after }) => {
@@ -202,6 +220,7 @@ export function useMonitorEditor({
       // Promote the saved draft to the baseline so the counter zeroes now.
       setBaseline({ ...draft });
       setGroupsDraft(null);
+      actions.settle();
       if (monitor) qc.invalidateQueries({ queryKey: ['monitor', monitor.id] });
       invalidate();
       toast.success(t('Monitor saved.'));
@@ -280,6 +299,7 @@ export function useMonitorEditor({
   const reset = () => {
     setDraft({ ...baseline });
     setGroupsDraft(null);
+    actions.reset();
     setFieldErrors({});
     setSaveError(null);
   };
@@ -295,6 +315,10 @@ export function useMonitorEditor({
           next.user = split.user;
           next.pass = split.pass;
         }
+      }
+      // Legacy `update_players`: turning a streaming server off drops its players back to Auto.
+      if (PLAYER_SERVER_KEYS.includes(key) && next.default_player && !playerOffered(String(next.default_player), next)) {
+        next.default_player = '';
       }
       // Legacy `buffer_setting_oninput`: Pre Event Count may not exceed a set Maximum Image Buffer Size.
       if (key === 'pre_event_count' || key === 'max_image_buffer_count') {
@@ -325,7 +349,8 @@ export function useMonitorEditor({
 
   // Legacy builds the tab list from Type, DeviceClass and the Control
   // permission; a tab that disappears under the operator falls back to the first.
-  const shownTabs = visibleTabs(tabs, draft, can);
+  // A new monitor has no id to hang actions on, so its editor has no Actions tab.
+  const shownTabs = visibleTabs(tabs, draft, can).filter((tab) => !(isNew && tab.panel === 'actions'));
   const formTabs = shownTabs.filter((tab) => !tab.navigatesTo);
 
   return {
@@ -336,6 +361,8 @@ export function useMonitorEditor({
     activeTab,
     setActiveTab,
     activeTabDef: formTabs.find((tab) => tab.id === activeTab) ?? formTabs[0],
+    fieldContext,
+    actions,
     draft,
     baseline,
     diff,

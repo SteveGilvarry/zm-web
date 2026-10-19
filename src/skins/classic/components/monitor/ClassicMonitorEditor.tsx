@@ -19,6 +19,8 @@ import type { Monitor } from '@/types';
 import { ClassicButton, ClassicIconButton } from '../Button';
 import { ClassicHeader, ClassicPage } from '../Page';
 import { ClassicChosen } from '../Chosen';
+import { classicButtonClass } from '../buttonClass';
+import { ClassicMonitorActions } from './ClassicMonitorActions';
 
 interface ClassicMonitorEditorProps {
   /** The monitor to edit; omit with `seed` for Add / Clone. */
@@ -157,11 +159,15 @@ function ClassicMonitorEditorBody({
             )}
           </ClassicHeader>
 
-          <ul className="text-sm text-zinc-900">
-            {visibleFields(ed.activeTabDef, ed.draft, ed.baseline).map((f, i) => (
-              <ClassicFieldRow key={`${f.key}-${i}`} field={f} ed={ed} />
-            ))}
-          </ul>
+          {ed.activeTabDef.panel === 'actions' ? (
+            <ClassicMonitorActions actions={ed.actions} />
+          ) : (
+            <ul className="text-sm text-zinc-900">
+              {visibleFields(ed.activeTabDef, ed.draft, ed.baseline, ed.fieldContext).map((f, i) => (
+                <ClassicFieldRow key={`${f.key}-${i}`} field={f} ed={ed} />
+              ))}
+            </ul>
+          )}
 
           {ed.saveError && (
             <p role="alert" className="mt-3 text-sm text-[#a94442]">{ed.saveError}</p>
@@ -231,6 +237,7 @@ function ClassicFieldRow({ field: f, ed }: { field: FieldDef; ed: MonitorEditorS
         invalid={!!error}
         locked={isFieldLocked(f, can)}
         inputClass={classicInput}
+        buttonClass={classicButtonClass('default', 'sm')}
         onChange={(v: FieldValue) => ed.updateField(f.key, v)}
         onUpdate={ed.updateField}
       />
@@ -238,6 +245,7 @@ function ClassicFieldRow({ field: f, ed }: { field: FieldDef; ed: MonitorEditorS
   }
 
   const companion = f.companion;
+  const diagnostic = f.diagnostic?.(ed.draft);
   return (
     <li className="flex flex-wrap items-start gap-x-3 py-1">
       <span className="w-64 shrink-0 pt-0.5 font-semibold">
@@ -287,6 +295,7 @@ function ClassicFieldRow({ field: f, ed }: { field: FieldDef; ed: MonitorEditorS
         {storedOnly(f, stored) && f.storedOnlyWarning && (
           <p className="mt-1 text-[#8a6d3b]">{f.storedOnlyWarning}</p>
         )}
+        {diagnostic && <p className="mt-1 text-[#8a6d3b]">{diagnostic}</p>}
         {error && <p role="alert" className="mt-1 text-[#a94442]">{error}</p>}
         {f.help && (!f.helpLink || helpOpen) && <p className="mt-1 text-zinc-600">{f.help}</p>}
       </div>
