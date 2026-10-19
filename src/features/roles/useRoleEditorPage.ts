@@ -17,7 +17,7 @@ import { ROLE_EDITOR_ROWS, roleChanges, roleCreateInput, roleToForm, type RoleFo
  *
  * Legacy also edits per-group and per-monitor permissions for a role
  * (`Role_Groups_Permissions`, `Role_Monitors_Permissions`); zm-api does not
- * serve those tables, so this editor leaves them out.
+ * serve those tables (zm-api#196), so this editor leaves them out.
  */
 export function useRoleEditorPage(roleId: number) {
   const { t } = useTranslation();

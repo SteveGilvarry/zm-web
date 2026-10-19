@@ -231,7 +231,7 @@ export function useMenuPage() {
       setError(null);
     },
 
-    /** zm-api has no endpoint that restores the default rows. */
+    /** zm-api has no endpoint that restores the default rows (zm-api#197). */
     resetAvailable: false,
     resetUnavailableReason: t('Reset needs a zm-api endpoint that does not exist yet.'),
 
