@@ -5,6 +5,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { makeServer, makeStorage } from '@/test/fixtures/admin';
+import { makeStorageArea } from '@/test/fixtures/storageAreas';
 import { useAuthStore } from '@/stores/auth';
 
 vi.mock('@/skins/AppShell', () => ({
@@ -75,32 +76,34 @@ describe('Storage page', () => {
     expect(within(dflt).getByText('Medium')).toBeInTheDocument();
     // ServerId 0 is ZoneMinder's "every server can reach this path".
     expect(within(dflt).getByText('Local')).toBeInTheDocument();
-    expect(within(dflt).getByText('40.0 GB')).toBeInTheDocument();
 
     expect(within(archive).getByText('Deep')).toBeInTheDocument();
     await waitFor(() => expect(within(archive).getByText('zm-edge-01')).toBeInTheDocument());
-    expect(within(archive).getByText('10.0 GB')).toBeInTheDocument();
   });
 
-  it('scales the disk bar against the largest area and says so', async () => {
-    seedStorage();
+  it('shows how full each filesystem is, coloured past legacy\'s thresholds', async () => {
+    seedStorage(0, [
+      makeStorageArea({ id: 1, name: 'Default' }, { total: 250 * GIB, usedPercent: 64.4 }),
+      makeStorageArea({ id: 2, name: 'Archive', path: '/mnt/archive' }, { total: 100 * GIB, usedPercent: 97 }),
+    ]);
     renderWithProviders(<StoragePage />);
-    await waitFor(() => expect(screen.getByText('Archive')).toBeInTheDocument());
+    const archive = (await screen.findByText('Archive')).closest('tr')!;
+    const dflt = screen.getByText('Default').closest('tr')!;
 
+    expect(within(dflt).getByText('64%')).not.toHaveClass('text-warn');
+    expect(dflt).toHaveTextContent('64% · 161 GB of 250 GB');
+    expect(within(archive).getByText('97%')).toHaveClass('text-warn');
     const bars = screen.getAllByRole('progressbar');
-    expect(bars.map((b) => b.getAttribute('aria-valuenow'))).toEqual(['100', '25']);
-    // Honest label: no percentage-of-disk is claimed.
-    expect(bars[1]).toHaveAccessibleName(
-      '10.0 GB of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.',
-    );
+    expect(bars.map((b) => b.getAttribute('aria-valuenow'))).toEqual(['64', '97']);
+    expect(bars[1]).toHaveAccessibleName('Archive disk usage');
   });
 
-  it('shows an em dash and no bar when zmaudit has no figure', async () => {
-    seedStorage(0, [makeStorage({ disk_space: null })]);
+  it('shows an em dash and no bar when zm-api has no filesystem figures', async () => {
+    seedStorage(0, [makeStorage({ filesystem: null })]);
     renderWithProviders(<StoragePage />);
     await waitFor(() => expect(screen.getByText('Default')).toBeInTheDocument());
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    expect(screen.getByText('\u2014')).toBeInTheDocument();
+    expect(screen.getByTitle('zm-api reports no filesystem figures for this path.')).toHaveTextContent('\u2014');
   });
 
   it('filters by name or path client-side', async () => {

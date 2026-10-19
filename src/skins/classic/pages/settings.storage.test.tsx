@@ -140,29 +140,28 @@ describe('ClassicSettingsStoragePage', () => {
     expect(within(row).getByText('Medium')).toBeInTheDocument();
     // ServerId 0 — the store is reachable from every server.
     expect(within(row).getByText('Local')).toBeInTheDocument();
-    expect(within(row).getByText('40.0 GB')).toBeInTheDocument();
+    // No filesystem figures: legacy prints the zeroes it gets for a missing path.
+    expect(within(row).getByTestId('storage-disk-space')).toHaveTextContent('0.00B of 0.00B');
 
     const cold = screen.getByRole('button', { name: 'Cold archive' }).closest('tr')!;
     expect(within(cold).getByText('Deep')).toBeInTheDocument();
     await waitFor(() => expect(within(cold).getByText('edge-01')).toBeInTheDocument());
-    expect(within(cold).getByText('10.0 GB')).toBeInTheDocument();
-
-    // The bar compares the listed stores; it is not a share of the disk.
-    const bars = screen.getAllByRole('progressbar');
-    expect(bars.map((b) => b.getAttribute('aria-valuenow'))).toEqual(['100', '25']);
-    expect(bars[1]).toHaveAccessibleName(
-      '10.0 GB of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.',
-    );
   });
 
-  it('shows an em dash and no bar when zmaudit has no figure', async () => {
+  it('prints the Disk Space cell as legacy does: truncated percent, used of total', async () => {
     signIn();
-    seed([http.get('/api/v3/storage', () => HttpResponse.json(paged([makeStorage({ disk_space: null })])))]);
+    seed([http.get('/api/v3/storage', () => HttpResponse.json(paged([
+      // The dev box's Default area on 2026-10-20.
+      makeStorage({
+        filesystem: {
+          total_bytes: 253_052_891_136, used_bytes: 188_529_205_248,
+          available_bytes: 52_910_870_528, usage_percent: 78.08529907143961,
+        },
+      }),
+    ])))]);
     await mount();
-
-    await screen.findByRole('button', { name: 'Default' });
-    expect(screen.queryByRole('progressbar')).toBeNull();
-    expect(screen.getByText('\u2014')).toBeInTheDocument();
+    const row = (await screen.findByRole('button', { name: 'Default' })).closest('tr')!;
+    expect(within(row).getByTestId('storage-disk-space')).toHaveTextContent('79% 186.40GB of 235.67GB');
   });
 
   it('the search box narrows the list by name or path', async () => {
