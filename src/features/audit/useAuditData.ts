@@ -3,9 +3,10 @@ import { useMemo } from 'react';
 import { getEvents } from '@/api/events';
 import { getAllMonitors } from '@/api/monitors';
 import { listServers } from '@/api/servers';
+import { getEventAudit } from '@/api/reports';
 import { useAuthStore } from '@/stores/auth';
 import type { Monitor, ZmEvent } from '@/types';
-import { computeAuditStats, EMPTY_STATS, type AuditRow } from './auditRows';
+import { computeAuditStats, EMPTY_STATS, statsFromEventAudit, type AuditRow } from './auditRows';
 
 /** Page size and cap when walking one monitor's events inside the window. */
 const PAGE = 500;
@@ -47,11 +48,29 @@ export interface AuditData {
 
 /**
  * Per-monitor event audit for one time window: monitors + servers once,
- * then the events of each listed monitor inside `[min, max]` (ISO stamps),
- * paged per monitor so rows fill in as they arrive.
+ * then the figures for each listed monitor inside `[min, max]` (ISO stamps).
+ *
+ * Two sources. By default the events of each monitor are paged through
+ * `/events` and rolled up here, so rows fill in as they arrive. With
+ * `fromServer`, one `GET /reports/event-audit` answers for every monitor,
+ * including the file checks (missing media, empty video) only the server
+ * can make, with no page cap.
  */
-export function useAuditData(monitors: Monitor[], min: string, max: string): AuditData {
+export function useAuditData(
+  monitors: Monitor[],
+  min: string,
+  max: string,
+  { fromServer = false }: { fromServer?: boolean } = {},
+): AuditData {
   const { isAuthenticated } = useAuthStore();
+  const ready = isAuthenticated && !!min && !!max;
+
+  const auditQ = useQuery({
+    queryKey: ['audit', 'event-audit', min, max],
+    queryFn: () => getEventAudit({ start: min, end: max }),
+    enabled: ready && fromServer,
+    staleTime: 60_000,
+  });
 
   const serversQ = useQuery({
     queryKey: ['servers'],
@@ -64,7 +83,7 @@ export function useAuditData(monitors: Monitor[], min: string, max: string): Aud
     queries: monitors.map((m) => ({
       queryKey: ['audit', 'events', m.id, min, max],
       queryFn: () => fetchMonitorWindowEvents(m.id, min, max),
-      enabled: isAuthenticated && !!min && !!max,
+      enabled: ready && !fromServer,
       staleTime: 60_000,
     })),
   });
@@ -77,18 +96,32 @@ export function useAuditData(monitors: Monitor[], min: string, max: string): Aud
     .map((q) => `${q.dataUpdatedAt}:${q.isLoading ? 1 : 0}:${q.errorUpdatedAt}`)
     .join('|');
 
+  const auditData = auditQ.data;
+  const auditLoading = auditQ.isLoading;
+  const auditError = (auditQ.error as Error | null) ?? null;
   const rows = useMemo<AuditRow[]>(
     () => monitors.map((monitor, i) => {
+      if (fromServer) {
+        const { stats, files } = statsFromEventAudit(auditData?.monitors.find((m) => m.monitor_id === monitor.id));
+        return {
+          monitor,
+          stats: auditData ? stats : EMPTY_STATS,
+          loading: auditLoading,
+          error: auditError,
+          files: auditData ? files : null,
+        };
+      }
       const q = eventQs[i];
       return {
         monitor,
         stats: q?.data ? computeAuditStats(q.data.events) : EMPTY_STATS,
         loading: q?.isLoading ?? false,
         error: (q?.error as Error | null) ?? null,
+        files: null,
       };
     }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [monitors, rowsKey],
+    [monitors, rowsKey, fromServer, auditData, auditLoading, auditError],
   );
 
   const truncatedMonitorIds = monitors.filter((_, i) => eventQs[i]?.data?.truncated).map((m) => m.id);
@@ -105,7 +138,10 @@ export function useAuditData(monitors: Monitor[], min: string, max: string): Aud
     monitorsLoading: false,
     monitorsError: null,
     truncatedMonitorIds,
-    refetch: () => { eventQs.forEach((q) => { q.refetch(); }); },
+    refetch: () => {
+      if (fromServer) void auditQ.refetch();
+      else eventQs.forEach((q) => { q.refetch(); });
+    },
   };
 }
 

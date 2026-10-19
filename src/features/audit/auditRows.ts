@@ -1,4 +1,5 @@
 import type { Monitor, ZmEvent } from '@/types';
+import type { MonitorEventAudit } from '@/api/reports';
 
 /**
  * Per-monitor rollup of legacy `?view=report_event_audit`: event count in
@@ -9,9 +10,16 @@ import type { Monitor, ZmEvent } from '@/types';
 export interface AuditMonitorStats {
   events: number;
   first: { id: number; at: string } | null;
-  last: { id: number; at: string } | null;
+  /** `ended`: `at` is when the event ended, not when it started. */
+  last: { id: number; at: string; ended?: boolean } | null;
   minGap: number | null;
   maxGap: number | null;
+}
+
+/** Events in the window with no media on disk, or an empty video file. */
+export interface AuditFileChecks {
+  missing: number[];
+  zeroSize: number[];
 }
 
 export interface AuditRow {
@@ -20,6 +28,8 @@ export interface AuditRow {
   /** Still paging through `/events` for this monitor. */
   loading: boolean;
   error: Error | null;
+  /** From `/reports/event-audit`; null when the page does not ask for it. */
+  files: AuditFileChecks | null;
 }
 
 export const EMPTY_STATS: AuditMonitorStats = { events: 0, first: null, last: null, minGap: null, maxGap: null };
@@ -63,10 +73,34 @@ export function computeAuditStats(events: EventRef[]): AuditMonitorStats {
   };
 }
 
-export type AuditSortKey = 'id' | 'name' | 'server' | 'events' | 'first' | 'last' | 'minGap' | 'maxGap';
+/**
+ * One monitor's row from `GET /reports/event-audit`. The server counts the
+ * events that overlap the window (legacy's `EndDateTime > min AND
+ * StartDateTime < max`) and measures each gap from one event's end to the
+ * next one's start, so overlapping events give a negative gap. It reports
+ * when the last event ended, not when it started. No entry means no events.
+ */
+export function statsFromEventAudit(entry: MonitorEventAudit | undefined): { stats: AuditMonitorStats; files: AuditFileChecks } {
+  if (!entry || entry.event_count === 0) {
+    return { stats: EMPTY_STATS, files: { missing: [], zeroSize: [] } };
+  }
+  return {
+    stats: {
+      events: entry.event_count,
+      first: entry.first_start ? { id: entry.first_event_id, at: entry.first_start } : null,
+      last: entry.last_end ? { id: entry.last_event_id, at: entry.last_end, ended: true } : null,
+      minGap: entry.min_gap_seconds ?? null,
+      maxGap: entry.max_gap_seconds ?? null,
+    },
+    files: { missing: entry.missing_files, zeroSize: entry.zero_size },
+  };
+}
+
+export type AuditSortKey = 'id' | 'name' | 'server' | 'events' | 'first' | 'last' | 'minGap' | 'maxGap' | 'missing' | 'zeroSize';
 
 export function compareAuditRows(a: AuditRow, b: AuditRow, key: AuditSortKey): number {
-  const num = (x: number | null) => (x === null ? -1 : x);
+  // Unknown sorts first; gaps can be negative (overlapping events), so no sentinel.
+  const num = (x: number | null, y: number | null) => (x === null ? (y === null ? 0 : -1) : y === null ? 1 : x - y);
   const at = (x: { at: string } | null) => (x ? Date.parse(x.at) : -1);
   switch (key) {
     case 'id': return a.monitor.id - b.monitor.id;
@@ -75,8 +109,10 @@ export function compareAuditRows(a: AuditRow, b: AuditRow, key: AuditSortKey): n
     case 'events': return a.stats.events - b.stats.events;
     case 'first': return at(a.stats.first) - at(b.stats.first);
     case 'last': return at(a.stats.last) - at(b.stats.last);
-    case 'minGap': return num(a.stats.minGap) - num(b.stats.minGap);
-    case 'maxGap': return num(a.stats.maxGap) - num(b.stats.maxGap);
+    case 'minGap': return num(a.stats.minGap, b.stats.minGap);
+    case 'maxGap': return num(a.stats.maxGap, b.stats.maxGap);
+    case 'missing': return num(a.files?.missing.length ?? null, b.files?.missing.length ?? null);
+    case 'zeroSize': return num(a.files?.zeroSize.length ?? null, b.files?.zeroSize.length ?? null);
   }
 }
 

@@ -17,12 +17,25 @@ export function useAuditCells(s: AuditPageState) {
   return (row: AuditRow, linkClass: string) => {
     const { monitor, stats } = row;
     const review = s.reviewSearch(monitor.id);
-    const eventRef = (ref: { id: number; at: string } | null) =>
+    const eventRef = (ref: { id: number; at: string; ended?: boolean } | null) =>
       ref ? (
         <Link to="/events/$eventId" params={{ eventId: String(ref.id) }} className={linkClass}>
-          {t('{{id}} at {{time}}', { id: ref.id, time: fmt(ref.at) })}
+          {ref.ended
+            ? t('{{id}} ended {{time}}', { id: ref.id, time: fmt(ref.at) })
+            : t('{{id}} at {{time}}', { id: ref.id, time: fmt(ref.at) })}
         </Link>
       ) : t('none');
+    // Legacy links a non-zero count to the events list holding exactly those ids.
+    const fileCheck = (ids: number[] | undefined) =>
+      row.loading || !ids
+        ? ''
+        : ids.length === 0
+          ? '0'
+          : (
+            <Link to="/events" search={s.idsSearch(ids)} className={linkClass} title={ids.join(', ')}>
+              {ids.length}
+            </Link>
+          );
     return {
       id: <Link to="/montagereview" search={review} className={linkClass}>{monitor.id}</Link>,
       name: <Link to="/montagereview" search={review} className={linkClass}>{monitor.name}</Link>,
@@ -36,6 +49,10 @@ export function useAuditCells(s: AuditPageState) {
       last: row.loading ? '' : eventRef(stats.last),
       minGap: stats.minGap ?? 0,
       maxGap: stats.maxGap ?? 0,
+      missing: fileCheck(row.files?.missing),
+      zeroSize: fileCheck(row.files?.zeroSize),
+      missingCount: row.files?.missing.length ?? 0,
+      zeroSizeCount: row.files?.zeroSize.length ?? 0,
       placeholder: <span title={t('Per-event file checks need zm-api#36.')}>{t('needs zm-api#36')}</span>,
     };
   };
