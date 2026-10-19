@@ -108,7 +108,7 @@ describe('ClassicLogsPage — extra paths', () => {
     await mount();
     await screen.findByTestId('log-row-1');
 
-    await user.selectOptions(screen.getByLabelText('Component'), 'zmc_m3');
+    await pickChosen(user, 'Component', 'zmc_m3');
     expect(lastSearch({ page: 4 })).toEqual({ component: 'zmc_m3' });
   });
 

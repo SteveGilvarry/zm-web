@@ -375,7 +375,7 @@ export function useLogsPage(): LogsPageState {
   // URL is always offered, so the select can show what is applied.
   const allComponents = useMemo(() => {
     const set = new Set<string>(componentsData ?? logs.map((l) => l.component));
-    if (componentFilter) set.add(componentFilter);
+    for (const c of componentFilter.split(',')) if (c) set.add(c);
     return Array.from(set).sort();
   }, [componentsData, logs, componentFilter]);
 

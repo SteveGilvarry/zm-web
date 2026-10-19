@@ -271,15 +271,17 @@ export default function ClassicLogsPage() {
             )}
 
             <ClassicFilterField label={t('Component')} htmlFor="log-component" className="ms-2">
-              <select
+              {/* Legacy's Component is a multi-select (ajax/log.php:183); `/logs`
+                  takes the picks as a comma list (zm-api#186). */}
+              <ClassicChosen
                 id="log-component"
-                value={componentFilter}
-                onChange={(e) => setSearch({ component: e.target.value || undefined, page: undefined })}
-                className={classicSelect}
-              >
-                <option value="">{t('All')}</option>
-                {allComponents.map((c) => <option key={c} value={c}>{c}</option>)}
-              </select>
+                label={t('Component')}
+                options={allComponents.map((c) => ({ value: c, label: c }))}
+                value={componentFilter ? componentFilter.split(',') : []}
+                onChange={(next) => setSearch({ component: next.length ? next.join(',') : undefined, page: undefined })}
+                placeholder={t('All')}
+                className="w-44"
+              />
             </ClassicFilterField>
 
             {showServerFilter && (

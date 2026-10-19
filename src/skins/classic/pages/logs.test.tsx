@@ -216,11 +216,15 @@ describe('LogsPage — classic skin', () => {
     stub();
     const user = userEvent.setup();
     await mount();
-    await waitFor(() => expect(screen.getByRole('option', { name: 'zmpkg' })).toBeInTheDocument());
 
-    const component = screen.getByLabelText('Component') as HTMLSelectElement;
-    expect(Array.from(component.options, (o) => o.textContent))
-      .toEqual(['All', 'web_php', 'zmc_m1', 'zmc_m3', 'zmc_m4', 'zmpkg']);
+    // Legacy's Component is a Chosen multi-select too, placeholder "All".
+    const component = screen.getByRole('combobox', { name: 'Component' });
+    expect(component).toHaveAttribute('placeholder', 'All');
+    await user.click(component);
+    await waitFor(() => expect(within(screen.getByRole('listbox', { name: 'Component' })).getByRole('option', { name: 'zmpkg' })).toBeInTheDocument());
+    expect(within(screen.getByRole('listbox', { name: 'Component' })).getAllByRole('option').map((o) => o.textContent))
+      .toEqual(['web_php', 'zmc_m1', 'zmc_m3', 'zmc_m4', 'zmpkg']);
+    await user.keyboard('{Escape}');
     // Legacy's chosen box, placeholder "All".
     const level = screen.getByRole('combobox', { name: 'Level' });
     expect(level).toHaveAttribute('placeholder', 'All');
