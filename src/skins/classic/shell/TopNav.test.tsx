@@ -58,6 +58,8 @@ const server = setupServer(
   })),
   http.get('/api/v3/auth/logout', () => { logoutCalls += 1; return new HttpResponse(null, { status: 204 }); }),
   http.get('/api/v3/me', () => HttpResponse.json({ kind: 'NOT_FOUND' }, { status: 404 })),
+  // No MenuItems rows: the navbar keeps its built-in list.
+  http.get('/api/v3/system/menu', () => HttpResponse.json([])),
   http.get('/api/v3/configs', () => HttpResponse.json({
     items: configRows(configOverrides), total: 1, per_page: 1000, current_page: 1, last_page: 1,
   })),
@@ -278,6 +280,29 @@ describe('ClassicTopNav', () => {
 
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(false));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' });
+  });
+});
+
+describe('ClassicTopNav — the operator\'s menu (Options → Menu)', () => {
+  it('follows the MenuItems rows: order, hidden entries, custom labels and links', async () => {
+    signIn();
+    server.use(http.get('/api/v3/system/menu', () => HttpResponse.json([
+      { id: 5, menu_key: 'Events', enabled: true, label: null, sort_order: 10, icon: null, icon_type: 'material', link: null },
+      { id: 1, menu_key: 'Console', enabled: true, label: 'Home', sort_order: 20, icon: null, icon_type: 'material', link: null },
+      { id: 9, menu_key: 'Wiki', enabled: true, label: null, sort_order: 30, icon: null, icon_type: 'none', link: 'https://wiki.zoneminder.com' },
+      { id: 12, menu_key: 'Map', enabled: true, label: null, sort_order: 40, icon: null, icon_type: 'material', link: null },
+    ])));
+    renderWithProviders(<ClassicTopNav />);
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    await waitFor(() => expect(within(nav).getByRole('link', { name: 'Home' })).toBeInTheDocument());
+    const names = within(nav).getAllByRole('link').map((l) => l.textContent);
+    expect(names).toEqual(['Events', 'Home', 'Wiki']);
+    expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+    const wiki = within(nav).getByRole('link', { name: 'Wiki' });
+    expect(wiki).toHaveAttribute('href', 'https://wiki.zoneminder.com');
+    expect(wiki).toHaveAttribute('target', '_blank');
+    // Groups and the rest are hidden rows; Map has no page here.
+    expect(within(nav).queryByRole('link', { name: 'Groups' })).toBeNull();
   });
 });
 

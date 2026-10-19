@@ -2,28 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
-  LayoutDashboard,
-  Monitor,
-  Video,
-  LayoutGrid,
-  Film,
-  RefreshCcw,
-  Settings,
-  Shield,
-  HardDrive,
-  Users,
-  UsersRound,
-  ScrollText,
-  Filter as FilterIcon,
-  FileText,
-  ShieldCheck,
-  Power,
-  KeyRound,
-  Brain,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
-  X,
+  LayoutDashboard, Monitor, Video, LayoutGrid, Film, RefreshCcw, Settings, Shield, HardDrive, Users, UsersRound, ScrollText, Filter as FilterIcon, FileText, ShieldCheck, Power, KeyRound, Brain, LogOut, ChevronLeft, ChevronRight, X, List,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
@@ -102,6 +81,9 @@ function useNavSections(logState: LogState): NavSection[] {
         { label: t('Settings'), icon: <Settings size={16} />, path: '/settings' },
         { label: t('Storage'), icon: <HardDrive size={16} />, path: '/settings/storage' },
         { label: t('Users'), icon: <Users size={16} />, path: '/settings/users' },
+        { label: t('Roles'), icon: <ShieldCheck size={16} />, path: '/settings/roles' },
+        { label: t('Encoder Templates'), icon: <Film size={16} />, path: '/settings/encoder-templates' },
+        { label: t('Menu'), icon: <List size={16} />, path: '/settings/menu' },
         { label: t('Servers'), icon: <Shield size={16} />, path: '/settings/servers' },
         { label: t('API Access'), icon: <KeyRound size={16} />, path: '/settings/api-tokens' },
         { label: t('AI'), icon: <Brain size={16} />, path: '/settings/ai/datasets' },

@@ -5,7 +5,7 @@ import { clsx } from 'clsx';
 import {
   LayoutDashboard, RefreshCcw, LayoutGrid, Film, Video, Settings, ScrollText,
   UsersRound, Filter as FilterIcon, FileText, ShieldCheck, UserRound, LogOut,
-  ChevronUp, ChevronDown,
+  ChevronUp, ChevronDown, Link2,
 } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
@@ -14,6 +14,7 @@ import { usePerms } from '@/features/auth/usePerms';
 import { useCurrentUsername, useMe } from '@/features/auth/useMe';
 import { useZmConfig } from '@/features/config/useZmConfig';
 import { canSeeNav } from '@/features/nav/navPerms';
+import { useSystemMenu } from '@/features/nav/useSystemMenu';
 import { Button } from '@/components/common/Button';
 import { useLogState, type LogState } from '@/features/logs/useLogState';
 import { useUiStore } from '@/stores/ui';
@@ -21,15 +22,21 @@ import { ClassicBrandMenu } from './BrandMenu';
 import { ClassicStatusButton } from './StatusButton';
 import { ClassicLogoutModal } from './LogoutModal';
 
+interface NavItem { icon: ReactNode; label: string; to: string; external?: boolean }
+
 /**
  * Classic ZoneMinder top navigation. Same items, order and labels as the
  * legacy navbar (`getNavBarHTML`), monochrome icons in place of Material
- * Icons.
+ * Icons. Legacy reads the `MenuItems` table (Options → Menu: hidden rows,
+ * custom labels, links and order); once `GET /system/menu` has answered
+ * with rows, the list below gives way to it. Entries with no page here
+ * (Devices, Snapshots, Map…) are left out, as a link to nowhere helps nobody.
  */
-function useNavItems(): Array<{ icon: ReactNode; label: string; to: string }> {
+function useNavItems(): NavItem[] {
   const { t } = useTranslation();
+  const { entries } = useSystemMenu();
   const s = 15;
-  return [
+  const defaults: NavItem[] = [
     { icon: <LayoutDashboard size={s} />, label: t('Console'), to: '/' },
     { icon: <RefreshCcw size={s} />, label: t('Cycle'), to: '/cycle' },
     { icon: <LayoutGrid size={s} />, label: t('Montage'), to: '/montage' },
@@ -42,6 +49,16 @@ function useNavItems(): Array<{ icon: ReactNode; label: string; to: string }> {
     { icon: <FileText size={s} />, label: t('Reports'), to: '/reports' },
     { icon: <ShieldCheck size={s} />, label: t('Audit Events Report'), to: '/audit' },
   ];
+  if (!entries || entries.length === 0) return defaults;
+  const iconByRoute = new Map(defaults.map((d) => [d.to, d.icon]));
+  return entries
+    .filter((e) => e.link != null)
+    .map((e) => ({
+      icon: iconByRoute.get(e.link!) ?? <Link2 size={s} />,
+      label: e.label,
+      to: e.link!,
+      external: e.external,
+    }));
 }
 
 /** `logState()` → the legacy nav classes (`text-success/warning/danger`). */
@@ -66,7 +83,7 @@ export function ClassicTopNav() {
   const statBarOpen = useUiStore((s) => s.classicStatBarOpen);
   const toggleStatBar = useUiStore((s) => s.toggleClassicStatBar);
   // Same canView() gating as the legacy navbar.
-  const items = useNavItems().filter((i) => canSeeNav(perms, i.to));
+  const items = useNavItems().filter((i) => i.external || canSeeNav(perms, i.to));
   // Legacy colours the Log item by `logState()`; only System viewers see it.
   const logState = useLogState(can('system', 'View') && items.some((i) => i.to === '/logs'));
 
@@ -94,6 +111,17 @@ export function ClassicTopNav() {
           <ul className="flex items-center gap-1 flex-wrap">
             {items.map((item) => (
               <li key={item.to}>
+                {item.external ? (
+                  <a
+                    href={item.to}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded text-sm transition-colors hover:bg-white/10 text-classic-nav-link"
+                  >
+                    <span aria-hidden className="leading-none">{item.icon}</span>
+                    <span>{item.label}</span>
+                  </a>
+                ) : (
                 <Link
                   to={item.to}
                   aria-current={isActive(item.to) ? 'page' : undefined}
@@ -109,6 +137,7 @@ export function ClassicTopNav() {
                   <span aria-hidden className="leading-none">{item.icon}</span>
                   <span>{item.label}</span>
                 </Link>
+                )}
               </li>
             ))}
           </ul>
