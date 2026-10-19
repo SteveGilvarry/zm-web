@@ -43,6 +43,8 @@ import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { SCALE_VALUES } from '@/features/monitors/watchStage';
 import { useMeasuredBox, stageFitStyle } from '@/features/monitors/useStageFit';
 import { PtzControls } from '@/features/ptz/PtzControls';
+import { MonitorActionButtons } from '@/features/ptz/MonitorActionButtons';
+import type { AlarmState } from '@/features/alarms/alarmWatch';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { zoneViewDimensions } from '@/features/zones/useZonesPage';
@@ -91,7 +93,8 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   });
   const {
     monitor, monitorLoading, events, liveStats, runtime, protocol, activeStream,
-    isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, volume, setVolume,
+    isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, liveAlarm, monitorActions,
+    isMuted, volume, setVolume,
     siblings, siblingIndex, prevMonitorId, nextMonitorId,
     isFullscreen, isWide,
     editorOpen, openEditor, closeEditor, editorTab, setEditorTab, updateModes, isUpdating,
@@ -173,9 +176,29 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     ? { ...stage.style, maxHeight: '100%' }
     : stageFitStyle(box, effW, effH);
 
+  // The live alarm state, when zmc reports it: the word, and its tone.
+  const alarmLabel = (s: AlarmState): string => {
+    switch (s) {
+      case 'idle': return t('Idle');
+      case 'prealarm': return t('Prealarm');
+      case 'alarm': return t('Alarm');
+      case 'alert': return t('Alert');
+    }
+  };
+  const alarmTone: 'danger' | 'warn' | undefined = liveAlarm.state === 'alarm'
+    ? 'danger'
+    : liveAlarm.state === 'alert' || liveAlarm.state === 'prealarm' ? 'warn' : undefined;
+
   const videoPanel = (
     <div
-      className="relative h-full w-full bg-bg-sunken rounded border border-border-subtle overflow-hidden"
+      data-alarm-state={liveAlarm.state ?? undefined}
+      className={clsx(
+        'relative h-full w-full bg-bg-sunken rounded border overflow-hidden',
+        // The frame is the one place the picture says it is in alarm.
+        liveAlarm.state === 'alarm' ? 'border-alarm ring-1 ring-alarm'
+          : liveAlarm.state === 'alert' ? 'border-warn ring-1 ring-warn'
+            : 'border-border-subtle',
+      )}
     >
       {/* Pinch, trackpad-pinch or drag to inspect a corner of the frame
           without touching the camera. This is digital zoom on the received
@@ -284,7 +307,14 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             {/* Runtime: capture-process state + fps (legacy State / Capturing FPS readout) */}
             {runtime && (
               <span className="text-xs font-mono tabular-nums text-white/70 whitespace-nowrap" data-testid="watch-runtime">
-                {runtime.status}
+                {liveAlarm.state ? (
+                  <span
+                    data-testid="watch-state"
+                    className={alarmTone === 'danger' ? 'text-alarm font-medium' : alarmTone === 'warn' ? 'text-warn font-medium' : undefined}
+                  >
+                    {alarmLabel(liveAlarm.state)}
+                  </span>
+                ) : runtime.status}
                 {viewingFps != null && (
                   <>
                     {' · '}
@@ -550,6 +580,16 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           tone={monitor.capturing === 'Always' ? 'ok' : undefined}
         />
         <Row label={t('Analysing')} value={modeLabel(monitor.analysing || 'None')} />
+        {liveAlarm.state && (
+          <Row label={t('State')} value={alarmLabel(liveAlarm.state)} tone={alarmTone} />
+        )}
+        {liveAlarm.alarmsDisabled != null && (
+          <Row
+            label={t('Alarms')}
+            value={liveAlarm.alarmsDisabled ? t('Disabled') : t('Enabled')}
+            tone={liveAlarm.alarmsDisabled ? 'warn' : undefined}
+          />
+        )}
         <Row
           label={t('Recording')}
           value={modeLabel(monitor.recording || 'None')}
@@ -634,21 +674,28 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   // Only mount the PTZ panel when the backend reports real capabilities;
   // non-PTZ monitors get no empty panel at all. Viewing the panel needs
   // Control View, as legacy's `canView('Control')` does.
-  const ptzAvailable = ptzState.status === 'ready' && !page.isWebSite && can('control', 'View');
-  const ptzPanel = ptzState.status === 'ready' && !page.isWebSite && ptzShow ? (
+  // A monitor with manual actions gets the panel too: they drive other
+  // devices, so it needs no control of its own (watch.php).
+  const ptzReady = ptzState.status === 'ready';
+  const hasActions = monitorActions.actions.length > 0;
+  const ptzAvailable = (ptzReady || hasActions) && !page.isWebSite && can('control', 'View');
+  const ptzPanel = (ptzReady || hasActions) && !page.isWebSite && ptzShow ? (
     <RequirePerm feature="control" level="View">
       <Panel
         title={t('Camera control')}
         icon={<Joystick size={16} />}
         action={
-          ptzState.capabilities.protocol ? (
+          ptzReady && ptzState.capabilities.protocol ? (
             <span className="text-xs font-mono text-fg-dim">
               {ptzState.capabilities.protocol}
             </span>
           ) : undefined
         }
       >
-        <PtzControls monitorId={id} capabilities={ptzState.capabilities} />
+        <div className="space-y-4">
+          <MonitorActionButtons state={monitorActions} />
+          {ptzReady && <PtzControls monitorId={id} capabilities={ptzState.capabilities} />}
+        </div>
       </Panel>
     </RequirePerm>
   ) : null;
@@ -819,6 +866,29 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
 
             <RequirePerm feature="monitors" level="Edit">
               <div className="flex items-center gap-2">
+                {/* Enable / Disable Alarms (`zmu -c` / `-n`). Amber while
+                    alarms are off, since that is a state worth noticing. */}
+                {liveAlarm.ready && (
+                  <button
+                    type="button"
+                    onClick={liveAlarm.toggle}
+                    disabled={liveAlarm.isPending}
+                    aria-pressed={liveAlarm.greyed}
+                    data-testid="alarms-toggle"
+                    className={clsx(
+                      'flex items-center gap-1.5 px-2 py-1 rounded border text-xs transition-colors disabled:opacity-50',
+                      liveAlarm.greyed
+                        ? 'border-warn bg-warn/15 text-warn'
+                        : 'border-border-subtle text-fg-dim hover:text-fg hover:border-border',
+                    )}
+                    title={liveAlarm.greyed
+                      ? t('Alarms are off for this monitor; click to turn them back on')
+                      : t('Stop this monitor raising alarms until turned back on')}
+                  >
+                    {liveAlarm.greyed ? <BellOff size={12} aria-hidden /> : <Bell size={12} aria-hidden />}
+                    {liveAlarm.greyed ? t('Enable Alarms') : t('Disable Alarms')}
+                  </button>
+                )}
                 {/* Force Alarm / Cancel — legacy watch buttons. Shown once the
                     alarm endpoint has answered for this (capturing) monitor. */}
                 {alarm.available && (
@@ -939,7 +1009,7 @@ function Row({
   value: string;
   mono?: boolean;
   truncate?: boolean;
-  tone?: 'ok' | 'danger';
+  tone?: 'ok' | 'warn' | 'danger';
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
@@ -949,7 +1019,7 @@ function Row({
           'text-sm text-end min-w-0',
           mono && 'font-mono tabular-nums',
           truncate && 'truncate',
-          tone === 'ok' ? 'text-ok' : tone === 'danger' ? 'text-danger' : 'text-fg',
+          tone === 'ok' ? 'text-ok' : tone === 'warn' ? 'text-warn' : tone === 'danger' ? 'text-danger' : 'text-fg',
         )}
       >
         {value}

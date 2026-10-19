@@ -891,3 +891,101 @@ describe('modern Watch page — cycle and PTZ toggles', () => {
   });
 });
 
+describe('modern Watch page — live alarm, alarms toggle, actions, light', () => {
+  /** The per-id status with the shared-memory fields of zm-api#139. */
+  const liveStatus = (live: Record<string, unknown>) =>
+    http.get('/api/v3/monitor-status/:id', ({ params }) =>
+      HttpResponse.json({ ...db.monitorStatuses.find((s) => s.monitor_id === Number(params.id)), ...live }));
+
+  it('reports Alarm in the status rail and draws the frame in the alarm colour', async () => {
+    server.use(liveStatus({ alarm_state: 'alarm', alarms_disabled: false, analysing: true }));
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    const stateTerm = await screen.findByText('State', { selector: 'dt' });
+    expect(stateTerm.nextElementSibling).toHaveTextContent('Alarm');
+    expect(stateTerm.nextElementSibling).toHaveClass('text-danger');
+    expect(screen.getByText('Alarms', { selector: 'dt' }).nextElementSibling).toHaveTextContent('Enabled');
+    expect(document.querySelector('[data-alarm-state="alarm"]')).toHaveClass('border-alarm');
+  });
+
+  it('disables alarms from the toolbar, and offers them back in amber once off', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      liveStatus({ alarm_state: 'idle', alarms_disabled: false, analysing: true }),
+      http.patch('/api/v3/monitors/:id/alarm', async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(db.monitors[0]);
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    const toggle = await screen.findByTestId('alarms-toggle');
+    expect(toggle).toHaveTextContent('Disable Alarms');
+    // The status answers with alarms off from here on.
+    server.use(liveStatus({ alarm_state: 'idle', alarms_disabled: true, analysing: true }));
+    await user.click(toggle);
+    await waitFor(() => expect(bodies).toContainEqual({ action: 'disable_alarms' }));
+    await waitFor(() => expect(screen.getByTestId('alarms-toggle')).toHaveTextContent('Enable Alarms'));
+    expect(screen.getByTestId('alarms-toggle')).toHaveClass('text-warn');
+
+    await user.click(screen.getByTestId('alarms-toggle'));
+    await waitFor(() => expect(bodies).toContainEqual({ action: 'enable_alarms' }));
+  });
+
+  it('hides the alarms toggle while zmc reports no state', async () => {
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await screen.findByRole('heading', { name: 'Status' });
+    expect(screen.queryByTestId('alarms-toggle')).toBeNull();
+  });
+
+  it('opens the control panel for manual actions on a camera without PTZ', async () => {
+    const runs: string[] = [];
+    server.use(
+      http.get('/api/v3/monitors/:id/actions', () => HttpResponse.json([
+        { id: 5, monitor_id: 1, target_monitor_id: 2, action_type: 'LightOn', trigger_on: 'Manual', label: null, enabled: true, sequence: 0 },
+      ])),
+      http.post('/api/v3/monitors/:id/actions/:actionId/run', ({ params }) => {
+        runs.push(`${params.id}/${params.actionId}`);
+        return HttpResponse.json({ success: true });
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    await screen.findByRole('heading', { name: 'Camera control' }, { timeout: 5_000 });
+    await user.click(screen.getByRole('button', { name: 'Turn light on - Driveway' }));
+    await waitFor(() => expect(runs).toEqual(['1/5']));
+    expect(screen.queryByRole('button', { name: 'Move up' })).toBeNull();
+  });
+
+  it('switches the camera light from its status', async () => {
+    const posts: string[] = [];
+    server.use(
+      http.get('/api/v3/ptz/monitors/:id/capabilities', ({ params }) =>
+        HttpResponse.json(makePtzCapabilities({
+          monitor_id: Number(params.id),
+          light: { can_light: true, can_indicator_light: false },
+        }))),
+      http.get('/api/v3/ptz/monitors/:id/light', () => HttpResponse.json({ light: 'on', indicator_light: null })),
+      http.post('/api/v3/ptz/monitors/:id/light/:state', ({ params }) => {
+        posts.push(String(params.state));
+        return HttpResponse.json({ success: true });
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/monitors/2');
+    await findWatch('Driveway');
+
+    const light = await screen.findByRole('button', { name: 'Light' }, { timeout: 5_000 });
+    await waitFor(() => expect(light).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.queryByRole('button', { name: 'Indicator' })).toBeNull();
+    await user.click(light);
+    await waitFor(() => expect(posts).toEqual(['off']));
+  });
+});
+
