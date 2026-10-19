@@ -198,10 +198,12 @@ export default function ClassicMonitorZonesPage({ monitorId }: PagePropsMap['mon
               </ClassicTable>
               <RequirePerm feature="monitors" level="Edit">
                 <div className="flex justify-end gap-2 mt-2">
-                  <ClassicButton icon={<PlusCircle size={14} />} onClick={() => page.openEditor('new')} disabled={!page.hasDimensions}>
+                  {/* Legacy's bare <button>s take the blue button colour (skin.css
+                      `button { background-color: var(--colorBackgroundButtons) }`). */}
+                  <ClassicButton tone="primary" icon={<PlusCircle size={14} />} onClick={() => page.openEditor('new')} disabled={!page.hasDimensions}>
                     {t('Add New Zone')}
                   </ClassicButton>
-                  <ClassicButton icon={<Trash2 size={14} />} onClick={page.deleteMarked} disabled={marked.size === 0 || page.busy}>
+                  <ClassicButton tone="primary" icon={<Trash2 size={14} />} onClick={page.deleteMarked} disabled={marked.size === 0 || page.busy}>
                     {t('Delete')}
                   </ClassicButton>
                 </div>
