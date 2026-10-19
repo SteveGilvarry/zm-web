@@ -881,9 +881,6 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
                         ? 'border-warn bg-warn/15 text-warn'
                         : 'border-border-subtle text-fg-dim hover:text-fg hover:border-border',
                     )}
-                    title={liveAlarm.greyed
-                      ? t('Alarms are off for this monitor; click to turn them back on')
-                      : t('Stop this monitor raising alarms until turned back on')}
                   >
                     {liveAlarm.greyed ? <BellOff size={12} aria-hidden /> : <Bell size={12} aria-hidden />}
                     {liveAlarm.greyed ? t('Enable Alarms') : t('Disable Alarms')}
