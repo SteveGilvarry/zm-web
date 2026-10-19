@@ -31,6 +31,7 @@ import { useUiStore } from '@/stores/ui';
 import { logout as apiLogout } from '@/api/auth';
 import { usePerms } from '@/features/auth/usePerms';
 import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
+import { AccountDialog } from './AccountDialog';
 import { useCurrentUsername } from '@/features/auth/useMe';
 import { canSeeNav } from '@/features/nav/navPerms';
 import { useLogState, type LogState } from '@/features/logs/useLogState';
@@ -151,8 +152,9 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const currentPath = router.location.pathname;
   const { clearAuth } = useAuthStore();
   const username = useCurrentUsername();
-  const { perms } = usePerms();
+  const { perms, can } = usePerms();
   const [passwordOpen, setPasswordOpen] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
   const logState = useLogState(canSeeNav(perms, '/logs'));
   const sections = useNavSections(logState);
   const asideRef = useRef<HTMLElement>(null);
@@ -283,18 +285,27 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             'bg-surface-2/50'
           )}
         >
-          <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-            <span className="text-accent font-medium text-sm">
-              {username?.charAt(0).toUpperCase() || '?'}
+          {/* Opens the account sheet: who is signed in and, for System
+              viewers, the other logged-in sessions. */}
+          <button
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            aria-label={t('Account')}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-start hover:bg-surface-2"
+          >
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20">
+              <span className="text-sm font-medium text-accent" aria-hidden>
+                {username?.charAt(0).toUpperCase() || '?'}
+              </span>
             </span>
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-fg truncate">
-                {username || t('Unknown')}
-              </p>
-            </div>
-          )}
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-fg">
+                  {username || t('Unknown')}
+                </span>
+              </span>
+            )}
+          </button>
           <Button
             variant="ghost"
             size="sm"
@@ -321,6 +332,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </div>
 
       <ChangePasswordDialog isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
+      <AccountDialog
+        isOpen={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        username={username}
+        canViewSystem={can('system', 'View')}
+        onChangePassword={() => { setAccountOpen(false); setPasswordOpen(true); }}
+        onLogout={() => { setAccountOpen(false); void handleLogout(); }}
+      />
     </aside>
   );
 }

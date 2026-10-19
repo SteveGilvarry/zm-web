@@ -4,7 +4,8 @@
  * at the alarm counts.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
@@ -67,5 +68,21 @@ describe('Sidebar — Log state', () => {
     logTotals = { '-2': 1 };
     renderWithProviders(<Sidebar />);
     await waitFor(() => expect(screen.getByTestId('nav-state-/logs')).toHaveClass('bg-warn'));
+  });
+});
+
+describe('Sidebar — account sheet', () => {
+  it('opens from the avatar and lists the other logged-in sessions for a System viewer', async () => {
+    server.use(http.get('/api/v3/sessions', () => HttpResponse.json({
+      items: [{ id: 'a', access: Math.floor(Date.now() / 1000) - 30, data: 'remoteAddr|s:12:"192.168.0.10";username|s:3:"bob";user|a:1:{s:2:"Id";i:7;}' }],
+      total: 1, per_page: 100, current_page: 1, last_page: 1,
+    })));
+    renderWithProviders(<Sidebar />);
+    await userEvent.click(screen.getByRole('button', { name: 'Account' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Signed in as admin')).toBeInTheDocument();
+    expect(await within(dialog).findByRole('link', { name: 'bob' })).toHaveAttribute('href', '/settings/users');
+    expect(within(dialog).getByText('192.168.0.10')).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Log out' })).toBeInTheDocument();
   });
 });
