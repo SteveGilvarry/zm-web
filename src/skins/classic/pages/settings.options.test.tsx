@@ -85,8 +85,8 @@ describe('Classic Options page', () => {
     const rail = screen.getByRole('navigation', { name: 'Options' });
     const labels = within(rail).getAllByRole('listitem').map((li) => li.textContent);
     expect(labels).toEqual([
-      'This Session', 'System', 'API', 'Servers', 'Storage', 'Display', 'Users', 'Groups',
-      'Control', 'MQTT', 'AI Datasets', 'AI Models', 'AI Classes', 'Run State',
+      'This Session', 'System', 'API', 'Servers', 'Storage', 'Display', 'Users', 'Roles', 'Groups',
+      'Control', 'Encoder Templates', 'Privacy', 'MQTT', 'Menu', 'AI Datasets', 'AI Models', 'AI Classes', 'Run State',
     ]);
     expect(within(rail).getByRole('link', { name: 'API' })).toHaveAttribute('href', '/settings/api-tokens');
     expect(within(rail).getByRole('link', { name: 'AI Models' })).toHaveAttribute('href', '/settings/ai/models');
