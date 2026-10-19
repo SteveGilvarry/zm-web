@@ -5,8 +5,9 @@ import {
   ArrowUp, ArrowDown, ArrowLeft, ArrowRight,
   ArrowUpLeft, ArrowUpRight, ArrowDownLeft, ArrowDownRight,
   ChevronLeft, ChevronRight,
-  Home, Plus, Minus, Focus as FocusIcon, Save, Trash2, AlertTriangle, Aperture,
+  Home, Plus, Minus, Focus as FocusIcon, Save, Trash2, AlertTriangle, Aperture, Lightbulb, Square,
 } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
 import { buttonClasses, fieldClasses } from '@/components/common/styles';
 import { ptz, type PtzCapabilities, type PtzDirection, type PtzPowerAction } from '@/api/ptz';
 import { usePerms } from '@/features/auth/usePerms';
@@ -26,6 +27,23 @@ interface PtzControlsProps {
 
 /** How long a failed command stays on screen before clearing itself. */
 const ERROR_TTL_MS = 6_000;
+
+/** watch.js asks for the light state again this long after a click. */
+const LIGHT_RECHECK_MS = 800;
+
+/** The camera's `on` / `off`, or null when it did not say. */
+function onOff(value: string | null | undefined): boolean | null {
+  const v = value?.toLowerCase();
+  if (v === 'on') return true;
+  if (v === 'off') return false;
+  return null;
+}
+
+/** `min_file..max_file`, empty unless both are numbers and in order. */
+function soundRange(min: number | null | undefined, max: number | null | undefined): number[] {
+  if (min == null || max == null || !Number.isInteger(min) || !Number.isInteger(max) || min > max) return [];
+  return Array.from({ length: max - min + 1 }, (_, i) => min + i);
+}
 
 /**
  * PTZ control surface — a neutral instrument panel. The pad is grey at rest
@@ -82,6 +100,34 @@ export function PtzControls({ monitorId, capabilities: caps, variant = 'modern' 
   // controlPresets: `canEdit('Monitors') && CanSetPresets()`.
   const canSetPresets = caps.presets.can_set_presets && can('monitors', 'Edit');
   const homeCommand = () => run(t('Home'), ptz.home(monitorId));
+
+  // Light and Indicator (control_functions.php `controlLight`,
+  // `controlIndicatorLight`): one toggle each, initialised from the camera
+  // and asked again 800 ms after a click, as watch.js does.
+  const light = caps.light;
+  const hasLight = !!light && (light.can_light || light.can_indicator_light);
+  const lightQ = useQuery({
+    queryKey: ['ptz', 'light', monitorId],
+    queryFn: () => ptz.getLightStatus(monitorId),
+    enabled: hasLight,
+    retry: false,
+  });
+  const lightOn = onOff(lightQ.data?.light);
+  const indicatorOn = onOff(lightQ.data?.indicator_light);
+  const { refetch: refetchLight } = lightQ;
+  // Unknown state sends On, as legacy's button does before a status arrives.
+  const toggleLight = (kind: 'light' | 'indicator') => {
+    if (kind === 'light') run(t('Light'), ptz.light(monitorId, lightOn ? 'off' : 'on'));
+    else run(t('Indicator'), ptz.indicatorLight(monitorId, indicatorOn ? 'off' : 'on'));
+    setTimeout(() => { void refetchLight(); }, LIGHT_RECHECK_MS);
+  };
+
+  // Audio (`controlAudio`): a button per sound the device holds, Stop, and
+  // volume down / up.
+  const audio = caps.audio;
+  const canPlay = !!audio?.can_play;
+  const canVolume = !!audio?.can_volume;
+  const soundFiles = canPlay ? soundRange(audio?.min_file, audio?.max_file) : [];
   // Names from `/control_presets`; slots without one show their number.
   const presetLabels = useControlPresets(monitorId, caps.presets.has_presets && presetSlots > 0);
 
@@ -297,6 +343,82 @@ export function PtzControls({ monitorId, capabilities: caps, variant = 'modern' 
         </Section>
       )}
 
+      {light && hasLight && (
+        <Section label={t('Light')}>
+          <div className="flex gap-2">
+            {light.can_light && (
+              <RockerBtn
+                className="flex-1 px-3"
+                pressed={lightOn === true}
+                aria-pressed={lightOn === true}
+                onClick={() => toggleLight('light')}
+              >
+                <Lightbulb size={14} strokeWidth={2.5} aria-hidden />
+                <span>{t('Light')}</span>
+              </RockerBtn>
+            )}
+            {light.can_indicator_light && (
+              <RockerBtn
+                className="flex-1 px-3"
+                pressed={indicatorOn === true}
+                aria-pressed={indicatorOn === true}
+                onClick={() => toggleLight('indicator')}
+              >
+                <span>{t('Indicator')}</span>
+              </RockerBtn>
+            )}
+          </div>
+        </Section>
+      )}
+
+      {(canPlay || canVolume) && (
+        <Section label={t('Audio')}>
+          <div className="space-y-2">
+            {soundFiles.length > 0 && (
+              <div className="flex flex-wrap gap-1.5" role="group" aria-label={t('Sounds')}>
+                {soundFiles.map((n) => (
+                  <button
+                    key={n}
+                    type="button"
+                    onClick={() => run(t('Play sound {{n}}', { n }), ptz.playAudio(monitorId, n))}
+                    className="min-w-9 h-9 px-1.5 rounded border border-border bg-surface-2 text-fg font-mono tabular-nums text-xs select-none transition-colors hover:bg-surface-3"
+                    title={t('Play sound {{n}}', { n })}
+                    aria-label={t('Play sound {{n}}', { n })}
+                  >
+                    {n}
+                  </button>
+                ))}
+              </div>
+            )}
+            {canPlay && (
+              <RockerBtn className="px-3" onClick={() => run(t('Stop Audio'), ptz.stopAudio(monitorId))}>
+                <Square size={12} strokeWidth={2.5} aria-hidden />
+                <span>{t('Stop Audio')}</span>
+              </RockerBtn>
+            )}
+            {canVolume && (
+              <div className="flex items-center gap-2" dir="ltr">
+                <RockerBtn
+                  className="px-3"
+                  aria-label={t('Volume down')}
+                  onClick={() => run(t('Volume down'), ptz.audioVolume(monitorId, 'down'))}
+                >
+                  <Minus size={14} strokeWidth={2.5} aria-hidden />
+                </RockerBtn>
+                <span className="text-xs text-fg-dim">{t('Volume')}</span>
+                <RockerBtn
+                  className="px-3"
+                  aria-label={t('Volume up')}
+                  onClick={() => run(t('Volume up'), ptz.audioVolume(monitorId, 'up'))}
+                >
+                  <Plus size={14} strokeWidth={2.5} aria-hidden />
+                </RockerBtn>
+              </div>
+            )}
+          </div>
+        </Section>
+      )}
+
       {/* Power — legacy `controlPower`: Wake / Sleep / Reset / Reboot, each
           only when the control advertises it. No confirmation, as in legacy. */}
       {hasPower && (
@@ -459,10 +581,12 @@ function DpadBtn({ children, center, disabled, className, ...rest }: DpadBtnProp
 interface RockerBtnProps extends ButtonHTMLAttributes<HTMLButtonElement> {
   /** 'state' = single-shot like Auto (no press-and-hold semantics). */
   variant?: 'default' | 'state';
+  /** A toggle that is on (a light that is lit): drawn selected. */
+  pressed?: boolean;
   children: ReactNode;
 }
 
-function RockerBtn({ children, variant = 'default', disabled, className, ...rest }: RockerBtnProps) {
+function RockerBtn({ children, variant = 'default', pressed, disabled, className, ...rest }: RockerBtnProps) {
   return (
     <button
       type="button"
@@ -471,6 +595,8 @@ function RockerBtn({ children, variant = 'default', disabled, className, ...rest
         'flex items-center justify-center gap-1.5 py-2 rounded border text-xs font-medium select-none touch-none transition-colors',
         disabled
           ? 'border-border-subtle text-fg-faint cursor-not-allowed bg-surface'
+          : pressed
+            ? 'border-accent bg-accent/15 text-accent'
           // Auto focus is a camera *mode*, so it stays coloured while offered.
           : variant === 'state'
             ? 'border-warn/30 bg-warn/12 text-warn hover:bg-warn/20'

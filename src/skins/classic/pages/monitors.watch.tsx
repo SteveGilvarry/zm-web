@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertCircle, AlertTriangle, Download, ExternalLink, Filter, FilterX, GalleryHorizontal, Maximize, Maximize2,
+  AlertCircle, AlertTriangle, Bell, Download, ExternalLink, Filter, FilterX, GalleryHorizontal, Maximize, Maximize2,
   Minimize2, Minus, Move, Pause, Pencil, Play, Plus, RefreshCw, SkipBack, SkipForward, Square,
   Volume2, VolumeX,
 } from 'lucide-react';
@@ -30,6 +30,8 @@ import { Modal } from '@/components/common/Modal';
 import { useUiStore } from '@/stores/ui';
 import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import { PtzControls } from '@/features/ptz/PtzControls';
+import { MonitorActionButtons } from '@/features/ptz/MonitorActionButtons';
+import type { AlarmState } from '@/features/alarms/alarmWatch';
 import { WatchLoading, WatchNotFound } from '@/skins/modern/layouts/WatchStates';
 import {
   ClassicButton, ClassicFilterRow, ClassicHeader, ClassicIconButton, ClassicPage,
@@ -41,6 +43,17 @@ const GREY_SQUARE = 'bg-[#8a9299]! border-[#7b838a]! hover:bg-[#6f777e]!';
 const RED_SQUARE = 'bg-[#d9534f]! border-[#d43f3a]! hover:bg-[#c9302c]!';
 /** skin.css `button.btn.btn-zoom-in` & co: translucent grey over the picture. */
 const OVERLAY_BTN = 'pointer-events-auto inline-flex items-center justify-center p-0 rounded-sm bg-[rgba(150,150,150,0.5)] hover:bg-[darkgrey] text-white';
+
+/** watch.css `span.alarm` / `span.alert`: the state word in colour. */
+const STATE_TEXT: Partial<Record<AlarmState, string>> = {
+  alarm: 'text-[#DC143C] font-bold',
+  alert: 'text-[#FF8C00] font-bold',
+};
+/** skin.css `.monitor.alarm .imageFeed` / `.monitor.alert .imageFeed`. */
+const STATE_FRAME: Partial<Record<AlarmState, string>> = {
+  alarm: 'border-[#ff0000]',
+  alert: 'border-[#ffa500]',
+};
 
 /** MonitorStream.js prints fps with `toLocaleString(undefined, {min: 1, max: n})`. */
 function fpsText(fps: number, maxDigits: number): string {
@@ -92,7 +105,9 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   // that is actually left, rather than to a constant.
   const { setAvailableHeight } = page.stage;
   useEffect(() => { setAvailableHeight(availableHeight); }, [availableHeight, setAvailableHeight]);
-  const { monitor, monitorLoading, runtime, alarm, ptzState, protocol, stage, contentRef } = page;
+  const {
+    monitor, monitorLoading, runtime, alarm, liveAlarm, monitorActions, ptzState, protocol, stage, contentRef,
+  } = page;
   const canViewEvents = can('events', 'View');
   const events = useMonitorEvents(monitorId, page.isAuthenticated && !!monitor && canViewEvents);
   const filter = useMonitorFilterRow(page.siblings);
@@ -115,9 +130,33 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   const isConnecting = streamState === 'connecting' || streamState === 'signaling';
   const isStreaming = streamState === 'connected';
   const isActive = streamState !== 'idle';
-  // watch.php: `Controllable() && canView('Control') && Type != 'WebSite'`.
-  const ptzAvailable = ptzState.status === 'ready' && can('control', 'View') && monitor.type !== 'WebSite';
-  const ptzOpen = ptzAvailable && ptzShow && ptzState.status === 'ready';
+  // watch.php: `Controllable() && canView('Control') && Type != 'WebSite'`,
+  // or a monitor with enabled manual actions (they drive other devices).
+  const hasActions = monitorActions.actions.length > 0;
+  const ptzAvailable = (ptzState.status === 'ready' || hasActions) && can('control', 'View') && monitor.type !== 'WebSite';
+  const ptzOpen = ptzAvailable && ptzShow;
+  const canEditMonitors = can('monitors', 'Edit');
+  // stateStrings[]: the shared-memory state when zmc reports it, otherwise
+  // the capture status from the shared 5 s poll.
+  const stateLabel = (s: AlarmState): string => {
+    switch (s) {
+      case 'idle': return t('Idle');
+      case 'prealarm': return t('Prealarm');
+      case 'alarm': return t('Alarm');
+      case 'alert': return t('Alert');
+    }
+  };
+  const stateText = liveAlarm.state
+    ? stateLabel(liveAlarm.state)
+    : runtime ? runtime.status : isStreaming ? t('Connected') : t('Idle');
+  // watch.php starts the bell's title as DisableAlarms; with Monitors edit
+  // the 1 s status then sets it to DisableAlarms on a greyed bell and
+  // EnableAlarms otherwise (MonitorStream.js:1461-1468). That reads back to
+  // front, but it is what legacy shows; the accessible name says what a
+  // click does.
+  const bellTitle = !canEditMonitors
+    ? t('{{title}}: disabled because cannot edit Monitors', { title: t('Disable Alarms') })
+    : liveAlarm.ready && !liveAlarm.greyed ? t('Enable Alarms') : t('Disable Alarms');
   const scaleLabel = (v: string): string => {
     switch (v) {
       case '0': return t('Auto');
@@ -203,6 +242,21 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
               <ClassicIconButton aria-label={t('Edit')} onClick={page.openEditor} className={GREY_SQUARE}>
                 <Pencil size={15} aria-hidden />
               </ClassicIconButton>
+            </RequirePerm>
+            {/* `#enableAlmBtn`: shown to everyone, usable with Monitors edit
+                once the status has arrived; greyed while alarms are off. */}
+            <ClassicIconButton
+              aria-label={liveAlarm.greyed ? t('Enable Alarms') : t('Disable Alarms')}
+              title={bellTitle}
+              aria-pressed={liveAlarm.ready ? !liveAlarm.greyed : undefined}
+              onClick={liveAlarm.toggle}
+              disabled={!canEditMonitors || !liveAlarm.ready || liveAlarm.isPending}
+              className={clsx(GREY_SQUARE, liveAlarm.greyed && 'opacity-65')}
+              data-testid="alarms-toggle"
+            >
+              <Bell size={15} aria-hidden />
+            </ClassicIconButton>
+            <RequirePerm feature="monitors" level="Edit">
               {/* One button that flips with the alarm, no confirmation —
                   watch.js `forceAlarm` / `cancelAlarm`. */}
               <ClassicIconButton
@@ -287,9 +341,19 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                 ref={stageRef}
                 dir="ltr"
                 data-testid="watch-stage"
+                data-alarm-state={liveAlarm.state ?? undefined}
                 className="group relative bg-black mx-auto overflow-hidden"
                 style={stage.style}
               >
+                {/* The frame turns red in Alarm and orange in Alert; drawn
+                    over the picture so the stage does not change size. */}
+                {liveAlarm.state && STATE_FRAME[liveAlarm.state] && (
+                  <div
+                    aria-hidden
+                    data-testid="watch-alarm-frame"
+                    className={clsx('absolute inset-0 z-10 pointer-events-none border-2', STATE_FRAME[liveAlarm.state])}
+                  />
+                )}
                 {page.isWebSite && (
                   <iframe
                     key={page.webSiteReloadKey}
@@ -370,7 +434,13 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
               </span>
               <span>{t('{{name}} (id={{id}})', { name: monitor.name, id: monitor.id })}</span>
               <span className="flex flex-wrap justify-center gap-x-3 tabular-nums">
-                <span>{t('State: {{state}}', { state: runtime ? runtime.status : isStreaming ? t('Connected') : t('Idle') })}</span>
+                {/* Monitor.php: `State:<span id="stateValue">`, no space. */}
+                <span>
+                  {t('State')}:<span
+                    data-testid="watch-state"
+                    className={liveAlarm.state ? STATE_TEXT[liveAlarm.state] : undefined}
+                  >{stateText}</span>
+                </span>
                 <span title={t('Viewing FPS')} data-testid="viewing-fps">
                   {t('{{fps}} fps', { fps: page.viewingFps == null ? '' : fpsText(page.viewingFps, 2) })}
                 </span>
@@ -440,8 +510,12 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           {/* `#ptzControls`: `canView('Control')` gates it in `ptzAvailable`,
               `ptzShow` decides whether it is open. */}
           {ptzOpen && (
-            <aside className="w-full lg:w-80 shrink-0 bg-white border border-zinc-300 rounded-sm p-3" aria-label={t('Camera control')}>
-              <PtzControls monitorId={monitor.id} capabilities={ptzState.capabilities} variant="classic" />
+            <aside className="w-full lg:w-80 shrink-0 bg-white border border-zinc-300 rounded-sm p-3 space-y-4" aria-label={t('Camera control')}>
+              {/* `ptzControls` echoes the action buttons first. */}
+              <MonitorActionButtons state={monitorActions} />
+              {ptzState.status === 'ready' && (
+                <PtzControls monitorId={monitor.id} capabilities={ptzState.capabilities} variant="classic" />
+              )}
             </aside>
           )}
         </div>

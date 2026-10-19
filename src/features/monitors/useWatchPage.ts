@@ -19,6 +19,9 @@ import { useZmConfig } from '@/features/config/useZmConfig';
 import { useDocumentVisible } from '@/hooks/useDocumentVisible';
 import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import { useViewingFps } from './useViewingFps';
+import { useMonitorAlarmState } from '@/features/alarms/useMonitorAlarmState';
+import type { AlarmState } from '@/features/alarms/alarmWatch';
+import { useManualActions, type ManualActionsState } from '@/features/ptz/useManualActions';
 import type { LiveStats, Monitor, StreamProtocol, ZmEvent } from '@/types';
 
 export interface WatchModeUpdate {
@@ -44,6 +47,29 @@ export interface WatchAlarmState {
   error: string | null;
   force: () => void;
   cancel: () => void;
+}
+
+/**
+ * The monitor's live alarm state and legacy's Enable/Disable Alarms bell
+ * (watch.js `cmdAlarm`, MonitorStream.js:1458-1471), from
+ * `GET /monitor-status/{id}` and `PATCH /monitors/{id}/alarm`
+ * (`disable_alarms` / `enable_alarms`, zm-api#139).
+ */
+export interface WatchLiveAlarm {
+  /** `idle | prealarm | alarm | alert`, or null when zmc does not report it. */
+  state: AlarmState | null;
+  /** Alarms switched off (`zmu -n`); null when unknown. */
+  alarmsDisabled: boolean | null;
+  /**
+   * The bell is greyed (legacy class `disabled`): analysis is off or alarms
+   * are switched off. A click on a greyed bell enables alarms; otherwise it
+   * disables them.
+   */
+  greyed: boolean;
+  /** The status has arrived; legacy keeps the bell disabled until it does. */
+  ready: boolean;
+  isPending: boolean;
+  toggle: () => void;
 }
 
 /** Legacy `Stream | Stills` toggle: live video or a refreshing snapshot. */
@@ -83,6 +109,9 @@ export interface WatchPageState {
   fellBackToHls: boolean;
   ptzState: PtzState;
   alarm: WatchAlarmState;
+  liveAlarm: WatchLiveAlarm;
+  /** Enabled `Manual` monitor actions for the control panel (zm-api#179). */
+  monitorActions: ManualActionsState;
   isMuted: boolean;
   /** Output volume, 0–1. Independent of `isMuted`, as on any player. */
   volume: number;
@@ -356,6 +385,42 @@ export function useWatchPage(monitorId: number): WatchPageState {
       toast.apiError(err);
     },
   });
+  // MonitorStream.js `setAlarmState`: on the way into an alarm, legacy plays
+  // `ZM_WEB_ALARM_SOUND` from `ZM_DIR_SOUNDS` when `ZM_WEB_SOUND_ON_ALARM`
+  // is on, raises the window when `ZM_WEB_POPUP_ON_ALARM` is on, and
+  // refreshes the events table at the start and at the end. The sound is
+  // left out: the file lives under legacy's web root, and neither zm-api nor
+  // zm-web serves it.
+  const popupOnAlarm = useZmConfig('ZM_WEB_POPUP_ON_ALARM', false);
+  const refreshEvents = () => {
+    void queryClient.invalidateQueries({ queryKey: ['monitorEvents', id] });
+  };
+  const alarmStatus = useMonitorAlarmState(
+    id,
+    isAuthenticated && !isNaN(id) && !!monitor && monitor.capturing !== 'None' && monitor.type !== 'WebSite',
+    {
+      onStart: () => {
+        if (popupOnAlarm) window.focus();
+        refreshEvents();
+      },
+      onEnd: refreshEvents,
+    },
+  );
+  const alarmsGreyed = alarmStatus.analysing === false || alarmStatus.alarmsDisabled === true;
+  const alarmsToggle = useMutation({
+    mutationFn: (action: 'enable_alarms' | 'disable_alarms') => controlMonitorAlarm(id, { action }),
+    onSuccess: () => alarmStatus.refetch(),
+    onError: toast.apiError,
+  });
+  const liveAlarm: WatchLiveAlarm = {
+    state: alarmStatus.state,
+    alarmsDisabled: alarmStatus.alarmsDisabled,
+    greyed: alarmsGreyed,
+    ready: alarmStatus.analysing != null || alarmStatus.alarmsDisabled != null,
+    isPending: alarmsToggle.isPending,
+    toggle: () => alarmsToggle.mutate(alarmsGreyed ? 'enable_alarms' : 'disable_alarms'),
+  };
+
   const alarm: WatchAlarmState = {
     available: alarmStatusQ.isSuccess,
     forced: alarmForced,
@@ -551,6 +616,14 @@ export function useWatchPage(monitorId: number): WatchPageState {
     staleTime: 60_000,
   });
   const siblings = monitorList ?? EMPTY_MONITORS;
+  // watch.php shows the control panel for a monitor with manual actions
+  // even when it has no control of its own; `ZM_OPT_CONTROL` gates both.
+  const controlEnabled = useZmConfig('ZM_OPT_CONTROL', true);
+  const monitorActions = useManualActions(
+    id,
+    isAuthenticated && !isNaN(id) && controlEnabled && !!monitor && !isWebSite,
+    siblings,
+  );
   const siblingIndex = siblings.findIndex((m) => m.id === id);
   // Wrap, so the last camera's Next is the first — an operator stepping
   // through a wall should not hit a dead end at either end.
@@ -575,6 +648,8 @@ export function useWatchPage(monitorId: number): WatchPageState {
     fellBackToHls,
     ptzState,
     alarm,
+    liveAlarm,
+    monitorActions,
     isMuted,
     volume,
     setVolume,

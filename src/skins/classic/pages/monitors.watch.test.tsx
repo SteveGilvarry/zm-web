@@ -155,6 +155,7 @@ const CAPS = {
 const server = setupServer();
 const alarmCalls: unknown[] = [];
 const deletedEvents: string[] = [];
+const actionRuns: string[] = [];
 
 /** `ptz: 'none'` makes the camera non-controllable (backend answers 400). */
 function stubOk(opts: {
@@ -165,6 +166,10 @@ function stubOk(opts: {
   configs?: Record<string, string>;
   /** Extra monitors for the cycle sidebar's rotation. */
   monitors?: unknown[];
+  /** Shared-memory fields on `GET /monitor-status/3` (zm-api#139). */
+  live?: Record<string, unknown>;
+  /** Rows on `GET /monitors/3/actions`. */
+  actions?: unknown[];
 } = {}) {
   const { ptz = 'none', events = [EVENT], configs = {} } = opts;
   // `Monitors.Controllable` is what the page gates the capability request on,
@@ -184,6 +189,12 @@ function stubOk(opts: {
         : HttpResponse.json({ kind: 'BAD_REQUEST', error_message: 'Monitor 3 has no PTZ control configured' }, { status: 400 })),
     http.get('/api/v3/monitors/:id', () => HttpResponse.json(monitor)),
     http.get('/api/v3/monitor-status', () => HttpResponse.json(paged([STATUS]))),
+    http.get('/api/v3/monitor-status/:id', () => HttpResponse.json({ ...STATUS, ...opts.live })),
+    http.get('/api/v3/monitors/:id/actions', () => HttpResponse.json(opts.actions ?? [])),
+    http.post('/api/v3/monitors/:id/actions/:actionId/run', ({ params }) => {
+      actionRuns.push(String(params.actionId));
+      return HttpResponse.json({ success: true });
+    }),
     http.get('/api/v3/events', () => HttpResponse.json(paged(events))),
     http.get('/api/v3/configs/:name', ({ params }) =>
       HttpResponse.json({ name: params.name, value: params.name === 'ZM_WEB_EVENTS_PER_PAGE' ? '25' : '1' })),
@@ -228,6 +239,7 @@ afterEach(() => {
   streamCalls.length = 0;
   alarmCalls.length = 0;
   deletedEvents.length = 0;
+  actionRuns.length = 0;
   useToastStore.getState().clear();
   useUiStore.setState({ classicCycleSidebarOpen: false, classicMonitorFilterBarOpen: true });
   useWatchPrefsStore.setState(useWatchPrefsStore.getInitialState());
@@ -280,7 +292,8 @@ describe('ClassicMonitorWatchPage', () => {
     stubOk();
     await mount();
     const runtime = await screen.findByTestId('watch-runtime');
-    await waitFor(() => expect(runtime).toHaveTextContent(/State: Connected/));
+    // No shared-memory state on this build: the capture status stands in.
+    await waitFor(() => expect(runtime).toHaveTextContent(/State:Connected/));
     expect(runtime).toHaveTextContent('Driveway (id=3)');
     expect(runtime).toHaveTextContent('WebRTC');
     expect(within(runtime).getByTitle('Capturing FPS')).toHaveTextContent('10.0 fps');
@@ -856,5 +869,123 @@ describe('ClassicMonitorWatchPage — idle timeout and hidden tab', () => {
       vi.useRealTimers();
       spy.mockRestore();
     }
+  });
+});
+
+const LIVE_IDLE = { alarm_state: 'idle', alarms_disabled: false, analysing: true };
+
+describe('ClassicMonitorWatchPage — live alarm state', () => {
+  it('prints the shared-memory state, uncoloured while idle', async () => {
+    stubOk({ live: LIVE_IDLE });
+    await mount();
+    const state = await screen.findByTestId('watch-state');
+    await waitFor(() => expect(state).toHaveTextContent('Idle'));
+    expect(screen.getByTestId('watch-runtime')).toHaveTextContent(/State:Idle/);
+    expect(state.className).toBe('');
+    expect(screen.queryByTestId('watch-alarm-frame')).toBeNull();
+  });
+
+  it('colours Alarm crimson and frames the picture in red, as watch.css and skin.css do', async () => {
+    stubOk({ live: { ...LIVE_IDLE, alarm_state: 'alarm' } });
+    await mount();
+    const state = await screen.findByTestId('watch-state');
+    await waitFor(() => expect(state).toHaveTextContent('Alarm'));
+    expect(state).toHaveClass('text-[#DC143C]', 'font-bold');
+    expect(screen.getByTestId('watch-alarm-frame')).toHaveClass('border-[#ff0000]');
+    expect(screen.getByTestId('watch-stage')).toHaveAttribute('data-alarm-state', 'alarm');
+  });
+
+  it('colours Alert orange and frames the picture in orange', async () => {
+    stubOk({ live: { ...LIVE_IDLE, alarm_state: 'alert' } });
+    await mount();
+    const state = await screen.findByTestId('watch-state');
+    await waitFor(() => expect(state).toHaveTextContent('Alert'));
+    expect(state).toHaveClass('text-[#FF8C00]');
+    expect(screen.getByTestId('watch-alarm-frame')).toHaveClass('border-[#ffa500]');
+  });
+});
+
+describe('ClassicMonitorWatchPage — Enable/Disable Alarms', () => {
+  it('stays disabled until the status arrives, as legacy does', async () => {
+    stubOk();
+    await mount();
+    await ready();
+    const bell = screen.getByTestId('alarms-toggle');
+    expect(bell).toBeDisabled();
+    expect(bell).toHaveAttribute('title', 'Disable Alarms');
+  });
+
+  it('disables alarms from a lit bell, with legacy\'s back-to-front title', async () => {
+    stubOk({ live: LIVE_IDLE });
+    await mount();
+    const bell = await screen.findByTestId('alarms-toggle');
+    await waitFor(() => expect(bell).toBeEnabled());
+    expect(bell).toHaveAccessibleName('Disable Alarms');
+    expect(bell).toHaveAttribute('title', 'Enable Alarms');
+    expect(bell).not.toHaveClass('opacity-65');
+    await userEvent.click(bell);
+    await waitFor(() => expect(alarmCalls).toContainEqual({ action: 'disable_alarms' }));
+  });
+
+  it('greys the bell while alarms are off, and a click turns them back on', async () => {
+    stubOk({ live: { ...LIVE_IDLE, alarms_disabled: true } });
+    await mount();
+    const bell = await screen.findByTestId('alarms-toggle');
+    await waitFor(() => expect(bell).toBeEnabled());
+    expect(bell).toHaveClass('opacity-65');
+    expect(bell).toHaveAccessibleName('Enable Alarms');
+    expect(bell).toHaveAttribute('title', 'Disable Alarms');
+    await userEvent.click(bell);
+    await waitFor(() => expect(alarmCalls).toContainEqual({ action: 'enable_alarms' }));
+  });
+
+  it('greys the bell while the monitor is not analysing', async () => {
+    stubOk({ live: { ...LIVE_IDLE, analysing: false } });
+    await mount();
+    const bell = await screen.findByTestId('alarms-toggle');
+    await waitFor(() => expect(bell).toBeEnabled());
+    expect(bell).toHaveClass('opacity-65');
+  });
+
+  it('shows the bell to a monitors:View user, disabled, with the legacy title suffix', async () => {
+    useAuthStore.setState({ user: VIEWER });
+    stubOk({ live: LIVE_IDLE });
+    await mount();
+    await ready();
+    const bell = screen.getByTestId('alarms-toggle');
+    expect(bell).toBeDisabled();
+    expect(bell).toHaveAttribute('title', 'Disable Alarms: disabled because cannot edit Monitors');
+  });
+});
+
+describe('ClassicMonitorWatchPage — manual monitor actions', () => {
+  const SPEAKER = { ...MONITOR, id: 8, name: 'Porch speaker' };
+  const ACTIONS = [
+    { id: 21, monitor_id: 3, target_monitor_id: 8, action_type: 'AudioPlay', trigger_on: 'Manual', label: '', enabled: true, sequence: 2 },
+    { id: 20, monitor_id: 3, target_monitor_id: 8, action_type: 'LightOn', trigger_on: 'Manual', label: 'Floodlight', enabled: true, sequence: 1 },
+    { id: 22, monitor_id: 3, target_monitor_id: 8, action_type: 'LightOff', trigger_on: 'Alarm', label: '', enabled: true, sequence: 0 },
+    { id: 23, monitor_id: 3, target_monitor_id: 8, action_type: 'AudioStop', trigger_on: 'Manual', label: '', enabled: false, sequence: 0 },
+  ];
+
+  it('opens the control panel on a monitor with no control, with one button per enabled Manual action', async () => {
+    stubOk({ actions: ACTIONS, monitors: [MONITOR, SPEAKER] });
+    await mount();
+    const panel = await screen.findByRole('complementary', { name: 'Camera control' });
+    const buttons = within(within(panel).getByTestId('monitor-actions')).getAllByRole('button');
+    // Sequence order; the row's label wins, else `Action<Type> - <target>`.
+    expect(buttons.map((b) => b.textContent)).toEqual(['Floodlight', 'Play sound - Porch speaker']);
+    expect(screen.getByRole('button', { name: 'Toggle PTZ Controls' })).toBeEnabled();
+    expect(within(panel).queryByRole('button', { name: 'Move up' })).toBeNull();
+
+    await userEvent.click(buttons[1]);
+    await waitFor(() => expect(actionRuns).toEqual(['21']));
+  });
+
+  it('keeps the panel shut for a user without control:View', async () => {
+    useAuthStore.setState({ user: VIEWER });
+    stubOk({ actions: ACTIONS, monitors: [MONITOR, SPEAKER] });
+    await mount();
+    await ready();
+    expect(screen.queryByRole('complementary', { name: 'Camera control' })).toBeNull();
   });
 });
