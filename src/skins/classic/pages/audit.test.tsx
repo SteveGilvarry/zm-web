@@ -1,7 +1,7 @@
 /**
  * Integration-style tests for the audit page (classic skin): the legacy
- * per-monitor window semantic — Events / FirstEvent / LastEvent / MinGap /
- * MaxGap from each monitor's events inside the window — and its deep links.
+ * table from `/reports/event-audit` — Events / FirstEvent / LastEvent / MinGap /
+ * MaxGap and the file checks per monitor — and its deep links.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
@@ -63,15 +63,11 @@ function paged<T>(items: T[]) {
   return { items, total: items.length, per_page: 500, current_page: 1, last_page: 1 };
 }
 
-const ev = (id: number, monitor_id: number, start: string, end: string) => ({
-  id, monitor_id, name: `Event ${id}`, start_date_time: start, end_date_time: end, length: 30,
-});
 
-/** Requests to /events by monitor id, for asserting the window bounds. */
-let eventRequests: URLSearchParams[] = [];
-
+/** Requests to /reports/event-audit, for asserting the window bounds. */
+let auditRequests: URLSearchParams[] = [];
 function stubEndpoints() {
-  eventRequests = [];
+  auditRequests = [];
   server.use(
     http.get('/api/v3/monitors', () => HttpResponse.json(paged([
       { id: 1, name: 'Front Door', server_id: 2 }, { id: 2, name: 'Driveway East', server_id: null },
@@ -79,44 +75,47 @@ function stubEndpoints() {
     http.get('/api/v3/servers', () => HttpResponse.json(paged([{ id: 2, name: 'edge-01', status: 'Running' }]))),
     http.get('/api/v3/groups', () => HttpResponse.json(paged([]))),
     http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([]))),
-    http.get('/api/v3/events', ({ request }) => {
+    // Shape as the dev box serves it; monitor 2 had no events, so no entry.
+    http.get('/api/v3/reports/event-audit', ({ request }) => {
       const q = new URL(request.url).searchParams;
-      eventRequests.push(q);
-      if (q.get('monitor_id') === '1') {
-        return HttpResponse.json(paged([
-          ev(28876, 1, '2026-08-21T06:40:00Z', '2026-08-21T06:45:00Z'),
-          ev(28880, 1, '2026-08-21T06:47:00Z', '2026-08-21T06:50:00Z'),
-          ev(28888, 1, '2026-08-21T07:00:00Z', '2026-08-21T07:05:00Z'),
-        ]));
-      }
-      return HttpResponse.json(paged([]));
+      auditRequests.push(q);
+      return HttpResponse.json({
+        start: q.get('start'),
+        end: q.get('end'),
+        monitors: [{
+          monitor_id: 1, event_count: 3, first_event_id: 28876, last_event_id: 28888,
+          first_start: '2026-08-21T06:40:00Z', last_end: '2026-08-21T07:05:00Z',
+          min_gap_seconds: -2, max_gap_seconds: 600, missing_files: [28880], zero_size: [],
+        }],
+      });
     }),
   );
 }
 
 describe('AuditPage — classic skin', () => {
-  it('computes Events / First / Last / MinGap / MaxGap per monitor inside the window', async () => {
+  it('shows Events / First / Last / MinGap / MaxGap and the file checks from the server audit', async () => {
     mockSearch = { min_time: '2026-08-21 06:37:03', max_time: '2026-08-21 07:37:03' };
     stubEndpoints();
     await mount();
     const row = await screen.findByTestId('audit-row-1');
     await waitFor(() => expect(within(row).getByRole('link', { name: '3' })).toBeInTheDocument());
-
     expect(within(row).getByText(/^28876 at /)).toBeInTheDocument();
-    expect(within(row).getByText(/^28888 at /)).toBeInTheDocument();
-    expect(within(row).getByText('120')).toBeInTheDocument();   // min gap 06:45 → 06:47
-    expect(within(row).getByText('600')).toBeInTheDocument();   // max gap 06:50 → 07:00
+    // The server reports when the last event ended, and says so.
+    expect(within(row).getByText(/^28888 ended /)).toBeInTheDocument();
+    expect(within(row).getByText('-2')).toBeInTheDocument();
+    expect(within(row).getByText('600')).toBeInTheDocument();
     expect(within(row).getByText('edge-01')).toBeInTheDocument();
-    expect(within(row).getAllByText('needs zm-api#36')).toHaveLength(2);
-
+    const missing = within(row).getByTestId('audit-missing');
+    expect(missing).toHaveClass('text-[#d9534f]');
+    expect(within(missing).getByRole('link', { name: '1' })).toBeInTheDocument();
+    expect(within(row).getByTestId('audit-zero-size')).toHaveTextContent('0');
+    expect(within(row).getByTestId('audit-zero-size')).not.toHaveClass('text-[#d9534f]');
     const empty = screen.getByTestId('audit-row-2');
     await waitFor(() => expect(within(empty).getByRole('link', { name: '0' })).toBeInTheDocument());
     expect(within(empty).getAllByText('none')).toHaveLength(2);
-
-    // The window went to the backend as start/end bounds for every monitor.
-    const req = eventRequests.find((q) => q.get('monitor_id') === '1')!;
-    expect(req.get('start_time')).toBe(new Date('2026-08-21T06:37:03').toISOString().replace(/\.\d{3}Z$/, 'Z'));
-    expect(req.get('sort')).toBe('start_time');
+    // One request, bounded by the window.
+    expect(auditRequests).toHaveLength(1);
+    expect(auditRequests[0].get('start')).toBe(new Date('2026-08-21T06:37:03').toISOString().replace(/\.\d{3}Z$/, 'Z'));
   });
 
   it('deep-links Id/Name to montage review, Events to the list and First/Last to the event', async () => {
