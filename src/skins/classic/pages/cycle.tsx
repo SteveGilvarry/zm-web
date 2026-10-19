@@ -47,17 +47,18 @@ export default function ClassicCyclePage() {
   return (
     <AppShell title={t('Cycle')}>
       <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2">
-        <div className="flex items-start gap-3 flex-wrap">
-          <ClassicFilterRow state={filter} tone="dark" className="flex-1" />
+        {/* `#headerButtons` (cycle.php:135-139): the PHP forces `mode=single`, so the
+            link always reads `Stream` and following it changes nothing. Kept as is. */}
+        <div className="flex items-start">
           <button
             type="button"
-            onClick={() => cycle.setViewMode(cycle.viewMode === 'stream' ? 'stills' : 'stream')}
-            className="text-sm text-cyan-200 hover:underline self-start"
-            aria-pressed={cycle.viewMode === 'stills'}
+            onClick={() => cycle.setViewMode('stream')}
+            className="text-sm text-cyan-200 hover:underline"
           >
-            {cycle.viewMode === 'stream' ? t('Stills') : t('Stream')}
+            {t('Stream')}
           </button>
         </div>
+        <ClassicFilterRow state={filter} tone="dark" />
         <div className="flex justify-center">
           <StageSizeSelects stage={cycle.stage} monitors={monitors} tone="dark" />
         </div>

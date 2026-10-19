@@ -1,7 +1,7 @@
 /**
  * Tests for the Cycle page (classic skin) — legacy `?view=cycle`: the
  * monitor nav-pills, the single stage, the `<< || |> >>` transport, the
- * Stills/Stream toggle, the Width/Height/Scale trio and the filter row.
+ * dead Stream link, the Width/Height/Scale trio and the filter row.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { act, screen, waitFor, within } from '@testing-library/react';
@@ -234,19 +234,20 @@ describe('ClassicCyclePage', () => {
     }
   });
 
-  it('swaps the stage between the live stream and stills', async () => {
+  it('keeps legacy\'s dead Stream link above the filter row', async () => {
+    // cycle.php forces `mode=single`, so `#headerButtons` always reads
+    // `Stream` and following it changes nothing on screen.
     const user = userEvent.setup();
     stub();
     await mount();
     await pills();
 
-    const toggle = screen.getByRole('button', { name: 'Stills' });
-    expect(toggle).toHaveAttribute('aria-pressed', 'false');
-    await user.click(toggle);
-
-    expect(screen.queryByTestId('stream-cell')).toBeNull();
-    expect(screen.getByTestId('monitor-preview')).toHaveTextContent('still:1');
-    expect(screen.getByRole('button', { name: 'Stream' })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.queryByRole('button', { name: 'Stills' })).toBeNull();
+    const link = screen.getByRole('button', { name: 'Stream' });
+    expect(link.compareDocumentPosition(screen.getByRole('group', { name: 'Monitor filter bar' })))
+      .toBe(Node.DOCUMENT_POSITION_FOLLOWING);
+    await user.click(link);
+    expect(screen.getByTestId('stream-cell')).toBeInTheDocument();
   });
 
   it('resizes the stage from the Width / Height / Scale trio', async () => {
