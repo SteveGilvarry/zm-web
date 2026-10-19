@@ -524,6 +524,21 @@ describe('MonitorEditor — General relationships', () => {
     await waitFor(() => expect(captured()).toEqual({ linked_monitors: '2' }));
   });
 
+  it('keeps a Linked Monitors expression as typed instead of replacing it with an id list', async () => {
+    const user = userEvent.setup();
+    const captured = patchSpy();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, linked_monitors: '2&(3|4)' }} onClose={() => {}} />);
+
+    const box = await screen.findByRole('textbox', { name: 'Linked monitors expression' });
+    expect(box).toHaveValue('2&(3|4)');
+    // The checkbox helper stands down for an expression.
+    expect(screen.queryByLabelText(/Driveway/)).not.toBeInTheDocument();
+    await user.clear(box);
+    await user.type(box, '2|4');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    await waitFor(() => expect(captured()).toEqual({ linked_monitors: '2|4' }));
+  });
+
   it('Return location lists saved PTZ presets after None / Home', async () => {
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={{ ...monitor, return_location: 3 }} onClose={() => {}} />);

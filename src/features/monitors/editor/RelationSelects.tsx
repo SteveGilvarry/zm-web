@@ -21,7 +21,7 @@ import { getUsers } from '@/api/users';
 import { useToast } from '@/components/common/toastStore';
 import { buttonClasses } from '@/components/common/styles';
 import type { FieldValue } from './fields';
-import { parseIdList, serializeIdList } from './editorState';
+import { isPlainIdList, parseIdList, serializeIdList } from './editorState';
 
 interface LookupProps {
   value: FieldValue;
@@ -269,7 +269,14 @@ export function ReturnLocationSelect({ monitorId, value, onChange, className }: 
   );
 }
 
-/** Checkbox list of every other monitor; stored as a comma-separated id string. */
+/**
+ * Legacy's `LinkedMonitors` is a text input holding the expression
+ * (`monitor.php:1160`), with `MonitorLinkExpression.js` drawing it as
+ * selects underneath. Here the text input is the source of truth and the
+ * checkbox list is the helper for the common case, a plain id list; an
+ * expression with `&`, `|`, parentheses or zones is left exactly as typed,
+ * since a save that replaced it with a bare list would lose it.
+ */
 export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & { selfId: number }) {
   const { t } = useTranslation();
   const q = useQuery({
@@ -277,6 +284,7 @@ export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & 
     queryFn: () => getMonitors({ page: 1, page_size: 500 }),
     staleTime: 60_000,
   });
+  const plain = isPlainIdList(value);
   const selected = new Set(parseIdList(value));
   const others = (q.data?.items ?? []).filter((m) => m.id !== selfId);
   const toggle = (id: number) => {
@@ -284,9 +292,30 @@ export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & 
     if (next.has(id)) next.delete(id); else next.add(id);
     onChange(serializeIdList([...next]));
   };
-  if (q.isLoading) return <p className="text-xs text-fg-dim">{t('Loading…')}</p>;
-  if (others.length === 0) return <p className="text-xs text-fg-dim">{t('No other monitors to link.')}</p>;
+  const expression = (
+    <input
+      type="text"
+      aria-label={t('Linked monitors expression')}
+      value={value == null ? '' : String(value)}
+      onChange={(e) => onChange(e.target.value.trim() === '' ? null : e.target.value)}
+      className="w-full rounded border border-border bg-surface px-2 py-1 font-mono text-sm text-fg"
+    />
+  );
+  if (q.isLoading) return <div className="space-y-1">{expression}<p className="text-xs text-fg-dim">{t('Loading…')}</p></div>;
+  if (others.length === 0) return <div className="space-y-1">{expression}<p className="text-xs text-fg-dim">{t('No other monitors to link.')}</p></div>;
+  if (!plain) {
+    return (
+      <div className="space-y-1">
+        {expression}
+        <p className="text-xs text-fg-dim">
+          {t('An expression (& | parentheses :zone) is kept as typed; the checkboxes only edit a plain list of ids.')}
+        </p>
+      </div>
+    );
+  }
   return (
+    <div className="space-y-1">
+    {expression}
     <div className="flex flex-wrap gap-2">
       {others.map((m) => (
         <label
@@ -308,6 +337,7 @@ export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & 
           {m.name}
         </label>
       ))}
+    </div>
     </div>
   );
 }

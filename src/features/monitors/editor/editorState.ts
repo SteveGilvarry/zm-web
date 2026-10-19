@@ -81,10 +81,20 @@ export function sameIdSet(a: number[], b: number[]): boolean {
   return b.every((id) => s.has(id));
 }
 
-/** `1,2,3` ↔ `[1, 2, 3]` for `linked_monitors`. */
+/**
+ * `LinkedMonitors` is an expression since ZoneMinder 1.37 (`1&2|(3:4)`:
+ * `&`/`|`/`,` join links, parentheses group, `:` adds a zone). A plain
+ * comma list is the simple case the checkbox helper can edit; anything else
+ * must be kept as typed, or a save would replace it with a bare id list.
+ */
+export function isPlainIdList(value: FieldValue): boolean {
+  return value == null || /^\s*(\d+\s*(,\s*\d+\s*)*)?$/.test(String(value));
+}
+
+/** `1,2,3` ↔ `[1, 2, 3]` for `linked_monitors`; an expression yields its ids too, for display. */
 export function parseIdList(value: FieldValue): number[] {
   if (value == null || String(value).trim() === '') return [];
-  return String(value).split(',').map((s) => Number(s.trim())).filter((n) => Number.isInteger(n) && n > 0);
+  return [...new Set(String(value).split(/[^0-9]+/).map((s) => Number(s)).filter((n) => Number.isInteger(n) && n > 0))];
 }
 
 export function serializeIdList(ids: number[]): string | null {
