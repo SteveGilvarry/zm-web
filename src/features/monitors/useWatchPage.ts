@@ -36,7 +36,10 @@ export interface WatchModeUpdate {
  * the backend answers with the monitor record (it logs the shared-memory
  * alarm state server-side but does not return it — backend ticket), so the
  * call tells us the endpoint works for this monitor, not whether an alarm
- * is currently forced. `forced` therefore tracks what this session did.
+ * is currently forced. `forced` therefore tracks what this session did
+ * until the live alarm state arrives (`/monitor-status/{id}`): legacy
+ * flips the button to Cancel whenever the stream is in Alarm or Alert
+ * (`MonitorStream.js:1474`), whoever raised it.
  */
 export interface WatchAlarmState {
   /** The alarm endpoint answered for this monitor. */
@@ -423,7 +426,9 @@ export function useWatchPage(monitorId: number): WatchPageState {
 
   const alarm: WatchAlarmState = {
     available: alarmStatusQ.isSuccess,
-    forced: alarmForced,
+    forced: alarmStatus.state != null
+      ? alarmStatus.state === 'alarm' || alarmStatus.state === 'alert'
+      : alarmForced,
     isPending: alarmMutation.isPending,
     error: alarmError,
     force: () => alarmMutation.mutate('on'),

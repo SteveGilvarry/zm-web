@@ -441,6 +441,19 @@ describe('useWatchPage — live alarm state', () => {
     expect(focus).not.toHaveBeenCalled();
     focus.mockRestore();
   });
+
+  it('flips Force Alarm to Cancel while the stream is in Alarm or Alert, whoever raised it', async () => {
+    live.value = { alarm_state: 'alert', alarms_disabled: false, analysing: true };
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('alert'));
+    // MonitorStream.js:1474: the button offers Cancel in Alarm and Alert.
+    expect(result.current.alarm.forced).toBe(true);
+    live.value = { alarm_state: 'idle', alarms_disabled: false, analysing: true };
+    act(() => result.current.liveAlarm.toggle());
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('idle'));
+    expect(result.current.alarm.forced).toBe(false);
+  });
 });
 
 describe('useWatchPage — manual monitor actions', () => {
