@@ -56,7 +56,9 @@ export function useSystemMenu() {
           id: item.id,
           key: item.menu_key,
           builtin: isBuiltinMenuKey(item.menu_key),
-          label: menuItemLabel(t, item),
+          // The navbar captions the `Watch` row "Cycle" (`getCycleHTML`), while
+          // Options → Menu names it by its key; a custom label wins in both.
+          label: item.label == null && item.menu_key === 'Watch' ? t('Cycle') : menuItemLabel(t, item),
           link,
           external: link != null && /^https?:\/\//i.test(link),
           icon,
