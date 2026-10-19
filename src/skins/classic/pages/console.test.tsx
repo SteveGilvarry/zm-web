@@ -12,6 +12,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
+import { pickChosen, chosenChips } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
@@ -368,7 +369,7 @@ describe('ClassicConsolePage — search, filter row and paging', () => {
     await mountAndSettle();
 
     expect(screen.getByRole('group', { name: 'Monitor filter bar' })).toBeInTheDocument();
-    await user.selectOptions(screen.getByLabelText('Recording'), 'OnMotion');
+    await pickChosen(user, 'Recording', 'On Motion');
     await waitFor(() => expect(screen.queryByTestId('console-row-2')).toBeNull());
     expect(screen.getByTestId('console-row-1')).toBeInTheDocument();
 
@@ -481,7 +482,7 @@ describe('ClassicConsolePage — Name cell', () => {
     // Hidden like legacy until the Status select holds Deleted.
     await screen.findByTestId('console-row-2');
     expect(screen.queryByTestId('console-row-1')).toBeNull();
-    await user.selectOptions(screen.getByRole('listbox', { name: 'Status' }), 'Deleted');
+    await pickChosen(user, 'Status', 'Deleted');
     const row1 = await screen.findByTestId('console-row-1');
     expect(screen.queryByTestId('console-row-2')).toBeNull();
     await waitFor(() => expect(within(row1).getByText('(deleted)')).toBeInTheDocument());
@@ -657,8 +658,8 @@ describe('ClassicConsolePage — verbs', () => {
     expect(screen.getByTestId('console-row-1')).toBeInTheDocument();
     expect(screen.getByTestId('console-row-3')).toBeInTheDocument();
     // The Monitor filter is a multi-select (legacy's Chosen widget), so the
-    // checked set shows as two selected options; nothing was written.
-    expect(screen.getByRole('listbox', { name: 'Monitor' })).toHaveValue(['1', '3']);
+    // checked set shows as two chips; nothing was written.
+    expect(chosenChips('Monitor').map((c) => c.split(' ')[0])).toEqual(['1', '3']);
     expect(calls).toEqual([]);
     expect(screen.getByRole('checkbox', { name: 'Select Front Door' })).not.toBeChecked();
 

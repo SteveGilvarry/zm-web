@@ -266,7 +266,8 @@ describe('ClassicMonitorWatchPage', () => {
     }
     expect(screen.queryByRole('combobox', { name: 'Width' })).toBeNull();
     expect(screen.queryByRole('combobox', { name: 'Height' })).toBeNull();
-    expect(screen.queryByRole('combobox', { name: 'Monitor' })).toBeNull();
+    // The filter row's Monitor picker is a combobox too; the dropped one was a <select>.
+    expect(screen.queryAllByRole('combobox', { name: 'Monitor' }).filter((el) => el.tagName === 'SELECT')).toHaveLength(0);
     expect(screen.queryByRole('heading', { name: 'Monitor - 3 - Driveway' })).toBeNull();
     // One Fullscreen in the transport row; the stage has its own "Open full screen".
     expect(screen.getAllByRole('button', { name: 'Fullscreen' })).toHaveLength(1);

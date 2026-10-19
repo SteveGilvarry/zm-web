@@ -458,6 +458,13 @@ body {
   outline-offset: var(--focus-offset);
 }
 
+/* The search field inside the classic Chosen picker: the box around it shows
+   the active state (Chosen's `.chosen-container-active` shadow), so the field
+   itself draws no ring. Unlayered for the same reason as the rule above. */
+.chosen-search:focus-visible {
+  outline: none;
+}
+
 /* ============================================
    Scrollbar Styling
    ============================================ */

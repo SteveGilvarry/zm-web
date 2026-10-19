@@ -9,6 +9,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
+import { pickChosen } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
@@ -178,7 +179,7 @@ describe('ClassicMontagePage', () => {
     await mount();
 
     await screen.findByTestId('montage-classic-cell-2');
-    await user.selectOptions(screen.getByRole('listbox', { name: 'Monitor' }), '2');
+    await pickChosen(user, 'Monitor', /^2 /);
 
     await waitFor(() => expect(screen.queryByTestId('montage-classic-cell-1')).toBeNull());
     expect(screen.getByTestId('montage-classic-cell-2')).toBeInTheDocument();

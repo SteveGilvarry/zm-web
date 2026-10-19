@@ -10,6 +10,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
+import { pickChosen } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
@@ -302,7 +303,7 @@ describe('ClassicCyclePage', () => {
     await mount();
     await pills();
 
-    await user.selectOptions(screen.getByLabelText('Recording'), 'OnMotion');
+    await pickChosen(user, 'Recording', 'On Motion');
     await waitFor(async () => expect((await pills()).map((b) => b.textContent)).toEqual(['Front Door']));
   });
 
@@ -317,7 +318,7 @@ describe('ClassicCyclePage', () => {
     await user.click(screen.getByRole('button', { name: 'Pause Cycle' }));
     // Driveway (2) records nothing; Front Door survives and goes on stage,
     // and the reload legacy does here leaves the cycle playing.
-    await user.selectOptions(screen.getByLabelText('Recording'), 'OnMotion');
+    await pickChosen(user, 'Recording', 'On Motion');
     await waitFor(() => expect(screen.getByTestId('stream-cell')).toHaveTextContent('stream:1'));
     expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeEnabled();
   });
