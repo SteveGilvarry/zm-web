@@ -1,5 +1,6 @@
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
+import { isDeleted } from '@/types';
 import { Funnel, FunnelX, Maximize, Pencil, Save, Shapes, Trash2, X } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -34,7 +35,12 @@ export default function ClassicMontagePage() {
   const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated);
   const filter = useMonitorFilterRow(page.monitors, runtimeById);
   const filteredIds = new Set(filter.filtered.map((m) => m.id));
-  const visible = page.capturingMonitors.filter((m) => filteredIds.has(m.id));
+  // Deleted monitors reach the wall only through the filter row's own pool
+  // (Status: Deleted), so they are appended rather than looked up here.
+  const visible = [
+    ...page.capturingMonitors.filter((m) => filteredIds.has(m.id)),
+    ...filter.filtered.filter((m) => isDeleted(m)),
+  ];
   const url = useMontageUrlParams();
   const montage = useClassicMontage(visible, { urlLayoutId: url.layoutId });
   const { can } = usePerms();

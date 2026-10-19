@@ -1,5 +1,6 @@
 import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
+import { isDeleted } from '@/types';
 import { ChevronDown, ChevronUp, Clock, Filter, FilterX, History } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -104,7 +105,11 @@ export default function ClassicMontageReviewPage() {
   // Filter row survivors ∩ chip selection (the chip row is the modern
   // page's; here the Monitor select in the filter row plays that role).
   const filteredIds = new Set(filter.filtered.map((m) => m.id));
-  const monitors = page.enabled.filter((m) => filteredIds.has(m.id) && page.selectedIds.has(m.id));
+  const monitors = [
+    ...page.enabled.filter((m) => filteredIds.has(m.id) && page.selectedIds.has(m.id)),
+    // Deleted monitors reach the wall only through the filter row's Deleted pick.
+    ...filter.filtered.filter((m) => isDeleted(m) && page.selectedIds.has(m.id)),
+  ];
   // Legacy normalises every canvas against the mean area of the monitors on
   // screen before applying Scale (montagereview.js.php:140-162).
   const avgArea = averageArea(monitors.map((m) => displayDimensions(m)));

@@ -507,6 +507,23 @@ describe('ClassicMontagePage', () => {
   });
 });
 
+describe('ClassicMontagePage — Deleted monitors', () => {
+  it('shows a soft-deleted monitor on the wall once Status holds Deleted', async () => {
+    const user = userEvent.setup();
+    stub();
+    server.use(http.get('/api/v3/monitors', ({ request }) => {
+      const withDeleted = new URL(request.url).searchParams.get('include_deleted') === 'true';
+      return HttpResponse.json(paged(withDeleted ? [...MONITORS, mon(99, { name: 'Old Gate', deleted: 1 })] : MONITORS));
+    }));
+    await mount();
+    expect(screen.queryByTestId('montage-classic-cell-99')).toBeNull();
+    await pickChosen(user, 'Status', 'Deleted');
+    // Legacy's `(… AND Status IN …) OR Deleted=true`: only the deleted monitor remains.
+    await waitFor(() => expect(screen.getByTestId('montage-classic-cell-99')).toBeInTheDocument());
+    expect(screen.queryByTestId('montage-classic-cell-1')).toBeNull();
+  });
+});
+
 describe('ClassicMontagePage — old-format layouts', () => {
   it('lists a pre-2024 layout and opens Error reading Layout when it is chosen', async () => {
     const user = userEvent.setup();

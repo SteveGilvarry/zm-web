@@ -7,7 +7,7 @@ import { displayDimensions } from '@/features/monitors/orientation';
 import { stageStyle, type StageSize } from '@/features/monitors/watchStage';
 import { useMontageStore } from '@/stores/montage';
 import { useZmConfig } from '@/features/config/useZmConfig';
-import type { Monitor } from '@/types';
+import { isDeleted, type Monitor } from '@/types';
 
 export const CYCLE_DEFAULT_INTERVAL_S = 10;
 export const CYCLE_INTERVAL_OPTIONS = [5, 10, 20, 30, 60] as const;
@@ -272,7 +272,11 @@ export function useCyclePage(options: CyclePageOptions = {}): CyclePageState {
   const source = options.monitors ?? filtered;
   const monitors = useMemo(() => {
     const ids = source ? new Set(source.map((m) => m.id)) : null;
-    return allMonitors.filter((m) => m.capturing !== 'None' && (!ids || ids.has(m.id)));
+    const live = allMonitors.filter((m) => m.capturing !== 'None' && (!ids || ids.has(m.id)));
+    // Soft-deleted monitors come only from the filter row's Deleted pick;
+    // legacy cycles through them like any other survivor of the filter.
+    const deleted = (source ?? []).filter((m) => isDeleted(m) && !allMonitors.some((a) => a.id === m.id));
+    return [...live, ...deleted];
   }, [allMonitors, source]);
 
   // Legacy `ZM_WEB_REFRESH_CYCLE` — seconds each monitor holds the stage.
