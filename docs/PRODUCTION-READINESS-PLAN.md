@@ -546,3 +546,23 @@ Done alongside: legacy's logout modal behind the account link (other logged-in P
 Gates: 4948 unit tests across 383 files green, `tsc`, lint, `i18n:check`, build and budget. **Nothing in this cut was opened in a browser**: the dev server was down and the sandbox cannot reach the box through it. The agents proved their work with unit tests and curl against the box (a throwaway monitor round-tripped the new fields; a details-only export of event 33500 came back as a zip; alarms were disabled and re-enabled on monitor 1). First thing after this: `npm run dev`, then the console stat strip, a watch page with alarms, Options → Roles / Menu / Encoder Templates, the events Export and Generate dialogs, and the frames page.
 
 **Still open:** the rubric re-run (the scores in §12 remain the agents' own), the seeded e2e suite (not run since wave 1; specs for the new dialogs and pickers are missing), the alarm sound, Generate Video until #191/#195, and the modern sidebar has no Privacy entry (reached through the Options rail).
+
+### 2026-10-20 — re-measurement at b7dd13f (code-verified)
+
+Four read-only agents re-scored every 2026-10-18 row against the merged tree with the same rubric (`legacy-requirements/review-2026-10-20/`, local). No browser was available, so every row is `verified: code`; each report ends with the rows to open first in a browser. Rows blocked on zm-api#138 and #31 stay blocked for good (closed as not planned).
+
+| Area | Classic fidelity (10-18 → 10-20) | Modern parity | Scored rows | Blocked |
+|---|---|---|---|---|
+| Console | 68.4 → **87.7** | 60.5 | 81 | 1 (host shutdown, no ticket) |
+| Watch | 59.5 → **91.4** | 82.8 | 64 | 10 (#138 ×6, #178, #182, #146, #194) |
+| Events list + Filter + Timeline | 71.0 → **89.8** | 92.9 | 98 | 4 (#31 ×3, sort by Tags) |
+| Event view + Frames + Stats | 72.4 → **92.4** | 94.9 | 99 | 0 |
+| Montage + Cycle + Review | 66 → **88.9** | 84.0 | 72 | 2 (#138) |
+| Monitor editor + Zones + Groups | 64.6 → **94.1** | 97.7 | 196 | 4 (probe, Id on create, #138) |
+| Options + admin | 62 → **88** | 95 | 121 | 3 (#196 ×2, #197) |
+
+Every classic area is past the Phase 3 bar of 85. Modern is under it on Console (no sort, columns, sequence editing, export, Name/Server/Storage filters, menu customisation), Watch (five-row events panel, no filter bar) and Montage/Review (ratio controls, scale slider, corner zoom).
+
+Fixed the same day from the reports' findings: the timeline's scope with several groups or tags (it compared an array with `===`), Linked Monitors expressions overwritten on save (now a text input, the checkbox helper only for plain id lists), Deleted picks reaching the three walls, the navbar's `Watch` row captioned Cycle, Do Deletes editable on storage edits (#185), light/audio columns on the control tables (#177), the classic log Component filter as a multi-select (#186). Filed from the reports: zm-api#198, `GET /sessions` returns the PHP session blobs with password hashes to System viewers (the logout modal reads that route and needs four fields).
+
+**Remaining classic gaps worth a browser first:** the events filter form (Chosen single selects, blank first `Id =` term, `StorageDiskSpace`), the event page toolbar (one icon row, legacy's order), the classic PTZ panel's styling and preset modal, picture-click PTZ moves, Montage Review's doubled Monitor select and shared cookies, the full Linked Monitors expression builder, the Control tab's Edit button, legacy's per-user tag recency, Reset in the Menu tab (#197), the role editor's permission tables (#196), the alarm sound (#194), Generate Video until #191/#195.
