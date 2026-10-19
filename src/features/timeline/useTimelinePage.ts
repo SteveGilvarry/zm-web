@@ -1,6 +1,6 @@
 import { useCallback, useMemo, useState } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { getAllMonitors } from '@/api/monitors';
 import { listGroupMonitors } from '@/api/groups';
 import { getTagDetail } from '@/api/tags';
@@ -11,6 +11,7 @@ import { useAuthStore } from '@/stores/auth';
 import { groupEventsAst } from '@/features/events/useEventsListPage';
 import {
   monitorIdsFromSearch,
+  tagsFromSearch,
   notesFromSearch,
   toApiTimestamp,
   type EventNavSearch,
@@ -188,23 +189,50 @@ export function useTimelinePage(): TimelinePageState {
     enabled: isAuthenticated && filter.group != null,
     staleTime: 60_000,
   });
-  const tagQ = useQuery({
-    queryKey: ['tag-events', filter.tag],
-    queryFn: () => getTagDetail(filter.tag as number, { page: 1, page_size: 1000 }),
-    enabled: isAuthenticated && filter.tag != null,
-    staleTime: 60_000,
+  // Tag picks that are ids resolve to event ids through each tag's detail
+  // (legacy's filter joins Events_Tags). `none` / `any` have no such list;
+  // the strip then shows every event, which is the one thing it can do
+  // without a tag filter on `/events` by time window (zm-api#136 serves
+  // `tag_op`, but the chart reads events through `/filters/preview`).
+  const tagIds = useMemo(
+    () => tagsFromSearch(filter).filter((p): p is number => typeof p === 'number'),
+    [filter],
+  );
+  const tagQs = useQueries({
+    queries: tagIds.map((id) => ({
+      queryKey: ['tag-events', id],
+      queryFn: () => getTagDetail(id, { page: 1, page_size: 1000 }),
+      enabled: isAuthenticated,
+      staleTime: 60_000,
+    })),
   });
+  const tagsReady = tagQs.every((q) => q.data !== undefined);
+  // `useQueries` hands back a new array every render; key the memo on the
+  // ids it carries so the scope only changes when they do.
+  const tagEventKey = tagQs.map((q) => q.data?.events.map((e) => e.id).join('.') ?? '?').join('|');
+  const tagEventIds = useMemo(() => {
+    if (tagIds.length === 0) return undefined;
+    const ids = new Set<number>();
+    for (const q of tagQs) for (const e of q.data?.events ?? []) ids.add(e.id);
+    return [...ids];
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- tagQs is represented by tagEventKey
+  }, [tagIds, tagEventKey]);
 
   const monitorIds = useMemo(() => monitorIdsFromSearch(filter), [filter]);
+  // The events list sends one group bare and several as an array.
+  const groupIds = useMemo(
+    () => (Array.isArray(filter.group) ? filter.group : filter.group != null ? [filter.group] : []),
+    [filter.group],
+  );
   const scope = useMemo(() => {
     let ids: number[] | null = monitorIds.length > 0 ? monitorIds : null;
-    if (!ids && filter.group != null) {
-      ids = (groupQ.data?.items ?? []).filter((gm) => gm.group_id === filter.group).map((gm) => gm.monitor_id);
+    if (!ids && groupIds.length > 0) {
+      const wanted = new Set(groupIds);
+      ids = [...new Set((groupQ.data?.items ?? []).filter((gm) => wanted.has(gm.group_id)).map((gm) => gm.monitor_id))];
     }
-    return { monitorIds: ids, tagEventIds: filter.tag != null ? (tagQ.data?.events ?? []).map((e) => e.id) : undefined };
-  }, [monitorIds, filter.group, filter.tag, groupQ.data, tagQ.data]);
-  const scopeReady = (filter.group == null || monitorIds.length > 0 || groupQ.data !== undefined)
-    && (filter.tag == null || tagQ.data !== undefined);
+    return { monitorIds: ids, tagEventIds };
+  }, [monitorIds, groupIds, groupQ.data, tagEventIds]);
+  const scopeReady = (groupIds.length === 0 || monitorIds.length > 0 || groupQ.data !== undefined) && tagsReady;
   const scopeEmpty = (scope.monitorIds !== null && scope.monitorIds.length === 0)
     || (scope.tagEventIds !== undefined && scope.tagEventIds.length === 0);
 

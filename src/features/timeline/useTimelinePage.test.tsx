@@ -169,6 +169,26 @@ describe('useTimelinePage', () => {
     ]));
   });
 
+  it('takes several groups and several tags, as the events list sends them', async () => {
+    server.use(
+      http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([
+        { id: 1, group_id: 5, monitor_id: 2 }, { id: 2, group_id: 6, monitor_id: 1 }, { id: 3, group_id: 7, monitor_id: 3 },
+      ]))),
+      http.get('/api/v3/tags/:id', ({ params }) => HttpResponse.json({
+        id: Number(params.id), name: `t${params.id}`, total_events: 1, current_page: 1, last_page: 1, per_page: 1000,
+        events: [{ id: params.id === '9' ? 22 : 21, monitor_id: 1, name: 'x' }],
+      })),
+    );
+    mockSearch = { group: [5, 6], tag: [9, 11], min_time: '2026-08-21 14:00:00', max_time: '2026-08-21 15:59:59' };
+    const { result } = await mount();
+    await waitFor(() => expect(result.current.chart).not.toBeNull());
+    await waitFor(() => expect(previews.length).toBeGreaterThan(0));
+    expect(rulesOf(previews[0].ast)).toEqual(expect.arrayContaining([
+      { field: 'monitor_id', op: 'in', value: [2, 1] },
+      { field: 'id', op: 'in', value: expect.arrayContaining([21, 22]) },
+    ]));
+  });
+
   it('a group with no monitors draws an empty last day instead of querying', async () => {
     server.use(http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged([]))));
     mockSearch = { group: 5 };
