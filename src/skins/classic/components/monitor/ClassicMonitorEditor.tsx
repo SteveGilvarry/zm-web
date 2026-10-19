@@ -18,6 +18,7 @@ import { DiscoveryDialog } from '@/features/monitors/discovery/DiscoveryDialog';
 import type { Monitor } from '@/types';
 import { ClassicButton, ClassicIconButton } from '../Button';
 import { ClassicHeader, ClassicPage } from '../Page';
+import { ClassicChosen } from '../Chosen';
 
 interface ClassicMonitorEditorProps {
   /** The monitor to edit; omit with `seed` for Add / Clone. */
@@ -293,26 +294,28 @@ function ClassicFieldRow({ field: f, ed }: { field: FieldDef; ed: MonitorEditorS
   );
 }
 
-/** Legacy General → Groups: a multi-select of the groups (chosen-styled there, native here). */
+/**
+ * Legacy General → Groups: monitor.php:598's `class="chosen"` multi-select.
+ * No `data-placeholder`, so Chosen shows its default text, and no
+ * clear-all button (that one is Filter.php's `btn-term-remove-all`).
+ */
 function ClassicGroupsSelect({ value, onChange, label }: { value: number[]; onChange: (ids: number[]) => void; label: string }) {
   const q = useQuery({
     queryKey: ['groups', { page_size: 500 }],
     queryFn: () => listGroups({ page: 1, page_size: 500 }),
     staleTime: 60_000,
   });
+  const { t } = useTranslation();
   const groups = q.data?.items ?? [];
   return (
-    <select
-      multiple
-      aria-label={label}
+    <ClassicChosen
+      label={label}
+      placeholder={t('Select Some Options')}
+      clearButton={false}
+      options={groups.map((g) => ({ value: String(g.id), label: g.name }))}
       value={value.map(String)}
-      onChange={(e) => onChange(Array.from(e.target.selectedOptions).map((o) => Number(o.value)).sort((a, b) => a - b))}
-      size={Math.min(6, Math.max(2, groups.length))}
-      className={clsx(classicInput(false), 'min-w-[16em]')}
-    >
-      {groups.map((g) => (
-        <option key={g.id} value={g.id}>{g.name}</option>
-      ))}
-    </select>
+      onChange={(next) => onChange(next.map(Number).sort((a, b) => a - b))}
+      className="min-w-[16em]"
+    />
   );
 }

@@ -214,15 +214,18 @@ describe('LogsPage — classic skin', () => {
 
   it('lists every component from GET /logs/components and every legacy level', async () => {
     stub();
+    const user = userEvent.setup();
     await mount();
     await waitFor(() => expect(screen.getByRole('option', { name: 'zmpkg' })).toBeInTheDocument());
 
     const component = screen.getByLabelText('Component') as HTMLSelectElement;
     expect(Array.from(component.options, (o) => o.textContent))
       .toEqual(['All', 'web_php', 'zmc_m1', 'zmc_m3', 'zmc_m4', 'zmpkg']);
-    const level = screen.getByLabelText('Level') as HTMLSelectElement;
-    expect(level.multiple).toBe(true);
-    expect(Array.from(level.options, (o) => o.value))
+    // Legacy's chosen box, placeholder "All".
+    const level = screen.getByRole('combobox', { name: 'Level' });
+    expect(level).toHaveAttribute('placeholder', 'All');
+    await user.click(level);
+    expect(within(screen.getByRole('listbox', { name: 'Level' })).getAllByRole('option').map((o) => o.textContent))
       .toEqual(['DBG', 'INF', 'WAR', 'ERR', 'FAT', 'PNC', 'AUD', 'OFF']);
   });
 

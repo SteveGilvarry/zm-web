@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
+import { chosenChips } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import type { Monitor } from '@/types';
 
@@ -72,10 +73,22 @@ describe('ClassicMonitorEditor', () => {
     expect(screen.getByRole('button', { name: 'Presets' })).toBeInTheDocument();
     expect(screen.getByText('Source Type')).toBeInTheDocument();
     expect(screen.getByText('None available')).toBeInTheDocument();
-    expect(await screen.findByRole('listbox', { name: 'Groups' })).toBeInTheDocument();
+    // monitor.php's chosen Groups box: no data-placeholder, no clear-all.
+    expect(screen.getByRole('combobox', { name: 'Groups' })).toHaveAttribute('placeholder', 'Select Some Options');
+    expect(screen.queryByRole('button', { name: 'Clear groups' })).toBeNull();
     expect(screen.getByRole('button', { name: 'Save' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Save and close' })).toBeEnabled();
     expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+  });
+
+  it('picks groups in the chosen Groups box', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<ClassicMonitorEditor monitor={monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('combobox', { name: 'Groups' }));
+    await user.click(await within(screen.getByRole('listbox', { name: 'Groups' })).findByRole('option', { name: 'Front Yard' }));
+    expect(chosenChips('Groups')).toEqual(['Front Yard']);
+    await user.click(screen.getByRole('button', { name: 'Remove Front Yard' }));
+    expect(chosenChips('Groups')).toEqual([]);
   });
 
   it('opens on the ?tab= tab and reports tab changes', async () => {

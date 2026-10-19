@@ -19,9 +19,14 @@ const UI = {
     component: (p: Page) => p.getByLabel('Component filter').first(),
   },
   classic: {
-    // Legacy's exact-level multi-select: ERR, FAT and PNC picked by hand,
-    // sent as zm-api's `level` list on the inverted scale.
-    pickError: (p: Page) => p.getByLabel(/^level$/i).selectOption(['ERR', 'FAT', 'PNC']),
+    // Legacy's exact-level chosen multi-select: ERR, FAT and PNC picked by
+    // hand, one at a time, sent as zm-api's `level` list on the inverted scale.
+    pickError: async (p: Page) => {
+      for (const code of ['ERR', 'FAT', 'PNC']) {
+        await p.getByRole('combobox', { name: 'Level', exact: true }).click();
+        await p.getByRole('option', { name: code, exact: true }).click();
+      }
+    },
     errorRequest: (q: URLSearchParams) => q.get('level') === '-2,-3,-4',
     component: (p: Page) => p.getByLabel(/^component$/i).first(),
   },

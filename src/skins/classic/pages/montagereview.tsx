@@ -1,6 +1,6 @@
 import { useCallback, useState, type CSSProperties, type ReactNode } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, ChevronUp, Clock, Filter, FilterX, History, X } from 'lucide-react';
+import { ChevronDown, ChevronUp, Clock, Filter, FilterX, History } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { StreamCell } from '@/components/common/StreamCell';
@@ -19,7 +19,7 @@ import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { useMontageStore } from '@/stores/montage';
-import { ClassicButton, ClassicFilterRow, ClassicPage, classicInputClass } from '@/skins/classic/components';
+import { ClassicButton, ClassicChosen, ClassicFilterRow, ClassicPage, classicInputClass } from '@/skins/classic/components';
 import type { Monitor } from '@/types';
 
 const selectClass = 'rounded-sm border border-zinc-400 bg-white px-1.5 py-0.5 text-sm text-zinc-900';
@@ -41,8 +41,8 @@ function Term({ label, op, children }: { label: string; op: string; children: Re
 }
 
 /**
- * Legacy's multi-select term value: a `multiple` select (Chosen in legacy)
- * with the clear button after it. An empty selection means "all".
+ * Legacy's multi-select term value: a Chosen multi-select with ZM's clear
+ * button over its corner. An empty selection means "all".
  */
 function MultiSelect({
   label, value, options, onChange,
@@ -54,29 +54,7 @@ function MultiSelect({
 }) {
   const { t } = useTranslation();
   return (
-    <span className="inline-flex items-stretch rounded-sm border border-zinc-400 bg-white w-40">
-      <select
-        multiple
-        size={3}
-        aria-label={label}
-        value={value}
-        onChange={(e) => onChange([...e.target.selectedOptions].map((o) => o.value))}
-        className="flex-1 min-w-0 bg-transparent px-1.5 py-0.5 text-sm text-zinc-900 focus:outline-none"
-      >
-        {options.map((o) => (
-          <option key={o.value} value={o.value}>{o.label}</option>
-        ))}
-      </select>
-      <button
-        type="button"
-        onClick={() => onChange([])}
-        disabled={value.length === 0}
-        aria-label={t('Clear {{label}}', { label: label.toLocaleLowerCase() })}
-        className="px-1.5 border-s border-zinc-300 text-zinc-600 hover:bg-zinc-100 disabled:text-zinc-300"
-      >
-        <X size={12} aria-hidden />
-      </button>
-    </span>
+    <ClassicChosen label={label} value={value} options={options} onChange={onChange} placeholder={t('All')} className="w-44" />
   );
 }
 

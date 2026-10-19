@@ -10,6 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
+import { pickChosen } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
@@ -151,10 +152,11 @@ describe('ClassicMontageReviewPage — event filters', () => {
     await user.selectOptions(screen.getByLabelText('Archive Status'), 'archived');
     await waitFor(() => expect(eventRequests.some((q) => q.get('archived') === 'true')).toBe(true));
 
-    await user.selectOptions(await screen.findByLabelText('Tags'), '4');
+    await user.click(await screen.findByRole('combobox', { name: 'Tags' }));
+    await user.click(await within(screen.getByRole('listbox', { name: 'Tags' })).findByRole('option', { name: 'Suspicious' }));
     await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === '4' && q.get('tag_op') === 'in')).toBe(true));
 
-    await user.selectOptions(screen.getByLabelText('Notes'), 'person');
+    await pickChosen(user, 'Notes', 'Person');
     await waitFor(() => expect(eventRequests.some((q) => q.get('notes') === 'person')).toBe(true));
   });
 
@@ -162,22 +164,27 @@ describe('ClassicMontageReviewPage — event filters', () => {
     const user = userEvent.setup();
     stub();
     await mount();
-    const tags = await screen.findByLabelText('Tags') as HTMLSelectElement;
-    const notes = screen.getByLabelText('Notes') as HTMLSelectElement;
-    expect(tags.multiple).toBe(true);
-    expect(notes.multiple).toBe(true);
-    await waitFor(() => expect([...tags.options].map((o) => o.text)).toEqual(['No Tag', 'Any Tag', 'Suspicious']));
+    const tags = await screen.findByRole('combobox', { name: 'Tags' });
+    const notes = screen.getByRole('combobox', { name: 'Notes' });
+    // Chosen pickers: the box is a combobox over a multi-select listbox.
+    await user.click(tags);
+    const tagList = screen.getByRole('listbox', { name: 'Tags' });
+    expect(tagList).toHaveAttribute('aria-multiselectable', 'true');
+    await waitFor(() => expect(within(tagList).getAllByRole('option').map((o) => o.textContent)).toEqual(['No Tag', 'Any Tag', 'Suspicious']));
+    await user.keyboard('{Escape}');
+    await user.click(notes);
     // Legacy's labels, capitalised.
-    expect([...notes.options].map((o) => o.text)).toContain('Person');
+    expect(within(screen.getByRole('listbox', { name: 'Notes' })).getAllByRole('option').map((o) => o.textContent)).toContain('Person');
+    await user.keyboard('{Escape}');
 
-    await user.selectOptions(tags, ['0']);
+    await pickChosen(user, 'Tags', 'No Tag');
     await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === 'none')).toBe(true));
     await user.click(screen.getByRole('button', { name: 'Clear tags' }));
-    await user.selectOptions(tags, ['-1']);
+    await pickChosen(user, 'Tags', 'Any Tag');
     await waitFor(() => expect(eventRequests.some((q) => q.get('tag_id') === 'any')).toBe(true));
 
     eventRequests.length = 0;
-    await user.selectOptions(notes, ['Motion', 'car']);
+    await pickChosen(user, 'Notes', 'Motion', 'Car');
     await waitFor(() => {
       const asked = new Set(eventRequests.map((q) => q.get('notes')));
       expect(asked.has('Motion') && asked.has('car')).toBe(true);
@@ -381,10 +388,10 @@ describe('ClassicMontageReviewPage', () => {
     expect(screen.queryByRole('group', { name: 'Monitor filter bar' })).toBeNull();
 
     // The Monitor term narrows the wall on its own.
-    const monitor = screen.getByRole('listbox', { name: 'Monitor' });
+    const monitor = screen.getByRole('combobox', { name: 'Monitor' });
     expect(monitor.compareDocumentPosition(screen.getByLabelText('Archive Status')) & Node.DOCUMENT_POSITION_FOLLOWING)
       .toBeTruthy();
-    await user.selectOptions(monitor, '2');
+    await pickChosen(user, 'Monitor', '2 Cam 2');
     await waitFor(() => expect(screen.queryByTitle('1 Cam 1')).toBeNull());
     expect(screen.getByTitle('2 Cam 2')).toBeInTheDocument();
 
@@ -467,7 +474,7 @@ describe('ClassicMontageReviewPage', () => {
     await mount();
 
     await screen.findByTitle('2 Cam 2');
-    await user.selectOptions(screen.getByRole('listbox', { name: 'Monitor' }), '1');
+    await pickChosen(user, 'Monitor', '1 Cam 1');
 
     await waitFor(() => expect(screen.queryByTitle('2 Cam 2')).toBeNull());
     expect(screen.getByTitle('1 Cam 1')).toBeInTheDocument();
@@ -480,7 +487,7 @@ describe('ClassicMontageReviewPage', () => {
 
     await screen.findByTitle('1 Cam 1');
     await user.click(screen.getByRole('button', { name: 'Monitor Filters' }));
-    await user.selectOptions(screen.getByRole('listbox', { name: 'GroupId' }), '5');
+    await pickChosen(user, 'GroupId', 'Outside');
     await user.type(screen.getByRole('textbox', { name: 'Name' }), 'nothing-matches-this');
 
     expect(await screen.findByText('Select one or more monitors to review.')).toBeInTheDocument();

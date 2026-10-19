@@ -10,6 +10,7 @@ import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
+import { chosenChips, pickChosen } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import type { LogsSearchParams } from '@/features/logs/useLogsPage';
 import type { UserClaims } from '@/types';
@@ -117,7 +118,7 @@ describe('ClassicLogsPage — extra paths', () => {
     await mount();
     await screen.findByTestId('log-row-1');
 
-    await user.selectOptions(screen.getByLabelText('Level'), ['ERR']);
+    await pickChosen(user, 'Level', 'ERR');
     expect(lastSearch({ page: 2 })).toEqual({ level: 'ERR' });
 
     // Re-render as the router would, with two levels applied.
@@ -125,8 +126,7 @@ describe('ClassicLogsPage — extra paths', () => {
     mockSearch = { level: 'WAR,PNC' };
     await mount();
     await waitFor(() => expect(logQueries.at(-1)?.get('level')).toBe('-1,-4'));
-    const select = screen.getByLabelText('Level') as HTMLSelectElement;
-    expect(Array.from(select.selectedOptions, (o) => o.value)).toEqual(['WAR', 'PNC']);
+    expect(chosenChips('Level')).toEqual(['WAR', 'PNC']);
   });
 
   it('empties the level pick from the clear button, which means All', async () => {
@@ -136,7 +136,7 @@ describe('ClassicLogsPage — extra paths', () => {
     await mount();
     await screen.findByTestId('log-row-2');
 
-    await user.click(screen.getByRole('button', { name: 'Clear Level' }));
+    await user.click(screen.getByRole('button', { name: 'Clear level' }));
     expect(lastSearch({ level: 'WAR' })).toEqual({});
   });
 

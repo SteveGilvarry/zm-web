@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type MouseEvent } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
-  ArrowLeft, Columns3, Download, Maximize2, RefreshCw, RefreshCwOff, Trash2, X,
+  ArrowLeft, Columns3, Download, Maximize2, RefreshCw, RefreshCwOff, Trash2,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -20,6 +20,7 @@ import {
   ClassicButton, ClassicFilterField, ClassicPager, ClassicTable, ClassicTh, ClassicThead, ClassicToolbar,
 } from '@/skins/classic/components/events/primitives';
 import { classicInput, classicLink, classicSelect } from '@/skins/classic/components/events/styles';
+import { ClassicChosen } from '@/skins/classic/components/Chosen';
 
 /**
  * Legacy row classes (`logpanel.js` post-body, `skin.css:1921-1934`):
@@ -298,31 +299,17 @@ export default function ClassicLogsPage() {
               </ClassicFilterField>
             )}
 
-            {/* Legacy's Chosen multi-select: exact levels, nothing picked = All. */}
+            {/* Legacy's Chosen multi-select (placeholder "All"): exact levels, nothing picked = All. */}
             <ClassicFilterField label={t('Level')} htmlFor="log-level">
-              <div className="flex items-start gap-1">
-                <select
-                  id="log-level"
-                  multiple
-                  size={3}
-                  title={t('All')}
-                  value={levels}
-                  onChange={(e) => setLevels(Array.from(e.target.selectedOptions, (o) => o.value as LogLevelCode))}
-                  className={clsx(classicSelect, 'w-24')}
-                >
-                  {LOG_LEVEL_CODES.map((code) => <option key={code} value={code}>{code}</option>)}
-                </select>
-                <button
-                  type="button"
-                  onClick={() => setLevels([])}
-                  disabled={levels.length === 0}
-                  aria-label={t('Clear {{field}}', { field: t('Level') })}
-                  title={t('Clear {{field}}', { field: t('Level') })}
-                  className="p-1 text-zinc-500 hover:text-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <X size={12} aria-hidden />
-                </button>
-              </div>
+              <ClassicChosen
+                id="log-level"
+                label={t('Level')}
+                placeholder={t('All')}
+                options={LOG_LEVEL_CODES.map((code) => ({ value: code, label: code }))}
+                value={levels}
+                onChange={(next) => setLevels(next as LogLevelCode[])}
+                className="w-24"
+              />
             </ClassicFilterField>
 
             <ClassicFilterField label={t('Start Date/Time')} htmlFor="log-start">

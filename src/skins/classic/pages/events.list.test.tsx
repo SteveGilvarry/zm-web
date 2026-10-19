@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useEventsColumnsStore } from '@/stores/eventsColumns';
 import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import { useUiStore } from '@/stores/ui';
+import { chosenChips, pickChosen } from '@/test/chosen';
 
 /* ---------------------------------------------------------------- router */
 
@@ -188,6 +189,14 @@ async function mountAndSettle() {
 
 /* ----------------------------------------------------------------- tests */
 
+/** Open a chosen box and read its option labels, then close it again. */
+async function chosenOptions(user: ReturnType<typeof userEvent.setup>, name: string): Promise<string[]> {
+  await user.click(screen.getByRole('combobox', { name }));
+  const labels = within(screen.getByRole('listbox', { name })).getAllByRole('option').map((o) => o.textContent ?? '');
+  await user.keyboard('{Escape}');
+  return labels;
+}
+
 describe('ClassicEventsListPage — rendering', () => {
   it('renders the legacy table with the events and the monitor name', async () => {
     stub();
@@ -207,12 +216,20 @@ describe('ClassicEventsListPage — rendering', () => {
   });
 
   it('offers the legacy filter fields with the fetched options', async () => {
+    const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    expect(within(screen.getByLabelText(/^Group/)).getByRole('option', { name: 'Front Yard' })).toBeInTheDocument();
-    expect(within(screen.getByLabelText(/^Monitor =/)).getByRole('option', { name: '2 Driveway' })).toBeInTheDocument();
-    expect(within(screen.getByLabelText(/^Tags/)).getByRole('option', { name: 'person' })).toBeInTheDocument();
+    // Legacy's chosen boxes, each with its data-placeholder.
+    expect(screen.getByRole('combobox', { name: 'Group' })).toHaveAttribute('placeholder', 'All Groups');
+    expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveAttribute('placeholder', 'All Monitors');
+    expect(screen.getByRole('combobox', { name: 'Notes' })).toHaveAttribute('placeholder', 'Event Type');
+    expect(screen.getByRole('combobox', { name: 'Tags' })).toHaveAttribute('placeholder', 'All Tags');
+    // The sibling labels still bind by id.
+    expect(screen.getByLabelText(/^Monitor =/)).toBe(screen.getByRole('combobox', { name: 'Monitor' }));
+    expect(await chosenOptions(user, 'Group')).toContain('Front Yard');
+    expect(await chosenOptions(user, 'Monitor')).toContain('2 Driveway');
+    expect(await chosenOptions(user, 'Tags')).toContain('person');
     const archived = screen.getByLabelText(/Archive Status/);
     expect(within(archived).getByRole('option', { name: 'Unarchived Only' })).toBeInTheDocument();
     expect(within(archived).getByRole('option', { name: 'Archived Only' })).toBeInTheDocument();
@@ -242,7 +259,7 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Monitor =/), '2');
+    await pickChosen(user, 'Monitor', '2 Driveway');
     await waitFor(() =>
       expect(eventRequests.at(-1)?.get('monitor_id')).toBe('2'));
   });
@@ -273,9 +290,8 @@ describe('ClassicEventsListPage — filters', () => {
     await mountAndSettle();
 
     // Legacy's Notes box is a fixed multi-select, not a free-text field.
-    const notes = screen.getByLabelText(/^Notes/);
-    expect(within(notes).getByRole('option', { name: 'Any Object' })).toBeInTheDocument();
-    await user.selectOptions(notes, ['detected']);
+    expect(await chosenOptions(user, 'Notes')).toContain('Any Object');
+    await pickChosen(user, 'Notes', 'Any Object');
     await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('detected'));
   });
 
@@ -289,7 +305,7 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Notes/), ['Motion', 'Linked']);
+    await pickChosen(user, 'Notes', 'Motion', 'Linked');
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(JSON.stringify(previewBody)).toContain('%Motion%');
     expect(JSON.stringify(previewBody)).toContain('%Linked%');
@@ -301,9 +317,9 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Notes/), ['Motion']);
+    await pickChosen(user, 'Notes', 'Motion');
     await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('Motion'));
-    await user.click(screen.getByRole('button', { name: 'Clear Notes' }));
+    await user.click(screen.getByRole('button', { name: 'Clear notes' }));
     await waitFor(() => expect(eventRequests.at(-1)?.has('notes')).toBe(false));
   });
 
@@ -321,11 +337,11 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Monitor =/), '2');
-    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue(['2']));
+    await pickChosen(user, 'Monitor', '2 Driveway');
+    await waitFor(() => expect(chosenChips('Monitor')).toEqual(['2 Driveway']));
 
     await user.click(screen.getByRole('button', { name: 'Reset filters' }));
-    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue([]));
+    await waitFor(() => expect(chosenChips('Monitor')).toEqual([]));
   });
 
   it('keeps two picked monitors in the search and lists them through /filters/preview', async () => {
@@ -338,13 +354,13 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Monitor =/), ['1', '2']);
-    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue(['1', '2']));
+    await pickChosen(user, 'Monitor', '2 Driveway', '1 Front Door');
+    await waitFor(() => expect(chosenChips('Monitor')).toEqual(['2 Driveway', '1 Front Door']));
 
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(previewBody).toMatchObject({
       where: { rules: expect.arrayContaining([
-        { field: 'monitor_id', op: 'in', value: [2, 1] }, // in option order: Driveway sorts first
+        { field: 'monitor_id', op: 'in', value: [2, 1] }, // in pick order
       ]) },
     });
     expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
@@ -360,7 +376,7 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Group/), '3');
+    await pickChosen(user, 'Group', 'Front Yard');
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(JSON.stringify(previewBody)).toContain('monitor_id');
     expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
@@ -371,28 +387,26 @@ describe('ClassicEventsListPage — filters', () => {
     stub({ events: [event(1, { tags: [] }), event(2, { tags: [{ id: 5, name: 'person' }] })] });
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Tags/), '5');
+    await pickChosen(user, 'Tags', 'person');
     await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5'));
   });
 
-  it('lists No Tag and Any Tag first in a multi-select Tags box, as legacy does', async () => {
+  it('lists No Tag and Any Tag first in the chosen Tags box, as legacy does', async () => {
     const user = userEvent.setup();
     stub({ tags: [{ id: 5, name: 'person' }, { id: 6, name: 'car' }] });
     await mountAndSettle();
 
-    const box = screen.getByLabelText(/^Tags/) as HTMLSelectElement;
-    expect(box.multiple).toBe(true);
-    expect(Array.from(box.options, (o) => o.textContent)).toEqual(['No Tag', 'Any Tag', 'person', 'car']);
+    expect(await chosenOptions(user, 'Tags')).toEqual(['No Tag', 'Any Tag', 'person', 'car']);
 
-    await user.selectOptions(box, ['5', '6']);
+    await pickChosen(user, 'Tags', 'person', 'car');
     await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5,6'));
     // A sentinel only means something on its own (FilterTerm.php:468).
-    await user.selectOptions(box, 'none');
+    await pickChosen(user, 'Tags', 'No Tag');
     await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('none'));
-    expect(Array.from(box.selectedOptions, (o) => o.value)).toEqual(['none']);
+    await waitFor(() => expect(chosenChips('Tags')).toEqual(['No Tag']));
   });
 
-  it('takes several groups in a multi-select Group box', async () => {
+  it('takes several groups in the chosen Group box', async () => {
     const user = userEvent.setup();
     stub({ groups: [{ id: 3, name: 'Front Yard' }, { id: 4, name: 'Back Yard' }] });
     let previewBody: Record<string, unknown> | null = null;
@@ -406,9 +420,7 @@ describe('ClassicEventsListPage — filters', () => {
     );
     await mountAndSettle();
 
-    const box = screen.getByLabelText(/^Group/) as HTMLSelectElement;
-    expect(box.multiple).toBe(true);
-    await user.selectOptions(box, ['3', '4']);
+    await pickChosen(user, 'Group', 'Front Yard', 'Back Yard');
     await waitFor(() => expect(JSON.stringify(previewBody)).toContain('"value":[1,2]'));
   });
 
