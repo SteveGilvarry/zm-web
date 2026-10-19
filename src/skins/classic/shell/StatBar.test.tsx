@@ -12,6 +12,8 @@ import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import { useUiStore } from '@/stores/ui';
+import { makeStorageArea } from '@/test/fixtures/storageAreas';
+import type { ZmStorage } from '@/types';
 import type { ReactNode } from 'react';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -65,8 +67,11 @@ function stub(
   status: Record<string, unknown>,
   version: Record<string, unknown> = { version: '1.37.64' },
   configs: Record<string, string> = {},
+  storage: ZmStorage[] = [makeStorageArea()],
 ) {
   server.use(
+    http.get('/api/v3/storage', () =>
+      HttpResponse.json({ items: storage, total: storage.length, per_page: 200, current_page: 1, last_page: 1 })),
     http.get('/api/v3/system/status', () => HttpResponse.json(status)),
     http.get('/api/v3/host/getVersion', () => HttpResponse.json(version)),
     http.get('/api/v3/configs', () =>
@@ -203,10 +208,64 @@ describe('ClassicStatBar', () => {
     await waitFor(() => expect(calls).toBeGreaterThanOrEqual(2), { timeout: 2500 });
   });
 
-  it('links the storage entry to Options → Storage', async () => {
+  it('links each storage entry to Options → Storage', async () => {
     stub({ running: true, daemons: [], stats: FULL_STATS });
     renderWithProviders(<ClassicStatBar />);
-    expect(await screen.findByTestId('stat-storage')).toHaveAttribute('href', '/settings/storage');
+    expect(await screen.findByText('Default: 50%')).toHaveAttribute('href', '/settings/storage');
+  });
+
+  it('lists one entry per enabled area, titled used of total and the events share', async () => {
+    const GB = 1024 ** 3;
+    stub({ running: true, daemons: [], stats: FULL_STATS }, undefined, {}, [
+      makeStorageArea({ id: 1, name: 'Default', disk_space: 60 * GB }, { total: 200 * GB, usedPercent: 79.1 }),
+      makeStorageArea({ id: 2, name: 'Old', enabled: 0 }),
+      makeStorageArea({ id: 3, name: 'Archive', disk_space: null }, { total: 100 * GB, usedPercent: 96 }),
+    ]);
+    renderWithProviders(<ClassicStatBar />);
+    const def = await screen.findByText('Default: 79%');
+    expect(def).toHaveAttribute('title', '158.20GB of 200.00GB 60.00GB used by events');
+    expect(def.className).not.toMatch(/ffa801|ff3f34/);
+    const archive = screen.getByText('Archive: 96%');
+    // No cached event size: legacy would sum the events; we leave that half off.
+    expect(archive).toHaveAttribute('title', '96.00GB of 100.00GB');
+    expect(archive.className).toContain('ffa801');
+    expect(screen.queryByText(/^Old:/)).toBeNull();
+  });
+
+  it('drops the events half of the title when events fill all the used space', async () => {
+    stub({ running: true, daemons: [], stats: FULL_STATS }, undefined, {}, [
+      makeStorageArea({ type: 's3fs', disk_space: 10 * 1024 ** 3 }, { total: 100 * 1024 ** 3 }),
+    ]);
+    renderWithProviders(<ClassicStatBar />);
+    expect(await screen.findByText('Default: 10%')).toHaveAttribute('title', '10.00GB of 100.00GB');
+  });
+
+  it('reddens an area over 98% and leaves exactly 95% alone', async () => {
+    stub({ running: true, daemons: [], stats: FULL_STATS }, undefined, {}, [
+      makeStorageArea({ id: 1, name: 'A' }, { usedPercent: 99 }),
+      makeStorageArea({ id: 2, name: 'B' }, { usedPercent: 95 }),
+    ]);
+    renderWithProviders(<ClassicStatBar />);
+    expect((await screen.findByText('A: 99%')).className).toContain('ff3f34');
+    expect(screen.getByText('B: 95%').className).not.toMatch(/ffa801|ff3f34/);
+  });
+
+  it('folds more than two areas into a Storage dropdown coloured by the fullest', async () => {
+    const user = userEvent.setup();
+    stub({ running: true, daemons: [], stats: FULL_STATS }, undefined, {}, [
+      makeStorageArea({ id: 1, name: 'A' }, { usedPercent: 20 }),
+      makeStorageArea({ id: 2, name: 'B' }, { usedPercent: 97 }),
+      makeStorageArea({ id: 3, name: 'C' }, { usedPercent: 40 }),
+    ]);
+    renderWithProviders(<ClassicStatBar />);
+    const toggle = await screen.findByRole('button', { name: /Storage/ });
+    expect(toggle.className).toContain('ffa801');
+    expect(screen.queryByText('A: 20%')).toBeNull();
+    await user.click(toggle);
+    const menu = screen.getByRole('menu', { name: 'Storage' });
+    expect(within(menu).getAllByRole('menuitem').map((a) => a.textContent)).toEqual(['A: 20%', 'B: 97%', 'C: 40%']);
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('menu')).toBeNull();
   });
 
   it('hides itself when the navbar chevron is flipped down', async () => {

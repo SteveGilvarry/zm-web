@@ -11,6 +11,7 @@ import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
 import { makeServer, makeStorage } from '@/test/fixtures/admin';
+import { makeStorageArea } from '@/test/fixtures/storageAreas';
 import { useStoragePage } from './useStoragePage';
 
 const server = setupServer();
@@ -91,23 +92,18 @@ describe('useStoragePage rows', () => {
     expect(result.current.rows[0]).toMatchObject({ serverId: 7, serverName: null });
   });
 
-  it('scales the disk-space bar against the largest listed area', async () => {
-    const { result } = await mounted();
-    // 40GB is the biggest of the two, so it pegs the bar; 10GB is a quarter.
-    expect(result.current.rows.map((r) => r.diskPercent)).toEqual([100, 25]);
-  });
-
-  it('has no bar for an area zmaudit has not costed', async () => {
-    const { result } = await mounted([makeStorage({ disk_space: null })]);
-    expect(result.current.rows[0].diskPercent).toBeNull();
-  });
-
-  it('has no bar at all when every listed area is uncosted', async () => {
+  it('measures each area against its own filesystem, legacy-style', async () => {
     const { result } = await mounted([
-      makeStorage({ disk_space: null }),
-      makeStorage({ id: 2, name: 'Cold', disk_space: 0 }),
+      makeStorageArea({ id: 1 }, { total: 1000, usedPercent: 64.9 }),
+      makeStorageArea({ id: 2, name: 'Cold', path: '/mnt/cold' }, { total: 1000, usedPercent: 99 }),
     ]);
-    expect(result.current.rows.map((r) => r.diskPercent)).toEqual([null, null]);
+    // Truncated for the Options page; toned at legacy's thresholds.
+    expect(result.current.rows.map((r) => [r.usage.percentTruncated, r.tone])).toEqual([[64, 'normal'], [99, 'danger']]);
+  });
+
+  it('marks an area unmeasured when zm-api has no filesystem figures', async () => {
+    const { result } = await mounted([makeStorage({ filesystem: null })]);
+    expect(result.current.rows[0].usage.measured).toBe(false);
   });
 
   it('narrows the rows with the search box', async () => {
@@ -115,8 +111,6 @@ describe('useStoragePage rows', () => {
     act(() => result.current.setSearchQuery('/mnt/cold'));
     await waitFor(() => expect(result.current.rows).toHaveLength(1));
     expect(result.current.rows[0].storage.name).toBe('Cold');
-    // The bar rescales to what is on screen.
-    expect(result.current.rows[0].diskPercent).toBe(100);
   });
 });
 

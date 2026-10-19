@@ -15,6 +15,7 @@ import { http, HttpResponse } from 'msw';
 import { renderRoute } from '@/test/renderRoute';
 import { db, server, setupMockServer } from '@/test/msw/server';
 import { makeMonitor, makeSystemStatus, makeSystemStats } from '@/test/fixtures';
+import { makeStorageArea } from '@/test/fixtures/storageAreas';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 
 setupMockServer();
@@ -103,7 +104,8 @@ describe('Console — renders with data', () => {
     await expectReading('Events (24h)', '3');
     await expectReading('Alarms', '0');
 
-    // 500 GB of 1 TB used — under the 75% mark, so no colour.
+    // No storage area has filesystem figures in the default fixture, so the
+    // host disk stands in: 500 GB of 1 TB, under the 95% mark, no colour.
     const disk = await expectReading('Disk', '50%');
     expect(disk).not.toHaveClass('text-warn');
     expect(disk).not.toHaveClass('text-danger');
@@ -329,13 +331,35 @@ describe('Console — live session badges', () => {
 
   it('shows the disk stats it is given', async () => {
     db.systemStatus = makeSystemStatus({
-      stats: makeSystemStats({ disk_usage_percent: 93, free_disk: 70_000_000_000 }),
+      stats: makeSystemStats({ disk_usage_percent: 99, free_disk: 70_000_000_000 }),
     });
     await renderConsole();
 
-    const disk = await expectReading('Disk', '93%');
-    expect(disk).toBeInTheDocument();
-    // Past 90%: the reading itself is the message, so it takes the danger tone.
+    const disk = await expectReading('Disk', '99%');
+    // Past legacy's 98%: the reading itself is the message, so it takes the danger tone.
     expect(disk).toHaveClass('text-danger');
+  });
+
+  it('reads the fullest storage area once areas report filesystem figures', async () => {
+    const GB = 1024 ** 3;
+    db.storage = [
+      makeStorageArea({ id: 1, name: 'Default', disk_space: 60 * GB }, { total: 200 * GB, usedPercent: 79 }),
+      makeStorageArea({ id: 2, name: 'Archive', disk_space: 10 * GB }, { total: 100 * GB, usedPercent: 96 }),
+      makeStorageArea({ id: 3, name: 'Retired', enabled: 0 }, { usedPercent: 100 }),
+    ];
+    await renderConsole();
+
+    const disk = await expectReading('Disk', '96%');
+    expect(disk).toHaveClass('text-warn');
+    expect(disk.parentElement).toHaveAttribute(
+      'title',
+      'Default: 79% (158.00GB of 200.00GB 60.00GB used by events)\nArchive: 96% (96.00GB of 100.00GB 10.00GB used by events)',
+    );
+
+    const line = await disclose('System detail');
+    await waitFor(() => expect(within(line).getByText('Archive')).toBeInTheDocument());
+    expect(within(line).getByText('Default')).toBeInTheDocument();
+    expect(within(line).queryByText('Retired')).toBeNull();
+    expect(within(line).getByText('96% used')).toHaveClass('text-warn');
   });
 });

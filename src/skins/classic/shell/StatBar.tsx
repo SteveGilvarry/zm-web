@@ -1,5 +1,4 @@
 import { useQuery } from '@tanstack/react-query';
-import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { clsx } from 'clsx';
 import { getSystemStatus, getVersion } from '@/api/system';
@@ -9,9 +8,9 @@ import { usePerms } from '@/features/auth/usePerms';
 import { useZmConfig, useZmConfigTable } from '@/features/config/useZmConfig';
 import { humanFilesize } from '@/lib/format';
 import { consoleRefreshInterval } from '@/features/console/refreshInterval';
-import {
-  DB_THRESHOLDS, RAM_THRESHOLDS, STAT_TONE_CLASS, STORAGE_THRESHOLDS, statTone,
-} from './statTone';
+import { useStorageAreas } from '@/features/storage/useStorageAreas';
+import { DB_THRESHOLDS, RAM_THRESHOLDS, STAT_TONE_CLASS, statTone } from './statTone';
+import { ClassicStorageStats } from './StorageStats';
 import { versionState } from './versionState';
 import { ClassicVersionReminder } from './VersionReminder';
 
@@ -24,9 +23,7 @@ import { ClassicVersionReminder } from './VersionReminder';
  * `ZM_WEB_H_REFRESH_NAVBAR` seconds (legacy `navBarRefresh`).
  *
  * The bandwidth-profile chip is deliberately absent (out of scope). Storage
- * is one global figure, not one entry per area: `/api/v3/storage` reports the
- * configured `disk_space` only, so per-area used/total — and legacy's
- * "X used by events" half of the tooltip — has no backend data yet.
+ * is one entry per enabled area (`getStorageHTML`, see `StorageStats`).
  */
 export function ClassicStatBar() {
   const { t } = useTranslation();
@@ -48,6 +45,7 @@ export function ClassicStatBar() {
     enabled: enabled && showStats,
     refetchInterval: navbarRefresh,
   });
+  const storage = useStorageAreas({ enabled: enabled && showStats, refetchInterval: navbarRefresh });
   const { data: version } = useQuery({
     queryKey: ['version'],
     queryFn: getVersion,
@@ -103,20 +101,7 @@ export function ClassicStatBar() {
           {t('DB')}: {dbCount}/{dbMax}
         </span>
       )}
-      {stats?.disk_usage_percent != null && (
-        // Legacy links each storage entry to Options → Storage.
-        <Link
-          to="/settings/storage"
-          className={clsx('hover:underline', STAT_TONE_CLASS[statTone(stats.disk_usage_percent, STORAGE_THRESHOLDS)])}
-          title={t('{{used}} of {{total}}', {
-            used: humanFilesize(stats.used_disk),
-            total: humanFilesize(stats.total_disk),
-          })}
-          data-testid="stat-storage"
-        >
-          {t('Default')}: {stats.disk_usage_percent.toFixed(0)}%
-        </Link>
-      )}
+      {showStats && <ClassicStorageStats areas={storage.areas} tone={storage.tone} />}
       {memUsedPct != null && (
         <span
           className={STAT_TONE_CLASS[statTone(memUsedPct, RAM_THRESHOLDS)]}

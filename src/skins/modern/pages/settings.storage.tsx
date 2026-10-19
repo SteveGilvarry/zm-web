@@ -30,6 +30,9 @@ import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
 const th = 'px-4 py-2 text-start text-xs font-medium text-fg-dim whitespace-nowrap';
 const iconBtn = 'p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors';
+// Colour only past legacy's storage thresholds; a healthy disk stays neutral.
+const toneText = { normal: '', warn: 'text-warn', danger: 'text-danger' } as const;
+const toneBar = { normal: 'bg-fg-dim', warn: 'bg-warn', danger: 'bg-danger' } as const;
 const pagerBtn = 'p-1.5 rounded border border-border-subtle transition-colors';
 
 /**
@@ -106,7 +109,7 @@ export default function SettingsStoragePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
-                    {rows.map(({ storage, serverId, serverName, diskPercent, eventCount }) => (
+                    {rows.map(({ storage, serverId, serverName, usage, tone, eventCount }) => (
                       <tr key={storage.id} className="hover:bg-surface-2 transition-colors">
                         <td className="px-4 py-2 font-mono tabular-nums text-xs text-fg-dim">{storage.id}</td>
                         <td className="px-4 py-2 font-medium text-fg">{storage.name}</td>
@@ -117,25 +120,26 @@ export default function SettingsStoragePage() {
                           {serverName ?? (serverId === null ? t('Local') : t('Server {{id}}', { id: serverId }))}
                         </td>
                         <td className="px-4 py-2">
-                          {storage.disk_space == null ? (
-                            <span className="text-fg-dim" title={t('zmaudit has not cached a size for this storage area yet.')}>
+                          {!usage.measured ? (
+                            <span className="text-fg-dim" title={t('zm-api reports no filesystem figures for this path.')}>
                               &mdash;
                             </span>
                           ) : (
-                            <div className="min-w-28 max-w-40">
-                              <span className="font-mono tabular-nums text-xs text-fg-muted">
-                                {formatBytes(storage.disk_space)}
+                            <div className="min-w-28 max-w-44">
+                              <span className="font-mono tabular-nums text-xs text-fg-muted whitespace-nowrap">
+                                <span className={clsx(toneText[tone])}>{usage.percent}%</span>
+                                {' · '}
+                                {t('{{used}} of {{total}}', { used: formatBytes(usage.usedBytes), total: formatBytes(usage.totalBytes) })}
                               </span>
                               <div
                                 role="progressbar"
-                                aria-valuenow={diskPercent ?? 0}
+                                aria-valuenow={usage.percent}
                                 aria-valuemin={0}
                                 aria-valuemax={100}
-                                aria-label={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
-                                title={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
+                                aria-label={t('{{name}} disk usage', { name: storage.name })}
                                 className="mt-1 h-1.5 rounded-full bg-border overflow-hidden"
                               >
-                                <div className="h-full rounded-full bg-fg-dim" style={{ width: `${diskPercent ?? 0}%` }} />
+                                <div className={clsx('h-full rounded-full', toneBar[tone])} style={{ width: `${Math.min(100, usage.percent)}%` }} />
                               </div>
                             </div>
                           )}

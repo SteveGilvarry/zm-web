@@ -35,7 +35,9 @@ export interface AuditPageState {
   sorted: AuditRow[];
   serverName: (serverId: number | null | undefined) => string;
   truncatedMonitorIds: number[];
-  totals: { events: number };
+  totals: { events: number; missing: number; zeroSize: number };
+  /** Search for the events list showing exactly these event ids (legacy's `Id =[]` link). */
+  idsSearch: (ids: number[]) => { terms: string };
 
   /** Search params for the deep links a row carries. */
   reviewSearch: (monitorId: number) => { monitor_id: number; min_time: string; max_time: string };
@@ -46,9 +48,10 @@ export interface AuditPageState {
  * Event audit (legacy `?view=report_event_audit`): a time window (default
  * the hour that ended an hour ago, kept in `?min_time&max_time`), the shared
  * monitor filter bar, and per-monitor Events / First / Last / MinGap /
- * MaxGap computed from that monitor's events inside the window.
+ * MaxGap inside the window. `fromServer` takes them, and the missing /
+ * empty media checks, from `/reports/event-audit` (see `useAuditData`).
  */
-export function useAuditPage(): AuditPageState {
+export function useAuditPage({ fromServer = false }: { fromServer?: boolean } = {}): AuditPageState {
   const { isAuthenticated } = useAuthStore();
   const search = useSearch({ from: '/audit/' }) as { min_time?: string; max_time?: string };
   const navigate = useNavigate({ from: '/audit/' });
@@ -69,7 +72,7 @@ export function useAuditPage(): AuditPageState {
   const all = useAuditMonitors();
   const [visible, setVisible] = useState<Monitor[] | null>(null);
   const monitors = visible ?? all.monitors;
-  const data = useAuditData(monitors, minIso, maxIso);
+  const data = useAuditData(monitors, minIso, maxIso, { fromServer });
 
   const [sortKey, setSortKey] = useState<AuditSortKey>('id');
   const [sortDir, setSortDir] = useState<AuditSortDir>('asc');
@@ -110,7 +113,12 @@ export function useAuditPage(): AuditPageState {
     sorted,
     serverName: data.serverName,
     truncatedMonitorIds: data.truncatedMonitorIds,
-    totals: { events: sorted.reduce((n, r) => n + r.stats.events, 0) },
+    totals: {
+      events: sorted.reduce((n, r) => n + r.stats.events, 0),
+      missing: sorted.reduce((n, r) => n + (r.files?.missing.length ?? 0), 0),
+      zeroSize: sorted.reduce((n, r) => n + (r.files?.zeroSize.length ?? 0), 0),
+    },
+    idsSearch: (ids) => ({ terms: JSON.stringify([{ attr: 'Id', op: '=[]', val: ids.join(',') }]) }),
 
     reviewSearch: (monitorId) => ({ monitor_id: monitorId, min_time: minZm, max_time: maxZm }),
     eventsSearch: (monitorId) => ({ monitor_id: monitorId, start: minInput, end: maxInput }),

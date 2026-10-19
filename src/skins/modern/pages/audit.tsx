@@ -22,14 +22,17 @@ const toolBtn = 'p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 tran
  * Event audit — the modern skin.
  *
  * Legacy `?view=report_event_audit`: per-monitor Events / First / Last /
- * MinGap / MaxGap inside a time window. The window is the control an
+ * MinGap / MaxGap / MissingFiles / ZeroSize inside a time window, all from
+ * one `/reports/event-audit` request. The window is the control an
  * operator moves, so it is the query line; the monitor chips sit behind
  * Monitors, counted (docs/DESIGN.md). The table owns the rest of the height.
  */
 export default function AuditPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Audit Events Report'));
-  const s = useAuditPage();
+  // The server audit answers every monitor in one request and checks the
+  // media on disk, which only it can do.
+  const s = useAuditPage({ fromServer: true });
   const cells = useAuditCells(s);
   // Selections live in the shared store, so the count is readable whether or
   // not the chip bar is on screen.
@@ -37,7 +40,7 @@ export default function AuditPage() {
 
   if (!s.isAuthenticated) return null;
 
-  const note = t('Events that start after the window opens and have ended by the time it closes. MissingFiles / ZeroSize need per-event file checks (zm-api#36).');
+  const note = t('Events that overlap the window. Gaps are seconds from one event\'s end to the next one\'s start; a negative gap means the events overlap. MissingFiles: no media on disk. ZeroSize: an empty video file.');
 
   return (
     <AppShell title={t('Audit Events Report')}>
@@ -95,8 +98,8 @@ export default function AuditPage() {
                     <Th label={t('LastEvent')}  sortKey="last"   active={s.sortKey} dir={s.sortDir} onClick={s.toggleSort} />
                     <Th label={t('MinGap')}     sortKey="minGap" active={s.sortKey} dir={s.sortDir} onClick={s.toggleSort} numeric />
                     <Th label={t('MaxGap')}     sortKey="maxGap" active={s.sortKey} dir={s.sortDir} onClick={s.toggleSort} numeric />
-                    <th scope="col" className="px-3 py-2 text-center text-xs font-medium text-fg-dim">{t('MissingFiles')}</th>
-                    <th scope="col" className="px-3 py-2 text-center text-xs font-medium text-fg-dim">{t('ZeroSize')}</th>
+                    <Th label={t('MissingFiles')} sortKey="missing"  active={s.sortKey} dir={s.sortDir} onClick={s.toggleSort} numeric />
+                    <Th label={t('ZeroSize')}     sortKey="zeroSize" active={s.sortKey} dir={s.sortDir} onClick={s.toggleSort} numeric />
                   </tr>
                 </thead>
                 <tbody>
@@ -112,8 +115,19 @@ export default function AuditPage() {
                         <td className="px-3 py-1 whitespace-nowrap text-fg-muted">{c.last}</td>
                         <td className="px-3 py-1 text-end font-mono tabular-nums text-fg-muted">{c.minGap}</td>
                         <td className="px-3 py-1 text-end font-mono tabular-nums text-fg-muted">{c.maxGap}</td>
-                        <td className="px-3 py-1 text-center text-fg-dim">{c.placeholder}</td>
-                        <td className="px-3 py-1 text-center text-fg-dim">{c.placeholder}</td>
+                        {/* Colour only when something is wrong: a count above zero. */}
+                        <td
+                          data-testid="audit-missing"
+                          className={clsx('px-3 py-1 text-end font-mono tabular-nums', c.missingCount > 0 ? 'text-danger' : 'text-fg-muted')}
+                        >
+                          {c.missing}
+                        </td>
+                        <td
+                          data-testid="audit-zero-size"
+                          className={clsx('px-3 py-1 text-end font-mono tabular-nums', c.zeroSizeCount > 0 ? 'text-danger' : 'text-fg-muted')}
+                        >
+                          {c.zeroSize}
+                        </td>
                       </tr>
                     );
                   })}
@@ -122,7 +136,9 @@ export default function AuditPage() {
                   <tr data-testid="audit-totals">
                     <td className="px-3 py-2 font-medium" colSpan={3}>{t('Totals')}</td>
                     <td className="px-3 py-2 text-end font-mono tabular-nums font-medium text-fg">{s.totals.events}</td>
-                    <td className="px-3 py-2" colSpan={6} />
+                    <td className="px-3 py-2" colSpan={4} />
+                    <td className={clsx('px-3 py-2 text-end font-mono tabular-nums font-medium', s.totals.missing > 0 ? 'text-danger' : 'text-fg')}>{s.totals.missing}</td>
+                    <td className={clsx('px-3 py-2 text-end font-mono tabular-nums font-medium', s.totals.zeroSize > 0 ? 'text-danger' : 'text-fg')}>{s.totals.zeroSize}</td>
                   </tr>
                 </tfoot>
               </table>

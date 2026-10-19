@@ -265,6 +265,7 @@ export default function SettingsOptionsPage() {
                             onReset={canEdit ? () => s.resetToDefault(config) : undefined}
                             isSaving={s.savingConfig === config.name}
                             dirtyValue={s.dirty[config.name]}
+                            lock={s.lockOf(config, canEdit)}
                           />
                         ))}
                       </tbody>

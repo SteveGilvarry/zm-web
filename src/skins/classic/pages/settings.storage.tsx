@@ -9,7 +9,8 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
-import { formatBytes, humanFilesize } from '@/lib/format';
+import { humanFilesize } from '@/lib/format';
+import { storageDiskSpaceText } from '@/features/storage/storageUsage';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
@@ -71,7 +72,7 @@ export default function ClassicSettingsStoragePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {st.rows.map(({ storage, serverId, serverName, diskPercent, eventCount }) => (
+                    {st.rows.map(({ storage, serverId, serverName, usage, eventCount }) => (
                       <tr key={storage.id}>
                         <td className={clsx(classicTd, 'font-mono text-xs')}>{storage.id}</td>
                         <td className={classicTd}>
@@ -87,27 +88,9 @@ export default function ClassicSettingsStoragePage() {
                         <td className={clsx(classicTd, 'text-xs')}>
                           {serverName ?? (serverId === null ? t('Local') : t('Server {{id}}', { id: serverId }))}
                         </td>
-                        <td className={clsx(classicTd, 'text-xs whitespace-nowrap')}>
-                          {storage.disk_space == null ? (
-                            <span title={t('zmaudit has not cached a size for this storage area yet.')}>&mdash;</span>
-                          ) : (
-                            <span
-                              className="inline-block min-w-24"
-                              title={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
-                            >
-                              <span className="font-mono">{formatBytes(storage.disk_space)}</span>
-                              <span
-                                role="progressbar"
-                                aria-valuenow={diskPercent ?? 0}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                aria-label={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
-                                className="block mt-0.5 h-1.5 rounded bg-zinc-200 overflow-hidden"
-                              >
-                                <span className="block h-full rounded bg-zinc-500" style={{ width: `${diskPercent ?? 0}%` }} />
-                              </span>
-                            </span>
-                          )}
+                        {/* `_options_storage.php:47-52`: "64% 152.63GB of 235.67GB". */}
+                        <td className={clsx(classicTd, 'text-xs whitespace-nowrap')} data-testid="storage-disk-space">
+                          {storageDiskSpaceText(usage, t)}
                         </td>
                         <td className={clsx(classicTd, 'text-xs')}>
                           <Link to="/events" search={{ storage: storage.id }} className={classicLink}>

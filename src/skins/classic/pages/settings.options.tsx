@@ -9,6 +9,7 @@ import { usePerms } from '@/features/auth/usePerms';
 import { TypedConfigInput } from '@/features/settings/TypedConfigInput';
 import { DEFAULT_OPTIONS_TAB, DISPLAY_TAB } from '@/features/settings/optionsTabs';
 import { useSettingsOptionsPage } from '@/features/settings/useSettingsOptionsPage';
+import { configFileValue, isFileSet } from '@/features/settings/configRequires';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { skins, useSkin } from '@/skins/registry';
 import type { SkinId } from '@/skins/types';
@@ -129,6 +130,7 @@ export default function ClassicSettingsOptionsPage() {
                             key={config.name}
                             config={config}
                             canEdit={canEdit}
+                            locked={s.lockOf(config, canEdit) !== null}
                             value={s.draftValue(config)}
                             onChange={(v) => s.setDraft(config.name, v)}
                             error={s.draftErrors[config.name] ?? null}
@@ -158,10 +160,12 @@ export default function ClassicSettingsOptionsPage() {
 
 /** One `form-group form-row`: short name label, input, prompt + "(?)". */
 function ClassicOptionRow({
-  config, canEdit, value, onChange, error, dirty, onHelp,
+  config, canEdit, locked, value, onChange, error, dirty, onHelp,
 }: {
   config: ZmConfig;
   canEdit: boolean;
+  /** No System=Edit, a System row, set in a conf file, or Requires unmet. */
+  locked: boolean;
   value: string;
   onChange: (v: string) => void;
   error: string | null;
@@ -170,10 +174,16 @@ function ClassicOptionRow({
 }) {
   const { t } = useTranslation();
   const shortName = config.name.replace(/^ZM_/, '');
-  const editable = canEdit && config.readonly !== 1;
   // A Private value (ZM_AUTH_HASH_SECRET…) is only for those who may change
   // it (`options.php:274-278`, GHSA-7g3f-93q8-fhwj).
   const valueHidden = config.private === 1 && !canEdit;
+  // Set in zm.conf or conf.d (`options.php:280-282, 373-376`): the value in
+  // effect, read-only, and a note naming the file. A secret never shows.
+  const fileSet = isFileSet(config);
+  const secret = config.private === 1 || config.type === 'password';
+  const shown = fileSet
+    ? (secret ? '<set in config file>' : configFileValue(config.value, config.type))
+    : valueHidden ? '' : value;
 
   return (
     <div className={clsx('grid grid-cols-1 md:grid-cols-[1fr_2fr] gap-x-4 gap-y-1 px-3 py-1.5', dirty && 'bg-amber-50')}>
@@ -185,14 +195,20 @@ function ClassicOptionRow({
           <TypedConfigInput
             id={config.name}
             config={config}
-            value={valueHidden ? '' : value}
+            value={shown}
             onChange={onChange}
-            disabled={!editable}
+            disabled={locked}
             variant="legacy"
             inputClassName={clsx(classicInput, 'max-w-md disabled:bg-zinc-100 disabled:text-zinc-500')}
           />
         </div>
-        {valueHidden && (
+        {fileSet ? (
+          <p className="text-xs font-bold text-[#ffa801]" data-testid="option-file-set">
+            {secret
+              ? t('Set by the system owner in {{file}}. The value is not shown.', { file: config.source_file ?? '' })
+              : t('Set by the system owner in {{file}}.', { file: config.source_file ?? '' })}
+          </p>
+        ) : valueHidden && (
           <p className="text-xs text-zinc-600">{t('This value is private and is shown only to users who can edit System settings.')}</p>
         )}
         {error && <p role="alert" className="text-xs text-red-700">{error}</p>}

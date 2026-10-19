@@ -6,6 +6,8 @@ import { previewFilter } from '@/api/filters';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import type { ZmStorage } from '@/types';
+import { storageUsage, type StorageUsage } from './storageUsage';
+import { storageTone, type StorageTone } from './useStorageAreas';
 
 export const STORAGE_TYPES = ['local', 's3fs'];
 export { STORAGE_SCHEMES };
@@ -31,12 +33,13 @@ export interface StorageRow {
   /** Name from `/servers` for `serverId`, or null when it resolves to nothing. */
   serverName: string | null;
   /**
-   * `disk_space` as a share (0-100) of the largest figure in the list. The API
-   * gives bytes on the store and no filesystem total, so this is a comparison
-   * between the listed stores — never a percentage of the disk. Null when the
-   * backend has no cached figure for the row.
+   * How full the area's filesystem is, the way legacy's Disk Space column
+   * reads it (`_options_storage.php:47-52`), from zm-api#145's `filesystem`.
+   * `measured` is false when zm-api has no figures for the path.
    */
-  diskPercent: number | null;
+  usage: StorageUsage;
+  /** Legacy's storage thresholds (warning over 95 %, danger over 98 %). */
+  tone: StorageTone;
   /**
    * Events stored here (legacy `Storage::EventCount()`), null until counted.
    * Legacy disables the row's Mark while it is non-zero.
@@ -138,17 +141,15 @@ export function useStoragePage() {
 
   const rows = useMemo<StorageRow[]>(() => {
     const counts = eventCountsKey.split(',').map((v) => (v === '' ? null : Number(v)));
-    const largest = Math.max(0, ...filteredItems.map((s) => s.disk_space ?? 0));
     return filteredItems.map((storage, i) => {
       const serverId = normalizeServerId(storage.server_id);
+      const usage = storageUsage(storage);
       return {
         storage,
         serverId,
         serverName: servers.find((srv) => srv.id === serverId)?.name ?? null,
-        diskPercent:
-          storage.disk_space == null || largest <= 0
-            ? null
-            : Math.round((storage.disk_space / largest) * 100),
+        usage,
+        tone: storageTone(usage.percent),
         eventCount: counts[i] ?? null,
       };
     });

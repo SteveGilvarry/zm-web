@@ -196,3 +196,44 @@ describe('ConfigRow — editing', () => {
     expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
   });
 });
+
+describe('ConfigRow — locks', () => {
+  it('shows a conf-file row with the file named and no way to edit it', async () => {
+    const user = userEvent.setup();
+    const { onStartEdit } = mount(
+      { name: 'ZM_PATH_FFMPEG', value: '/usr/bin/ffmpeg', source: 'file', source_file: '/etc/zm/conf.d/01-system-paths.conf' },
+      { lock: 'file' },
+    );
+    expect(screen.getByTestId('config-lock-note')).toHaveTextContent('Set by the system owner in /etc/zm/conf.d/01-system-paths.conf.');
+    expect(screen.getByLabelText('Read-only')).toBeInTheDocument();
+    await user.click(screen.getByText('/usr/bin/ffmpeg'));
+    expect(onStartEdit).not.toHaveBeenCalled();
+  });
+
+  it('says what a row needs while its requirement is unmet, and hides reset', () => {
+    mount(
+      { name: 'ZM_AUTH_HASH_TTL', value: '5', default_value: '2', requires: 'ZM_OPT_USE_AUTH=1;ZM_AUTH_RELAY=hashed' },
+      { lock: 'requires', onReset: vi.fn() },
+    );
+    expect(screen.getByTestId('config-lock-note')).toHaveTextContent('Needs ZM_OPT_USE_AUTH=1, ZM_AUTH_RELAY=hashed');
+    expect(screen.queryByRole('button', { name: /Reset/ })).toBeNull();
+  });
+
+  it('masks a secret set in a file', () => {
+    mount({ name: 'ZM_AUTH_HASH_SECRET', private: 1, value: 'abc', source: 'file', source_file: '/etc/zm/zm.conf' }, { lock: 'file' });
+    expect(screen.getByTestId('config-lock-note')).toHaveTextContent('The value is not shown.');
+    expect(screen.queryByText('abc')).toBeNull();
+  });
+
+  it('reads a boolean word from a conf file as on', () => {
+    mount({ type: 'boolean', value: 'yes', hint: null, source: 'file', source_file: '/etc/zm/zm.conf' }, { lock: 'file' });
+    expect(screen.getByText('enabled')).toBeInTheDocument();
+  });
+
+  it('lets the lock, not the row flag, decide when one is given', async () => {
+    const user = userEvent.setup();
+    const { onStartEdit } = mount({ value: 'Cams', readonly: 1 }, { lock: null });
+    await user.click(screen.getByText('Cams'));
+    expect(onStartEdit).toHaveBeenCalled();
+  });
+});

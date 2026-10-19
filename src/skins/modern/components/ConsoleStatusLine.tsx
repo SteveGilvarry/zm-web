@@ -19,6 +19,8 @@ export interface StatusReading {
   label: string;
   value: string;
   tone?: 'normal' | 'warn' | 'danger';
+  /** Hover text with the detail behind the number. */
+  title?: string;
   /** A state mark rendered before the value — a recording dot, say. */
   mark?: ReactNode;
 }
@@ -100,7 +102,7 @@ export function ConsoleStatusLine({
         <div className="w-px h-5 bg-border-subtle shrink-0" aria-hidden />
 
         {readings.map((r) => (
-          <span key={r.label} className="flex items-baseline gap-1.5 text-sm shrink-0">
+          <span key={r.label} className="flex items-baseline gap-1.5 text-sm shrink-0" title={r.title}>
             <span className="text-fg-dim">{r.label}</span>
             {r.mark}
             <span className={clsx('font-mono tabular-nums', toneClass[r.tone ?? 'normal'])}>
