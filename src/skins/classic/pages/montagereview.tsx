@@ -158,37 +158,28 @@ export default function ClassicMontageReviewPage() {
     </ClassicButton>
   );
 
+  // Legacy `#mfbflip`: folds away everything above the wall.
+  const flipButton = (
+    <button
+      type="button"
+      onClick={() => setPanelOpen(!panelOpen)}
+      aria-expanded={panelOpen}
+      aria-controls="review-panel"
+      aria-label={t('Toggle filters and controls')}
+      title={t('Toggle filters and controls')}
+      className="text-white/90 hover:text-white"
+    >
+      {panelOpen ? <FilterX size={18} aria-hidden /> : <Filter size={18} aria-hidden />}
+    </button>
+  );
+
   return (
     <AppShell title={t('Montage Review')}>
       <div className="bg-[#485a6b] px-3 py-1.5 flex flex-col gap-2 text-white">
-        {/* Legacy floats both `a.flip` links right (`skin.css` `a.flip`), so
-            the Monitor Filters toggle and the panel's own flip icon share
-            one line at the end. */}
-        <div className="flex items-center justify-end gap-3">
-          {panelOpen && (
-            <button
-              type="button"
-              onClick={() => setMonitorFiltersOpen((o) => !o)}
-              aria-expanded={monitorFiltersOpen}
-              className="flex items-center gap-1 text-sm text-white/90 hover:text-white"
-            >
-              {monitorFiltersOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
-              {t('Monitor Filters')}
-            </button>
-          )}
-          {/* Legacy `#mfbflip`: folds away everything above the wall. */}
-          <button
-            type="button"
-            onClick={() => setPanelOpen(!panelOpen)}
-            aria-expanded={panelOpen}
-            aria-controls="review-panel"
-            aria-label={t('Toggle filters and controls')}
-            title={t('Toggle filters and controls')}
-            className="text-white/90 hover:text-white"
-          >
-            {panelOpen ? <FilterX size={18} aria-hidden /> : <Filter size={18} aria-hidden />}
-          </button>
-        </div>
+        {/* Legacy floats both `a.flip` links right (`skin.css` `a.flip`) and
+            the terms row flows beside them, so the Monitor Filters toggle and
+            the panel's own flip icon end the first row of terms. */}
+        {!panelOpen && <div className="flex justify-end">{flipButton}</div>}
         {panelOpen && (
           <div id="review-panel" className="flex flex-col gap-2">
           {monitorFiltersOpen && (
@@ -261,6 +252,18 @@ export default function ClassicMontageReviewPage() {
                 onChange={(next) => page.setFilters({ notes: next })}
               />
             </Term>
+            <div className="ms-auto flex items-center gap-3 self-start">
+              <button
+                type="button"
+                onClick={() => setMonitorFiltersOpen((o) => !o)}
+                aria-expanded={monitorFiltersOpen}
+                className="flex items-center gap-1 text-sm text-white/90 hover:text-white"
+              >
+                {monitorFiltersOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+                {t('Monitor Filters')}
+              </button>
+              {flipButton}
+            </div>
           </div>
           <div className="flex flex-wrap items-end justify-center gap-x-4 gap-y-2 text-sm">
             {!page.fit && (

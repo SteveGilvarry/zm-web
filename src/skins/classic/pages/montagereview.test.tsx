@@ -376,7 +376,9 @@ describe('ClassicMontageReviewPage', () => {
     expect(screen.getByTestId('review-classic-grid')).toBeInTheDocument();
     expect(useMontageStore.getState().reviewPanelOpen).toBe(false);
 
-    await user.click(flip);
+    // The icon ends the terms row while open and stands alone when folded,
+    // so it is a fresh element here.
+    await user.click(screen.getByRole('button', { name: 'Toggle filters and controls' }));
     expect(await screen.findByRole('toolbar', { name: 'Review range' })).toBeInTheDocument();
   });
 
