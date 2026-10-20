@@ -160,30 +160,37 @@ export default function ClassicMontageReviewPage() {
 
   return (
     <AppShell title={t('Montage Review')}>
-      <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2 text-white">
-        {/* Legacy `#mfbflip`: folds away everything above the wall. */}
-        <button
-          type="button"
-          onClick={() => setPanelOpen(!panelOpen)}
-          aria-expanded={panelOpen}
-          aria-controls="review-panel"
-          aria-label={t('Toggle filters and controls')}
-          title={t('Toggle filters and controls')}
-          className="self-start text-white/90 hover:text-white"
-        >
-          {panelOpen ? <FilterX size={18} aria-hidden /> : <Filter size={18} aria-hidden />}
-        </button>
-        {panelOpen && (
-          <div id="review-panel" className="flex flex-col gap-2">
+      <div className="bg-[#485a6b] px-3 py-1.5 flex flex-col gap-2 text-white">
+        {/* Legacy floats both `a.flip` links right (`skin.css` `a.flip`), so
+            the Monitor Filters toggle and the panel's own flip icon share
+            one line at the end. */}
+        <div className="flex items-center justify-end gap-3">
+          {panelOpen && (
+            <button
+              type="button"
+              onClick={() => setMonitorFiltersOpen((o) => !o)}
+              aria-expanded={monitorFiltersOpen}
+              className="flex items-center gap-1 text-sm text-white/90 hover:text-white"
+            >
+              {monitorFiltersOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
+              {t('Monitor Filters')}
+            </button>
+          )}
+          {/* Legacy `#mfbflip`: folds away everything above the wall. */}
           <button
             type="button"
-            onClick={() => setMonitorFiltersOpen((o) => !o)}
-            aria-expanded={monitorFiltersOpen}
-            className="self-start flex items-center gap-1 text-sm text-white/90 hover:text-white"
+            onClick={() => setPanelOpen(!panelOpen)}
+            aria-expanded={panelOpen}
+            aria-controls="review-panel"
+            aria-label={t('Toggle filters and controls')}
+            title={t('Toggle filters and controls')}
+            className="text-white/90 hover:text-white"
           >
-            {monitorFiltersOpen ? <ChevronUp size={16} aria-hidden /> : <ChevronDown size={16} aria-hidden />}
-            {t('Monitor Filters')}
+            {panelOpen ? <FilterX size={18} aria-hidden /> : <Filter size={18} aria-hidden />}
           </button>
+        </div>
+        {panelOpen && (
+          <div id="review-panel" className="flex flex-col gap-2">
           {monitorFiltersOpen && (
             <ClassicFilterRow state={filter} tone="dark" />
           )}
