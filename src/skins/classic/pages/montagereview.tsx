@@ -9,7 +9,7 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
 import { ReviewDownloadVideo } from '@/features/montagereview/ReviewDownloadVideo';
-import { averageArea, reviewCanvasWidth } from '@/features/montagereview/reviewScale';
+import { averageArea, normalizeScale, reviewCanvasWidth } from '@/features/montagereview/reviewScale';
 import {
   REVIEW_SPEEDS, reviewSpeedIndex, toLocalInputValue, useMontageReviewPage, useReviewNotesOptions,
 } from '@/features/montagereview/useMontageReviewPage';
@@ -18,7 +18,6 @@ import { displayDimensions } from '@/features/monitors/orientation';
 import { maxFit } from '@/features/montage/maxfit';
 import { useAvailableHeight, useMeasuredBox } from '@/features/monitors/useStageFit';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
-import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import { useMontageStore } from '@/stores/montage';
 import { ClassicButton, ClassicChosen, ClassicFilterRow, ClassicPage, classicInputClass } from '@/skins/classic/components';
@@ -63,11 +62,25 @@ function MultiSelect({
 
 /**
  * Legacy `maxfit2` over the monitors on screen: one absolute-position style
- * per monitor, or null when the wall is unmeasured or nothing fits.
+ * per monitor, or null when the wall is unmeasured or nothing fits. The
+ * tiles go in at `monitorNormalizeScale × monitorZoomScale`, as legacy packs
+ * them, so a 720p camera beside two 4K ones takes a comparable share rather
+ * than a third of their width.
  */
-function fitPlacements(monitors: Monitor[], width: number, height: number): Map<number, CSSProperties> | null {
+function fitPlacements(
+  monitors: Monitor[],
+  width: number,
+  height: number,
+  avgArea: number,
+  zoom: Record<number, number>,
+): Map<number, CSSProperties> | null {
+  const sizes = monitors.map((m) => {
+    const dims = displayDimensions(m);
+    const k = normalizeScale(dims, avgArea) * (zoom[m.id] ?? 1);
+    return { width: dims.width * k, height: dims.height * k };
+  });
   // 1px border each side, as the cell renders.
-  const placed = maxFit(monitors.map((m) => displayDimensions(m)), width, height, { width: 2, height: 2 });
+  const placed = maxFit(sizes, width, height, { width: 2, height: 2 });
   if (!placed) return null;
   const byId = new Map<number, CSSProperties>();
   monitors.forEach((m, i) => {
@@ -89,8 +102,10 @@ export default function ClassicMontageReviewPage() {
   // 0 is the only pause.
   const page = useMontageReviewPage({ autoplay: true });
   const notesOptions = useReviewNotesOptions();
-  const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated);
-  const filter = useMonitorFilterRow(page.allMonitors, runtimeById);
+  // The filter row polls `/monitor-status` itself, and only while one of
+  // its runtime statuses is picked; handing it a page-wide poll kept the
+  // box's rate limiter busy every 5 s for a row that is usually folded away.
+  const filter = useMonitorFilterRow(page.allMonitors);
   useDocumentTitle(t('Montage Review'));
   const { clock, isLive, preset } = page;
   // Legacy's three flips (skin.js): the whole panel and the timeline keep
@@ -129,7 +144,7 @@ export default function ClassicMontageReviewPage() {
 
   // Legacy backs out of fit mode when nothing fits; here the scaled sizing
   // simply stays in place (and comes back once the wall has been measured).
-  const fitStyles = page.fit ? fitPlacements(monitors, wallBox.width, wallHeight) : null;
+  const fitStyles = page.fit ? fitPlacements(monitors, wallBox.width, wallHeight, avgArea, page.monitorZoom) : null;
 
   if (!page.isAuthenticated) return null;
 
@@ -330,6 +345,21 @@ export default function ClassicMontageReviewPage() {
               <span role="status" className="text-xs text-red-700">{t('No events to fit')}</span>
             )}
           </div>
+          {/* Legacy `#timelinediv` sits inside the panel, under the buttons. */}
+          {!isLive && timelineOpen && monitors.length > 0 && (
+            <div dir="ltr" className="mt-1">
+              <MontageReviewTimeline
+                variant="classic"
+                collapsible={false}
+                monitors={monitors}
+                rangeStart={clock.rangeStart}
+                rangeEnd={clock.rangeEnd}
+                currentTime={clock.currentTime}
+                onSeek={clock.setCurrentTime}
+                filters={page.filters}
+              />
+            </div>
+          )}
           </div>
         )}
       </div>
@@ -343,19 +373,6 @@ export default function ClassicMontageReviewPage() {
           empty={monitors.length === 0}
           emptyMessage={t('Select one or more monitors to review.')}
         >
-          {!isLive && panelOpen && timelineOpen && (
-            <div dir="ltr" className="mb-3">
-              <MontageReviewTimeline
-                collapsible={false}
-                monitors={monitors}
-                rangeStart={clock.rangeStart}
-                rangeEnd={clock.rangeEnd}
-                currentTime={clock.currentTime}
-                onSeek={clock.setCurrentTime}
-                filters={page.filters}
-              />
-            </div>
-          )}
           {/* Measures the wall: its width packs the cells, its top says how
               much viewport height is left for them. */}
           <div ref={wallRef} className="w-full" aria-hidden />
@@ -393,6 +410,7 @@ export default function ClassicMontageReviewPage() {
                         speed={clock.speed}
                         filters={page.filters}
                         fill={!!fitted}
+                        variant="classic"
                         onZoom={(factor) => page.zoomMonitor(m.id, factor)}
                       />
                     )}

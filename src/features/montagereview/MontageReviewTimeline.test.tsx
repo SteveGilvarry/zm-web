@@ -512,4 +512,47 @@ describe('MontageReviewTimeline — legacy fidelity', () => {
     fireEvent.click(toggle);
     expect(await screen.findByText('Front Door')).toBeInTheDocument();
   });
+
+  it('classic: a bordered strip with no header, the names over the bars and the edges along the bottom', () => {
+    stubEvents([]);
+    const start = new Date('2026-08-21T02:00:00Z');
+    const end = new Date('2026-08-21T03:00:00Z');
+    renderWithProviders(
+      <MontageReviewTimeline
+        variant="classic"
+        collapsible={false}
+        monitors={[monitor(1, 'Front Door')]}
+        rangeStart={start}
+        rangeEnd={end}
+        currentTime={start}
+        onSeek={() => {}}
+      />,
+    );
+    const root = screen.getByTestId('review-timeline');
+    expect(root.className).toContain('border-white');
+    expect(root.className).not.toContain('rounded');
+    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.getByText('Front Door').className).toContain('text-white');
+    // The axis starts at the edge, as legacy draws the names over the bars.
+    expect(screen.getByTestId('review-timeline-lane').className).toContain('start-0');
+    // Legacy's scrub labels sit along the bottom of the canvas.
+    const lane = screen.getByTestId('review-timeline-label-lane');
+    expect(lane.compareDocumentPosition(screen.getByTestId('review-timeline-lane')) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
+  it('drops the edge label the playhead label would cover, as legacy hides scrubleft / scrubright', () => {
+    stubEvents([]);
+    const start = new Date('2026-08-21T02:00:00Z');
+    const end = new Date('2026-08-21T03:00:00Z');
+    const { rerender } = renderWithProviders(
+      <MontageReviewTimeline monitors={[monitor(1, 'Front Door')]} rangeStart={start} rangeEnd={end} currentTime={start} onSeek={() => {}} />,
+    );
+    expect(screen.queryByTestId('review-timeline-min')).toBeNull();
+    expect(screen.getByTestId('review-timeline-max')).toBeInTheDocument();
+    rerender(
+      <MontageReviewTimeline monitors={[monitor(1, 'Front Door')]} rangeStart={start} rangeEnd={end} currentTime={end} onSeek={() => {}} />,
+    );
+    expect(screen.getByTestId('review-timeline-min')).toBeInTheDocument();
+    expect(screen.queryByTestId('review-timeline-max')).toBeNull();
+  });
 });

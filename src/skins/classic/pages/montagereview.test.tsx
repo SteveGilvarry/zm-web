@@ -206,7 +206,7 @@ describe('ClassicMontageReviewPage', () => {
     expect(within(grid).getByTitle('2 Cam 2')).toBeInTheDocument();
     expect(within(grid).queryByTitle('3 Cam 3')).toBeNull();
 
-    expect(screen.getByText('Timeline')).toBeInTheDocument();
+    expect(screen.getByTestId('review-timeline')).toBeInTheDocument();
     // A recorded event shows as a bar on its monitor's track.
     expect(await screen.findByTitle(/^Event-5150 — /)).toBeInTheDocument();
   });
@@ -230,9 +230,12 @@ describe('ClassicMontageReviewPage', () => {
 
     const bar = await screen.findByRole('toolbar', { name: 'Review range' });
     expect(within(bar).getByRole('button', { name: '1 Hour' })).toHaveAttribute('aria-pressed', 'true');
-    for (const name of ['< Pan', 'In +', 'Out -', '24 Hour', '8 Hour', 'All Events', 'Live', 'Pan >', 'Download Video']) {
+    for (const name of ['< Pan', 'In +', 'Out -', '24 Hour', '8 Hour', 'All Events', 'Live', 'Pan >']) {
       expect(within(bar).getByRole('button', { name })).toBeInTheDocument();
     }
+    // Legacy prints Download Video only with monitors on screen, so it
+    // follows the monitor list.
+    expect(await within(bar).findByRole('button', { name: 'Download Video' })).toBeInTheDocument();
     // Legacy's default window (montagereview.php:103-116) is the last hour.
     const start = screen.getByLabelText('Date Time >=') as HTMLInputElement;
     const end = screen.getByLabelText('Date Time <=') as HTMLInputElement;
@@ -331,7 +334,7 @@ describe('ClassicMontageReviewPage', () => {
 
     expect(await screen.findByTestId('live-1')).toBeInTheDocument();
     expect(screen.getByTestId('live-1').getAttribute('data-protocol')).toBe('hls');
-    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.queryByTestId('review-timeline')).toBeNull();
     // Legacy `redrawScreen` hides what live view has no use for…
     for (const name of ['< Pan', 'In +', 'Out -', 'Pan >', 'Download Video']) {
       expect(within(bar).queryByRole('button', { name })).toBeNull();
@@ -353,7 +356,7 @@ describe('ClassicMontageReviewPage', () => {
     await user.click(within(bar).getByRole('button', { name: 'Live' }));
     await user.click(await within(bar).findByRole('button', { name: 'History' }));
 
-    expect(await screen.findByText('Timeline')).toBeInTheDocument();
+    expect(await screen.findByTestId('review-timeline')).toBeInTheDocument();
     expect((screen.getByLabelText('Date Time >=') as HTMLInputElement).value).toBe(startBefore);
     expect(within(bar).getByRole('button', { name: '< Pan' })).toBeInTheDocument();
   });
@@ -362,14 +365,14 @@ describe('ClassicMontageReviewPage', () => {
     const user = userEvent.setup();
     stub();
     await mount();
-    await screen.findByText('Timeline');
+    await screen.findByTestId('review-timeline');
 
     const flip = screen.getByRole('button', { name: 'Toggle filters and controls' });
     expect(flip).toHaveAttribute('aria-expanded', 'true');
     await user.click(flip);
     expect(screen.queryByRole('toolbar', { name: 'Review range' })).toBeNull();
     expect(screen.queryByLabelText('Archive Status')).toBeNull();
-    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.queryByTestId('review-timeline')).toBeNull();
     expect(screen.getByTestId('review-classic-grid')).toBeInTheDocument();
     expect(useMontageStore.getState().reviewPanelOpen).toBe(false);
 
@@ -404,14 +407,14 @@ describe('ClassicMontageReviewPage', () => {
     stub();
     await mount();
     const bar = await screen.findByRole('toolbar', { name: 'Review range' });
-    await screen.findByText('Timeline');
+    await screen.findByTestId('review-timeline');
 
     await user.click(within(bar).getByRole('button', { name: 'Toggle timeline visibility' }));
-    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.queryByTestId('review-timeline')).toBeNull();
     expect(useMontageStore.getState().reviewTimelineOpen).toBe(false);
     // The timeline carries no second toggle of its own here.
     await user.click(within(bar).getByRole('button', { name: 'Toggle timeline visibility' }));
-    expect(await screen.findByText('Timeline')).toBeInTheDocument();
+    expect(await screen.findByTestId('review-timeline')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Toggle timeline visibility' })).toHaveLength(1);
   });
 

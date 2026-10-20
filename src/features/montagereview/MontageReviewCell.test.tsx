@@ -5,7 +5,7 @@
  * `currentTime` are stubbed on HTMLMediaElement.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
@@ -242,26 +242,59 @@ describe('MontageReviewCell — master clock sync', () => {
     expect(await screen.findByText('No Event')).toBeInTheDocument();
   });
 
-  it('applies the monitor orientation to the video element', async () => {
+  it('a rotated monitor gets a portrait cell and plays the recording as decoded, untouched', async () => {
     stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
     const { container } = renderCell({ monitor: monitor({ orientation: 'ROTATE_90' } as Partial<Monitor>) });
     await screen.findByRole('link', { name: '#9' });
+    expect(screen.getByTestId('review-cell-1').style.aspectRatio).toBe('1080 / 1920');
     const video = container.querySelector('video')!;
-    expect(video.getAttribute('style')).toContain('rotate(90deg)');
+    // ZoneMinder writes the rotation into the mp4, so the decoder hands back
+    // an upright portrait frame; a CSS turn on top would lay it on its side.
+    expect(video.className).toContain('w-full h-full');
+    expect(video.getAttribute('style')).toBeNull();
+    Object.defineProperty(video, 'videoWidth', { value: 1080, configurable: true });
+    Object.defineProperty(video, 'videoHeight', { value: 1920, configurable: true });
+    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); });
+    expect(video.getAttribute('style')).toBeNull();
   });
 
-  it('a rotated monitor gets a portrait cell and a video laid out at the swapped size', async () => {
+  it('turns the video only when the decoder ignored the rotation and handed back a landscape frame', async () => {
     stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
     const { container } = renderCell({ monitor: monitor({ orientation: 'ROTATE_90' } as Partial<Monitor>) });
     await screen.findByRole('link', { name: '#9' });
-    const cell = screen.getByTestId('review-cell-1');
-    expect(cell.style.aspectRatio).toBe('1080 / 1920');
     const video = container.querySelector('video')!;
+    Object.defineProperty(video, 'videoWidth', { value: 1920, configurable: true });
+    Object.defineProperty(video, 'videoHeight', { value: 1080, configurable: true });
+    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); });
     // 1920×1080 turned 90°: the element is (1920/1080) wide and (1080/1920)
     // tall relative to the portrait box, so after the turn it fills it.
     expect(video.style.width).toBe(`${(1920 / 1080) * 100}%`);
     expect(video.style.height).toBe(`${(1080 / 1920) * 100}%`);
     expect(video.style.maxWidth).toBe('none');
+    expect(video.style.transform).toContain('rotate(90deg)');
+  });
+
+  it("classic: a bare black box with legacy's corner marks and no name or event badges", async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    renderCell({ variant: 'classic', onZoom: () => {} });
+    await screen.findByTestId('review-cell-1');
+    const cell = screen.getByTestId('review-cell-1');
+    expect(cell.className).toContain('bg-black');
+    expect(cell.className).not.toContain('rounded');
+    expect(cell.style.containerType).toBe('size');
+    expect(screen.queryByText('Front Door')).toBeNull();
+    expect(screen.queryByRole('link', { name: '#9' })).toBeNull();
+    expect(screen.queryByTitle("Download this event's video")).toBeNull();
+    // `imagedone`: a tenth of the canvas's longer side.
+    expect(screen.getByTestId('review-zoom-in-1').className).toContain('text-[length:max(10cqw,10cqh)]');
+  });
+
+  it('classic: "No Event" written across the box at 15 % of its width', async () => {
+    stubEvents([]);
+    renderCell({ variant: 'classic' });
+    const text = await screen.findByText('No Event');
+    expect(text.className).toContain('text-[length:15cqw]');
+    expect(text.parentElement?.className).toContain('text-white');
   });
 
   it('an unrotated monitor keeps a landscape cell and a full-size video', async () => {

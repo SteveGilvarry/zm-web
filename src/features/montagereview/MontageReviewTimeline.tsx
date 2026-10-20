@@ -18,6 +18,13 @@ interface MontageReviewTimelineProps {
    * turns it off: legacy's `#collapse` sits in the button row instead.
    */
   collapsible?: boolean;
+  /**
+   * `classic` draws legacy's `#timeline` canvas: a bordered strip on the
+   * dark panel with no header, the names in white over the bars, 20 px
+   * rows, and the window's edges written along the bottom. `modern`
+   * (default) is the card with the Timeline header.
+   */
+  variant?: 'modern' | 'classic';
 }
 
 /**
@@ -26,6 +33,8 @@ interface MontageReviewTimelineProps {
  * region after it, so one instant maps to one x everywhere.
  */
 const NAME_COLUMN = 'start-32';
+/** Legacy writes the names over the bars, so its axis starts at the edge. */
+const CLASSIC_NAME_COLUMN = 'start-0';
 
 /** Legacy's fallback when a monitor has no `WebColour` (`drawEventOnGraph`). */
 export const DEFAULT_MONITOR_COLOUR = '#43bcf2';
@@ -52,8 +61,11 @@ export function MontageReviewTimeline({
   onSeek,
   filters = DEFAULT_REVIEW_FILTERS,
   collapsible = true,
+  variant = 'modern',
 }: MontageReviewTimelineProps) {
   const { t } = useTranslation();
+  const classic = variant === 'classic';
+  const nameColumn = classic ? CLASSIC_NAME_COLUMN : NAME_COLUMN;
   // The time axis: the body minus the name column, the same box the bars
   // are laid out in. Seeking measures this, never the whole body.
   const laneRef = useRef<HTMLDivElement | null>(null);
@@ -85,8 +97,46 @@ export function MontageReviewTimeline({
     seekFromPointer(e);
   };
 
+  // Legacy `drawGraph` drops `scrubleft` / `scrubright` while the slider's
+  // own label would sit on top of them.
+  const EDGE_CLEARANCE_PCT = 8;
+  const labelLane = (
+    <div className={classic ? 'relative h-4' : 'relative h-5 border-b border-border-subtle/50'}>
+      <div className={`absolute ${nameColumn} end-0 top-0 bottom-0`} data-testid="review-timeline-label-lane">
+        {playheadPct > EDGE_CLEARANCE_PCT && (
+        <span
+          className={`absolute start-1 top-0.5 text-xs tabular-nums ${classic ? 'text-white' : 'font-mono text-fg-faint'}`}
+          data-testid="review-timeline-min"
+        >
+          {formatEdge(rangeStart, durationMs)}
+        </span>
+        )}
+        {playheadPct < 100 - EDGE_CLEARANCE_PCT && (
+        <span
+          className={`absolute end-3 top-0.5 text-xs tabular-nums ${classic ? 'text-white' : 'font-mono text-fg-faint'}`}
+          data-testid="review-timeline-max"
+        >
+          {formatEdge(rangeEnd, durationMs)}
+        </span>
+        )}
+        <span
+          className={`absolute top-0.5 text-xs tabular-nums -translate-x-1/2 ${classic ? 'text-white font-semibold' : 'font-mono text-fg'}`}
+          style={{ left: `${playheadPct}%` }}
+          data-testid="review-timeline-playhead-label"
+        >
+          {formatEdge(currentTime, durationMs)}
+        </span>
+      </div>
+    </div>
+  );
+
   return (
-    <div dir="ltr" className="bg-surface rounded border border-border-subtle overflow-hidden">
+    <div
+      dir="ltr"
+      data-testid="review-timeline"
+      className={classic ? 'border border-white' : 'bg-surface rounded border border-border-subtle overflow-hidden'}
+    >
+      {!classic && (
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
         <span className="text-label text-fg-dim">
           {t('Timeline')}
@@ -109,27 +159,14 @@ export function MontageReviewTimeline({
           )}
         </div>
       </div>
+      )}
 
       {!collapsed && (
         <>
-          {/* Window edges + the playhead's own label, as legacy draws them. */}
-          <div className="relative h-5 border-b border-border-subtle/50">
-            <div className={`absolute ${NAME_COLUMN} end-0 top-0 bottom-0`} data-testid="review-timeline-label-lane">
-              <span className="absolute start-1 top-1 text-xs font-mono text-fg-faint tabular-nums" data-testid="review-timeline-min">
-                {formatEdge(rangeStart, durationMs)}
-              </span>
-              <span className="absolute end-3 top-1 text-xs font-mono text-fg-faint tabular-nums" data-testid="review-timeline-max">
-                {formatEdge(rangeEnd, durationMs)}
-              </span>
-              <span
-                className="absolute top-1 text-xs font-mono text-fg tabular-nums -translate-x-1/2"
-                style={{ left: `${playheadPct}%` }}
-                data-testid="review-timeline-playhead-label"
-              >
-                {formatEdge(currentTime, durationMs)}
-              </span>
-            </div>
-          </div>
+          {/* Window edges + the playhead's own label, as legacy draws them:
+              along the bottom of its canvas (`scrubleft`, `scrubright`,
+              `scruboutput`), above the tracks in the modern card. */}
+          {!classic && labelLane}
 
           {/* Tracks + playhead */}
           <div
@@ -145,6 +182,7 @@ export function MontageReviewTimeline({
                 rangeStart={rangeStart}
                 rangeEnd={rangeEnd}
                 filters={filters}
+                classic={classic}
               />
             ))}
 
@@ -152,7 +190,7 @@ export function MontageReviewTimeline({
                 name column (z-10) so its marker is never covered. */}
             <div
               ref={laneRef}
-              className={`absolute ${NAME_COLUMN} end-0 top-0 bottom-0 pointer-events-none z-20`}
+              className={`absolute ${nameColumn} end-0 top-0 bottom-0 pointer-events-none z-20`}
               data-testid="review-timeline-lane"
             >
               <div
@@ -160,11 +198,19 @@ export function MontageReviewTimeline({
                 style={{ left: `${playheadPct}%` }}
                 data-testid="review-timeline-playhead"
               >
-                <div className="w-px h-full bg-accent" />
-                <div className="absolute -top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-accent" />
+                {classic ? (
+                  // Legacy's slider: a 10 px bar the height of the canvas.
+                  <div className="h-full w-2.5 -translate-x-1/2 bg-white/60 border-x border-white" />
+                ) : (
+                  <>
+                    <div className="w-px h-full bg-accent" />
+                    <div className="absolute -top-1 -translate-x-1/2 w-2.5 h-2.5 rounded-full bg-accent" />
+                  </>
+                )}
               </div>
             </div>
           </div>
+          {classic && labelLane}
         </>
       )}
     </div>
@@ -176,22 +222,33 @@ interface TrackProps {
   rangeStart: Date;
   rangeEnd: Date;
   filters: ReviewEventFilters;
+  classic: boolean;
 }
 
-function Track({ monitor, rangeStart, rangeEnd, filters }: TrackProps) {
+function Track({ monitor, rangeStart, rangeEnd, filters, classic }: TrackProps) {
   const { events } = useReviewEvents(monitor.id, rangeStart, rangeEnd, filters);
   const { framesByEvent, maxScore } = useFrameScores(events);
   const durationMs = rangeEnd.getTime() - rangeStart.getTime();
   const colour = monitorColour(monitor);
 
   return (
-    <div className="relative h-8 flex items-center border-b border-border-subtle/30 last:border-b-0">
-      <div className="absolute start-0 top-0 bottom-0 w-32 px-3 flex items-center bg-surface border-e border-border-subtle z-10">
-        <span className="text-xs text-fg-muted truncate font-medium">
-          {monitor.name}
-        </span>
-      </div>
-      <div className={`absolute ${NAME_COLUMN} end-0 top-0 bottom-0`} data-testid="review-track-bars">
+    <div className={classic
+      ? 'relative h-5 flex items-center'
+      : 'relative h-8 flex items-center border-b border-border-subtle/30 last:border-b-0'}
+    >
+      {classic ? (
+        // Legacy `drawGraph`: the name in white Georgia over the row.
+        <div className="absolute start-0 top-0 bottom-0 px-1 flex items-center z-10 pointer-events-none max-w-full">
+          <span className="text-sm leading-none font-serif text-white truncate">{monitor.name}</span>
+        </div>
+      ) : (
+        <div className="absolute start-0 top-0 bottom-0 w-32 px-3 flex items-center bg-surface border-e border-border-subtle z-10">
+          <span className="text-xs text-fg-muted truncate font-medium">
+            {monitor.name}
+          </span>
+        </div>
+      )}
+      <div className={`absolute ${classic ? CLASSIC_NAME_COLUMN : NAME_COLUMN} end-0 top-0 bottom-0`} data-testid="review-track-bars">
         {events.map((event) => (
           <EventBar
             key={event.id}
@@ -201,6 +258,7 @@ function Track({ monitor, rangeStart, rangeEnd, filters }: TrackProps) {
             durationMs={durationMs}
             frames={framesByEvent.get(event.id)}
             maxScore={maxScore}
+            classic={classic}
           />
         ))}
       </div>
@@ -215,9 +273,10 @@ interface EventBarProps {
   durationMs: number;
   frames?: Array<{ frame_id: number; score: number; time_stamp: string }>;
   maxScore: number;
+  classic: boolean;
 }
 
-function EventBar({ event, colour, rangeStart, durationMs, frames, maxScore }: EventBarProps) {
+function EventBar({ event, colour, rangeStart, durationMs, frames, maxScore, classic }: EventBarProps) {
   if (!event.start_date_time || durationMs <= 0) return null;
   const start = Date.parse(event.start_date_time);
   if (isNaN(start)) return null;
@@ -234,7 +293,10 @@ function EventBar({ event, colour, rangeStart, durationMs, frames, maxScore }: E
     <>
       <div
         data-testid={`review-event-bar-${event.id}`}
-        className="absolute top-1/2 -translate-y-1/2 h-3 rounded pointer-events-none"
+        // Legacy fills the row less 2 px, square; the card uses a slimmer pill.
+        className={classic
+          ? 'absolute top-0 bottom-0.5 pointer-events-none'
+          : 'absolute top-1/2 -translate-y-1/2 h-3 rounded pointer-events-none'}
         style={{
           left: `${Math.max(0, leftPct)}%`,
           width: `${Math.min(100 - Math.max(0, leftPct), widthPct)}%`,
@@ -254,7 +316,9 @@ function EventBar({ event, colour, rangeStart, durationMs, frames, maxScore }: E
           <div
             key={frame.frame_id}
             data-testid={`review-frame-${frame.frame_id}`}
-            className="absolute top-1/2 -translate-y-1/2 h-3 pointer-events-none"
+            className={classic
+              ? 'absolute top-0 bottom-0.5 pointer-events-none'
+              : 'absolute top-1/2 -translate-y-1/2 h-3 pointer-events-none'}
             style={{
               left: `${pct}%`,
               width: 2,
