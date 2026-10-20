@@ -247,7 +247,31 @@ describe('MontageReviewCell — master clock sync', () => {
     const { container } = renderCell({ monitor: monitor({ orientation: 'ROTATE_90' } as Partial<Monitor>) });
     await screen.findByRole('link', { name: '#9' });
     const video = container.querySelector('video')!;
-    expect(video.getAttribute('style')).toContain('rotate');
+    expect(video.getAttribute('style')).toContain('rotate(90deg)');
+  });
+
+  it('a rotated monitor gets a portrait cell and a video laid out at the swapped size', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { container } = renderCell({ monitor: monitor({ orientation: 'ROTATE_90' } as Partial<Monitor>) });
+    await screen.findByRole('link', { name: '#9' });
+    const cell = screen.getByTestId('review-cell-1');
+    expect(cell.style.aspectRatio).toBe('1080 / 1920');
+    const video = container.querySelector('video')!;
+    // 1920×1080 turned 90°: the element is (1920/1080) wide and (1080/1920)
+    // tall relative to the portrait box, so after the turn it fills it.
+    expect(video.style.width).toBe(`${(1920 / 1080) * 100}%`);
+    expect(video.style.height).toBe(`${(1080 / 1920) * 100}%`);
+    expect(video.style.maxWidth).toBe('none');
+  });
+
+  it('an unrotated monitor keeps a landscape cell and a full-size video', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { container } = renderCell();
+    await screen.findByRole('link', { name: '#9' });
+    expect(screen.getByTestId('review-cell-1').style.aspectRatio).toBe('1920 / 1080');
+    const video = container.querySelector('video')!;
+    expect(video.className).toContain('w-full h-full');
+    expect(video.getAttribute('style')).toBeNull();
   });
 });
 

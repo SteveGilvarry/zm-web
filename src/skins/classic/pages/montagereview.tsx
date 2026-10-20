@@ -85,7 +85,9 @@ function fitPlacements(monitors: Monitor[], width: number, height: number): Map<
  */
 export default function ClassicMontageReviewPage() {
   const { t } = useTranslation();
-  const page = useMontageReviewPage();
+  // Legacy's page loads into motion at the cookie speed; the Speed slider at
+  // 0 is the only pause.
+  const page = useMontageReviewPage({ autoplay: true });
   const notesOptions = useReviewNotesOptions();
   const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated);
   const filter = useMonitorFilterRow(page.allMonitors, runtimeById);

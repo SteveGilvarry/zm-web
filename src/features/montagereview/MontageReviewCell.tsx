@@ -7,7 +7,7 @@ import { useReviewEvents, findEventAt, DEFAULT_REVIEW_FILTERS, type ReviewEventF
 import { playbackRateFor } from './useReviewClock';
 import { getEventVideoUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
-import { getOrientationStyle } from '@/types';
+import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
 import type { Monitor } from '@/types';
 
 interface MontageReviewCellProps {
@@ -122,6 +122,11 @@ export function MontageReviewCell({
   const overlayEdge = onZoom ? 'bottom-1.5' : 'top-1.5';
 
   const token = getAuthToken();
+  // The box takes the camera's displayed shape, so a Rotate90 monitor gets a
+  // portrait cell; the <video> is then laid out landscape at the swapped size
+  // and turned onto that footprint (`stageVideoStyle`), as Watch does. A
+  // `fill` cell leaves the shape to its parent, which sized it the same way.
+  const dims = displayDimensions(monitor);
   const downloadHref = currentEvent
     ? getEventVideoUrl(currentEvent.id, token ?? undefined)
     : null;
@@ -129,7 +134,8 @@ export function MontageReviewCell({
   return (
     <div
       dir="ltr"
-      className={`relative bg-bg-sunken rounded overflow-hidden border border-border-subtle cursor-pointer ${fill ? 'w-full h-full' : 'aspect-video'}`}
+      className={`relative bg-bg-sunken rounded overflow-hidden border border-border-subtle cursor-pointer ${fill ? 'w-full h-full' : ''}`}
+      style={fill ? undefined : { aspectRatio: `${dims.width} / ${dims.height}` }}
       onClick={handleClick}
       data-testid={`review-cell-${monitor.id}`}
     >
@@ -164,8 +170,8 @@ export function MontageReviewCell({
             ref={videoRef}
             key={currentEvent.id}
             src={getEventVideoUrl(currentEvent.id, token ?? undefined)}
-            className="w-full h-full object-contain bg-black"
-            style={getOrientationStyle(monitor.orientation)}
+            className={stageVideoClass(monitor)}
+            style={stageVideoStyle(monitor)}
             muted
             playsInline
             preload="auto"

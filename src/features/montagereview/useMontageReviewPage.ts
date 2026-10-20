@@ -237,7 +237,12 @@ export interface MontageReviewPageState {
   tags: Tag[];
 }
 
-export function useMontageReviewPage(): MontageReviewPageState {
+export interface MontageReviewPageOptions {
+  /** Start the clock on open, as legacy does; see the option on `useReviewClock`. */
+  autoplay?: boolean;
+}
+
+export function useMontageReviewPage({ autoplay = false }: MontageReviewPageOptions = {}): MontageReviewPageState {
   const { isAuthenticated } = useAuthStore();
   const qc = useQueryClient();
   const search = useRouteSearch();
@@ -313,7 +318,7 @@ export function useMontageReviewPage(): MontageReviewPageState {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-  const clock = useReviewClock(initialRange.start, initialRange.end);
+  const clock = useReviewClock(initialRange.start, initialRange.end, { autoplay });
 
   // `&current=` places the playhead once the clock exists.
   useEffect(() => {
