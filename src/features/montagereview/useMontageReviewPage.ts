@@ -318,7 +318,10 @@ export function useMontageReviewPage({ autoplay = false }: MontageReviewPageOpti
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
   );
-  const clock = useReviewClock(initialRange.start, initialRange.end, { autoplay });
+  // Live has no playhead to move: a page opened on `?live=1` must not run
+  // the clock unseen, or it reaches the window's end and zeroes the stored
+  // speed. History resumes the motion when live is left.
+  const clock = useReviewClock(initialRange.start, initialRange.end, { autoplay: autoplay && preset !== 'live' });
 
   // `&current=` places the playhead once the clock exists.
   useEffect(() => {
@@ -358,10 +361,12 @@ export function useMontageReviewPage({ autoplay = false }: MontageReviewPageOpti
     const back = parseStoredRange(useReviewRangeStore.getState().range);
     if (!back) {
       setPreset('1h');
+      if (autoplay) clock.play();
       return;
     }
     setPresetState('custom');
     applyRange(back.start, back.end);
+    if (autoplay) clock.play();
   };
 
   const setCustomRange = (start: Date, end: Date) => {

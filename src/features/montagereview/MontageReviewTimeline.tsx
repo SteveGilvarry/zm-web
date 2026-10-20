@@ -100,6 +100,11 @@ export function MontageReviewTimeline({
   // Legacy `drawGraph` drops `scrubleft` / `scrubright` while the slider's
   // own label would sit on top of them.
   const EDGE_CLEARANCE_PCT = 8;
+  // Centred on the playhead, except at the edges where it would leave the
+  // box: there it hangs off the playhead's inner side.
+  const playheadLabelShift = playheadPct <= EDGE_CLEARANCE_PCT
+    ? 'translate-x-0'
+    : playheadPct >= 100 - EDGE_CLEARANCE_PCT ? '-translate-x-full' : '-translate-x-1/2';
   const labelLane = (
     <div className={classic ? 'relative h-4' : 'relative h-5 border-b border-border-subtle/50'}>
       <div className={`absolute ${nameColumn} end-0 top-0 bottom-0`} data-testid="review-timeline-label-lane">
@@ -120,7 +125,7 @@ export function MontageReviewTimeline({
         </span>
         )}
         <span
-          className={`absolute top-0.5 text-xs tabular-nums -translate-x-1/2 ${classic ? 'text-white font-semibold' : 'font-mono text-fg'}`}
+          className={`absolute top-0.5 text-xs tabular-nums ${playheadLabelShift} ${classic ? 'text-white font-semibold' : 'font-mono text-fg'}`}
           style={{ left: `${playheadPct}%` }}
           data-testid="review-timeline-playhead-label"
         >
@@ -134,7 +139,7 @@ export function MontageReviewTimeline({
     <div
       dir="ltr"
       data-testid="review-timeline"
-      className={classic ? 'border border-white' : 'bg-surface rounded border border-border-subtle overflow-hidden'}
+      className={classic ? 'border border-white overflow-hidden' : 'bg-surface rounded border border-border-subtle overflow-hidden'}
     >
       {!classic && (
       <div className="flex items-center justify-between px-3 py-1.5 border-b border-border-subtle">
@@ -209,8 +214,9 @@ export function MontageReviewTimeline({
                 )}
               </div>
             </div>
+            {/* Inside the seek box: legacy's canvas seeks on its label row too. */}
+            {classic && labelLane}
           </div>
-          {classic && labelLane}
         </>
       )}
     </div>

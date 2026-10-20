@@ -310,7 +310,12 @@ export default function MontageReviewPage() {
             <RequirePerm feature={isLive ? 'stream' : 'events'} level="View" fallback="message">
               <div
                 dir="ltr"
-                className="flex-1 min-h-0 overflow-auto p-2 grid gap-2 content-start"
+                // `auto-rows-max`: inside this fixed-height scroller Chrome
+                // sizes auto rows to fit the box, not the cells, and cells
+                // with an aspect ratio (portrait cameras especially) then
+                // overlap the row below. Max-content rows let the wall scroll.
+                className="flex-1 min-h-0 overflow-auto p-2 grid gap-2 content-start auto-rows-max"
+                data-testid="review-modern-grid"
                 style={{
                   gridTemplateColumns: `repeat(${reviewGridColumns(selectedMonitors.length)}, minmax(0, 1fr))`,
                 }}

@@ -77,6 +77,13 @@ describe('MontageReviewPage (modern) — rendering', () => {
     expect(screen.getAllByText('No Event')).toHaveLength(2);
   });
 
+  it('lays the wall out in max-content rows so portrait cells never overlap the row below', async () => {
+    renderRoute('/montagereview');
+    const grid = await screen.findByTestId('review-modern-grid');
+    expect(grid.className).toContain('auto-rows-max');
+    expect(grid.className).toContain('overflow-auto');
+  });
+
   it('opens on the last hour', async () => {
     renderRoute('/montagereview');
     await findChips();

@@ -549,10 +549,12 @@ describe('MontageReviewTimeline — legacy fidelity', () => {
     );
     expect(screen.queryByTestId('review-timeline-min')).toBeNull();
     expect(screen.getByTestId('review-timeline-max')).toBeInTheDocument();
+    expect(screen.getByTestId('review-timeline-playhead-label').className).toContain('translate-x-0');
     rerender(
       <MontageReviewTimeline monitors={[monitor(1, 'Front Door')]} rangeStart={start} rangeEnd={end} currentTime={end} onSeek={() => {}} />,
     );
     expect(screen.getByTestId('review-timeline-min')).toBeInTheDocument();
     expect(screen.queryByTestId('review-timeline-max')).toBeNull();
+    expect(screen.getByTestId('review-timeline-playhead-label').className).toContain('-translate-x-full');
   });
 });

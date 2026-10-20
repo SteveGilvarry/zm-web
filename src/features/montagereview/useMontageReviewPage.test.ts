@@ -172,4 +172,18 @@ describe('useMontageReviewPage', () => {
     expect(result.current.isLive).toBe(true);
     expect(result.current.clock.isPlaying).toBe(false);
   });
+
+  it('autoplay opens in motion, sits still while live, and moves again when live is left', () => {
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage({ autoplay: true }), { wrapper: makeWrapper() });
+    expect(result.current.clock.isPlaying).toBe(true);
+
+    act(() => result.current.toggleLive());
+    expect(result.current.isLive).toBe(true);
+    expect(result.current.clock.isPlaying).toBe(false);
+
+    act(() => result.current.toggleLive());
+    expect(result.current.isLive).toBe(false);
+    expect(result.current.clock.isPlaying).toBe(true);
+  });
 });
