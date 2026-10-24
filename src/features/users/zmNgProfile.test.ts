@@ -29,20 +29,13 @@ describe('zmNgPortalUrl', () => {
 });
 
 describe('zmNgQrPayload', () => {
-  it("uses the app's compact keys and omits an empty password", () => {
+  it("uses the app's compact keys", () => {
     expect(JSON.parse(zmNgQrPayload({ name: 'ZoneMinder', portalUrl: 'https://h', username: 'admin' }))).toEqual({
       n: 'ZoneMinder', p: 'https://h', u: 'admin',
     });
   });
-  it('includes the password when one was typed', () => {
-    expect(JSON.parse(zmNgQrPayload({ name: 'n', portalUrl: 'p', username: 'u', password: 's3cret' }))).toEqual({
-      n: 'n', p: 'p', u: 'u', pw: 's3cret',
-    });
-  });
-  it('never emits an API or CGI URL (zmNinjaNg would demand both)', () => {
-    const keys = Object.keys(JSON.parse(zmNgQrPayload({ name: 'n', portalUrl: 'p', username: 'u' })));
-    expect(keys).not.toContain('a');
-    expect(keys).not.toContain('c');
+  it('emits exactly n, p and u: no password, no API or CGI URL (zmNinjaNg would demand both)', () => {
+    expect(Object.keys(JSON.parse(zmNgQrPayload({ name: 'n', portalUrl: 'p', username: 'u' })))).toEqual(['n', 'p', 'u']);
   });
 });
 

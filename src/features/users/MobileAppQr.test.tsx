@@ -1,5 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { describe, expect, it, vi } from 'vitest';
 import { MobileAppQr } from './MobileAppQr';
@@ -30,7 +29,7 @@ function setup() {
 }
 
 describe('MobileAppQr', () => {
-  it('renders the profile QR for the user, named after ZM_WEB_TITLE, without a password', async () => {
+  it('renders the profile QR for the user, named after ZM_WEB_TITLE', async () => {
     setup();
     const img = await screen.findByRole('img', { name: /scan this qr code with the zmng app/i });
     expect(payloadOf(img as HTMLImageElement)).toEqual({
@@ -41,17 +40,11 @@ describe('MobileAppQr', () => {
     expect(screen.getByText('zmNg Mobile App QR Code')).toBeInTheDocument();
   });
 
-  it('adds the password to the QR as it is typed, and can show it', async () => {
-    const user = userEvent.setup();
+  it('offers no password field: the app asks on the phone', async () => {
     setup();
     await screen.findByRole('img');
-    const field = screen.getByLabelText('Password');
-    expect(field).toHaveAttribute('type', 'password');
-    await user.type(field, 'hunter2');
-    await waitFor(() => {
-      expect(payloadOf(screen.getByRole('img') as HTMLImageElement).pw).toBe('hunter2');
-    });
-    await user.click(screen.getByRole('button', { name: /show password/i }));
-    expect(field).toHaveAttribute('type', 'text');
+    expect(screen.queryByLabelText(/password/i)).not.toBeInTheDocument();
+    expect(screen.getByText('The app asks for the password when the profile is added.')).toBeInTheDocument();
   });
+
 });

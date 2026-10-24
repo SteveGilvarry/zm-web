@@ -1,33 +1,28 @@
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Eye, EyeOff } from 'lucide-react';
 
-import { TextField } from '@/components/common/TextField';
 import { useZmConfig } from '@/features/config/useZmConfig';
 import { renderQrSvg, zmNgPortalUrl, zmNgProfileName, zmNgQrPayload } from './zmNgProfile';
 
 /**
  * Legacy `user.php`'s "zmNg Mobile App QR Code" fieldset: a QR the zmNinjaNg
- * app scans to add this server as a profile, with the user's name filled in
- * and, if the operator types it here, the password. Shown for a saved user
- * whose API access is on, as legacy does (`ZM_OPT_USE_API && APIEnabled`).
+ * app scans to add this server as a profile, with the user's name filled in.
+ * Shown for a saved user whose API access is on, as legacy does
+ * (`ZM_OPT_USE_API && APIEnabled`).
  *
- * The password never leaves the page: it is typed into the QR text only, and
- * the field is empty every time the editor opens.
+ * Legacy also offers a field that types the password into the code. Not
+ * here: the app asks for it on the phone.
  */
 export function MobileAppQr({ username }: { username: string }) {
   const { t } = useTranslation();
   const webTitle = useZmConfig('ZM_WEB_TITLE', '');
   const homeUrl = useZmConfig('ZM_HOME_URL', '');
-  const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [svg, setSvg] = useState<string | null>(null);
 
   const payload = zmNgQrPayload({
     name: zmNgProfileName(webTitle, homeUrl),
     portalUrl: zmNgPortalUrl(window.location.origin),
     username,
-    password,
   });
 
   useEffect(() => {
@@ -60,27 +55,7 @@ export function MobileAppQr({ username }: { username: string }) {
           )}
         </div>
         <p className="text-xs text-fg-dim">{scanHint}</p>
-        <div className="flex w-full max-w-xs items-end gap-2">
-          <TextField
-            label={t('Password')}
-            type={showPassword ? 'text' : 'password'}
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            placeholder={t('Optional')}
-            autoComplete="off"
-            hint={t('Enter password to include it in the QR code')}
-            className="flex-1"
-          />
-          <button
-            type="button"
-            onClick={() => setShowPassword((v) => !v)}
-            aria-label={showPassword ? t('Hide password') : t('Show password')}
-            aria-pressed={showPassword}
-            className="mb-6 rounded border border-border-subtle p-2 text-fg-muted hover:text-fg"
-          >
-            {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-          </button>
-        </div>
+        <p className="text-xs text-fg-dim">{t('The app asks for the password when the profile is added.')}</p>
       </div>
     </fieldset>
   );

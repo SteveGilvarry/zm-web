@@ -16,8 +16,6 @@ export interface ZmNgProfile {
   name: string;
   portalUrl: string;
   username: string;
-  /** Empty: the app asks for it on first login. */
-  password?: string;
 }
 
 export const DEFAULT_PROFILE_NAME = 'ZoneMinder';
@@ -45,11 +43,9 @@ export function zmNgPortalUrl(origin: string, basePath: string = import.meta.env
   return `${origin.replace(/\/+$/, '')}${base}`;
 }
 
-/** The QR text. Keys are the app's; `pw` only when a password was typed. */
+/** The QR text. Keys are the app's; never a password. */
 export function zmNgQrPayload(profile: ZmNgProfile): string {
-  const data: Record<string, string> = { n: profile.name, p: profile.portalUrl, u: profile.username };
-  if (profile.password) data.pw = profile.password;
-  return JSON.stringify(data);
+  return JSON.stringify({ n: profile.name, p: profile.portalUrl, u: profile.username });
 }
 
 /**
