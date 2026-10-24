@@ -54,7 +54,7 @@ npm run lint
 
 ## Testing
 
-- Unit: `npm test` (vitest + RTL + MSW; coverage over all of `src/**` with thresholds — `npm run test:coverage`).
+- Unit: `npm test` (vitest + RTL + MSW; coverage over all of `src/**` with thresholds — `npm run test:coverage`). `vitest.setup.ts` drains every request a test started before the next test runs (`src/test/requestDrain.ts`), so a `setX()` that triggers a query need not be awaited for the next test's MSW handlers to stay clean; `ZM_DETECT_INFLIGHT=1 npx vitest run` lists the requests that were still in flight when their test returned.
 - E2E, seeded (hermetic, preferred): `npm run e2e:seed:up` (MariaDB from zm-api's docker recipe on :3308, loads `e2e/seed/seed.sql`), `npm run e2e:seed:api` (zm_api against it), then `npm run test:e2e:seeded`. See `e2e/seed/README.md`.
 - E2E, live: `npm run test:e2e` against `VITE_API_PROXY_TARGET` with `TEST_USERNAME`/`TEST_PASSWORD` (no fallback). It mutates the box (notes, archive flags) — only against a dev box.
 

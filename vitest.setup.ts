@@ -23,6 +23,11 @@ afterEach(() => {
   cleanup();
 });
 
+// Every request a test started settles before the next test runs, so a
+// request left in flight cannot be matched against the next test's MSW
+// handlers. ZM_DETECT_INFLIGHT=1 names the leaks; see the module.
+import './src/test/requestDrain';
+
 // jsdom lacks IntersectionObserver + ResizeObserver. Both are used by
 // MonitorPreview / StreamCell / the justified-row grid for visibility +
 // container-size detection. Stub them so component tests can mount these

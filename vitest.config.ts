@@ -23,6 +23,10 @@ export default defineConfig({
     include: ['src/**/*.{test,spec}.{ts,tsx}'],
     exclude: ['node_modules', 'dist', 'e2e'],
     css: false,
+    // Hooks run in registration order, so the request drain in vitest.setup.ts
+    // (registered first) finishes before a file's own afterEach resets its
+    // MSW handlers: a late request meets the handlers its test installed.
+    sequence: { hooks: 'list' },
     // Resetting between tests catches accidental cross-test pollution
     // from module-scoped state (e.g. our auth store's refresh timer).
     clearMocks: true,
