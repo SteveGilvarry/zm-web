@@ -84,6 +84,20 @@ const ANCHORS: Record<PageKey, Anchor> = {
     p.getByRole('checkbox', { name: `API enabled for ${SEED.viewer.username}` }),
   // Opens on Datasets; the stock COCO row is what a fresh schema ships.
   'settings.ai': (p) => p.getByRole('row', { name: /COCO/ }).first(),
+  'settings.roles': (p, skin) =>
+    p.getByRole('button', { name: skin === 'classic' ? /^add new role$/i : /^add role$/i }),
+  'settings.roles.edit': (p, skin) =>
+    p.getByRole('button', { name: skin === 'classic' ? /^back$/i : /^back to roles$/i }),
+  'settings.encoderTemplates': (p, skin) =>
+    p.getByRole('button', { name: skin === 'classic' ? /^add new template$/i : /^add template$/i }),
+  'settings.menu': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('button', { name: /^add$/i })
+      : p.getByRole('button', { name: /^add entry$/i }),
+  'settings.privacy': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('combobox', { name: /privacy/i })
+      : p.getByRole('button', { name: /^accept$/i }),
 };
 
 test.describe('Route happy paths', () => {

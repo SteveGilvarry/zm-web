@@ -336,3 +336,67 @@ test.describe('Settings — AI', () => {
     });
   }
 });
+
+/**
+ * The wave-2 admin pages (roles, encoder templates, menu, privacy). Nothing
+ * here needs seeded rows: each page is opened in both skins and its primary
+ * control has to be there, which also holds on a live box.
+ */
+test.describe('Settings — roles', () => {
+  for (const skin of SKINS) {
+    test(`${skin}: the roles list offers a new role @route:settings.roles`, async ({ loggedInPage: page }) => {
+      await gotoSkin(page, '/settings/roles', skin);
+      await expect(
+        page.getByRole('button', { name: skin === 'classic' ? /^add new role$/i : /^add role$/i }),
+      ).toBeVisible();
+    });
+
+    test(`${skin}: a new role opens an empty editor @route:settings.roles.edit`, async ({ loggedInPage: page }) => {
+      await gotoSkin(page, '/settings/roles/new', skin);
+      await expect(page.getByRole('textbox', { name: /^name$/i })).toHaveValue('');
+      await expect(
+        page.getByRole('button', { name: skin === 'classic' ? /^back$/i : /^back to roles$/i }),
+      ).toBeVisible();
+    });
+  }
+});
+
+test.describe('Settings — encoder templates', () => {
+  for (const skin of SKINS) {
+    test(`${skin}: the template list offers a new template @route:settings.encoderTemplates`, async ({
+      loggedInPage: page,
+    }) => {
+      await gotoSkin(page, '/settings/encoder-templates', skin);
+      await expect(
+        page.getByRole('button', { name: skin === 'classic' ? /^add new template$/i : /^add template$/i }),
+      ).toBeVisible();
+    });
+  }
+});
+
+test.describe('Settings — menu', () => {
+  for (const skin of SKINS) {
+    test(`${skin}: the menu editor can add an entry @route:settings.menu`, async ({ loggedInPage: page }) => {
+      await gotoSkin(page, '/settings/menu', skin);
+      await expect(
+        page.getByRole('button', { name: skin === 'classic' ? /^add$/i : /^add entry$/i }),
+      ).toBeVisible();
+      await expect(page.getByRole('button', { name: /^save$/i })).toBeVisible();
+    });
+  }
+});
+
+test.describe('Settings — privacy', () => {
+  for (const skin of SKINS) {
+    test(`${skin}: the privacy notice asks for an answer @route:settings.privacy`, async ({ loggedInPage: page }) => {
+      await gotoSkin(page, '/settings/privacy', skin);
+      // Nothing is answered: that would change ZM_SHOW_PRIVACY for everyone.
+      if (skin === 'classic') {
+        await expect(page.getByRole('combobox', { name: /privacy/i })).toBeVisible();
+      } else {
+        await expect(page.getByRole('button', { name: /^accept$/i })).toBeVisible();
+        await expect(page.getByRole('button', { name: /^decline$/i })).toBeVisible();
+      }
+    });
+  }
+});

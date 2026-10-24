@@ -51,6 +51,12 @@ export const ROUTES: readonly RouteEntry[] = [
   { key: 'settings.state', path: '/settings/state', auth: true },
   { key: 'settings.ptzControls', path: '/settings/ptz-controls', auth: true },
   { key: 'settings.apiTokens', path: '/settings/api-tokens', auth: true },
+  { key: 'settings.roles', path: '/settings/roles', auth: true },
+  // `new` opens an empty editor, so the sweep needs no seeded role.
+  { key: 'settings.roles.edit', path: '/settings/roles/new', auth: true },
+  { key: 'settings.encoderTemplates', path: '/settings/encoder-templates', auth: true },
+  { key: 'settings.menu', path: '/settings/menu', auth: true },
+  { key: 'settings.privacy', path: '/settings/privacy', auth: true },
   // Three URLs, one page key: /settings/ai/{datasets,models,classes}. The
   // sweeps take the tab the nav opens on.
   { key: 'settings.ai', path: '/settings/ai/datasets', auth: true },
