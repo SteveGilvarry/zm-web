@@ -199,6 +199,9 @@ describe('useLogsPage', () => {
     act(() => result.current.setPageSize(200));
     expect(result.current.pageSize).toBe(200);
     expect(window.localStorage.getItem('zm-web.logs.pageSize')).toBe('200');
+    // The new size re-queries; wait for that request so it cannot land in
+    // the next test's capture (jsdom 30 made that race lose every time).
+    await waitFor(() => expect(logRequests.some((q) => q.get('page_size') === '200')).toBe(true));
     const call = mockNavigate.mock.calls[0][0] as { search: (p: LogsSearchParams) => LogsSearchParams };
     expect(call.search({ page: 3 })).toEqual({});
 
