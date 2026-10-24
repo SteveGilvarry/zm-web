@@ -259,7 +259,10 @@ describe('useMonitorFilterRow', () => {
   });
 
   it('keeps Name, Source, Status, Server and Storage across a remount, as legacy cookies do', async () => {
-    const first = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    // The page supplies the runtime here so picking a Status starts no
+    // /monitor-status poll: a fetch left in flight when this test ends is
+    // intercepted during the next one and counted against its handler.
+    const first = renderHook(() => useMonitorFilterRow(list, {}), { wrapper: wrapper() });
     act(() => {
       first.result.current.set('name', 'front');
       first.result.current.set('source', '10\\.0');
@@ -268,7 +271,7 @@ describe('useMonitorFilterRow', () => {
       first.result.current.setMulti('storageId', ['3']);
     });
     first.unmount();
-    const second = renderHook(() => useMonitorFilterRow(list), { wrapper: wrapper() });
+    const second = renderHook(() => useMonitorFilterRow(list, {}), { wrapper: wrapper() });
     expect(second.result.current.values).toMatchObject({
       name: 'front', source: '10\\.0', status: 'Connected', serverId: '2', storageId: '3',
     });
