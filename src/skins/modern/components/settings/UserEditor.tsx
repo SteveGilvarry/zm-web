@@ -10,9 +10,11 @@ import { Select } from '@/components/common/Select';
 import { TextField } from '@/components/common/TextField';
 import { fieldClasses, LABEL } from '@/components/common/styles';
 import { PermissionMatrix } from '@/features/users/PermissionMatrix';
+import { MobileAppQr } from '@/features/users/MobileAppQr';
 import { USERNAME_PATTERN_SOURCE, useAccountForm, type HomeView } from '@/features/users/useAccountForm';
 import { useGlobalPermissions } from '@/features/users/useGlobalPermissions';
 import { useRoleOptions } from '@/features/users/useRoleOptions';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import { useGroupPermissions } from '@/features/users/useGroupPermissions';
 import { useMonitorPermissions } from '@/features/users/useMonitorPermissions';
 import type { User } from '@/types';
@@ -120,6 +122,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
   } = useAccountForm(editing, onSaved, { selfEdit });
   const lockedCls = 'opacity-60 cursor-not-allowed';
   const adminOnly = t('Only an administrator can change this');
+  const useApi = useZmConfig('ZM_OPT_USE_API', true);
   const homeViewLabel: Record<HomeView, string> = {
     console: t('Console'),
     events: t('Events'),
@@ -255,6 +258,9 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           onEditRole={onEditRole}
         />
       )}
+
+      {/* user.php: the zmNg QR for a saved user with API access, self-edit included. */}
+      {editing && useApi && (editing.api_enabled ?? 1) === 1 && <MobileAppQr username={editing.username} />}
 
       {error && (
         <div className="rounded border border-danger/30 bg-danger/10 p-2 text-xs text-danger">
