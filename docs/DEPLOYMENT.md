@@ -23,7 +23,7 @@ the supported path, and B/C exist for people who already run a web server.
 
 ## Option A: the container
 
-The image builds the app with Node 22 and serves it from `nginx:1.27-alpine`.
+The image builds the app with Node 24 and serves it from `nginx:1.31-alpine`.
 The entrypoint renders the nginx config and `/config.js` from environment
 variables on every start, so one image serves every install.
 
@@ -94,7 +94,7 @@ so the Google STUN servers need no entry.
 
 ## Option B: bare nginx
 
-Build on any machine with Node 20+ and copy `dist/` to the server:
+Build on any machine with Node 22.12 or newer and copy `dist/` to the server:
 
 ```bash
 npm ci && npm run build

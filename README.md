@@ -183,7 +183,7 @@ flowchart TD
 
 ### Prerequisites
 
-- **Node.js 20+** (developed on Node 24) — install via [nvm](https://github.com/nvm-sh/nvm) or [the installer](https://nodejs.org)
+- **Node.js 22.12+** (developed and built on Node 24 LTS) — install via [nvm](https://github.com/nvm-sh/nvm) or [the installer](https://nodejs.org)
 - A running [`zm-api`](https://github.com/SteveGilvarry/zm-api) backend reachable from your machine
 
 ```bash
