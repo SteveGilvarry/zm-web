@@ -5,7 +5,7 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
@@ -13,7 +13,7 @@ import { renderWithProviders } from '@/test/render';
 import { ChangePasswordDialog } from './ChangePasswordDialog';
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => {
   server.resetHandlers();
   useToastStore.getState().clear();

@@ -15,7 +15,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import i18next from 'i18next';
 
 import { renderRoute } from '@/test/renderRoute';

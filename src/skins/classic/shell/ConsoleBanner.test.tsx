@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -23,7 +23,7 @@ const server = setupServer(
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', isAuthenticated: true, user: null });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); banner = ''; configCalls = 0; });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

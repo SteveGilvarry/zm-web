@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 
@@ -74,7 +74,7 @@ const server = setupServer(
   http.post('/api/v3/live/:id/start', () => HttpResponse.json({ session_id: 's', status: 'started' })),
 );
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   useAuthStore.setState({ accessToken: TOKEN, refreshToken: 'r', user: null, isAuthenticated: true });
 });

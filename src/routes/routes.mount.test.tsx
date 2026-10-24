@@ -13,7 +13,7 @@ import { screen, within } from '@testing-library/react';
 import { createMemoryHistory, createRouter } from '@tanstack/react-router';
 
 import { renderRoute } from '@/test/renderRoute';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { server, setupMockServer } from '@/test/msw/server';
 import { routeTree } from '@/routeTree.gen';
 

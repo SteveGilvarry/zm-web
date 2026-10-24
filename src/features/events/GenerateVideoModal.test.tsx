@@ -1,7 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { EventVideo } from '@/api/eventVideos';
 import { renderWithProviders } from '@/test/render';
@@ -16,7 +16,7 @@ beforeAll(() => {
     // No `perms` claim: every feature reads as Edit (pre-RBAC token).
     user: { user: 'admin', iat: 0, exp: 0 } as never, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

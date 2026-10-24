@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import {
   listControls, getControl, createControl, updateControl, deleteControl,
@@ -12,7 +12,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {

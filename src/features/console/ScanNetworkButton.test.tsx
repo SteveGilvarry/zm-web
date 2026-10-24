@@ -6,7 +6,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -15,7 +15,7 @@ import { ScanNetworkButton } from './ScanNetworkButton';
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'bypass' });
+  server.listen({ onUnhandledFrame: 'bypass' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

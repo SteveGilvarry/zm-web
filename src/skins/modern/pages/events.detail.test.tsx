@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -64,7 +64,7 @@ beforeAll(() => {
     // No `perms` claim → every feature reads as Edit (pre-RBAC token).
     user: { user: 'admin', iat: 0, exp: 0 } as never,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 beforeEach(() => {
   mockNavigate.mockReset();

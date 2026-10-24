@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { createRef } from 'react';
 import { act, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { TagChips, type TagChipsApi } from './TagChips';
@@ -15,7 +15,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 beforeEach(() => useEventPlaybackStore.setState({ tagRecency: [] }));
 afterEach(() => server.resetHandlers());

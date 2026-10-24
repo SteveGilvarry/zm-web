@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupMockServer, server } from '@/test/msw/server';
 import {
   exclusivePick, pickTags, resolveTagRule, tagPickFromOption, tagPicksToApi, tagPicksToTermValue,

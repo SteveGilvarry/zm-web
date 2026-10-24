@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
@@ -40,7 +40,7 @@ beforeAll(() => {
     user: { iat: 0, exp: 0, user: 'admin', uid: 7 } as never,
     isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 // The montage store is global and persisted, so every selection a test makes
 // would otherwise leak into the next one.

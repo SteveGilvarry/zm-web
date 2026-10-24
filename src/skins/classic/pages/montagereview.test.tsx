@@ -7,7 +7,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { pickChosen } from '@/test/chosen';
@@ -66,7 +66,7 @@ function signIn(user: UserClaims = perms()) {
 }
 
 const server = setupServer();
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 // Legacy opens fitted; the scaled sizing is what most of these assert, so
 // each test opts into fit explicitly.
 beforeEach(() => {

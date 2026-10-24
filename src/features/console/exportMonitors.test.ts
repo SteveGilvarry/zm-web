@@ -3,7 +3,7 @@
  * Sequence order, instance fields dropped, group names and zones attached.
  */
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { Monitor } from '@/types';
 import type { Zone } from '@/api/zones';
@@ -48,7 +48,7 @@ const server = setupServer(
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', isAuthenticated: true, user: null });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

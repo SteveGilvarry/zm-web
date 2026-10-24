@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -34,7 +34,7 @@ const paged = (items: unknown[]) =>
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 beforeEach(() => {
   server.use(

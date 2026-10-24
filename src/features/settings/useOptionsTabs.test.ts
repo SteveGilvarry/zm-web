@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { configListHandler } from '@/test/msw/handlers';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
@@ -24,7 +24,7 @@ const CATEGORIES = [
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); categoryRequests = 0; });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

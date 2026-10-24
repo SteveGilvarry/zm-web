@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -80,7 +80,7 @@ function stub(opts: { logs?: unknown[]; servers?: unknown[]; total?: number; las
   );
 }
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   useAuthStore.setState({
     accessToken: 't', refreshToken: 't', isAuthenticated: true,

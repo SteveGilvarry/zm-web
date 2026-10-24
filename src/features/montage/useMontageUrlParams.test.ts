@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
 import { renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
@@ -25,7 +25,7 @@ vi.mock('@tanstack/react-router', () => ({
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 beforeEach(() => {
   useMontageStore.setState({ tree: leaf(null), statusPosition: 'inside', showZones: false });

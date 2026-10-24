@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -43,7 +43,7 @@ beforeAll(() => {
     accessToken: 't', refreshToken: 't', isAuthenticated: true,
     user: { iat: 0, exp: 0, user: 'admin', perms: { system: 'View' } } as unknown as UserClaims,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); logTotals = {}; });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

@@ -1,4 +1,4 @@
-import { http, HttpResponse, type HttpHandler } from 'msw';
+import { http, HttpResponse, type HttpHandler } from 'msw/http';
 
 import { useAuthStore } from '@/stores/auth';
 import { PERM_FEATURES } from '@/features/auth/perms';

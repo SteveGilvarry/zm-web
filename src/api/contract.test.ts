@@ -21,7 +21,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 import { TABS, columnFields } from '@/features/monitors/editor/fields';
@@ -508,7 +508,7 @@ const server = setupServer(
 
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterAll(() => {
   server.close();

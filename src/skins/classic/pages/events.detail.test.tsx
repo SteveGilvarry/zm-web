@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -149,7 +149,7 @@ function signIn(perms: unknown = ALL_EDIT) {
   });
 }
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   signIn();
   useEventPlaybackStore.setState({ replayMode: 'none', scaleByMonitor: {}, showStats: false, rate: 1 });

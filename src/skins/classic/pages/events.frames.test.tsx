@@ -4,7 +4,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -42,7 +42,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => {
   server.resetHandlers();

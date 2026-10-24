@@ -4,7 +4,7 @@
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -44,7 +44,7 @@ const server = setupServer(
 
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'tok', refreshToken: 'r', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); mockSearch = {}; mockNavigate.mockReset(); });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

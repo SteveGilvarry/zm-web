@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 import { fetchLatestServerStats, latestPerServer, serverStatusTone, summarizeStat } from './serverStats';
@@ -37,7 +37,7 @@ describe('fetchLatestServerStats', () => {
   const server = setupServer();
   beforeAll(() => {
     useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-    server.listen({ onUnhandledRequest: 'error' });
+    server.listen({ onUnhandledFrame: 'error' });
   });
   afterEach(() => server.resetHandlers());
   afterAll(() => {

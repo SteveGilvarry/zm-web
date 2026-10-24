@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { http, HttpResponse, type JsonBodyType } from 'msw';
+import { http, HttpResponse } from 'msw/http';
+import type { JsonBodyType } from 'msw';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 import { listEncoderTemplates, getEncoderTemplate, createEncoderTemplate, updateEncoderTemplate, deleteEncoderTemplate } from './encoderTemplates';
@@ -18,7 +19,7 @@ function record(reply: JsonBodyType = {}, status = 200) {
 
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

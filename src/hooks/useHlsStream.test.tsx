@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeAll, afterEach, afterAll } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 
@@ -106,7 +106,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 
 afterEach(() => {

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { listStats, getAllStatsForEvent } from './stats';
 import { useAuthStore } from '@/stores/auth';
@@ -8,7 +8,7 @@ const server = setupServer();
 
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'test-token', refreshToken: 'test-refresh', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());

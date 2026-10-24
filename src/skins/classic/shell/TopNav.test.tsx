@@ -5,7 +5,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -70,7 +70,7 @@ const server = setupServer(
     });
   }),
 );
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 afterEach(() => {
   server.resetHandlers();
   pathname = '/';

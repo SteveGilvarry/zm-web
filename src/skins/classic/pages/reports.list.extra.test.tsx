@@ -7,7 +7,7 @@ import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } 
 import { toApiDateTime } from '@/features/reports/datetime';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -70,7 +70,7 @@ function stub(reports: unknown[] = REPORTS) {
   );
 }
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   // No `perms` claim → Edit everywhere (legacy backend), so the verbs show.
   useAuthStore.setState({

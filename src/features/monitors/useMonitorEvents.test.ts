@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
@@ -26,7 +26,7 @@ const server = setupServer(
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'tok', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); requests.length = 0; deleted.length = 0; useToastStore.getState().clear(); });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

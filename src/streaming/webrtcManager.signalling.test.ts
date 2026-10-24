@@ -9,7 +9,7 @@
  * end to end rather than being short-circuited by a stub.
  */
 import { describe, expect, it, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 
@@ -170,7 +170,7 @@ let nextMonitorId = 991_000;
 let MID: number;
 
 beforeAll(() => {
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 
 beforeEach(() => {

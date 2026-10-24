@@ -6,7 +6,7 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
@@ -20,7 +20,7 @@ beforeAll(() => {
     accessToken: 'test', refreshToken: 'test', isAuthenticated: true,
     user: { user: 'admin', iat: 0, exp: 4102444800 } as never,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {

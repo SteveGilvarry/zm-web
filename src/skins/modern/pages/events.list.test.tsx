@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import type { PaginatedResponse, ZmEvent } from '@/types';
 
 import { renderRoute } from '@/test/renderRoute';
