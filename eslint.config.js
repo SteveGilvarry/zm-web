@@ -25,7 +25,7 @@ export default defineConfig([
     // Playwright specs and config are Node, not React. The fixture API names
     // its injector `use`, which the React-Compiler hooks rules read as a hook
     // call in a non-component function; and fast-refresh has no meaning here.
-    files: ['e2e/**/*.{ts,tsx}', 'playwright.config.ts', 'vite.config.ts', 'vitest.config.ts', 'scripts/**/*.mjs'],
+    files: ['e2e/**/*.{ts,tsx}', 'playwright.config.ts', 'vite.config.ts', 'vitest.config.ts', 'i18next.config.ts', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: { ...globals.node },
     },

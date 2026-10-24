@@ -11,7 +11,7 @@
  * checks every key and every select option against the OpenAPI snapshot.
  *
  * Labels, help text and option labels are user-visible, so the tables are
- * built by `buildTabs(t)` with literal `t('…')` calls (the i18n extractor
+ * built by `buildTabs(t)` with literal `t()` calls with string keys (the i18n extractor
  * needs literal keys). Components use `useMonitorTabs()`; option `value`s
  * are wire values and never translated.
  */
