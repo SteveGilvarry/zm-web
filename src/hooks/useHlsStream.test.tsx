@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
+import { noteRateLimited, resetRateLimitGate } from '@/api/client';
 
 /**
  * useHlsStream wraps hls.js + the `/api/v3/live/{id}/start` lifecycle.
@@ -29,6 +30,7 @@ vi.mock('hls.js', () => {
     attachMedia: ReturnType<typeof vi.fn>;
     destroy: ReturnType<typeof vi.fn>;
     startLoad: ReturnType<typeof vi.fn>;
+    stopLoad: ReturnType<typeof vi.fn>;
     recoverMediaError: ReturnType<typeof vi.fn>;
     swapAudioCodec: ReturnType<typeof vi.fn>;
     on: (event: HlsEvent, cb: HlsHandler) => void;
@@ -42,6 +44,7 @@ vi.mock('hls.js', () => {
       attachMedia: vi.fn(),
       destroy: vi.fn(),
       startLoad: vi.fn(),
+      stopLoad: vi.fn(),
       recoverMediaError: vi.fn(),
       swapAudioCodec: vi.fn(),
       on: (event: HlsEvent, cb: HlsHandler) => { handlers.set(event, cb); },
@@ -56,11 +59,16 @@ vi.mock('hls.js', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (HlsCtor as any).isSupported = () => true;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (HlsCtor as any).DefaultConfig = { loader: class BaseLoader { load() {} abort() {} destroy() {} } };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (HlsCtor as any).Events = {
     MANIFEST_PARSED: 'hlsManifestParsed',
     ERROR: 'hlsError',
     FRAG_BUFFERED: 'hlsFragBuffered',
+    LEVEL_LOADED: 'hlsLevelLoaded',
   };
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  (HlsCtor as any).ErrorDetails = { LEVEL_LOAD_ERROR: 'levelLoadError' };
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   (HlsCtor as any).ErrorTypes = {
     NETWORK_ERROR: 'networkError',
@@ -86,6 +94,7 @@ const instances: Array<{
   attachMedia: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
   startLoad: ReturnType<typeof vi.fn>;
+  stopLoad: ReturnType<typeof vi.fn>;
   recoverMediaError: ReturnType<typeof vi.fn>;
   swapAudioCodec: ReturnType<typeof vi.fn>;
   on: (event: string, cb: (event: string, data: unknown) => void) => void;
@@ -240,7 +249,8 @@ describe('useHlsStream — fatal errors surface as "failed"', () => {
   it('a failed POST /start propagates to state="failed" with the error message', async () => {
     server.use(
       http.post('/api/v3/live/:id/start', () =>
-        HttpResponse.json({ error: 'X', message: 'start failed' }, { status: 500 }),
+        // 403 is not transient; a 500 or 429 would be retried instead.
+        HttpResponse.json({ error: 'X', message: 'start failed' }, { status: 403 }),
       ),
     );
 
@@ -363,5 +373,256 @@ describe('useHlsStream — fatal network errors back off and give up', () => {
     } finally {
       vi.useRealTimers();
     }
+  });
+});
+
+describe('useHlsStream — a reaped backend session is re-created on retry', () => {
+  // zm-api reaps a live session 90 s after its last playlist fetch. From then
+  // on live.m3u8 answers 404 until someone POSTs /start again, and hls.js
+  // never retries a 4xx by itself. So every network retry must re-create the
+  // session before it reloads, or a cell that lost its session polls a dead
+  // playlist until it is remounted.
+  it('POSTs /start again before startLoad() after a 404 on the playlist', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let starts = 0;
+      server.use(http.post('/api/v3/live/:id/start', () => {
+        starts += 1;
+        return HttpResponse.json({ session_id: 'sess-2' });
+      }));
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(7));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      const inst = instances[instances.length - 1];
+      act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+      expect(starts).toBe(1);
+
+      act(() => {
+        inst.fire('hlsError', { fatal: true, type: 'networkError', response: { code: 404 } });
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      await vi.waitFor(() => expect(inst.startLoad).toHaveBeenCalledTimes(1));
+      expect(starts).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('still reloads when the re-created session answers 409', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      let starts = 0;
+      server.use(http.post('/api/v3/live/:id/start', () => {
+        starts += 1;
+        if (starts === 1) return HttpResponse.json({ session_id: 'sess-1' });
+        return HttpResponse.json({ error: 'Live stream already exists' }, { status: 409 });
+      }));
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(7));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      const inst = instances[instances.length - 1];
+      act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+      act(() => {
+        inst.fire('hlsError', { fatal: true, type: 'networkError', response: { code: 404 } });
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      await vi.waitFor(() => expect(inst.startLoad).toHaveBeenCalledTimes(1));
+      expect(starts).toBe(2);
+      expect(result.current.state).toBe('connected');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('useHlsStream — a retry waits out the shared rate-limit gate', () => {
+  // The gated loader (src/streaming/gatedHlsLoader.ts) closes the API client's
+  // 429 gate when hls.js is told to slow down. The hook's own retry must wait
+  // for that gate too, not just its backoff, or it reloads into the penalty.
+  it('does not reload until Retry-After has passed', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      resetRateLimitGate();
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(8));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      const inst = instances[instances.length - 1];
+      act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+
+      noteRateLimited(6000);
+      act(() => {
+        inst.fire('hlsError', { fatal: true, type: 'networkError', response: { code: 429 } });
+      });
+      // The usual first backoff (1 s) must not reload yet.
+      await act(async () => { await vi.advanceTimersByTimeAsync(1500); });
+      expect(inst.startLoad).not.toHaveBeenCalled();
+      await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
+      await vi.waitFor(() => expect(inst.startLoad).toHaveBeenCalledTimes(1));
+    } finally {
+      resetRateLimitGate();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('useHlsStream — a 429 on the re-created session is one more retry, not the end', () => {
+  // The box's limiter can answer the retry's own POST /start with 429. That
+  // is the same transient the retry exists for, so it must count as another
+  // attempt with the usual backoff, not land the cell in `failed`.
+  it('schedules another attempt when POST /start answers 429', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      resetRateLimitGate();
+      let starts = 0;
+      server.use(http.post('/api/v3/live/:id/start', () => {
+        starts += 1;
+        if (starts === 2) return HttpResponse.json({ error: 'slow down' }, { status: 429, headers: { 'retry-after': '1' } });
+        return HttpResponse.json({ session_id: 'sess' });
+      }));
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(9));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      const inst = instances[instances.length - 1];
+      act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+
+      act(() => {
+        inst.fire('hlsError', { fatal: true, type: 'networkError', response: { code: 404 } });
+      });
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      await vi.waitFor(() => expect(starts).toBe(2));
+      // The 429 did not fail the cell; it is attempt 2 of 5.
+      await vi.waitFor(() => expect(result.current.error).toContain('(2/5)'));
+      expect(result.current.state).toBe('connected');
+      expect(inst.startLoad).not.toHaveBeenCalled();
+      // Attempt 2 backs off 2 s (and the gate's 1 s is inside that), then starts again.
+      await act(async () => { await vi.advanceTimersByTimeAsync(2100); });
+      await vi.waitFor(() => expect(starts).toBe(3));
+      await vi.waitFor(() => expect(inst.startLoad).toHaveBeenCalledTimes(1));
+    } finally {
+      resetRateLimitGate();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('useHlsStream — a 429 on the first POST /start is retried, not fatal', () => {
+  // On a busy box the very first /start can be the request that trips the
+  // limiter. That is the same transient the network retry handles, so the
+  // hook must back off and start again rather than show the Retry button.
+  it('backs off and POSTs /start again', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      resetRateLimitGate();
+      let starts = 0;
+      server.use(http.post('/api/v3/live/:id/start', () => {
+        starts += 1;
+        if (starts === 1) return HttpResponse.json({ error: 'slow down' }, { status: 429, headers: { 'retry-after': '1' } });
+        return HttpResponse.json({ session_id: 'sess' });
+      }));
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(10));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(starts).toBe(1));
+      await vi.waitFor(() => expect(result.current.error).toContain('(1/5)'));
+      expect(result.current.state).toBe('connecting');
+      await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+      await vi.waitFor(() => expect(starts).toBe(2));
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      expect(result.current.state).toBe('connecting');
+    } finally {
+      resetRateLimitGate();
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('useHlsStream — the retry caption clears when the network is back', () => {
+  // FRAG_BUFFERED is the signal for "really playing again", but a camera
+  // with a long keyframe interval produces one fragment every 30 s, which
+  // left "retrying" on screen for half a minute of good playback. A playlist
+  // that loads is enough to say the network error is over.
+  it('clears the error on LEVEL_LOADED but keeps the attempt count', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(11));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      const inst = instances[instances.length - 1];
+      act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+      act(() => { inst.fire('hlsError', { fatal: true, type: 'networkError', response: { code: 404 } }); });
+      expect(result.current.error).toContain('(1/5)');
+      await act(async () => { await vi.advanceTimersByTimeAsync(1000); });
+      await vi.waitFor(() => expect(inst.startLoad).toHaveBeenCalledTimes(1));
+
+      act(() => { inst.fire('hlsLevelLoaded', {}); });
+      expect(result.current.error).toBeNull();
+      // Not a full reset: the next failure is attempt 2, until a fragment buffers.
+      act(() => { inst.fire('hlsError', { fatal: true, type: 'networkError', response: { code: 404 } }); });
+      expect(result.current.error).toContain('(2/5)');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('useHlsStream — a 404 or 429 playlist goes to the retry path at once', () => {
+  // hls.js keeps reloading a single-variant live playlist on any status
+  // until its own retry count runs out, because there is no other level to
+  // switch to. A 404 means zm-api reaped the session and a 429 means stop
+  // asking, so neither is worth that minute of polling: stop loading and
+  // let the hook's retry re-create the session behind the gate.
+  it.each([404, 429])('treats a non-fatal level load error with %i as a network retry', async (code) => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      resetRateLimitGate();
+      let starts = 0;
+      server.use(http.post('/api/v3/live/:id/start', () => { starts += 1; return HttpResponse.json({ session_id: 's' }); }));
+      const before = instances.length;
+      const { result } = renderHook(() => useHlsStream(12));
+      attachVideo(result.current.videoRef);
+      act(() => { result.current.start(); });
+      await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+      const inst = instances[instances.length - 1];
+      act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+
+      act(() => {
+        inst.fire('hlsError', { fatal: false, type: 'networkError', details: 'levelLoadError', response: { code } });
+      });
+      expect(inst.stopLoad).toHaveBeenCalledTimes(1);
+      expect(result.current.error).toContain('(1/5)');
+      expect(result.current.state).toBe('connected');
+      await act(async () => { await vi.advanceTimersByTimeAsync(1100); });
+      await vi.waitFor(() => expect(starts).toBe(2));
+      await vi.waitFor(() => expect(inst.startLoad).toHaveBeenCalledTimes(1));
+    } finally {
+      resetRateLimitGate();
+      vi.useRealTimers();
+    }
+  });
+
+  it('leaves other non-fatal errors to hls.js', async () => {
+    const before = instances.length;
+    const { result } = renderHook(() => useHlsStream(13));
+    attachVideo(result.current.videoRef);
+    act(() => { result.current.start(); });
+    await vi.waitFor(() => expect(instances.length).toBeGreaterThan(before));
+    const inst = instances[instances.length - 1];
+    act(() => { inst.fire('hlsManifestParsed', { levels: [] }); });
+    act(() => {
+      inst.fire('hlsError', { fatal: false, type: 'networkError', details: 'levelEmptyError', response: { code: 200 } });
+    });
+    expect(inst.stopLoad).not.toHaveBeenCalled();
+    expect(result.current.error).toBeNull();
   });
 });

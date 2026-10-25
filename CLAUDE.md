@@ -196,6 +196,8 @@ Detailed per-area evidence: `legacy-requirements/review-2026-08-21/` (local, git
 - Backend notes:
   - `/api/v3/daemons` returns empty array (no ZM daemons configured on test system)
   - Storage stats not available from `/api/v3/system/status`
+  - zm-api reaps a live session 90 s after its last HLS playlist/segment fetch (`[streaming.hls] idle_timeout_seconds`), reader included; only HLS fetches count, not WebRTC viewers. After that `live.m3u8` answers 404 and `POST /start` answers 200 again. `useHlsStream` re-POSTs `/start` on every network retry for this reason.
+  - The box's limiter (1 req/s sustained, burst 120, zm-api's shipped prod values) cannot sustain a four-cell HLS montage (about 4 req/s of playlists and segments); expect 429s within a minute. hls.js fetches go through `src/streaming/gatedHlsLoader.ts` so they wait out the client's 429 gate instead of extending the penalty.
 
 ## Related Projects
 
