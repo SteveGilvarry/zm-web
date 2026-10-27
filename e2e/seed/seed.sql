@@ -95,10 +95,11 @@ VALUES
 -- PTZ control profile: a copy of the stock Ffmpeg/Pelco-D row (positional
 -- VALUES, same column order as zm_create.sql.in) with our own id and name.
 -- Positional, so every column ZoneMinder adds to Controls has to be added
--- here too — the four audio columns at the end are the most recent.
+-- here too, and every column it drops removed: Type went in 1.39.39 (ZoneMinder
+-- 1043273, 2026-10-10), the four audio columns at the end are the newest.
 -- ---------------------------------------------------------------------------
 INSERT INTO Controls VALUES
-  (9001,'e2e-PTZ Dome (Pelco-D)','Ffmpeg','PelcoD',1,1,0,0,1,1,0,0,1,NULL,NULL,NULL,NULL,1,0,3,1,1,0,0,1,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,0,0,0,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,1,20,1,1,1,1,0,0,0,1,1,NULL,NULL,NULL,NULL,1,0,63,1,254,1,NULL,NULL,NULL,NULL,1,0,63,1,254,0,0,0,NULL,NULL,0);
+  (9001,'e2e-PTZ Dome (Pelco-D)','PelcoD',1,1,0,0,1,1,0,0,1,NULL,NULL,NULL,NULL,1,0,3,1,1,0,0,1,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,0,0,0,NULL,NULL,NULL,NULL,0,NULL,NULL,1,1,0,1,0,NULL,NULL,NULL,NULL,0,NULL,NULL,0,0,1,20,1,1,1,1,0,0,0,1,1,NULL,NULL,NULL,NULL,1,0,63,1,254,1,NULL,NULL,NULL,NULL,1,0,63,1,254,0,0,0,NULL,NULL,0);
 
 -- ---------------------------------------------------------------------------
 -- Monitors. Four Ffmpeg cameras; 9002 is ROTATE_90 and 9003 is ROTATE_270 for
