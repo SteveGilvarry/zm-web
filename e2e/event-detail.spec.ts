@@ -61,8 +61,9 @@ test.describe('Event detail', () => {
       // and says "No more events" when pressed (event.js streamNext).
       // Then step back and forward again.
       // Modern's Prev is named "Prev, Previous event" (its visible text leads,
-      // WCAG 2.5.3); classic's icon button is still just "Previous event".
-      const prev = page.getByRole('button', { name: /^(prev, )?previous event$/i });
+      // WCAG 2.5.3; Chrome puts a space before the comma, jsdom does not);
+      // classic's icon button is still just "Previous event".
+      const prev = page.getByRole('button', { name: /^(prev ?, )?previous event$/i });
       const next = page.getByRole('button', { name: /^next event$/i });
       if (skin === 'modern') {
         await expect(next).toBeDisabled();
