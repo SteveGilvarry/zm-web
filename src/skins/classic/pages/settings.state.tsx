@@ -107,7 +107,8 @@ export default function ClassicSettingsStatePage() {
                                   type="button"
                                   onClick={() => rs.togglePreview(s.id)}
                                   aria-expanded={expanded}
-                                  aria-label={t('Show definition of {{name}}', { name: s.name })}
+                                  // Visible text first, so the name contains it (WCAG 2.5.3).
+                                  aria-label={`${t('{{count}} monitor', { count: parsed.length })}, ${t('Show definition of {{name}}', { name: s.name })}`}
                                   className={classicLink}
                                 >
                                   {t('{{count}} monitor', { count: parsed.length })} {expanded ? '▾' : '▸'}

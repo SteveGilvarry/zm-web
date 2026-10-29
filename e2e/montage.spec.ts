@@ -54,7 +54,9 @@ test.describe('Montage', () => {
   }) => {
     await gotoSkin(page, '/montage', 'classic');
 
-    await page.getByLabel(/^groupid/i).selectOption({ label: 'e2e-Front' });
+    // Legacy's monitor filter row is a Chosen box, not a bare <select>.
+    await page.getByRole('combobox', { name: 'GroupId', exact: true }).click();
+    await page.getByRole('option', { name: 'e2e-Front', exact: true }).click();
     await expect(page.getByTestId(`montage-classic-cell-${SEED.monitors.frontDoor}`)).toBeVisible();
     await expect(page.getByTestId(`montage-classic-cell-${SEED.monitors.garage}`)).toHaveCount(0);
   });

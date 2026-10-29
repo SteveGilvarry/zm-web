@@ -11,9 +11,27 @@
   "classic/events.detail": [
     "color-contrast"
   ],
+  "classic/events.frame": [
+    "color-contrast"
+  ],
+  "classic/events.frames": [
+    "color-contrast"
+  ],
   "classic/events.list": [
     "color-contrast",
     "link-name"
+  ],
+  "classic/events.stats": [
+    "color-contrast"
+  ],
+  "classic/filters": [
+    "color-contrast"
+  ],
+  "classic/groups": [
+    "color-contrast"
+  ],
+  "classic/logs": [
+    "color-contrast"
   ],
   "classic/monitors.list": [
     "color-contrast"
@@ -31,11 +49,65 @@
   "classic/montagereview": [
     "color-contrast"
   ],
+  "classic/reports.detail": [
+    "color-contrast"
+  ],
+  "classic/reports.list": [
+    "color-contrast"
+  ],
+  "classic/settings.ai": [
+    "color-contrast"
+  ],
+  "classic/settings.apiTokens": [
+    "color-contrast"
+  ],
+  "classic/settings.encoderTemplates": [
+    "color-contrast"
+  ],
+  "classic/settings.menu": [
+    "color-contrast"
+  ],
+  "classic/settings.options": [
+    "color-contrast"
+  ],
+  "classic/settings.privacy": [
+    "color-contrast"
+  ],
+  "classic/settings.ptzControls": [
+    "color-contrast"
+  ],
+  "classic/settings.roles": [
+    "color-contrast"
+  ],
+  "classic/settings.roles.edit": [
+    "color-contrast"
+  ],
+  "classic/settings.servers": [
+    "color-contrast"
+  ],
+  "classic/settings.state": [
+    "color-contrast"
+  ],
+  "classic/settings.storage": [
+    "color-contrast"
+  ],
+  "classic/settings.users": [
+    "color-contrast"
+  ],
+  "classic/timeline": [
+    "color-contrast"
+  ],
   "modern/events.detail": [
     "button-name",
     "label"
   ],
   "modern/montage": [
     "aria-prohibited-attr"
+  ],
+  "modern/montagereview": [
+    "scrollable-region-focusable"
+  ],
+  "modern/settings.privacy": [
+    "link-in-text-block"
   ]
 }

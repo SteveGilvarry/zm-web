@@ -249,9 +249,8 @@ export function Chip({ label, emptyLabel, options, selected, onChange }: ChipPro
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={count > 0
-          ? t('{{label}} filter, {{count}} selected', { label, count })
-          : t('{{label}} filter', { label })}
+        // No aria-label: the name is the content (label, then the summary or
+        // the count's own label), so it contains the visible text (WCAG 2.5.3).
         className={clsx(
           'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border transition-colors',
           // The accent marks a chip that is *selected*; an untouched chip is
@@ -261,7 +260,9 @@ export function Chip({ label, emptyLabel, options, selected, onChange }: ChipPro
             : 'border-border-subtle bg-surface text-fg-muted hover:border-border hover:text-fg',
         )}
       >
-        <span className="font-medium">{label}</span>
+        {/* The spaces are text nodes so the name reads "Groups All groups",
+            not "GroupsAll groups"; flex layout does not draw them. */}
+        <span className="font-medium">{label}</span>{' '}
         {count > 0 && (
           <span
             className="px-1 min-w-[1rem] text-center text-xs font-mono tabular-nums"

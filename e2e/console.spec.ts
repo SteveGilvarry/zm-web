@@ -58,18 +58,19 @@ test.describe('Console', () => {
   });
 
   // Both skins filter by group; e2e-Front holds only the front door. Modern
-  // uses a listbox popover, classic the legacy <select>.
+  // uses a listbox popover, classic the legacy Chosen box (ClassicChosen).
   const pickFrontGroup = {
     modern: async (page: Page) => {
       // The chips live behind the status line's Filters disclosure.
       await page.getByRole('button', { name: /^Filters/ }).click();
-      await page.getByRole('button', { name: 'Groups filter' }).click();
+      await page.getByRole('button', { name: 'Groups All groups' }).click();
       // The popover is a listbox of checkboxes, one per group.
       await page.getByRole('checkbox', { name: 'e2e-Front', exact: true }).check();
       await page.keyboard.press('Escape');
     },
     classic: async (page: Page) => {
-      await page.getByLabel(/^groupid/i).selectOption({ label: 'e2e-Front' });
+      await page.getByRole('combobox', { name: 'GroupId', exact: true }).click();
+      await page.getByRole('option', { name: 'e2e-Front', exact: true }).click();
     },
   } satisfies Record<Skin, (page: Page) => Promise<void>>;
 

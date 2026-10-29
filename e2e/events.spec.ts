@@ -18,7 +18,7 @@ const UI = {
     // Modern's Monitor filter is a chip popover of checkboxes, not a
     // <select>; legacy's multi-select became one control per skin.
     pickMonitor: async (p: Page, name: string) => {
-      await p.getByRole('button', { name: 'Monitor filter' }).click();
+      await p.getByRole('button', { name: 'Monitor All Monitors' }).click();
       await p.getByRole('checkbox', { name, exact: true }).check();
       await p.keyboard.press('Escape');
     },

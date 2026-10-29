@@ -72,13 +72,18 @@ describe('Sidebar — Log state', () => {
 });
 
 describe('Sidebar — account sheet', () => {
+  it('names the account button after the visible username, so the name contains what is seen', () => {
+    renderWithProviders(<Sidebar />);
+    expect(screen.getByRole('button', { name: 'Account admin' })).toHaveTextContent('admin');
+  });
+
   it('opens from the avatar and lists the other logged-in sessions for a System viewer', async () => {
     server.use(http.get('/api/v3/sessions', () => HttpResponse.json({
       items: [{ id: 'a', access: Math.floor(Date.now() / 1000) - 30, data: 'remoteAddr|s:12:"192.168.0.10";username|s:3:"bob";user|a:1:{s:2:"Id";i:7;}' }],
       total: 1, per_page: 100, current_page: 1, last_page: 1,
     })));
     renderWithProviders(<Sidebar />);
-    await userEvent.click(screen.getByRole('button', { name: 'Account' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Account admin' }));
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('Signed in as admin')).toBeInTheDocument();
     expect(await within(dialog).findByRole('link', { name: 'bob' })).toHaveAttribute('href', '/settings/users');

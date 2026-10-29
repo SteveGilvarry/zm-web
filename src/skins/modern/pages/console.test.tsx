@@ -252,9 +252,13 @@ describe('Console — thumbnail protocol toggle', () => {
     await renderConsole();
 
     const group = screen.getByRole('group', { name: 'Thumbnail mode' });
-    const rtc = within(group).getByRole('button', { name: 'WebRTC live thumbnails' });
-    const hls = within(group).getByRole('button', { name: 'HLS live thumbnails' });
-    const off = within(group).getByRole('button', { name: 'Static thumbnails (no streaming)' });
+    // The visible text is the name (WCAG 2.5.3); the long form is the description.
+    const rtc = within(group).getByRole('button', { name: 'RTC' });
+    const hls = within(group).getByRole('button', { name: 'HLS' });
+    const off = within(group).getByRole('button', { name: 'Off' });
+    expect(rtc).toHaveAccessibleDescription('WebRTC live thumbnails');
+    expect(hls).toHaveAccessibleDescription('HLS live thumbnails');
+    expect(off).toHaveAccessibleDescription('Static thumbnails (no streaming)');
 
     expect(rtc).toHaveAttribute('aria-pressed', 'true');
     expect(hls).toHaveAttribute('aria-pressed', 'false');
@@ -281,7 +285,7 @@ describe('Console — monitor filter bar', () => {
 
     // Both seeded monitors are capturing, so filtering to "disabled" empties
     // the wall without emptying the underlying list.
-    await user.click(screen.getByRole('button', { name: 'Status filter' }));
+    await user.click(screen.getByRole('button', { name: 'Status Any' }));
     await user.click(
       within(screen.getByRole('listbox', { name: 'Status options' }))
         .getByRole('checkbox', { name: 'Disabled' }),
@@ -313,7 +317,7 @@ describe('Console — monitor filter bar', () => {
     expect(within(wall()).queryByRole('link', { name: /Front Door/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Filters/ }));
-    expect(screen.getByRole('button', { name: 'Monitor filter, 1 selected' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Monitor 1 active' })).toBeInTheDocument();
   });
 });
 
@@ -324,7 +328,7 @@ describe('Console — live session badges', () => {
     await renderConsole();
 
     // Static thumbnails is the branch that paints the live mark.
-    await user.click(screen.getByRole('button', { name: 'Static thumbnails (no streaming)' }));
+    await user.click(screen.getByRole('button', { name: 'Off' }));
 
     await waitFor(() => expect(within(wall()).getByLabelText('Live')).toBeInTheDocument());
   });

@@ -144,7 +144,8 @@ export function ConsoleStatusLine({
                 key={String(mode)}
                 type="button"
                 aria-pressed={protocol === mode}
-                aria-label={label}
+                // The short visible text is the name; the title describes it.
+                // An aria-label hiding the visible text fails WCAG 2.5.3.
                 title={label}
                 onClick={() => onProtocol(mode)}
                 className={clsx(

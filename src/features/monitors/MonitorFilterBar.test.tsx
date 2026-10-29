@@ -174,17 +174,25 @@ describe('MonitorFilterBar — component', () => {
     );
   });
 
+  it("a chip's accessible name is its visible text: the label and the summary, then the count", async () => {
+    renderWithProviders(<MonitorFilterBar monitors={MONS} onChange={() => {}} />);
+    // WCAG 2.5.3: what is read must contain what is seen. 'Groups filter'
+    // hid the summary; the name is now the content.
+    expect(screen.getByRole('button', { name: 'Groups All groups' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /groups filter/i })).not.toBeInTheDocument();
+  });
+
   it('renders all seven chip groups', async () => {
     renderWithProviders(
       <MonitorFilterBar monitors={MONS} onChange={() => {}} />,
     );
-    expect(screen.getByRole('button', { name: /groups filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /capturing filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /analysing filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /recording filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /status filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /source filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /monitor filter/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Groups All groups' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Capturing Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Analysing Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Recording Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Status Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Source Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Monitor Any' })).toBeInTheDocument();
   });
 
   it('selecting a Capturing option narrows the filtered set', async () => {
@@ -198,7 +206,7 @@ describe('MonitorFilterBar — component', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     onChange.mockClear();
 
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     const list = await screen.findByRole('listbox', { name: /capturing options/i });
     await user.click(within(list).getByLabelText('None'));
 
@@ -227,7 +235,7 @@ describe('MonitorFilterBar — component', () => {
     // Nothing asks for deleted rows until the chip does.
     expect(hits).toEqual([]);
 
-    await user.click(screen.getByRole('button', { name: /status filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Status Any' }));
     const list = await screen.findByRole('listbox', { name: /status options/i });
     await user.click(within(list).getByLabelText('Deleted'));
 
@@ -247,7 +255,7 @@ describe('MonitorFilterBar — component', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     onChange.mockClear();
 
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     const list = await screen.findByRole('listbox', { name: /capturing options/i });
     await user.click(within(list).getByLabelText('Always'));
     await user.click(within(list).getByLabelText('Ondemand'));
@@ -268,7 +276,7 @@ describe('MonitorFilterBar — component', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalled());
 
     // Capturing: Always
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
         .getByLabelText('Always'),
@@ -277,7 +285,7 @@ describe('MonitorFilterBar — component', () => {
     await user.click(document.body);
 
     // Source: Ffmpeg
-    await user.click(screen.getByRole('button', { name: /source filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Source Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /source options/i }))
         .getByLabelText('Ffmpeg'),
@@ -296,7 +304,7 @@ describe('MonitorFilterBar — component', () => {
       <MonitorFilterBar monitors={MONS} onChange={() => {}} />,
     );
 
-    const capturingBtn = screen.getByRole('button', { name: /capturing filter/i });
+    const capturingBtn = screen.getByRole('button', { name: 'Capturing Any' });
     await user.click(capturingBtn);
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
@@ -317,7 +325,7 @@ describe('MonitorFilterBar — component', () => {
     );
 
     // Apply a capturing filter first.
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
         .getByLabelText('Always'),
@@ -350,7 +358,7 @@ describe('MonitorFilterBar — component', () => {
       expect(onChange).toHaveBeenCalled();
     });
 
-    await user.click(screen.getByRole('button', { name: /groups filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Groups All groups' }));
     const list = await screen.findByRole('listbox', { name: /groups options/i });
     // "Outdoor" has monitors 1 + 2.
     await user.click(within(list).getByLabelText('Outdoor'));
@@ -367,7 +375,7 @@ describe('MonitorFilterBar — component', () => {
     const { unmount } = renderWithProviders(
       <MonitorFilterBar monitors={MONS} onChange={onChange1} />,
     );
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
         .getByLabelText('Always'),

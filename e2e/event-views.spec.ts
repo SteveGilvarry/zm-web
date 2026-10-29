@@ -30,7 +30,7 @@ test.describe('Event stats and frame views', () => {
     test(`${skin}: the frame viewer shows the frame and walks First/Prev/Next/Last @route:events.frame`, async ({
       loggedInPage: page,
     }) => {
-      const image = page.waitForRequest((r) => /\/api\/v3\/frames\/\d+\/image/.test(r.url()), {
+      const image = page.waitForRequest((r) => /\/api\/v3\/events\/\d+\/frames\/\d+\/image/.test(r.url()), {
         timeout: 15_000,
       });
       await gotoSkin(page, `/events/${EVENT}/frames/1`, skin);

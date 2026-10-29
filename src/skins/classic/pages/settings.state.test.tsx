@@ -143,7 +143,8 @@ describe('ClassicSettingsStatePage', () => {
     const user = userEvent.setup();
     await mount();
 
-    const toggle = await screen.findByRole('button', { name: 'Show definition of Away' });
+    // The name starts with the visible monitor count (WCAG 2.5.3).
+    const toggle = await screen.findByRole('button', { name: '2 monitors, Show definition of Away' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');

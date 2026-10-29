@@ -89,8 +89,6 @@
   "{{count}}m ago_other": "{{count}}m ago",
   "{{hours}}h ago · {{count}} event_one": "{{hours}}h ago · {{count}} event",
   "{{hours}}h ago · {{count}} event_other": "{{hours}}h ago · {{count}} events",
-  "{{label}} filter, {{count}} selected_one": "{{label}} filter, {{count}} selected",
-  "{{label}} filter, {{count}} selected_other": "{{label}} filter, {{count}} selected",
   "{{label}}: {{count}}_one": "{{label}}: {{count}}",
   "{{label}}: {{count}}_other": "{{label}}: {{count}}",
   "24-hour event activity, peak {{count}} events per hour_one": "24-hour event activity, peak {{count}} event per hour",

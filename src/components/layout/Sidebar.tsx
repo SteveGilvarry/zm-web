@@ -272,9 +272,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
           <button
             type="button"
             onClick={() => setAccountOpen(true)}
-            aria-label={t('Account')}
             className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-start hover:bg-surface-2"
           >
+            {/* The name must contain the visible text (WCAG 2.5.3), so the
+                label is a hidden prefix to the username, not an aria-label. */}
+            <span className="sr-only">{t('Account')}</span>{' '}
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20">
               <span className="text-sm font-medium text-accent" aria-hidden>
                 {username?.charAt(0).toUpperCase() || '?'}

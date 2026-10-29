@@ -424,7 +424,7 @@ describe('MontageReviewPage (modern) — event filters', () => {
     await user.selectOptions(screen.getByLabelText('Archive Status'), 'unarchived');
     await waitFor(() => expect(seen.some((q) => q.get('archived') === 'false')).toBe(true));
 
-    await user.click(screen.getByRole('button', { name: 'Notes filter' }));
+    await user.click(screen.getByRole('button', { name: 'Notes Any' }));
     await user.click(screen.getByRole('checkbox', { name: 'Motion' }));
     await user.click(screen.getByRole('checkbox', { name: 'Person' }));
     await waitFor(() => {
@@ -447,7 +447,7 @@ describe('MontageReviewPage (modern) — event filters', () => {
     await findChips();
 
     await user.click(screen.getByRole('button', { name: 'Filters' }));
-    await user.click(screen.getByRole('button', { name: 'Tags filter' }));
+    await user.click(screen.getByRole('button', { name: 'Tags All Tags' }));
     const list = screen.getByRole('listbox', { name: 'Tags options' });
     const labels = within(list).getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'));
     expect(labels.slice(0, 2)).toEqual(['No Tag', 'Any Tag']);

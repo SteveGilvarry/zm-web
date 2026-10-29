@@ -51,7 +51,7 @@ describe('Run State — saved states', () => {
     renderRoute('/settings/state');
     await runStatePage();
 
-    await user.click(await screen.findByRole('button', { name: /Show definition of away/i }));
+    await user.click(await screen.findByRole('button', { name: /^\d+ monitors?, Show definition of away$/i }));
 
     const table = await screen.findByRole('table', { name: /Definition of away/i });
     expect(within(table).getByText('Front Door')).toBeInTheDocument();
