@@ -60,7 +60,9 @@ test.describe('Event detail', () => {
       // the walk. Modern disables it; classic keeps it live as legacy does
       // and says "No more events" when pressed (event.js streamNext).
       // Then step back and forward again.
-      const prev = page.getByRole('button', { name: /previous event$/i });
+      // Modern's Prev is named "Prev, Previous event" (its visible text leads,
+      // WCAG 2.5.3); classic's icon button is still just "Previous event".
+      const prev = page.getByRole('button', { name: /^(prev, )?previous event$/i });
       const next = page.getByRole('button', { name: /^next event$/i });
       if (skin === 'modern') {
         await expect(next).toBeDisabled();
