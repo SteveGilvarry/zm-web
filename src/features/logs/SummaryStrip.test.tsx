@@ -23,9 +23,9 @@ describe('SummaryStrip', () => {
         {...noopHandlers}
       />,
     );
-    expect(screen.getByRole('button', { name: /errors: 3/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /warnings: 7/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /^info: 42/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /errors 3/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /warnings 7/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^info 42/i })).toBeInTheDocument();
   });
 
   it('marks the active card via aria-pressed', () => {
@@ -41,9 +41,9 @@ describe('SummaryStrip', () => {
       />,
     );
     // The cards set the API's `min_level` — "this severity or worse".
-    expect(screen.getByRole('button', { name: /errors: 1/i }))
+    expect(screen.getByRole('button', { name: /errors 1/i }))
       .toHaveAttribute('aria-pressed', 'true');
-    expect(screen.getByRole('button', { name: /warnings: 0/i }))
+    expect(screen.getByRole('button', { name: /warnings 0/i }))
       .toHaveAttribute('aria-pressed', 'false');
   });
 
@@ -65,11 +65,11 @@ describe('SummaryStrip', () => {
         onPickInfo={onPickInfo}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /errors: 1/i }));
+    await user.click(screen.getByRole('button', { name: /errors 1/i }));
     expect(onPickErrors).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: /warnings: 1/i }));
+    await user.click(screen.getByRole('button', { name: /warnings 1/i }));
     expect(onPickWarnings).toHaveBeenCalledTimes(1);
-    await user.click(screen.getByRole('button', { name: /^info: 1/i }));
+    await user.click(screen.getByRole('button', { name: /^info 1/i }));
     expect(onPickInfo).toHaveBeenCalledTimes(1);
   });
 
@@ -119,7 +119,7 @@ describe('SummaryStrip', () => {
         onPickDebug={() => {}}
       />,
     );
-    expect(screen.getByRole('button', { name: /debug: 5/i })).toHaveAttribute('aria-pressed', 'true');
+    expect(screen.getByRole('button', { name: /debug 5/i })).toHaveAttribute('aria-pressed', 'true');
     // Every filter is server-side, so the readout is always the real range.
     expect(screen.getByText(/displaying: 51–57/i)).toBeInTheDocument();
   });

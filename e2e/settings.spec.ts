@@ -240,7 +240,7 @@ test.describe('Settings — run state', () => {
       loggedInPage: page,
     }) => {
       await gotoSkin(page, '/settings/state', skin);
-      await page.getByRole('button', { name: /^show definition of e2e-night$/i }).click();
+      await page.getByRole('button', { name: /, show definition of e2e-night$/i }).click();
       // Definition is "id:Capturing:Analysing:Recording" per monitor.
       await expect(page.getByText(String(SEED.monitors.frontDoor)).first()).toBeVisible();
     });

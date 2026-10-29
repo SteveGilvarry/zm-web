@@ -117,7 +117,8 @@ export function CycleLayout({
                       type="button"
                       onClick={() => cycle.setInterval(s)}
                       aria-pressed={intervalS === s}
-                      aria-label={t('{{count}} second', { count: s })}
+                      // "5s" is the name (WCAG 2.5.3); the title spells it out.
+                      title={t('{{count}} second', { count: s })}
                       className={clsx(
                         'px-1.5 py-0.5 text-xs font-mono tabular-nums rounded transition-colors',
                         intervalS === s ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',

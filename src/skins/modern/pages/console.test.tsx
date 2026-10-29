@@ -80,7 +80,7 @@ function rail(): HTMLElement {
 }
 
 /** Opens one of the status line's disclosures and returns its panel. */
-async function disclose(button: string): Promise<HTMLElement> {
+async function disclose(button: string | RegExp): Promise<HTMLElement> {
   const user = userEvent.setup();
   const line = await screen.findByRole('region', { name: 'Console status' });
   await user.click(within(line).getByRole('button', { name: button }));
@@ -125,7 +125,7 @@ describe('Console — renders with data', () => {
     await renderConsole();
 
     expect(screen.queryByText('zmc -m 1')).toBeNull();
-    const line = await disclose('System detail');
+    const line = await disclose(/, System detail$/);
 
     await waitFor(() => expect(within(line).getByText('v1.37.64')).toBeInTheDocument());
     expect(within(line).getByText('zmc -m 1')).toBeInTheDocument();
@@ -246,6 +246,15 @@ describe('Console — permissions', () => {
   });
 });
 
+describe('Console — status line names', () => {
+  it('names the system disclosure after the visible run state, then its purpose', async () => {
+    await renderConsole();
+    const line = await screen.findByRole('region', { name: 'Console status' });
+    // WCAG 2.5.3: the name must contain the visible text, "Running" here.
+    expect(within(line).getByRole('button', { name: /System detail$/ })).toHaveAccessibleName(/^(Running|Stopped), System detail$/);
+  });
+});
+
 describe('Console — thumbnail protocol toggle', () => {
   it('starts on WebRTC and switches to HLS then static', async () => {
     const user = userEvent.setup();
@@ -360,7 +369,7 @@ describe('Console — live session badges', () => {
       'Default: 79% (158.00GB of 200.00GB 60.00GB used by events)\nArchive: 96% (96.00GB of 100.00GB 10.00GB used by events)',
     );
 
-    const line = await disclose('System detail');
+    const line = await disclose(/, System detail$/);
     await waitFor(() => expect(within(line).getByText('Archive')).toBeInTheDocument());
     expect(within(line).getByText('Default')).toBeInTheDocument();
     expect(within(line).queryByText('Retired')).toBeNull();

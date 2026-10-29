@@ -174,12 +174,14 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 type="button"
                 onClick={s.navPrev}
                 disabled={prevEventId == null}
-                aria-label={t('Previous event')}
                 aria-keyshortcuts="ArrowLeft"
                 className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeftIcon size={14} className="rtl:-scale-x-100" aria-hidden />
                 {t('Prev')}
+                {/* "Prev" is not a word of "Previous event", so the name
+                    carries both (WCAG 2.5.3). "Next" already is. */}
+                <span className="sr-only">, {t('Previous event')}</span>
               </button>
               <button
                 type="button"

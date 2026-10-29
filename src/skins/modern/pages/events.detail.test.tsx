@@ -260,6 +260,8 @@ describe('EventDetailPage — prev/next navigation', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /previous event/i })).toBeDisabled();
+    // WCAG 2.5.3: the name leads with the visible "Prev".
+    expect(screen.getByRole('button', { name: /previous event/i })).toHaveAccessibleName(/^Prev, /);
     });
     expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled();
   });

@@ -121,8 +121,6 @@
   "{{label}} options": "",
   "{{label}}, sorted ascending": "",
   "{{label}}, sorted descending": "",
-  "{{label}}: {{count}}_one": "",
-  "{{label}}: {{count}}_other": "",
   "{{label}}: {{level}}": "",
   "{{m}}m": "",
   "{{matched}} of the last {{window}} match (client preview)": "",

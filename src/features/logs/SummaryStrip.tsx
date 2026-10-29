@@ -95,7 +95,6 @@ function SummaryCard({
   onClick: () => void;
   tone: 'danger' | 'warn' | 'info' | 'muted';
 }) {
-  const { t } = useTranslation();
   // Colour marks a state worth acting on — errors and warnings that actually
   // happened. Zero of either, and the info / debug tallies, stay neutral; the
   // accent is left to say which threshold is currently applied.
@@ -106,7 +105,7 @@ function SummaryCard({
   return (
     <button
       onClick={onClick}
-      aria-label={t('{{label}}: {{count}}', { label, count })}
+      // Named by its content, "Errors 1": the visible text is the name (WCAG 2.5.3).
       aria-pressed={active}
       className={clsx(
         'flex items-baseline gap-2 px-2 py-1 rounded border transition-colors',
@@ -115,7 +114,7 @@ function SummaryCard({
           : 'border-border-subtle bg-surface hover:border-border',
       )}
     >
-      <span className="text-xs text-fg-dim">{label}</span>
+      <span className="text-xs text-fg-dim">{label}</span>{' '}
       <span className={clsx('font-mono tabular-nums text-sm font-medium', countTone)}>{count}</span>
     </button>
   );

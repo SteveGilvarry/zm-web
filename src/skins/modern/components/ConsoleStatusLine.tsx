@@ -83,7 +83,8 @@ export function ConsoleStatusLine({
           type="button"
           onClick={() => setOpen(open === 'system' ? null : 'system')}
           aria-expanded={open === 'system'}
-          aria-label={t('System detail')}
+          // The visible run state leads the name (WCAG 2.5.3).
+          aria-label={`${running === null ? '…' : running ? t('Running') : t('Stopped')}, ${t('System detail')}`}
           className="flex items-center gap-2 text-sm shrink-0 rounded hover:text-fg transition-colors"
         >
           <span

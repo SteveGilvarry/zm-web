@@ -163,14 +163,15 @@ describe('Cycle — transport', () => {
     await onStage();
 
     const dial = screen.getByRole('group', { name: 'Interval' });
-    expect(within(dial).getByRole('button', { name: '10 seconds' }))
+    expect(within(dial).getByRole('button', { name: '10s' })).toHaveAccessibleDescription('10 seconds');
+    expect(within(dial).getByRole('button', { name: '10s' }))
       .toHaveAttribute('aria-pressed', 'true');
 
-    await user.click(within(dial).getByRole('button', { name: '30 seconds' }));
+    await user.click(within(dial).getByRole('button', { name: '30s' }));
 
-    expect(within(dial).getByRole('button', { name: '30 seconds' }))
+    expect(within(dial).getByRole('button', { name: '30s' }))
       .toHaveAttribute('aria-pressed', 'true');
-    expect(within(dial).getByRole('button', { name: '10 seconds' }))
+    expect(within(dial).getByRole('button', { name: '10s' }))
       .toHaveAttribute('aria-pressed', 'false');
     expect(countdown()).toBe('30s');
   });

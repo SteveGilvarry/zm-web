@@ -27,7 +27,7 @@ test.describe('Console', () => {
 
     // Daemon detail is one click away rather than taking a third of the page.
     await expect(page.getByText('Daemons', { exact: true })).toHaveCount(0);
-    await status.getByRole('button', { name: 'System detail' }).click();
+    await status.getByRole('button', { name: /, System detail$/ }).click();
     await expect(page.getByText('Daemons', { exact: true })).toBeVisible();
   });
 

@@ -89,9 +89,9 @@ describe('LogsPage (modern) — rendering', () => {
     await findTable();
 
     const strip = screen.getByRole('region', { name: 'Logs summary' });
-    expect(within(strip).getByRole('button', { name: 'Errors: 1' })).toBeInTheDocument();
-    expect(within(strip).getByRole('button', { name: 'Warnings: 0' })).toBeInTheDocument();
-    expect(within(strip).getByRole('button', { name: 'Info: 1' })).toBeInTheDocument();
+    expect(within(strip).getByRole('button', { name: 'Errors 1' })).toBeInTheDocument();
+    expect(within(strip).getByRole('button', { name: 'Warnings 0' })).toBeInTheDocument();
+    expect(within(strip).getByRole('button', { name: 'Info 1' })).toBeInTheDocument();
     // Available is the whole table (`unfiltered_total`), here the same two rows.
     expect(within(strip).getByText('Total: 2 · Available: 2 · Displaying: 1–2')).toBeInTheDocument();
   });
@@ -242,7 +242,7 @@ describe('LogsPage (modern) — level chips', () => {
     await findTable();
 
     const strip = screen.getByRole('region', { name: 'Logs summary' });
-    const errors = within(strip).getByRole('button', { name: 'Errors: 1' });
+    const errors = within(strip).getByRole('button', { name: 'Errors 1' });
     expect(errors).toHaveAttribute('aria-pressed', 'true');
 
     await user.click(errors);
@@ -258,7 +258,7 @@ describe('LogsPage (modern) — level chips', () => {
     await findTable();
 
     const strip = screen.getByRole('region', { name: 'Logs summary' });
-    await user.click(within(strip).getByRole('button', { name: 'Warnings: 0' }));
+    await user.click(within(strip).getByRole('button', { name: 'Warnings 0' }));
 
     await waitFor(() => {
       expect(router.state.location.search).toMatchObject({ min_level: 'warning' });
