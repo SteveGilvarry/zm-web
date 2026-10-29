@@ -17,10 +17,11 @@ import { listServers } from '@/api/servers';
 import { listControlPresets } from '@/api/controlPresets';
 import { getMonitors } from '@/api/monitors';
 import { listGroups } from '@/api/groups';
+import { getUsers } from '@/api/users';
 import { useToast } from '@/components/common/toastStore';
 import { buttonClasses } from '@/components/common/styles';
 import type { FieldValue } from './fields';
-import { parseIdList, serializeIdList } from './editorState';
+import { isPlainIdList, parseIdList, serializeIdList } from './editorState';
 
 interface LookupProps {
   value: FieldValue;
@@ -180,7 +181,10 @@ export function ModelSelect({ manufacturerId, ...props }: LookupProps & { manufa
   );
 }
 
-export function StorageSelect({ value, onChange, className }: LookupProps) {
+export function StorageSelect({ value, onChange, className, zeroOption }: LookupProps & {
+  /** Label of an option that writes 0 (legacy "Unspecified"). */
+  zeroOption?: string;
+}) {
   const { t } = useTranslation();
   const q = useQuery({
     queryKey: ['storage', { page_size: 200 }],
@@ -196,7 +200,8 @@ export function StorageSelect({ value, onChange, className }: LookupProps) {
         disabled={q.isLoading}
         className={clsx(className, 'cursor-pointer')}
       >
-        {items.length === 0 && <option value="">{t('Default')}</option>}
+        {zeroOption && <option value="0">{zeroOption}</option>}
+        {items.length === 0 && !zeroOption && <option value="">{t('Default')}</option>}
         {items.map((s) => (
           <option key={s.id} value={s.id}>{s.name}{s.path ? ` — ${s.path}` : ''}</option>
         ))}
@@ -264,7 +269,14 @@ export function ReturnLocationSelect({ monitorId, value, onChange, className }: 
   );
 }
 
-/** Checkbox list of every other monitor; stored as a comma-separated id string. */
+/**
+ * Legacy's `LinkedMonitors` is a text input holding the expression
+ * (`monitor.php:1160`), with `MonitorLinkExpression.js` drawing it as
+ * selects underneath. Here the text input is the source of truth and the
+ * checkbox list is the helper for the common case, a plain id list; an
+ * expression with `&`, `|`, parentheses or zones is left exactly as typed,
+ * since a save that replaced it with a bare list would lose it.
+ */
 export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & { selfId: number }) {
   const { t } = useTranslation();
   const q = useQuery({
@@ -272,6 +284,7 @@ export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & 
     queryFn: () => getMonitors({ page: 1, page_size: 500 }),
     staleTime: 60_000,
   });
+  const plain = isPlainIdList(value);
   const selected = new Set(parseIdList(value));
   const others = (q.data?.items ?? []).filter((m) => m.id !== selfId);
   const toggle = (id: number) => {
@@ -279,9 +292,30 @@ export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & 
     if (next.has(id)) next.delete(id); else next.add(id);
     onChange(serializeIdList([...next]));
   };
-  if (q.isLoading) return <p className="text-xs text-fg-dim">{t('Loading…')}</p>;
-  if (others.length === 0) return <p className="text-xs text-fg-dim">{t('No other monitors to link.')}</p>;
+  const expression = (
+    <input
+      type="text"
+      aria-label={t('Linked monitors expression')}
+      value={value == null ? '' : String(value)}
+      onChange={(e) => onChange(e.target.value.trim() === '' ? null : e.target.value)}
+      className="w-full rounded border border-border bg-surface px-2 py-1 font-mono text-sm text-fg"
+    />
+  );
+  if (q.isLoading) return <div className="space-y-1">{expression}<p className="text-xs text-fg-dim">{t('Loading…')}</p></div>;
+  if (others.length === 0) return <div className="space-y-1">{expression}<p className="text-xs text-fg-dim">{t('No other monitors to link.')}</p></div>;
+  if (!plain) {
+    return (
+      <div className="space-y-1">
+        {expression}
+        <p className="text-xs text-fg-dim">
+          {t('An expression (& | parentheses :zone) is kept as typed; the checkboxes only edit a plain list of ids.')}
+        </p>
+      </div>
+    );
+  }
   return (
+    <div className="space-y-1">
+    {expression}
     <div className="flex flex-wrap gap-2">
       {others.map((m) => (
         <label
@@ -303,6 +337,7 @@ export function LinkedMonitorsSelect({ selfId, value, onChange }: LookupProps & 
           {m.name}
         </label>
       ))}
+    </div>
     </div>
   );
 }
@@ -345,6 +380,41 @@ export function GroupsMembership({ value, onChange }: { value: number[]; onChang
           {g.name}
         </label>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Legacy "User for RTSP Server Auth": None or one of the users, stored as
+ * the user id. Legacy lists only the users who can view the monitor; the
+ * API does not say who can, so every user is offered.
+ */
+export function UserSelect({ value, onChange, className }: LookupProps) {
+  const { t } = useTranslation();
+  const q = useQuery({
+    queryKey: ['users', { page_size: 500 }],
+    queryFn: () => getUsers({ page: 1, page_size: 500 }),
+    staleTime: 5 * 60_000,
+  });
+  const users = q.data?.items ?? [];
+  const current = value == null ? '' : String(value);
+  return (
+    <div>
+      <select
+        value={current}
+        onChange={(e) => onChange(e.target.value === '' ? null : Number(e.target.value))}
+        disabled={q.isLoading}
+        className={clsx(className, 'cursor-pointer')}
+      >
+        <option value="">{t('None')}</option>
+        {users.map((u) => (
+          <option key={u.id} value={u.id}>{u.username}</option>
+        ))}
+        {current !== '' && !users.some((u) => String(u.id) === current) && (
+          <option value={current}>{current}</option>
+        )}
+      </select>
+      {q.isError && <p className="text-xs text-danger mt-1">{t('Could not load users.')}</p>}
     </div>
   );
 }

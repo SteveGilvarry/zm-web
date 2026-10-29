@@ -22,6 +22,11 @@ describe('mapLegacyUrl', () => {
     expect(map('?view=monitor&mid=4')).toEqual({ to: '/monitors/4', search: { edit: true } });
     expect(map('?view=monitor')).toEqual({ to: '/monitors', search: { new: true } });
     expect(map('?view=zones&mid=4')).toEqual({ to: '/monitors/4/zones', search: {} });
+    // One zone opens in the editor; zid=0 is legacy's Add New Zone.
+    expect(map('?view=zone&mid=4&zid=9')).toEqual({ to: '/monitors/4/zones', search: { zid: 9 } });
+    expect(map('?view=zone&mid=4&zid=0')).toEqual({ to: '/monitors/4/zones', search: { zid: 'new' } });
+    expect(map('?view=zone&mid=4')).toEqual({ to: '/monitors/4/zones', search: {} });
+    expect(map('?view=zone')).toEqual({ to: '/monitors', search: {} });
     expect(map('?view=watch&mid=abc')).toEqual({ to: '/monitors', search: {} });
   });
 
@@ -51,6 +56,12 @@ describe('mapLegacyUrl', () => {
   it('maps montage, montagereview, cycle', () => {
     expect(map('?view=montage')).toEqual({ to: '/montage', search: {} });
     expect(map('?view=montage&group=2')).toEqual({ to: '/montage', search: { group: 2 } });
+    // montage.php's own request params: layout, zones, caption, kiosk header.
+    expect(map('?view=montage&zmMontageLayout=7&showZones=1&monitorStatusPositionSelected=showOnHover&header=0')).toEqual({
+      to: '/montage',
+      search: { layout: 7, show_zones: 1, status_position: 'showOnHover', header: '0' },
+    });
+    expect(map('?view=montage&showZones=0')).toEqual({ to: '/montage', search: { show_zones: 0 } });
     expect(
       map('?view=montagereview&MonitorId=5&minTime=2026-08-01T00:00:00&maxTime=2026-08-02T00:00:00'),
     ).toEqual({
@@ -61,15 +72,36 @@ describe('mapLegacyUrl', () => {
     expect(map('?view=cycle')).toEqual({ to: '/cycle', search: {} });
   });
 
+  it('maps the timeline with its filter and window', () => {
+    expect(map('?view=timeline')).toEqual({ to: '/timeline', search: {} });
+    expect(
+      map('?view=timeline&filter[Query][terms][0][attr]=MonitorId&filter[Query][terms][0][op]=%3D&filter[Query][terms][0][val]=3'
+        + '&midTime=2026-08-21%2014:00:00&range=7200'),
+    ).toEqual({
+      to: '/timeline',
+      search: { monitor_id: 3, mid_time: '2026-08-21 14:00:00', range: 7200 },
+    });
+    expect(map('?view=timeline&minTime=2026-08-21%2000:00:00&maxTime=2026-08-21%2023:59:59')).toEqual({
+      to: '/timeline',
+      search: { min_time: '2026-08-21 00:00:00', max_time: '2026-08-21 23:59:59' },
+    });
+  });
+
   it('maps options tabs to settings sub-pages', () => {
     expect(map('?view=options')).toEqual({ to: '/settings', search: {} });
     expect(map('?view=options&tab=users')).toEqual({ to: '/settings/users', search: {} });
     expect(map('?view=options&tab=servers')).toEqual({ to: '/settings/servers', search: {} });
     expect(map('?view=options&tab=storage')).toEqual({ to: '/settings/storage', search: {} });
     expect(map('?view=options&tab=control')).toEqual({ to: '/settings/ptz-controls', search: {} });
-    expect(map('?view=options&tab=privacy')).toEqual({ to: '/settings', search: { tab: 'privacy' } });
+    expect(map('?view=options&tab=privacy')).toEqual({ to: '/settings/privacy', search: {} });
+    expect(map('?view=options&tab=roles')).toEqual({ to: '/settings/roles', search: {} });
+    expect(map('?view=options&tab=encoderTemplates')).toEqual({ to: '/settings/encoder-templates', search: {} });
+    expect(map('?view=options&tab=menu')).toEqual({ to: '/settings/menu', search: {} });
+    expect(map('?view=options&tab=mqtt')).toEqual({ to: '/settings', search: { tab: 'mqtt' } });
     expect(map('?view=state')).toEqual({ to: '/settings/state', search: {} });
     expect(map('?view=user&uid=7')).toEqual({ to: '/settings/users', search: { uid: 7 } });
+    expect(map('?view=role&rid=3')).toEqual({ to: '/settings/roles/3', search: {} });
+    expect(map('?view=role')).toEqual({ to: '/settings/roles', search: {} });
     expect(map('?view=controlcaps')).toEqual({ to: '/settings/ptz-controls', search: {} });
   });
 

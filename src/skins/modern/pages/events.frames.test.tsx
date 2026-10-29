@@ -9,11 +9,11 @@ import { describe, expect, it } from 'vitest';
 import { configListHandler } from '@/test/msw/handlers';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
-import { makeEvent, makeFrame, paginated } from '@/test/fixtures';
+import { makeEvent, makeFrame, makeZone, paginated } from '@/test/fixtures';
 
 setupMockServer();
 
@@ -33,9 +33,9 @@ describe('EventFramesPage — modern skin', () => {
   it('renders the legacy column set and one row per frame', async () => {
     db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
     db.frames = [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
-      makeFrame({ id: 3, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
     ];
 
     renderRoute('/events/101/frames');
@@ -67,7 +67,7 @@ describe('EventFramesPage — modern skin', () => {
     // One thumbnail per row, keyed off the `Frames` row id like legacy.
     const thumbs = table.getAllByTestId(/^frame-thumb-/);
     expect(thumbs).toHaveLength(3);
-    expect(thumbs[0].getAttribute('src')).toMatch(/^\/api\/v3\/frames\/\d+\/image\?token=/);
+    expect(thumbs[0].getAttribute('src')).toMatch(/^\/api\/v3\/events\/101\/frames\/\d+\/image\?token=/);
   });
 
   it('asks the API only for this event, one page at a time', async () => {
@@ -213,9 +213,9 @@ describe('EventFramesPage — client-side table controls', () => {
   function seed() {
     db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
     db.frames = [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, score: 0, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
-      makeFrame({ id: 3, event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+      makeFrame({ event_id: 101, frame_id: 1, score: 0, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
     ];
   }
 
@@ -260,5 +260,91 @@ describe('EventFramesPage — client-side table controls', () => {
 
     await waitFor(() => expect(router.state.location.search).toEqual({ page_size: 0 }));
     await waitFor(() => expect(urls.at(-1)!.searchParams.get('page_size')).toBe('500'));
+  });
+});
+
+describe('EventFramesPage — modern stats and frame links', () => {
+  const stat = {
+    id: 9, monitor_id: 1, zone_id: 3, event_id: 101, frame_id: 2,
+    pixel_diff: 25, alarm_pixels: 15360, filter_pixels: 10000, blob_pixels: 9999, blobs: 1,
+    min_blob_size: 7680, max_blob_size: 7680, min_x: 12, max_x: 300, min_y: 34, max_y: 400, score: 88,
+  };
+
+  function seed() {
+    db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101', width: 640, height: 480, frames: 3 })];
+    db.frames = [
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+      makeFrame({ event_id: 101, frame_id: 3, score: 22, delta: '2.25' }),
+    ];
+    db.zones = [makeZone({ id: 3, monitor_id: 1, name: 'Driveway', area: 5000, coords: '0,0 50,0 50,100 0,100' })];
+    server.use(http.get('/api/v3/stats', () => HttpResponse.json(paginated([stat]))));
+  }
+
+  it('opens a row\'s stats from its chevron', async () => {
+    seed();
+    const user = userEvent.setup();
+    renderRoute('/events/101/frames');
+    await screen.findByTestId('frame-row-2');
+
+    await user.click(screen.getByRole('button', { name: 'Show stats for frame 2' }));
+    const row = await screen.findByTestId('stats-row-3');
+    expect(within(row).getByText('Driveway')).toBeVisible();
+    expect(within(row).getByText('15360 (10%)')).toBeVisible();
+    expect(within(row).getByText('7680 (5%)')).toBeVisible();
+  });
+
+  it('goes to the stats page from Score', async () => {
+    seed();
+    const user = userEvent.setup();
+    const { router } = renderRoute('/events/101/frames');
+    await user.click(await screen.findByTestId('frame-score-2'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/events/101/stats'));
+    expect(router.state.location.search).toEqual({ fid: 2 });
+    expect(await screen.findByTestId('stats-row-3')).toBeVisible();
+  });
+
+  it('goes to the frame viewer from a row', async () => {
+    seed();
+    const user = userEvent.setup();
+    const { router } = renderRoute('/events/101/frames');
+    await user.click(within(await screen.findByTestId('frame-row-3')).getByText('2.25'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/events/101/frames/3'));
+    expect(await screen.findByTestId('frame-image')).toHaveAttribute('src', expect.stringMatching(/^\/api\/v3\/events\/101\/frames\/3\/image/));
+  });
+});
+
+describe('EventFramesPage — modern card view and paging', () => {
+  it('shows each frame as a tile that opens the frame', async () => {
+    db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
+    db.frames = [
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.50' }),
+    ];
+    const user = userEvent.setup();
+    const { router } = renderRoute('/events/101/frames');
+    await screen.findByTestId('frame-row-2');
+
+    await user.click(screen.getByRole('button', { name: 'Show card view' }));
+    const card = await screen.findByTestId('frame-card-2');
+    expect(card).toHaveTextContent('#2');
+    expect(card).toHaveTextContent('score 88');
+    await user.click(card);
+    await waitFor(() => expect(router.state.location.pathname).toBe('/events/101/frames/2'));
+  });
+
+  it('jumps to a page typed into the pager', async () => {
+    db.events = [makeEvent({ id: 101, monitor_id: 1, name: 'Event-101' })];
+    db.frames = Array.from({ length: 30 }, (_, i) =>
+      makeFrame({ event_id: 101, frame_id: i + 1, delta: String(i) }));
+    const user = userEvent.setup();
+    const { router } = renderRoute('/events/101/frames?page_size=10');
+    await screen.findByTestId('frame-row-1');
+
+    const jump = screen.getByLabelText('Go to page');
+    await user.clear(jump);
+    await user.type(jump, '3{Enter}');
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ page: 3 }));
+    expect(await screen.findByTestId('frame-row-21')).toBeVisible();
   });
 });

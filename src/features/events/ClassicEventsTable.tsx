@@ -19,6 +19,7 @@ import { EventThumbnail } from './EventThumbnail';
 import { formatDurationHms, sumEventDurations, sumEventDiskSpace } from './duration';
 import { useEventsColumnLabels } from './columnLabels';
 import { COLUMN_SORT_FIELD } from './sortColumns';
+import { maxScoreFrameParams } from './maxScoreLink';
 import type { EventNavSearch } from './eventsSearch';
 
 interface ClassicEventsTableProps {
@@ -58,6 +59,15 @@ interface ClassicEventsTableProps {
    * page walk this list in this order (legacy `filterQuery` + `sortQuery`).
    */
   detailSearch?: EventNavSearch;
+  /** The totals row under Duration and DiskSpace (the watch table has none). */
+  showFooter?: boolean;
+  /** watch.js: rows still named "New Event" get the `recent` highlight. */
+  highlightNew?: boolean;
+  /**
+   * Footer sums when the caller has them for the whole result (legacy
+   * `footerData`, ajax/events.php:403); without them the footer sums the rows.
+   */
+  totals?: { duration: number; disk: number };
 }
 
 const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
@@ -76,7 +86,7 @@ const NUMERIC: ReadonlySet<EventsColumnKey> = new Set([
 export function ClassicEventsTable({
   events, monitorLookup, storageName, selectedIds, onToggleSelected, onSetSelected, token,
   sortField, sortDir = 'asc', onSort, showThumbs = false, thumbWidth = 48, columns, thumbsAtEnd = false, onDeleteRow,
-  detailSearch,
+  detailSearch, showFooter = true, highlightNew = false, totals,
 }: ClassicEventsTableProps) {
   const { t } = useTranslation();
   const labels = useEventsColumnLabels();
@@ -97,8 +107,8 @@ export function ClassicEventsTable({
     else ids.filter((id) => allSelected || !selectedIds.has(id)).forEach(onToggleSelected);
   };
 
-  const totalDurationSec = sumEventDurations(events);
-  const totalDiskSpace = sumEventDiskSpace(events);
+  const totalDurationSec = totals?.duration ?? sumEventDurations(events);
+  const totalDiskSpace = totals?.disk ?? sumEventDiskSpace(events);
 
   const cell = (e: ZmEvent, key: EventsColumnKey) => {
     const eventLink = { to: '/events/$eventId' as const, params: { eventId: String(e.id) }, search: detailSearch };
@@ -153,11 +163,13 @@ export function ClassicEventsTable({
       case 'avg_score':
         return e.avg_score ?? 0;
       case 'max_score':
-        return <Link {...framesLink} className={classicLink}>{e.max_score ?? 0}</Link>;
+        // Legacy links Max to the max-score frame (events.js:108).
+        return <Link to="/events/$eventId/frames/$frameId" params={maxScoreFrameParams(e)} className={classicLink}>{e.max_score ?? 0}</Link>;
       case 'storage':
-        return storageName ? storageName(e.storage_id) : String(e.storage_id);
+        // Legacy links Storage and DiskSpace to the event too (events.js:110-111).
+        return <Link {...eventLink} className={classicLink}>{storageName ? storageName(e.storage_id) : String(e.storage_id)}</Link>;
       case 'disk_space':
-        return e.disk_space != null ? humanFilesize(e.disk_space) : '—';
+        return e.disk_space != null ? <Link {...eventLink} className={classicLink}>{humanFilesize(e.disk_space)}</Link> : '—';
       case 'notes':
         return <EventNotesCell event={e} />;
     }
@@ -234,7 +246,9 @@ export function ClassicEventsTable({
               if ((ev.target as HTMLElement).closest('a, button, input, select, textarea, label')) return;
               onToggleSelected(e.id);
             }}
-            className={selectedIds.has(e.id) ? '!bg-[#dbeafe]' : undefined}
+            className={selectedIds.has(e.id)
+              ? '!bg-[#dbeafe]'
+              : highlightNew && e.name === 'New Event' ? 'recent !bg-[#B0E0E6]' : undefined}
           >
             {onDeleteRow ? (
               <ClassicTd center>
@@ -268,7 +282,7 @@ export function ClassicEventsTable({
           </tr>
         ))}
       </ClassicTbody>
-      {events.length > 0 && (visible.includes('duration') || visible.includes('disk_space')) && (
+      {showFooter && events.length > 0 && (visible.includes('duration') || visible.includes('disk_space')) && (
         <tfoot className="bg-[#f8f9fa] text-zinc-800" data-testid="events-table-footer">
           <tr>
             <ClassicTd />

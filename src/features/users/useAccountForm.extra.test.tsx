@@ -5,7 +5,7 @@
  */
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import type { ReactNode } from 'react';
@@ -19,7 +19,7 @@ let requests = 0;
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => {
   server.resetHandlers();
@@ -115,5 +115,38 @@ describe('useAccountForm — client-side validation', () => {
     act(() => result.current.submit());
     await waitFor(() => expect(requests).toBe(1));
     expect(result.current.error).toBeNull();
+  });
+});
+
+describe('useAccountForm — ZM_PASSWORD_MIN_LENGTH', () => {
+  it('refuses a password shorter than the configured minimum, and says how long it must be', async () => {
+    server.use(
+      http.get('/api/v3/configs', () => HttpResponse.json({
+        items: [{ id: 1, name: 'ZM_PASSWORD_MIN_LENGTH', value: '8', type: 'integer', category: 'auth', readonly: 0, private: 0, system: 0 }],
+        total: 1, per_page: 1000, current_page: 1, last_page: 1,
+      })),
+      http.post('/api/v3/users', () => {
+        requests += 1;
+        return HttpResponse.json({ ...existing, id: 9, username: 'newbie' });
+      }),
+    );
+    const { result } = renderHook(() => useAccountForm(null, noop), { wrapper });
+    await waitFor(() => expect(result.current.passwordMinLength).toBe(8));
+
+    act(() => {
+      result.current.setField('username', 'newbie');
+      result.current.setField('password', 'short');
+      result.current.setField('confirmPassword', 'short');
+    });
+    act(() => result.current.submit());
+    expect(result.current.error).toBe('Password must be at least 8 characters.');
+    expect(requests).toBe(0);
+
+    act(() => {
+      result.current.setField('password', 'long enough');
+      result.current.setField('confirmPassword', 'long enough');
+    });
+    act(() => result.current.submit());
+    await waitFor(() => expect(requests).toBe(1));
   });
 });

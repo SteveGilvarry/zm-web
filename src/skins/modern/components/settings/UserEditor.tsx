@@ -10,8 +10,11 @@ import { Select } from '@/components/common/Select';
 import { TextField } from '@/components/common/TextField';
 import { fieldClasses, LABEL } from '@/components/common/styles';
 import { PermissionMatrix } from '@/features/users/PermissionMatrix';
+import { MobileAppQr } from '@/features/users/MobileAppQr';
 import { USERNAME_PATTERN_SOURCE, useAccountForm, type HomeView } from '@/features/users/useAccountForm';
 import { useGlobalPermissions } from '@/features/users/useGlobalPermissions';
+import { useRoleOptions } from '@/features/users/useRoleOptions';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import { useGroupPermissions } from '@/features/users/useGroupPermissions';
 import { useMonitorPermissions } from '@/features/users/useMonitorPermissions';
 import type { User } from '@/types';
@@ -34,13 +37,15 @@ interface UserEditorProps {
   /** Present when the row being edited is the signed-in operator's own:
    *  closes this dialog and opens the self-service password form. */
   onChangePassword?: () => void;
+  /** Opens the role editor for the selected role (legacy's Edit link beside Role). */
+  onEditRole?: (roleId: number) => void;
 }
 
 /**
  * Create / edit dialog. Mount it only while open, keyed on the user being
  * edited, so the tab resets to Account whenever it opens or switches user.
  */
-export function UserEditor({ editing, onClose, mode = 'admin', onChangePassword }: UserEditorProps) {
+export function UserEditor({ editing, onClose, mode = 'admin', onChangePassword, onEditRole }: UserEditorProps) {
   const { t } = useTranslation();
   const queryClient = useQueryClient();
   const [tab, setTab] = useState<EditorTab>('account');
@@ -81,6 +86,7 @@ export function UserEditor({ editing, onClose, mode = 'admin', onChangePassword 
               editing={editing}
               selfEdit={selfEdit}
               onChangePassword={onChangePassword}
+              onEditRole={onEditRole}
               onSaved={() => {
                 queryClient.invalidateQueries({ queryKey: ['users'] });
                 onClose();
@@ -105,16 +111,18 @@ interface AccountFormProps {
   onCancel: () => void;
   selfEdit?: boolean;
   onChangePassword?: () => void;
+  onEditRole?: (roleId: number) => void;
 }
 
-function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePassword }: AccountFormProps) {
+function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePassword, onEditRole }: AccountFormProps) {
   const { t } = useTranslation();
   const {
     formData, setField, toggleEnabled, toggleApiEnabled, error, usernameError, isSaving, submitDisabled, submit,
-    canChange, languages, homeViews,
+    canChange, languages, homeViews, passwordMinLength,
   } = useAccountForm(editing, onSaved, { selfEdit });
   const lockedCls = 'opacity-60 cursor-not-allowed';
   const adminOnly = t('Only an administrator can change this');
+  const useApi = useZmConfig('ZM_OPT_USE_API', true);
   const homeViewLabel: Record<HomeView, string> = {
     console: t('Console'),
     events: t('Events'),
@@ -173,6 +181,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
             value={formData.password}
             onChange={(e) => setField('password', e.target.value)}
             autoComplete="new-password"
+            minLength={passwordMinLength}
             placeholder={editing ? t('Leave blank to keep') : t('Password')}
           />
           <TextField
@@ -181,6 +190,7 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
             value={formData.confirmPassword}
             onChange={(e) => setField('confirmPassword', e.target.value)}
             autoComplete="new-password"
+            minLength={passwordMinLength}
             placeholder={t('Confirm password')}
           />
         </div>
@@ -239,6 +249,19 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
         )}
       </div>
 
+      {!selfEdit && (
+        <RoleField
+          value={formData.roleId}
+          onChange={(v) => setField('roleId', v)}
+          // Legacy links the stored role, not an unsaved pick.
+          editRoleId={editing?.role_id ?? null}
+          onEditRole={onEditRole}
+        />
+      )}
+
+      {/* user.php: the zmNg QR for a saved user with API access, self-edit included. */}
+      {editing && useApi && (editing.api_enabled ?? 1) === 1 && <MobileAppQr username={editing.username} />}
+
       {error && (
         <div className="rounded border border-danger/30 bg-danger/10 p-2 text-xs text-danger">
           {error}
@@ -258,6 +281,24 @@ function AccountForm({ editing, onSaved, onCancel, selfEdit = false, onChangePas
           {editing ? t('Save Changes') : t('Create User')}
         </Button>
       </div>
+    </div>
+  );
+}
+
+/** `user[RoleId]` (`user.php:154-160`): admins only, so self-edit never asks for the role list. */
+function RoleField({
+  value, onChange, editRoleId, onEditRole,
+}: { value: string; onChange: (v: string) => void; editRoleId: number | null; onEditRole?: (roleId: number) => void }) {
+  const { t } = useTranslation();
+  const options = useRoleOptions(value);
+  return (
+    <div className="flex items-end gap-2">
+      <Select label={t('Role')} value={value} onChange={(e) => onChange(e.target.value)} className="flex-1">
+        {options.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+      </Select>
+      {editRoleId != null && onEditRole && (
+        <Button variant="ghost" onClick={() => onEditRole(editRoleId)}>{t('Edit role')}</Button>
+      )}
     </div>
   );
 }

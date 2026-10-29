@@ -17,6 +17,14 @@ describe('useReviewClock — initial state', () => {
     expect(result.current.rangeStart).toEqual(START);
     expect(result.current.rangeEnd).toEqual(END);
   });
+
+  it('autoplay starts in motion at the stored speed, and stays still at speed 0', () => {
+    const { result } = renderHook(() => useReviewClock(START, END, { autoplay: true }));
+    expect(result.current.isPlaying).toBe(true);
+    act(() => useMontageStore.getState().setReviewSpeed(0));
+    const paused = renderHook(() => useReviewClock(START, END, { autoplay: true }));
+    expect(paused.result.current.isPlaying).toBe(false);
+  });
 });
 
 describe('useReviewClock — play / pause / togglePlay', () => {

@@ -7,7 +7,7 @@ import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest
 import type { ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -45,7 +45,7 @@ function signIn(user: unknown = ADMIN) {
 }
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => {
   server.resetHandlers();
   useToastStore.getState().clear();
@@ -147,11 +147,13 @@ describe('ClassicSettingsPtzControlsPage', () => {
     await mount();
 
     const row = (await screen.findByRole('button', { name: 'Onvif PTZ' })).closest('tr')!;
-    expect(within(row).getByText('Ffmpeg')).toBeInTheDocument();
+    // 1.39.39 dropped the Type column.
+    expect(screen.queryByRole('columnheader', { name: /^Type/ })).toBeNull();
+    expect(within(row).queryByText('Ffmpeg')).toBeNull();
     expect(within(row).getByText('onvif')).toBeInTheDocument();
     // Can Move / Zoom / Focus yes; Iris / White no.
     expect(within(row).getAllByText('Yes')).toHaveLength(3);   // move, zoom, focus
-    expect(within(row).getAllByText('No')).toHaveLength(2);    // iris, white
+    expect(within(row).getAllByText('No')).toHaveLength(5);    // iris, white, light, indicator light, audio
     // has_home_preset + 64 presets → legacy prints "H64".
     expect(within(row).getByText('H64')).toBeInTheDocument();
     // Two live monitors reference it; the soft-deleted one does not count.
@@ -187,7 +189,7 @@ describe('ClassicSettingsPtzControlsPage', () => {
     expect(names()).toEqual(['Amcrest HTTP', 'Onvif PTZ']);
   });
 
-  it('the search box filters on name, protocol and type', async () => {
+  it('the search box filters on name and protocol', async () => {
     signIn();
     seed();
     const user = userEvent.setup();
@@ -200,7 +202,7 @@ describe('ClassicSettingsPtzControlsPage', () => {
     expect(screen.getByText('Showing 1 of 2 rows')).toBeInTheDocument();
 
     await user.clear(box);
-    await user.type(box, 'ffmpeg');
+    await user.type(box, 'onvif');
     await waitFor(() => expect(screen.getByRole('button', { name: 'Onvif PTZ' })).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Amcrest HTTP' })).toBeNull();
 
@@ -297,7 +299,8 @@ describe('ClassicSettingsPtzControlsPage', () => {
     expect(screen.queryByRole('columnheader', { name: /^Name/ })).toBeNull();
 
     await user.type(screen.getByLabelText('Name'), '  Test PTZ  ');
-    await user.selectOptions(screen.getByLabelText('Type'), 'Ffmpeg');
+    // No Type field any more (1.39.39); zm-api still wants one on create.
+    expect(screen.queryByLabelText('Type')).toBeNull();
     await user.type(screen.getByLabelText('Protocol'), ' fancy ');
     await user.click(screen.getByLabelText('Can Wake'));
 
@@ -314,7 +317,7 @@ describe('ClassicSettingsPtzControlsPage', () => {
     expect(sent[0].path).toBe('/controls');
     const body = sent[0].body!;
     expect(body.name).toBe('Test PTZ');
-    expect(body.type).toBe('Ffmpeg');
+    expect(body.type).toBe('Local');
     expect(body.protocol).toBe('fancy');
     expect(body.can_wake).toBe(1);
     expect(body.has_presets).toBe(1);

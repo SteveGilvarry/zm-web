@@ -11,14 +11,28 @@ import { SEED } from './seed/seed-data';
 
 const UI = {
   modern: {
-    // A segmented control, not a select.
+    // A segmented threshold control: "error" means that severity or worse,
+    // which the backend spells `min_level` by name.
     pickError: (p: Page) =>
       p.getByRole('group', { name: /minimum level/i }).getByRole('button', { name: /^error$/i }).click(),
-    component: (p: Page) => p.getByLabel('Component filter').first(),
+    errorRequest: (q: URLSearchParams) => q.get('min_level') === 'error',
+    pickComponent: (p: Page, value: string) => p.getByLabel('Component filter').first().selectOption(value),
   },
   classic: {
-    pickError: (p: Page) => p.getByLabel(/^level$/i).selectOption('error'),
-    component: (p: Page) => p.getByLabel(/^component$/i).first(),
+    // Legacy's exact-level chosen multi-select: ERR, FAT and PNC picked by
+    // hand, one at a time, sent as zm-api's `level` list on the inverted scale.
+    pickError: async (p: Page) => {
+      for (const code of ['ERR', 'FAT', 'PNC']) {
+        await p.getByRole('combobox', { name: 'Level', exact: true }).click();
+        await p.getByRole('option', { name: code, exact: true }).click();
+      }
+    },
+    errorRequest: (q: URLSearchParams) => q.get('level') === '-2,-3,-4',
+    // Component is a Chosen multi-select too (ajax/log.php:183).
+    pickComponent: async (p: Page, value: string) => {
+      await p.getByRole('combobox', { name: 'Component', exact: true }).click();
+      await p.getByRole('option', { name: value, exact: true }).click();
+    },
   },
 } satisfies Record<Skin, unknown>;
 
@@ -59,19 +73,16 @@ test.describe('Logs', () => {
       await expect(page.getByRole('button', { name: /download csv/i })).toBeVisible();
     });
 
-    test(`${skin}: the level filter asks for that severity or worse @route:logs`, async ({
+    test(`${skin}: the level filter asks for errors and worse @route:logs`, async ({
       loggedInPage: page,
     }) => {
       await gotoSkin(page, '/logs', skin);
       await expect(page.locator('tbody tr').first()).toBeVisible();
 
-      const pending = logsRequest(page, (q) => q.get('min_level') === 'error');
+      const pending = logsRequest(page, UI[skin].errorRequest);
       await UI[skin].pickError(page);
       const resp = await pending;
 
-      // Legacy's Level dropdown always meant "this severity or worse", which
-      // the backend spells `min_level` by name — not the inverted number.
-      expect(new URL(resp.url()).searchParams.get('min_level')).toBe('error');
       // The seed writes 20 ERR + 10 FAT + 10 PNC rows.
       expect((await resp.json()).total).toBe(
         SEED.logs.byCode.ERR + SEED.logs.byCode.FAT + SEED.logs.byCode.PNC,
@@ -87,7 +98,7 @@ test.describe('Logs', () => {
       await gotoSkin(page, '/logs', skin);
 
       const pending = logsRequest(page, (q) => q.get('component') === 'zmdc');
-      await UI[skin].component(page).selectOption('zmdc');
+      await UI[skin].pickComponent(page, 'zmdc');
       const resp = await pending;
 
       expect((await resp.json()).total).toBeGreaterThan(0);

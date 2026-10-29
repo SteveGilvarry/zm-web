@@ -30,6 +30,9 @@ import { useSiteTitle } from '@/features/settings/useSiteTitle';
 
 const th = 'px-4 py-2 text-start text-xs font-medium text-fg-dim whitespace-nowrap';
 const iconBtn = 'p-1.5 rounded text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors';
+// Colour only past legacy's storage thresholds; a healthy disk stays neutral.
+const toneText = { normal: '', warn: 'text-warn', danger: 'text-danger' } as const;
+const toneBar = { normal: 'bg-fg-dim', warn: 'bg-warn', danger: 'bg-danger' } as const;
 const pagerBtn = 'p-1.5 rounded border border-border-subtle transition-colors';
 
 /**
@@ -106,7 +109,7 @@ export default function SettingsStoragePage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border-subtle">
-                    {rows.map(({ storage, serverId, serverName, diskPercent }) => (
+                    {rows.map(({ storage, serverId, serverName, usage, tone, eventCount }) => (
                       <tr key={storage.id} className="hover:bg-surface-2 transition-colors">
                         <td className="px-4 py-2 font-mono tabular-nums text-xs text-fg-dim">{storage.id}</td>
                         <td className="px-4 py-2 font-medium text-fg">{storage.name}</td>
@@ -117,25 +120,26 @@ export default function SettingsStoragePage() {
                           {serverName ?? (serverId === null ? t('Local') : t('Server {{id}}', { id: serverId }))}
                         </td>
                         <td className="px-4 py-2">
-                          {storage.disk_space == null ? (
-                            <span className="text-fg-dim" title={t('zmaudit has not cached a size for this storage area yet.')}>
+                          {!usage.measured ? (
+                            <span className="text-fg-dim" title={t('zm-api reports no filesystem figures for this path.')}>
                               &mdash;
                             </span>
                           ) : (
-                            <div className="min-w-28 max-w-40">
-                              <span className="font-mono tabular-nums text-xs text-fg-muted">
-                                {formatBytes(storage.disk_space)}
+                            <div className="min-w-28 max-w-44">
+                              <span className="font-mono tabular-nums text-xs text-fg-muted whitespace-nowrap">
+                                <span className={clsx(toneText[tone])}>{usage.percent}%</span>
+                                {' · '}
+                                {t('{{used}} of {{total}}', { used: formatBytes(usage.usedBytes), total: formatBytes(usage.totalBytes) })}
                               </span>
                               <div
                                 role="progressbar"
-                                aria-valuenow={diskPercent ?? 0}
+                                aria-valuenow={usage.percent}
                                 aria-valuemin={0}
                                 aria-valuemax={100}
-                                aria-label={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
-                                title={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
+                                aria-label={t('{{name}} disk usage', { name: storage.name })}
                                 className="mt-1 h-1.5 rounded-full bg-border overflow-hidden"
                               >
-                                <div className="h-full rounded-full bg-fg-dim" style={{ width: `${diskPercent ?? 0}%` }} />
+                                <div className={clsx('h-full rounded-full', toneBar[tone])} style={{ width: `${Math.min(100, usage.percent)}%` }} />
                               </div>
                             </div>
                           )}
@@ -164,11 +168,13 @@ export default function SettingsStoragePage() {
                         <td className="px-4 py-2">
                           <Link
                             to="/events"
+                            search={{ storage: storage.id }}
                             className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
-                            title={t('The events list cannot be pre-filtered by storage area yet; this opens the full list.')}
                           >
                             <Film size={12} aria-hidden />
-                            {t('Events')}
+                            {eventCount == null
+                              ? t('Events')
+                              : t('{{count}} using {{size}}', { count: eventCount, size: formatBytes(storage.disk_space ?? 0) })}
                           </Link>
                         </td>
                         <td className="px-4 py-2">
@@ -337,7 +343,6 @@ export default function SettingsStoragePage() {
                 role="switch"
                 aria-checked={formData.do_delete === 1}
                 aria-label={t('Delete events')}
-                disabled={st.doDeleteLocked}
                 className={clsx(
                   'relative w-10 h-5 rounded-full transition-colors disabled:opacity-50',
                   formData.do_delete === 1 ? 'bg-accent' : 'bg-border'
@@ -353,9 +358,7 @@ export default function SettingsStoragePage() {
             </div>
             <span className="flex items-start gap-1.5 text-xs text-fg-dim leading-relaxed">
               <Info size={12} className="mt-0.5 shrink-0" aria-hidden />
-              {st.doDeleteLocked
-                ? t('Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.')
-                : t('Deleting an event may remove its media from here.')}
+              {t('Deleting an event may remove its media from here.')}
             </span>
           </div>
 

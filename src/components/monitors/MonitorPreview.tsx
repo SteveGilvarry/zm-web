@@ -69,6 +69,12 @@ export function MonitorPreview({
   const snapshotUrl = useRefreshingSnapshot(monitorId, isActive && inView);
 
   const [live, setLive] = useState(false);
+  // zm-api's snapshot is ZoneMinder's captured image, which already carries
+  // the monitor's orientation: a ROTATE_90 camera's JPEG arrives portrait.
+  // Older builds served the raw frame. Decide per image: once a rotated
+  // monitor's snapshot loads portrait it is shown as it is; until then, and
+  // for a landscape one, it gets the turn.
+  const [snapshotOriented, setSnapshotOriented] = useState(false);
   const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const canPreview = enableLivePreview && isActive;
@@ -122,17 +128,25 @@ export function MonitorPreview({
               src={snapshotUrl}
               alt={monitorName}
               className={
-                isOrientationRotated(orientation) && rotationFit === 'fill'
-                  ? 'bg-black'
-                  : 'absolute inset-0 w-full h-full object-contain'
+                snapshotOriented
+                  ? `absolute inset-0 w-full h-full ${rotationFit === 'fill' ? 'object-cover' : 'object-contain'}`
+                  : isOrientationRotated(orientation) && rotationFit === 'fill'
+                    ? 'bg-black'
+                    : 'absolute inset-0 w-full h-full object-contain'
               }
               style={
-                isOrientationRotated(orientation) && rotationFit === 'fill'
-                  ? rotatedSnapshotStyle(orientation)
-                  : getOrientationStyle(orientation)
+                snapshotOriented
+                  ? undefined
+                  : isOrientationRotated(orientation) && rotationFit === 'fill'
+                    ? rotatedSnapshotStyle(orientation)
+                    : getOrientationStyle(orientation)
               }
               onLoad={(e) => {
-                (e.target as HTMLImageElement).style.visibility = 'visible';
+                const el = e.target as HTMLImageElement;
+                el.style.visibility = 'visible';
+                if (isOrientationRotated(orientation) && el.naturalWidth > 0 && el.naturalHeight > 0) {
+                  setSnapshotOriented(el.naturalHeight > el.naturalWidth);
+                }
               }}
               onError={(e) => {
                 (e.target as HTMLImageElement).style.visibility = 'hidden';

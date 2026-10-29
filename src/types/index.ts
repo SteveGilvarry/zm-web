@@ -232,6 +232,8 @@ export interface Monitor {
   stream_channel?: string;
   /** 0 or 1 — serve this monitor through go2rtc. */
   go2rtc_enabled?: number;
+  /** Legacy's preferred live player (`''` = Auto, `zms`, `go2rtc_webrtc`, `janus`…). Response-only. */
+  default_player?: string | null;
   /** 0–100, how strongly the analysis image blends over the frame. */
   analysis_image_opacity?: number;
   /** Object-detection mode. */
@@ -289,6 +291,10 @@ export interface ZmEvent {
   scheme: string;
   locked: number; // 0 or 1
   tags?: Array<{ id: number; name: string }> | null;
+  /** Frame number of the highest-scoring frame (zm-api#176); legacy's Max link. */
+  max_score_frame_id?: number | null;
+  /** The event's directory on its storage area (zm-api#140); legacy's Path row. */
+  path?: string | null;
 }
 
 // ============================================
@@ -477,6 +483,12 @@ export interface ZmConfig {
   pattern?: string | null;
   /** Perl snippet that normalises the value (`($1 =~ /^y/) ? 'yes' : 'no'`); display only. */
   format?: string | null;
+  /** `Config.Requires`, raw clauses like `ZM_OPT_USE_AUTH=1;ZM_AUTH_RELAY=hashed`. */
+  requires?: string | null;
+  /** `db`, or `file` when zm.conf or a conf.d file sets the option. */
+  source: string;
+  /** The file that sets it, for `source: "file"`. */
+  source_file?: string | null;
 }
 
 // ============================================
@@ -501,6 +513,16 @@ export interface ZmStorage {
   disk_space?: number | null;
   /** 0/1 — whether ZoneMinder may delete from this store. */
   do_delete?: number;
+  /** Live filesystem numbers for the path (zm-api#145); null when the path is not mounted. */
+  filesystem?: StorageFilesystem | null;
+}
+
+/** `StorageFilesystem`: what `df` says about a storage area's path. */
+export interface StorageFilesystem {
+  total_bytes: number;
+  used_bytes: number;
+  available_bytes: number;
+  usage_percent: number;
 }
 
 // ============================================
@@ -532,6 +554,8 @@ export interface User {
   language?: string | null;
   /** Bandwidth profile name; null when unset. Not edited here (see MEMORY.md). */
   max_bandwidth?: string | null;
+  /** The role whose permissions add to the levels above (ZM 1.39, zm-api#143). */
+  role_id?: number | null;
 }
 
 // Orientation values from the API. Since zm-api#59 these are the raw

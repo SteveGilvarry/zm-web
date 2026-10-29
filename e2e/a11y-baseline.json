@@ -11,12 +11,24 @@
   "classic/events.detail": [
     "color-contrast"
   ],
+  "classic/events.frame": [
+    "color-contrast"
+  ],
   "classic/events.frames": [
     "color-contrast"
   ],
   "classic/events.list": [
     "color-contrast",
     "link-name"
+  ],
+  "classic/events.stats": [
+    "color-contrast"
+  ],
+  "classic/filters": [
+    "color-contrast"
+  ],
+  "classic/groups": [
+    "color-contrast"
   ],
   "classic/logs": [
     "color-contrast"
@@ -28,16 +40,46 @@
     "color-contrast",
     "link-name"
   ],
+  "classic/monitors.zones": [
+    "color-contrast"
+  ],
   "classic/montage": [
     "color-contrast"
   ],
   "classic/montagereview": [
     "color-contrast"
   ],
+  "classic/reports.detail": [
+    "color-contrast"
+  ],
   "classic/reports.list": [
     "color-contrast"
   ],
+  "classic/settings.ai": [
+    "color-contrast"
+  ],
+  "classic/settings.apiTokens": [
+    "color-contrast"
+  ],
+  "classic/settings.encoderTemplates": [
+    "color-contrast"
+  ],
+  "classic/settings.menu": [
+    "color-contrast"
+  ],
+  "classic/settings.options": [
+    "color-contrast"
+  ],
+  "classic/settings.privacy": [
+    "color-contrast"
+  ],
   "classic/settings.ptzControls": [
+    "color-contrast"
+  ],
+  "classic/settings.roles": [
+    "color-contrast"
+  ],
+  "classic/settings.roles.edit": [
     "color-contrast"
   ],
   "classic/settings.servers": [
@@ -52,49 +94,20 @@
   "classic/settings.users": [
     "color-contrast"
   ],
-  "modern/console": [
-    "color-contrast"
-  ],
-  "modern/cycle": [
+  "classic/timeline": [
     "color-contrast"
   ],
   "modern/events.detail": [
     "button-name",
     "label"
   ],
-  "modern/events.list": [
-    "color-contrast"
-  ],
-  "modern/groups": [
-    "color-contrast"
-  ],
-  "modern/logs": [
-    "color-contrast"
-  ],
-  "modern/monitors.list": [
-    "color-contrast"
-  ],
-  "modern/monitors.watch": [
-    "color-contrast"
-  ],
   "modern/montage": [
-    "aria-prohibited-attr",
-    "color-contrast"
+    "aria-prohibited-attr"
   ],
   "modern/montagereview": [
-    "color-contrast"
+    "scrollable-region-focusable"
   ],
-  "modern/reports.detail": [
-    "label",
-    "select-name"
-  ],
-  "modern/settings.servers": [
-    "color-contrast"
-  ],
-  "modern/settings.state": [
-    "color-contrast"
-  ],
-  "modern/settings.users": [
-    "color-contrast"
+  "modern/settings.privacy": [
+    "link-in-text-block"
   ]
 }

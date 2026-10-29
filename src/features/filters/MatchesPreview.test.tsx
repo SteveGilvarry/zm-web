@@ -1,15 +1,15 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
 import type { FilterQuery } from '@/api/filters';
 
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string }) => (
-    <a href={to ?? '#'} {...rest}>{children}</a>
+  Link: ({ children, to, search, ...rest }: { children: React.ReactNode; to?: string; search?: unknown }) => (
+    <a href={to ?? '#'} data-search={search ? JSON.stringify(search) : undefined} {...rest}>{children}</a>
   ),
 }));
 const { MatchesPreview } = await import('./MatchesPreview');
@@ -19,7 +19,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: { user: 'admin', iat: 0, exp: 0 } as never, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -34,6 +34,28 @@ const events = [
 ];
 
 const noActions = { archive: false, unarchive: false, delete: false };
+
+describe('MatchesPreview — List Matches', () => {
+  it('opens the events list on the form\'s terms and sort, as legacy submits to ?view=events', () => {
+    const query: FilterQuery = {
+      terms: [{ attr: 'Cause', op: 'LIKE', val: 'Motion' }, { cnj: 'and', attr: 'Tags', op: '=', val: '0' }],
+      sort_field: 'MaxScore', sort_asc: '0',
+    };
+    renderWithProviders(<MatchesPreview query={query} monitors={[]} actions={noActions} />);
+    const link = screen.getByRole('link', { name: /list matches/i });
+    expect(link).toHaveAttribute('href', '/events');
+    const search = JSON.parse(link.getAttribute('data-search')!);
+    expect(JSON.parse(search.terms)).toEqual(query.terms);
+    expect(search).toMatchObject({ sort: 'max_score', dir: 'desc' });
+  });
+
+  it('leaves the sort to the list when the filter sorts by something it cannot', () => {
+    const query: FilterQuery = { terms: [], sort_field: 'Tags', sort_asc: '1' };
+    renderWithProviders(<MatchesPreview query={query} monitors={[]} actions={noActions} />);
+    const search = JSON.parse(screen.getByRole('link', { name: /list matches/i }).getAttribute('data-search')!);
+    expect(search).toEqual({ terms: '[]' });
+  });
+});
 
 describe('MatchesPreview — server path', () => {
   it('POSTs the AST to /filters/preview and lists the page it returns', async () => {
@@ -51,7 +73,7 @@ describe('MatchesPreview — server path', () => {
     renderWithProviders(<MatchesPreview query={query} monitors={[]} actions={noActions} />);
     expect(screen.queryByText(/event 1/i)).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText(/^event 1$/i)).toBeInTheDocument());
     expect(body).toEqual({
       where: { match: 'all', rules: [{ field: 'cause', op: 'eq', value: 'Motion' }] },
@@ -76,7 +98,7 @@ describe('MatchesPreview — server path', () => {
       }),
     );
     renderWithProviders(<MatchesPreview query={{ terms: [] }} monitors={[]} actions={noActions} />);
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText(/^event 1$/i)).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /next page/i }));
     await waitFor(() => expect(screen.getByText(/^event 2$/i)).toBeInTheDocument());
@@ -91,7 +113,7 @@ describe('MatchesPreview — server path', () => {
       )),
     );
     renderWithProviders(<MatchesPreview query={{ terms: [] }} monitors={[]} actions={noActions} />);
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/preview failed/i));
   });
 });
@@ -109,7 +131,7 @@ describe('MatchesPreview — client fallback', () => {
       { cnj: 'and', attr: 'DiskPercent', op: '>=', val: '80' },
     ] };
     renderWithProviders(<MatchesPreview query={query} monitors={[]} actions={noActions} />);
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText(/^event 1$/i)).toBeInTheDocument());
     expect(screen.getByText(/^event 3$/i)).toBeInTheDocument();
     expect(screen.queryByText(/^event 2$/i)).toBeNull();
@@ -134,9 +156,10 @@ describe('MatchesPreview — execute now', () => {
 
     rerender(<MatchesPreview query={{ terms: [] }} monitors={[]} actions={{ ...noActions, delete: true }} />);
     const exec = screen.getByRole('button', { name: /^execute$/i });
-    expect(exec).toBeDisabled();
+    // The ticked action is enough, as in legacy (filter.js:74-105).
+    expect(exec).toBeEnabled();
 
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(exec).toBeEnabled());
     const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(true);
     await user.click(exec);

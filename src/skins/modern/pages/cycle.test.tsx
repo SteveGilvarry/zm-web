@@ -9,12 +9,14 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 
 import { renderRoute } from '@/test/renderRoute';
 import { db, server, setupMockServer } from '@/test/msw/server';
 import { makeMonitor } from '@/test/fixtures';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMontageStore } from '@/stores/montage';
+import { DEFAULT_STAGE_SIZE } from '@/features/monitors/watchStage';
 
 setupMockServer();
 
@@ -161,14 +163,15 @@ describe('Cycle — transport', () => {
     await onStage();
 
     const dial = screen.getByRole('group', { name: 'Interval' });
-    expect(within(dial).getByRole('button', { name: '10 seconds' }))
+    expect(within(dial).getByRole('button', { name: '10s' })).toHaveAccessibleDescription('10 seconds');
+    expect(within(dial).getByRole('button', { name: '10s' }))
       .toHaveAttribute('aria-pressed', 'true');
 
-    await user.click(within(dial).getByRole('button', { name: '30 seconds' }));
+    await user.click(within(dial).getByRole('button', { name: '30s' }));
 
-    expect(within(dial).getByRole('button', { name: '30 seconds' }))
+    expect(within(dial).getByRole('button', { name: '30s' }))
       .toHaveAttribute('aria-pressed', 'true');
-    expect(within(dial).getByRole('button', { name: '10 seconds' }))
+    expect(within(dial).getByRole('button', { name: '10s' }))
       .toHaveAttribute('aria-pressed', 'false');
     expect(countdown()).toBe('30s');
   });
@@ -291,7 +294,7 @@ describe('Cycle — monitor filter bar', () => {
     // The chip bar is an occasional control, so it lives behind the
     // toolbar's Filters disclosure.
     await user.click(screen.getByRole('button', { name: 'Filters' }));
-    await user.click(screen.getByRole('button', { name: 'Monitor filter' }));
+    await user.click(screen.getByRole('button', { name: 'Monitor Any' }));
     await user.click(
       within(screen.getByRole('listbox', { name: 'Monitor options' }))
         .getByRole('checkbox', { name: 'Driveway' }),
@@ -309,7 +312,7 @@ describe('Cycle — monitor filter bar', () => {
     await onStage();
 
     await user.click(screen.getByRole('button', { name: 'Filters' }));
-    await user.click(screen.getByRole('button', { name: 'Status filter' }));
+    await user.click(screen.getByRole('button', { name: 'Status Any' }));
     await user.click(
       within(screen.getByRole('listbox', { name: 'Status options' }))
         .getByRole('checkbox', { name: 'Disabled' }),
@@ -317,5 +320,36 @@ describe('Cycle — monitor filter bar', () => {
 
     expect(await screen.findByText('No capturing monitors to cycle through.'))
       .toBeInTheDocument();
+  });
+});
+
+describe('Cycle — stage size and tile controls', () => {
+  beforeEach(() => {
+    useMontageStore.setState({ cycleStage: { ...DEFAULT_STAGE_SIZE } });
+  });
+
+  it('sizes the stage from the Size disclosure, each choice resetting the other side', async () => {
+    const user = userEvent.setup();
+    await renderCycle();
+    await onStage();
+
+    await user.click(screen.getByRole('button', { name: 'Size' }));
+    await user.selectOptions(screen.getByLabelText('Width'), '640px');
+    expect(screen.getByTestId('cycle-stage')).toHaveStyle({ width: '640px' });
+
+    await user.selectOptions(screen.getByLabelText('Scale'), '100');
+    expect(screen.getByLabelText('Width')).toHaveValue('auto');
+    expect(useMontageStore.getState().cycleStage).toEqual({ width: 'auto', height: 'auto', scale: '100' });
+  });
+
+  it('carries zoom, fullscreen, watch and edit over the stage', async () => {
+    const user = userEvent.setup();
+    await renderCycle();
+    await onStage();
+
+    const controls = within(screen.getByTestId('cycle-stage')).getByTestId('tile-controls-1');
+    expect(within(controls).getByRole('link', { name: 'Open watch page' })).toHaveAttribute('href', '/monitors/1');
+    await user.click(within(controls).getByRole('button', { name: 'Zoom IN' }));
+    expect(within(controls).getByRole('button', { name: 'Zoom OUT' })).toBeEnabled();
   });
 });

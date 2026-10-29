@@ -1,3 +1,4 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -33,6 +34,8 @@ import {
   LayoutGrid,
   ChevronsLeft,
   ChevronsRight,
+  RefreshCw,
+  ExternalLink,
 } from 'lucide-react';
 
 import { AppShell } from '@/skins/AppShell';
@@ -45,6 +48,10 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { EventEditForm } from '@/features/events/EventEditForm';
+import { ExportEventsModal } from '@/features/events/ExportEventsModal';
+import { GenerateVideoModal } from '@/features/events/GenerateVideoModal';
+import { maxScoreFrameParams } from '@/features/events/maxScoreLink';
+import { useEventFileCheck } from '@/features/events/useEventFileCheck';
 import {
   useCodecOptions, useRateOptions, useReplayModeOptions, useScaleOptions,
 } from '@/features/events/playbackOptions';
@@ -88,6 +95,8 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
   } = s;
 
   useDocumentTitle(event ? t('Event {{id}}', { id: event.id }) : t('Events'));
+  const { missingPath } = useEventFileCheck(event);
+  const [mediaOpen, setMediaOpen] = useState<'export' | 'video' | null>(null);
 
   // Wire values stay as-is; only the display label is translated.
 
@@ -143,6 +152,15 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
             </Link>
             <ChevronRight size={12} className="shrink-0 text-fg-faint rtl:-scale-x-100" aria-hidden />
             <span className="shrink-0 text-sm text-fg truncate max-w-[14rem]">{event.name}</span>
+            <button
+              type="button"
+              onClick={s.refresh}
+              aria-label={t('Refresh')}
+              title={t('Refresh')}
+              className="shrink-0 p-1 rounded text-fg-dim hover:text-fg transition-colors"
+            >
+              <RefreshCw size={14} aria-hidden />
+            </button>
 
             <span className="h-5 w-px bg-border-subtle shrink-0" />
 
@@ -156,12 +174,14 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 type="button"
                 onClick={s.navPrev}
                 disabled={prevEventId == null}
-                aria-label={t('Previous event')}
                 aria-keyshortcuts="ArrowLeft"
                 className="shrink-0 flex items-center gap-1 px-2 py-1 rounded text-xs text-fg-dim hover:text-fg hover:bg-surface-2 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
               >
                 <ChevronLeftIcon size={14} className="rtl:-scale-x-100" aria-hidden />
                 {t('Prev')}
+                {/* "Prev" is not a word of "Previous event", so the name
+                    carries both (WCAG 2.5.3). "Next" already is. */}
+                <span className="sr-only">, {t('Previous event')}</span>
               </button>
               <button
                 type="button"
@@ -269,6 +289,14 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
               {showStats ? t('Hide Stats') : t('Stats')}
             </button>
           </div>
+
+          {/* Legacy's warning when the event directory is gone (event.php:207). */}
+          {missingPath && (
+            <p role="alert" data-testid="event-missing-files" className="flex items-center gap-2 px-3 py-2 shrink-0 border-b border-border-subtle text-sm text-danger">
+              <AlertTriangle size={14} aria-hidden />
+              {t('Event was not found at {{path}}. It is unlikely that playback will be possible.', { path: missingPath })}
+            </p>
+          )}
 
           <div className="flex-1 min-h-0 overflow-auto p-3 grid grid-cols-12 gap-3 items-start">
             {/* Video Player - 8 columns */}
@@ -490,6 +518,16 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                         >
                           {isMuted ? <VolumeX size={18} /> : <Volume2 size={18} />}
                         </button>
+                        <input
+                          type="range"
+                          min={0}
+                          max={1}
+                          step={0.05}
+                          value={isMuted ? 0 : s.volume}
+                          onChange={(e) => s.setVolume(Number(e.target.value))}
+                          aria-label={t('Volume')}
+                          className="w-20 accent-white/80"
+                        />
 
                         {/* Fullscreen */}
                         <button
@@ -512,6 +550,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                 <span>{t('Mode')}: <span className="text-fg">{isPlaying ? t('Replay') : t('Paused')}</span></span>
                 <span>{t('Rate')}: <span className="text-fg">{rateOptions.find((o) => o.value === rate)?.label}</span></span>
                 <span>{t('Progress')}: <span className="text-fg">{Math.floor(currentTime)}</span>s</span>
+                <span>{t('Time')}: <span className="text-fg">{startTime ? new Date(startTime.getTime() + currentTime * 1000).toLocaleTimeString() : '—'}</span></span>
                 <span>{t('Zoom')}: <span className="text-fg">{zoomScale.toFixed(1)}</span>x</span>
               </p>
 
@@ -527,14 +566,29 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <StatRow label={t('Total Frames')} value={event.frames ?? 0} />
                     <StatRow label={t('Tot Score')} value={event.tot_score ?? 0} />
                     <StatRow label={t('Avg Score')} value={event.avg_score ?? 0} />
-                    <StatRow label={t('Max Score')} value={event.max_score ?? 0} />
+                    <StatRow
+                      label={t('Max Score')}
+                      value={
+                        // Legacy links Max to the max-score frame (`?view=frame&fid=0`).
+                        <Link
+                          to="/events/$eventId/frames/$frameId"
+                          params={maxScoreFrameParams(event)}
+                          className="text-accent hover:text-accent-dim transition-colors"
+                          title={t('Open the frame with the max score')}
+                        >
+                          {event.max_score ?? 0}
+                        </Link>
+                      }
+                    />
                     <StatRow
                       label={t('Duration')}
                       value={t('{{seconds}}s', { seconds: eventDurationSeconds(event.length) })}
                     />
                     <StatRow
                       label={t('Disk Space')}
-                      value={formatBytes(event.disk_space ?? 0)}
+                      value={s.storageName
+                        ? t('{{size}} on {{storage}}', { size: formatBytes(event.disk_space ?? 0), storage: s.storageName })
+                        : formatBytes(event.disk_space ?? 0)}
                     />
                     <StatRow
                       label={t('Start')}
@@ -552,6 +606,10 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     <StatRow
                       label={t('Archived')}
                       value={event.archived === 1 ? t('Yes') : t('No')}
+                    />
+                    <StatRow
+                      label={t('Emailed')}
+                      value={event.emailed === 1 ? t('Yes') : t('No')}
                     />
                   </div>
                   {/* Legacy's two stills under the stats table. */}
@@ -634,6 +692,26 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                       {monitor?.name || t('Monitor {{id}}', { id: event.monitor_id })}
                     </Link>
                   </div>
+                  {/* Legacy's Edit and All Events buttons beside the monitor. */}
+                  <div className="flex items-center justify-end gap-3 -mt-2 text-xs">
+                    <RequirePerm feature="monitors" level="Edit">
+                      <Link
+                        to="/monitors/$monitorId"
+                        params={{ monitorId: String(event.monitor_id) }}
+                        search={{ edit: true }}
+                        className="text-fg-dim hover:text-fg transition-colors"
+                      >
+                        {t('Edit monitor')}
+                      </Link>
+                    </RequirePerm>
+                    <Link
+                      to="/events"
+                      search={{ monitor_id: event.monitor_id, sort: 'start_time', dir: 'asc' }}
+                      className="text-fg-dim hover:text-fg transition-colors"
+                    >
+                      {t('All Events')}
+                    </Link>
+                  </div>
 
                   {/* Cause */}
                   {event.cause && (
@@ -713,6 +791,13 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                       <span className="font-mono text-fg">
                         {t('{{size}} MB', { size: (event.disk_space / 1024 / 1024).toFixed(2) })}
                       </span>
+                    </div>
+                  )}
+
+                  {event.path && (
+                    <div className="flex items-start justify-between gap-3">
+                      <span className="text-fg-muted">{t('Path')}</span>
+                      <span className="font-mono text-fg text-xs break-all text-end" data-testid="event-path">{event.path}</span>
                     </div>
                   )}
 
@@ -852,6 +937,31 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
                     </a>
                   )}
 
+                  <button
+                    type="button"
+                    onClick={() => setMediaOpen('export')}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                    )}
+                  >
+                    <ExternalLink size={14} aria-hidden />
+                    {t('Export')}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMediaOpen('video')}
+                    className={clsx(
+                      'flex items-center justify-center gap-2 w-full px-3 py-1.5 rounded text-sm',
+                      'bg-surface border border-border-subtle',
+                      'text-fg hover:border-border hover:bg-surface-2 transition-colors'
+                    )}
+                  >
+                    <FileVideo size={14} aria-hidden />
+                    {t('Generate Video')}
+                  </button>
+
                   <RequirePerm feature="events" level="Edit">
                     <button
                       onClick={(e) => s.requestDelete(e.shiftKey)}
@@ -895,6 +1005,19 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
             </span>
           </div>
 
+          <ExportEventsModal
+            isOpen={mediaOpen === 'export'}
+            onClose={() => setMediaOpen(null)}
+            ids={[event.id]}
+            events={[event]}
+            monitorName={() => monitor?.name ?? String(event.monitor_id)}
+          />
+          <GenerateVideoModal
+            isOpen={mediaOpen === 'video'}
+            onClose={() => setMediaOpen(null)}
+            event={event}
+          />
+
           <ConfirmDialog
             isOpen={s.deleteOpen}
             onClose={s.cancelDelete}
@@ -924,7 +1047,7 @@ export default function EventDetailPage({ eventId }: { eventId: number }) {
 }
 
 /** Two-cell label/value row used inside the stats panel. */
-function StatRow({ label, value }: { label: string; value: number | string }) {
+function StatRow({ label, value }: { label: string; value: React.ReactNode }) {
   return (
     <div className="flex items-baseline justify-between gap-3 border-b border-border-subtle py-1">
       <span className="text-fg-dim text-xs">{label}</span>

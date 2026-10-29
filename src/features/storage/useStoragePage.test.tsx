@@ -6,11 +6,12 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
 import type { ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { useAuthStore } from '@/stores/auth';
 import { makeServer, makeStorage } from '@/test/fixtures/admin';
+import { makeStorageArea } from '@/test/fixtures/storageAreas';
 import { useStoragePage } from './useStoragePage';
 
 const server = setupServer();
@@ -19,7 +20,7 @@ beforeAll(() => {
     accessToken: 'test', refreshToken: 'test', isAuthenticated: true,
     user: { user: 'admin', iat: 0, exp: 4102444800 } as never,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -91,23 +92,18 @@ describe('useStoragePage rows', () => {
     expect(result.current.rows[0]).toMatchObject({ serverId: 7, serverName: null });
   });
 
-  it('scales the disk-space bar against the largest listed area', async () => {
-    const { result } = await mounted();
-    // 40GB is the biggest of the two, so it pegs the bar; 10GB is a quarter.
-    expect(result.current.rows.map((r) => r.diskPercent)).toEqual([100, 25]);
-  });
-
-  it('has no bar for an area zmaudit has not costed', async () => {
-    const { result } = await mounted([makeStorage({ disk_space: null })]);
-    expect(result.current.rows[0].diskPercent).toBeNull();
-  });
-
-  it('has no bar at all when every listed area is uncosted', async () => {
+  it('measures each area against its own filesystem, legacy-style', async () => {
     const { result } = await mounted([
-      makeStorage({ disk_space: null }),
-      makeStorage({ id: 2, name: 'Cold', disk_space: 0 }),
+      makeStorageArea({ id: 1 }, { total: 1000, usedPercent: 64.9 }),
+      makeStorageArea({ id: 2, name: 'Cold', path: '/mnt/cold' }, { total: 1000, usedPercent: 99 }),
     ]);
-    expect(result.current.rows.map((r) => r.diskPercent)).toEqual([null, null]);
+    // Truncated for the Options page; toned at legacy's thresholds.
+    expect(result.current.rows.map((r) => [r.usage.percentTruncated, r.tone])).toEqual([[64, 'normal'], [99, 'danger']]);
+  });
+
+  it('marks an area unmeasured when zm-api has no filesystem figures', async () => {
+    const { result } = await mounted([makeStorage({ filesystem: null })]);
+    expect(result.current.rows[0].usage.measured).toBe(false);
   });
 
   it('narrows the rows with the search box', async () => {
@@ -115,8 +111,6 @@ describe('useStoragePage rows', () => {
     act(() => result.current.setSearchQuery('/mnt/cold'));
     await waitFor(() => expect(result.current.rows).toHaveLength(1));
     expect(result.current.rows[0].storage.name).toBe('Cold');
-    // The bar rescales to what is on screen.
-    expect(result.current.rows[0].diskPercent).toBe(100);
   });
 });
 
@@ -147,7 +141,7 @@ describe('useStoragePage form', () => {
       method: 'PATCH', id: '2',
       body: {
         name: 'Cold', path: '/mnt/cold', type: 's3fs', enabled: 0,
-        scheme: 'Shallow', server_id: 7, url: 's3://bucket/zm',
+        scheme: 'Shallow', server_id: 7, url: 's3://bucket/zm', do_delete: 0,
       },
     });
   });
@@ -163,7 +157,7 @@ describe('useStoragePage form', () => {
     expect(sent[0].body).toMatchObject({ url: null, server_id: null });
   });
 
-  it('sends do_delete on create and never on an update', async () => {
+  it('sends do_delete on create and on update (zm-api#185)', async () => {
     const { result, sent } = await mounted();
     act(() => result.current.openCreate());
     act(() => result.current.setField('name', 'Warm'));
@@ -174,21 +168,12 @@ describe('useStoragePage form', () => {
     expect(sent[0].method).toBe('POST');
     expect(sent[0].body).toMatchObject({ do_delete: 0 });
 
-    // `UpdateStorageRequest` has no `do_delete` — the backend answers 200 and
-    // silently leaves the column alone, so the PATCH must not carry it.
     act(() => result.current.openEdit(COLD_ROW));
+    act(() => result.current.toggleFormDoDelete());
     act(() => result.current.submitForm());
     await waitFor(() => expect(sent).toHaveLength(2));
     expect(sent[1].method).toBe('PATCH');
-    expect(sent[1].body).not.toHaveProperty('do_delete');
-  });
-
-  it('locks do_delete while editing, since only create accepts it', async () => {
-    const { result } = await mounted();
-    act(() => result.current.openCreate());
-    expect(result.current.doDeleteLocked).toBe(false);
-    act(() => result.current.openEdit(COLD_ROW));
-    expect(result.current.doDeleteLocked).toBe(true);
+    expect(sent[1].body).toMatchObject({ do_delete: 1 });
   });
 
   it('opens the create form on defaults after an edit', async () => {

@@ -2,28 +2,7 @@ import { useEffect, useRef, useState, useSyncExternalStore } from 'react';
 import { Link, useNavigate, useRouterState } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
-  LayoutDashboard,
-  Monitor,
-  Video,
-  LayoutGrid,
-  Film,
-  RefreshCcw,
-  Settings,
-  Shield,
-  HardDrive,
-  Users,
-  UsersRound,
-  ScrollText,
-  Filter as FilterIcon,
-  FileText,
-  ShieldCheck,
-  Power,
-  KeyRound,
-  Brain,
-  LogOut,
-  ChevronLeft,
-  ChevronRight,
-  X,
+  LayoutDashboard, Monitor, Video, LayoutGrid, Film, RefreshCcw, Settings, Shield, HardDrive, Users, UsersRound, ScrollText, Filter as FilterIcon, FileText, ShieldCheck, Power, KeyRound, Brain, LogOut, ChevronLeft, ChevronRight, X, List,
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useAuthStore } from '@/stores/auth';
@@ -31,8 +10,10 @@ import { useUiStore } from '@/stores/ui';
 import { logout as apiLogout } from '@/api/auth';
 import { usePerms } from '@/features/auth/usePerms';
 import { ChangePasswordDialog } from '@/features/auth/ChangePasswordDialog';
+import { AccountDialog } from './AccountDialog';
 import { useCurrentUsername } from '@/features/auth/useMe';
 import { canSeeNav } from '@/features/nav/navPerms';
+import { useLogState, type LogState } from '@/features/logs/useLogState';
 import { Button } from '@/components/common/Button';
 
 interface NavItem {
@@ -40,6 +21,10 @@ interface NavItem {
   icon: React.ReactNode;
   path: string;
   badge?: number;
+  /** A state mark beside the label: the Log item's `logState()`. */
+  state?: 'warn' | 'danger';
+  /** Accessible text for `state`. */
+  stateLabel?: string;
 }
 
 interface NavSection {
@@ -56,8 +41,14 @@ interface NavSection {
  * something that happened, change how the system runs — with the console
  * standing alone above them because it is where everyone starts.
  */
-function useNavSections(): NavSection[] {
+function useNavSections(logState: LogState): NavSection[] {
   const { t } = useTranslation();
+  // Legacy colours its Log item by `logState()`; here a small state mark,
+  // since a green "nothing wrong" would be decoration (docs/DESIGN.md).
+  const logMark: Pick<NavItem, 'state' | 'stateLabel'> =
+    logState === 'alarm' ? { state: 'danger', stateLabel: t('Log has errors') }
+      : logState === 'alert' ? { state: 'warn', stateLabel: t('Log has warnings') }
+        : {};
   return [
     {
       items: [
@@ -79,7 +70,7 @@ function useNavSections(): NavSection[] {
         { label: t('Events'), icon: <Video size={16} />, path: '/events' },
         { label: t('Reports'), icon: <FileText size={16} />, path: '/reports' },
         { label: t('Audit'), icon: <ShieldCheck size={16} />, path: '/audit' },
-        { label: t('Log'), icon: <ScrollText size={16} />, path: '/logs' },
+        { label: t('Log'), icon: <ScrollText size={16} />, path: '/logs', ...logMark },
       ],
     },
     {
@@ -90,6 +81,9 @@ function useNavSections(): NavSection[] {
         { label: t('Settings'), icon: <Settings size={16} />, path: '/settings' },
         { label: t('Storage'), icon: <HardDrive size={16} />, path: '/settings/storage' },
         { label: t('Users'), icon: <Users size={16} />, path: '/settings/users' },
+        { label: t('Roles'), icon: <ShieldCheck size={16} />, path: '/settings/roles' },
+        { label: t('Encoder Templates'), icon: <Film size={16} />, path: '/settings/encoder-templates' },
+        { label: t('Menu'), icon: <List size={16} />, path: '/settings/menu' },
         { label: t('Servers'), icon: <Shield size={16} />, path: '/settings/servers' },
         { label: t('API Access'), icon: <KeyRound size={16} />, path: '/settings/api-tokens' },
         { label: t('AI'), icon: <Brain size={16} />, path: '/settings/ai/datasets' },
@@ -140,9 +134,11 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
   const currentPath = router.location.pathname;
   const { clearAuth } = useAuthStore();
   const username = useCurrentUsername();
-  const { perms } = usePerms();
+  const { perms, can } = usePerms();
   const [passwordOpen, setPasswordOpen] = useState(false);
-  const sections = useNavSections();
+  const [accountOpen, setAccountOpen] = useState(false);
+  const logState = useLogState(canSeeNav(perms, '/logs'));
+  const sections = useNavSections(logState);
   const asideRef = useRef<HTMLElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
 
@@ -271,18 +267,29 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
             'bg-surface-2/50'
           )}
         >
-          <div className="w-8 h-8 rounded-full bg-accent/20 flex items-center justify-center">
-            <span className="text-accent font-medium text-sm">
-              {username?.charAt(0).toUpperCase() || '?'}
+          {/* Opens the account sheet: who is signed in and, for System
+              viewers, the other logged-in sessions. */}
+          <button
+            type="button"
+            onClick={() => setAccountOpen(true)}
+            className="flex min-w-0 flex-1 items-center gap-3 rounded-md text-start hover:bg-surface-2"
+          >
+            {/* The name must contain the visible text (WCAG 2.5.3), so the
+                label is a hidden prefix to the username, not an aria-label. */}
+            <span className="sr-only">{t('Account')}</span>{' '}
+            <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/20">
+              <span className="text-sm font-medium text-accent" aria-hidden>
+                {username?.charAt(0).toUpperCase() || '?'}
+              </span>
             </span>
-          </div>
-          {!collapsed && (
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-fg truncate">
-                {username || t('Unknown')}
-              </p>
-            </div>
-          )}
+            {!collapsed && (
+              <span className="min-w-0 flex-1">
+                <span className="block truncate text-sm font-medium text-fg">
+                  {username || t('Unknown')}
+                </span>
+              </span>
+            )}
+          </button>
           <Button
             variant="ghost"
             size="sm"
@@ -309,6 +316,14 @@ export function Sidebar({ mobileOpen = false, onMobileClose }: SidebarProps) {
       </div>
 
       <ChangePasswordDialog isOpen={passwordOpen} onClose={() => setPasswordOpen(false)} />
+      <AccountDialog
+        isOpen={accountOpen}
+        onClose={() => setAccountOpen(false)}
+        username={username}
+        canViewSystem={can('system', 'View')}
+        onChangePassword={() => { setAccountOpen(false); setPasswordOpen(true); }}
+        onLogout={() => { setAccountOpen(false); void handleLogout(); }}
+      />
     </aside>
   );
 }
@@ -351,6 +366,20 @@ function NavLink({
 
       {!collapsed && (
         <span className="text-sm">{item.label}</span>
+      )}
+
+      {item.state && (
+        <span
+          role="img"
+          aria-label={item.stateLabel}
+          title={item.stateLabel}
+          data-testid={`nav-state-${item.path}`}
+          className={clsx(
+            'w-1.5 h-1.5 rounded-full shrink-0',
+            item.state === 'danger' ? 'bg-danger' : 'bg-warn',
+            collapsed ? 'absolute top-1.5 end-2' : 'ms-auto',
+          )}
+        />
       )}
 
       {!collapsed && item.badge !== undefined && item.badge > 0 && (

@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi, beforeAll, beforeEach, afterEach, afterAll } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
 
@@ -18,6 +18,7 @@ interface HlsInstance {
   attachMedia: ReturnType<typeof vi.fn>;
   destroy: ReturnType<typeof vi.fn>;
   startLoad: ReturnType<typeof vi.fn>;
+  stopLoad: ReturnType<typeof vi.fn>;
   recoverMediaError: ReturnType<typeof vi.fn>;
   swapAudioCodec: ReturnType<typeof vi.fn>;
   fire: (event: string, data?: unknown) => void;
@@ -36,6 +37,7 @@ vi.mock('hls.js', () => {
       attachMedia: vi.fn(),
       destroy: vi.fn(),
       startLoad: vi.fn(),
+      stopLoad: vi.fn(),
       recoverMediaError: vi.fn(),
       swapAudioCodec: vi.fn(),
       fire: (event, data) => handlers.get(event)?.(event, data),
@@ -46,7 +48,9 @@ vi.mock('hls.js', () => {
   }
   const ctor = HlsCtor as unknown as Record<string, unknown>;
   ctor.isSupported = () => supported.value;
-  ctor.Events = { MANIFEST_PARSED: 'hlsManifestParsed', ERROR: 'hlsError', FRAG_BUFFERED: 'hlsFragBuffered' };
+  ctor.DefaultConfig = { loader: class BaseLoader { load() {} abort() {} destroy() {} } };
+  ctor.Events = { MANIFEST_PARSED: 'hlsManifestParsed', ERROR: 'hlsError', FRAG_BUFFERED: 'hlsFragBuffered', LEVEL_LOADED: 'hlsLevelLoaded' };
+  ctor.ErrorDetails = { LEVEL_LOAD_ERROR: 'levelLoadError' };
   ctor.ErrorTypes = { NETWORK_ERROR: 'networkError', MEDIA_ERROR: 'mediaError', OTHER_ERROR: 'otherError' };
 
   return {
@@ -74,7 +78,7 @@ const server = setupServer(
   http.post('/api/v3/live/:id/start', () => HttpResponse.json({ session_id: 's', status: 'started' })),
 );
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   useAuthStore.setState({ accessToken: TOKEN, refreshToken: 'r', user: null, isAuthenticated: true });
 });
@@ -325,5 +329,27 @@ describe('useHlsStream — Safari native HLS', () => {
     act(() => { result.current.start(); });
     await waitFor(() => expect(result.current.state).toBe('failed'));
     expect(result.current.error).toBe('HLS not supported in this browser');
+  });
+});
+
+describe('useHlsStream — hls.js config', () => {
+  it('loads through the gated loader and gives an empty playlist a few quick retries', async () => {
+    const { result } = renderHook(() => useHlsStream(1));
+    attach(result.current.videoRef);
+    act(() => { result.current.start(); });
+    await waitFor(() => expect(instances.length).toBe(1));
+    const config = instances[0].config as {
+      loader: unknown;
+      playlistLoadPolicy: { default: { errorRetry: { maxNumRetry: number; maxRetryDelayMs: number } } };
+    };
+    const Base = (hlsNs as unknown as { default: { DefaultConfig: { loader: unknown } } }).default.DefaultConfig.loader;
+    expect(config.loader).not.toBe(Base);
+    expect(Object.getPrototypeOf(config.loader)).toBe(Base);
+    // A camera with a 30 s keyframe interval keeps the playlist empty for
+    // about ten seconds after start; this many short retries cover it
+    // without hls.js polling a dead playlist for a minute.
+    const { errorRetry } = config.playlistLoadPolicy.default;
+    expect(errorRetry.maxNumRetry).toBeLessThanOrEqual(6);
+    expect(errorRetry.maxRetryDelayMs).toBeLessThanOrEqual(2000);
   });
 });

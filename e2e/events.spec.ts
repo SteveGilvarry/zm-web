@@ -18,7 +18,7 @@ const UI = {
     // Modern's Monitor filter is a chip popover of checkboxes, not a
     // <select>; legacy's multi-select became one control per skin.
     pickMonitor: async (p: Page, name: string) => {
-      await p.getByRole('button', { name: 'Monitor filter' }).click();
+      await p.getByRole('button', { name: 'Monitor All Monitors' }).click();
       await p.getByRole('checkbox', { name, exact: true }).check();
       await p.keyboard.press('Escape');
     },
@@ -27,8 +27,13 @@ const UI = {
     archivedOnly: async (p: Page) => p.getByRole('button', { name: /^archived$/i }).click(),
   },
   classic: {
+    // Legacy's chosen multi-select labels each option `Id Name` (Filter.php:1332).
+    // One pick still goes through `GET /events?monitor_id=`; several go
+    // through `/filters/preview`.
     pickMonitor: async (p: Page, name: string) => {
-      await p.getByLabel('Monitor =', { exact: true }).selectOption({ label: name });
+      const id = Object.entries(SEED.monitors.names).find(([, n]) => n === name)?.[0];
+      await p.getByRole('combobox', { name: 'Monitor', exact: true }).click();
+      await p.getByRole('option', { name: `${id} ${name}`, exact: true }).click();
     },
     sortByDuration: (p: Page) => p.getByRole('button', { name: /^duration/i }),
     perPage: (p: Page) => p.getByLabel(/rows per page/i).first(),
@@ -153,8 +158,9 @@ test.describe('Events list', () => {
 
       // Seeded event names are "Event-<id>", so the id is a unique substring.
       const needle = `Event-${SEED.events.last}`;
-      const pending = eventsList(page, (q) => q.get('name') === needle);
-      await page.getByLabel('Name contains', { exact: true }).fill(needle);
+      // The toolbar box is free-text search now (`q`, zm-api#136), not a Name term.
+      const pending = eventsList(page, (q) => q.get('q') === needle);
+      await page.getByLabel('Search events', { exact: true }).fill(needle);
       const resp = await pending;
 
       expect(await total(resp)).toBe(1);

@@ -1,4 +1,4 @@
-import { type CSSProperties } from 'react';
+import { useRef, useState, type CSSProperties } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
@@ -28,7 +28,12 @@ import {
   Pencil,
   Camera,
   Image as ImageIcon,
-  Search, ChevronLeft} from 'lucide-react';
+  Search, ChevronLeft, Plus, Minus, Repeat} from 'lucide-react';
+import { useWatchCycle } from '@/features/cycle/useWatchCycle';
+import { usePerms } from '@/features/auth/usePerms';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
+import { Modal } from '@/components/common/Modal';
+import { Button } from '@/components/common/Button';
 import { AppShell } from '@/skins/AppShell';
 import { Panel } from '@/components/common/Panel';
 import type { CapturingMode, AnalysingMode, RecordingMode } from '@/types';
@@ -38,6 +43,8 @@ import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import { SCALE_VALUES } from '@/features/monitors/watchStage';
 import { useMeasuredBox, stageFitStyle } from '@/features/monitors/useStageFit';
 import { PtzControls } from '@/features/ptz/PtzControls';
+import { MonitorActionButtons } from '@/features/ptz/MonitorActionButtons';
+import type { AlarmState } from '@/features/alarms/alarmWatch';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
 import { ZoneEditor } from '@/features/zones/ZoneEditor';
 import { zoneViewDimensions } from '@/features/zones/useZonesPage';
@@ -77,19 +84,41 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   const page = useWatchPage(monitorId);
   const { formatTime } = useDateTimeFormat();
   // Digital zoom on the live picture; the camera is not moved.
-  const { ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom } =
-    usePinchZoom<HTMLDivElement>();
+  // Double-click fullscreens the picture, as legacy's does on the stream.
+  const stageBoxRef = useRef<HTMLDivElement | null>(null);
+  const {
+    ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom, zoomIn, zoomOut,
+  } = usePinchZoom<HTMLDivElement>(true, false, {
+    onDoubleClick: () => page.toggleStageFullscreen(stageBoxRef.current),
+  });
   const {
     monitor, monitorLoading, events, liveStats, runtime, protocol, activeStream,
-    isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, isMuted, volume, setVolume,
+    isStreaming, isConnecting, isActive, fellBackToHls, ptzState, alarm, liveAlarm, monitorActions,
+    isMuted, volume, setVolume,
     siblings, siblingIndex, prevMonitorId, nextMonitorId,
     isFullscreen, isWide,
-    editorOpen, openEditor, closeEditor, updateModes, isUpdating,
-    startStream, stopStream, changeProtocol, toggleFullscreen, toggleMute, retry,
-    viewMode, setViewMode, stage, downloadImage, isDownloading,
+    editorOpen, openEditor, closeEditor, editorTab, setEditorTab, updateModes, isUpdating,
+    startStream, stopStream, pauseStream, isPaused, viewingFps, changeProtocol, toggleFullscreen,
+    toggleMute, retry, viewMode, setViewMode, stage, downloadImage, isDownloading, contentRef, idle,
   } = page;
   const id = monitorId;
+  const { can } = usePerms();
   const [stageRef, box] = useMeasuredBox<HTMLDivElement>();
+  // Rotation through the capturing cameras — legacy's cycle sidebar, here a
+  // cluster in the control line. Opens running only with `?cycle=true`.
+  const [cycleOn, setCycleOn] = useState(page.cycleRequested);
+  const cycle = useWatchCycle(
+    monitorId,
+    siblings.filter((m) => m.capturing !== 'None'),
+    cycleOn,
+    {
+      autoStart: page.cycleRequested,
+      playing: isStreaming && !isPaused,
+      failed: activeStream.state === 'failed',
+    },
+  );
+  const ptzShow = useWatchPrefsStore((s) => s.ptzShow);
+  const togglePtzShow = useWatchPrefsStore((s) => s.togglePtzShow);
   // Display labels for the capture/analysis/recording wire values. The
   // values themselves are sent to the API untranslated.
   const modeLabel = (mode: string): string => {
@@ -147,9 +176,29 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     ? { ...stage.style, maxHeight: '100%' }
     : stageFitStyle(box, effW, effH);
 
+  // The live alarm state, when zmc reports it: the word, and its tone.
+  const alarmLabel = (s: AlarmState): string => {
+    switch (s) {
+      case 'idle': return t('Idle');
+      case 'prealarm': return t('Prealarm');
+      case 'alarm': return t('Alarm');
+      case 'alert': return t('Alert');
+    }
+  };
+  const alarmTone: 'danger' | 'warn' | undefined = liveAlarm.state === 'alarm'
+    ? 'danger'
+    : liveAlarm.state === 'alert' || liveAlarm.state === 'prealarm' ? 'warn' : undefined;
+
   const videoPanel = (
     <div
-      className="relative h-full w-full bg-bg-sunken rounded border border-border-subtle overflow-hidden"
+      data-alarm-state={liveAlarm.state ?? undefined}
+      className={clsx(
+        'relative h-full w-full bg-bg-sunken rounded border overflow-hidden',
+        // The frame is the one place the picture says it is in alarm.
+        liveAlarm.state === 'alarm' ? 'border-alarm ring-1 ring-alarm'
+          : liveAlarm.state === 'alert' ? 'border-warn ring-1 ring-warn'
+            : 'border-border-subtle',
+      )}
     >
       {/* Pinch, trackpad-pinch or drag to inspect a corner of the frame
           without touching the camera. This is digital zoom on the received
@@ -166,6 +215,17 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         />
       </div>
 
+      {page.isWebSite && (
+        <iframe
+          key={page.webSiteReloadKey}
+          src={monitor.path ?? undefined}
+          title={monitor.name}
+          sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+          referrerPolicy="no-referrer"
+          className="absolute inset-0 z-30 w-full h-full bg-surface border-0"
+        />
+      )}
+
       {stills && isEnabled && (
         <MonitorPreview
           monitorId={monitor.id}
@@ -174,6 +234,35 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           isActive
           rotationFit="fit"
         />
+      )}
+
+      {/* Digital zoom steps: legacy's Zoom IN / Zoom OUT over the picture.
+          Out of the way until the pointer is over the stage. */}
+      {!stills && (
+        <div
+          data-testid="watch-zoom-buttons"
+          className="absolute top-2 start-2 z-20 flex items-center gap-0.5 rounded bg-black/60 p-0.5 opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+        >
+          <button
+            type="button"
+            onClick={zoomOut}
+            disabled={!zoomed}
+            aria-label={t('Zoom out')}
+            title={t('Zoom out')}
+            className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-40 transition-colors"
+          >
+            <Minus size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={zoomIn}
+            aria-label={t('Zoom in')}
+            title={t('Zoom in')}
+            className="p-1 rounded text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+          >
+            <Plus size={14} aria-hidden />
+          </button>
+        </div>
       )}
 
       {zoomed && (
@@ -218,7 +307,20 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             {/* Runtime: capture-process state + fps (legacy State / Capturing FPS readout) */}
             {runtime && (
               <span className="text-xs font-mono tabular-nums text-white/70 whitespace-nowrap" data-testid="watch-runtime">
-                {runtime.status}
+                {liveAlarm.state ? (
+                  <span
+                    data-testid="watch-state"
+                    className={alarmTone === 'danger' ? 'text-alarm font-medium' : alarmTone === 'warn' ? 'text-warn font-medium' : undefined}
+                  >
+                    {alarmLabel(liveAlarm.state)}
+                  </span>
+                ) : runtime.status}
+                {viewingFps != null && (
+                  <>
+                    {' · '}
+                    <span title={t('Viewing FPS')}>{t('View: {{fps}}', { fps: formatFps(viewingFps, i18n.language) })}</span>
+                  </>
+                )}
                 {' · '}
                 {narrowStage
                   ? formatFps(runtime.captureFps, i18n.language)
@@ -265,12 +367,34 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
               >
                 <Maximize2 size={14} />
               </button>
+              {isPaused ? (
+                <button
+                  type="button"
+                  onClick={startStream}
+                  aria-label={t('Play')}
+                  title={t('Play')}
+                  className="p-1.5 rounded text-white/80 hover:text-white hover:bg-white/10 transition-colors"
+                >
+                  <Play size={14} aria-hidden />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={pauseStream}
+                  disabled={!isStreaming}
+                  aria-label={t('Pause')}
+                  title={t('Pause')}
+                  className="p-1.5 rounded text-white/80 hover:text-white hover:bg-white/10 disabled:opacity-40 transition-colors"
+                >
+                  <Pause size={14} aria-hidden />
+                </button>
+              )}
               <button
                 type="button"
                 onClick={stopStream}
                 className="flex items-center gap-1.5 px-2 py-1 rounded text-xs text-white/80 hover:text-white hover:bg-white/10 transition-colors"
               >
-                <Pause size={12} aria-hidden />
+                <Square size={12} aria-hidden />
                 {t('Stop')}
               </button>
             </div>
@@ -456,6 +580,16 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           tone={monitor.capturing === 'Always' ? 'ok' : undefined}
         />
         <Row label={t('Analysing')} value={modeLabel(monitor.analysing || 'None')} />
+        {liveAlarm.state && (
+          <Row label={t('State')} value={alarmLabel(liveAlarm.state)} tone={alarmTone} />
+        )}
+        {liveAlarm.alarmsDisabled != null && (
+          <Row
+            label={t('Alarms')}
+            value={liveAlarm.alarmsDisabled ? t('Disabled') : t('Enabled')}
+            tone={liveAlarm.alarmsDisabled ? 'warn' : undefined}
+          />
+        )}
         <Row
           label={t('Recording')}
           value={modeLabel(monitor.recording || 'None')}
@@ -483,7 +617,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
     </Panel>
   );
 
-  const eventsPanel = (
+  const eventsPanel = page.isWebSite ? null : (
     <Panel
       title={t('Recent Events')}
       icon={<Video size={16} />}
@@ -538,21 +672,30 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
   ) : null;
 
   // Only mount the PTZ panel when the backend reports real capabilities;
-  // non-PTZ monitors get no empty panel at all.
-  const ptzPanel = ptzState.status === 'ready' ? (
-    <RequirePerm feature="control" level="Edit">
+  // non-PTZ monitors get no empty panel at all. Viewing the panel needs
+  // Control View, as legacy's `canView('Control')` does.
+  // A monitor with manual actions gets the panel too: they drive other
+  // devices, so it needs no control of its own (watch.php).
+  const ptzReady = ptzState.status === 'ready';
+  const hasActions = monitorActions.actions.length > 0;
+  const ptzAvailable = (ptzReady || hasActions) && !page.isWebSite && can('control', 'View');
+  const ptzPanel = (ptzReady || hasActions) && !page.isWebSite && ptzShow ? (
+    <RequirePerm feature="control" level="View">
       <Panel
         title={t('Camera control')}
         icon={<Joystick size={16} />}
         action={
-          ptzState.capabilities.protocol ? (
+          ptzReady && ptzState.capabilities.protocol ? (
             <span className="text-xs font-mono text-fg-dim">
               {ptzState.capabilities.protocol}
             </span>
           ) : undefined
         }
       >
-        <PtzControls monitorId={id} capabilities={ptzState.capabilities} />
+        <div className="space-y-4">
+          <MonitorActionButtons state={monitorActions} />
+          {ptzReady && <PtzControls monitorId={id} capabilities={ptzState.capabilities} />}
+        </div>
       </Panel>
     </RequirePerm>
   ) : null;
@@ -601,7 +744,66 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             </div>
           )}
 
+          {prevMonitorId !== null && (
+            <div className="flex items-center gap-1 shrink-0" role="group" aria-label={t('Cycle')}>
+              <button
+                type="button"
+                onClick={() => setCycleOn((v) => !v)}
+                aria-pressed={cycleOn}
+                aria-label={t('Cycle through monitors')}
+                title={t('Cycle through monitors')}
+                className={clsx(toolBtn, cycleOn && 'text-accent')}
+              >
+                <Repeat size={14} aria-hidden />
+              </button>
+              {cycleOn && (
+                <>
+                  <select
+                    aria-label={t('Cycle period')}
+                    value={String(cycle.intervalS)}
+                    onChange={(e) => cycle.setInterval(Number(e.target.value))}
+                    className="px-1.5 py-1 rounded border border-border-subtle bg-surface text-fg text-xs cursor-pointer focus:outline-none focus:border-accent"
+                  >
+                    {cycle.periods.map((secs) => (
+                      <option key={secs} value={secs}>
+                        {secs < 60 || secs % 60 !== 0
+                          ? t('{{count}} s', { count: secs })
+                          : t('{{count}} min', { count: secs / 60 })}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={cycle.togglePause}
+                    aria-label={cycle.isPaused ? t('Play Cycle') : t('Pause Cycle')}
+                    title={cycle.isPaused ? t('Play Cycle') : t('Pause Cycle')}
+                    className={toolBtn}
+                  >
+                    {cycle.isPaused ? <Play size={14} aria-hidden /> : <Pause size={14} aria-hidden />}
+                  </button>
+                  {!cycle.isPaused && (
+                    <span className="w-6 text-xs font-mono tabular-nums text-fg-dim" data-testid="seconds-to-cycle">
+                      {cycle.countdown}
+                    </span>
+                  )}
+                </>
+              )}
+            </div>
+          )}
+
           <div className="ms-auto flex items-center gap-2 shrink-0">
+            {ptzAvailable && (
+              <button
+                type="button"
+                onClick={togglePtzShow}
+                aria-pressed={ptzShow}
+                aria-label={t('Toggle PTZ Controls')}
+                title={t('Toggle PTZ Controls')}
+                className={clsx(toolBtn, ptzShow && 'text-accent')}
+              >
+                <Joystick size={16} aria-hidden />
+              </button>
+            )}
             <div
               role="group"
               aria-label={t('View mode')}
@@ -641,6 +843,16 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
 
             <button
               type="button"
+              onClick={page.refresh}
+              aria-label={t('Refresh')}
+              title={t('Refresh')}
+              className={toolBtn}
+            >
+              <RefreshCw size={16} aria-hidden />
+            </button>
+
+            <button
+              type="button"
               onClick={downloadImage}
               disabled={!isEnabled || isDownloading}
               aria-label={t('Download Image')}
@@ -654,6 +866,26 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
 
             <RequirePerm feature="monitors" level="Edit">
               <div className="flex items-center gap-2">
+                {/* Enable / Disable Alarms (`zmu -c` / `-n`). Amber while
+                    alarms are off, since that is a state worth noticing. */}
+                {liveAlarm.ready && (
+                  <button
+                    type="button"
+                    onClick={liveAlarm.toggle}
+                    disabled={liveAlarm.isPending}
+                    aria-pressed={liveAlarm.greyed}
+                    data-testid="alarms-toggle"
+                    className={clsx(
+                      'flex items-center gap-1.5 px-2 py-1 rounded border text-xs transition-colors disabled:opacity-50',
+                      liveAlarm.greyed
+                        ? 'border-warn bg-warn/15 text-warn'
+                        : 'border-border-subtle text-fg-dim hover:text-fg hover:border-border',
+                    )}
+                  >
+                    {liveAlarm.greyed ? <BellOff size={12} aria-hidden /> : <Bell size={12} aria-hidden />}
+                    {liveAlarm.greyed ? t('Enable Alarms') : t('Disable Alarms')}
+                  </button>
+                )}
                 {/* Force Alarm / Cancel — legacy watch buttons. Shown once the
                     alarm endpoint has answered for this (capturing) monitor. */}
                 {alarm.available && (
@@ -712,7 +944,9 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
           </div>
         )}
 
-        <div className="flex-1 min-h-0 flex">
+        {/* Fullscreen takes this whole region, rail included, as legacy's
+            Fullscreen takes `#content` with the PTZ panel. */}
+        <div ref={contentRef} className="flex-1 min-h-0 flex bg-bg">
           {/* The picture takes the frame; the rail scrolls beside it. */}
           <section
             ref={stageRef}
@@ -720,7 +954,7 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
             className="flex-1 min-w-0 min-h-0 p-2 flex items-center justify-center"
             dir="ltr"
           >
-            <div className="relative max-w-full max-h-full" style={stageStyle}>
+            <div ref={stageBoxRef} className="group relative max-w-full max-h-full" style={stageStyle} data-testid="watch-stage">
               {videoPanel}
             </div>
           </section>
@@ -740,10 +974,20 @@ export default function MonitorWatchPage({ monitorId }: PagePropsMap['monitors.w
         </div>
       </main>
 
+      {/* `ZM_WEB_VIEWING_TIMEOUT`: the stream stopped itself; offer it back. */}
+      <Modal isOpen={idle.prompted} onClose={idle.resume} title={t('Are you still watching?')}>
+        <p className="text-sm text-fg-muted mb-4">{t('Video paused. Continue watching?')}</p>
+        <div className="flex justify-end">
+          <Button variant="primary" onClick={idle.resume}>{t('Continue watching')}</Button>
+        </div>
+      </Modal>
+
       {editorOpen && (
         <MonitorEditor
           monitor={monitor}
           onClose={closeEditor}
+          initialTab={editorTab}
+          onTabChange={setEditorTab}
         />
       )}
     </AppShell>
@@ -762,7 +1006,7 @@ function Row({
   value: string;
   mono?: boolean;
   truncate?: boolean;
-  tone?: 'ok' | 'danger';
+  tone?: 'ok' | 'warn' | 'danger';
 }) {
   return (
     <div className="flex items-baseline justify-between gap-3">
@@ -772,7 +1016,7 @@ function Row({
           'text-sm text-end min-w-0',
           mono && 'font-mono tabular-nums',
           truncate && 'truncate',
-          tone === 'ok' ? 'text-ok' : tone === 'danger' ? 'text-danger' : 'text-fg',
+          tone === 'ok' ? 'text-ok' : tone === 'warn' ? 'text-warn' : tone === 'danger' ? 'text-danger' : 'text-fg',
         )}
       >
         {value}

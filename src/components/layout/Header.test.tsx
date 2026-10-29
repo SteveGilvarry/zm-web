@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -9,7 +9,9 @@ import type { UserClaims } from '@/types';
 // Stub the SystemRunningToggle out to a sentinel — it has its own tests and
 // renders extra mutations / queries we don't care about here.
 vi.mock('@/components/system/SystemRunningToggle', () => ({
-  SystemRunningToggle: () => <div data-testid="running-toggle" />,
+  SystemRunningToggle: ({ readOnly }: { readOnly?: boolean }) => (
+    <div data-testid="running-toggle" data-readonly={String(!!readOnly)} />
+  ),
 }));
 
 const { Header } = await import('./Header');
@@ -19,7 +21,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -105,6 +107,20 @@ describe('Header — running toggle', () => {
       user: { user: 'admin', perms: { system: 'Edit' } } as unknown as UserClaims,
     });
     renderWithProviders(<Header />);
-    expect(screen.getByTestId('running-toggle')).toBeInTheDocument();
+    expect(screen.getByTestId('running-toggle')).toHaveAttribute('data-readonly', 'false');
+  });
+
+  it('shows System View users the run state read-only, and System None nothing', () => {
+    useAuthStore.setState({
+      user: { user: 'viewer', perms: { system: 'View' } } as unknown as UserClaims,
+    });
+    const view = renderWithProviders(<Header />);
+    expect(screen.getByTestId('running-toggle')).toHaveAttribute('data-readonly', 'true');
+    view.unmount();
+    useAuthStore.setState({
+      user: { user: 'nobody', perms: { system: 'None' } } as unknown as UserClaims,
+    });
+    renderWithProviders(<Header />);
+    expect(screen.queryByTestId('running-toggle')).toBeNull();
   });
 });

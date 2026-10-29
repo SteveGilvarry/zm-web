@@ -1,40 +1,64 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
 import { clsx } from 'clsx';
 import { Link, useNavigate } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import {
-  AlertTriangle, Bell, BellOff, Camera, Filter, FilterX, Image as ImageIcon, Maximize2,
-  Pause, Pencil, Play, RefreshCw, Repeat, SkipBack, SkipForward, Square, Video, Volume2,
-  VolumeX, ZoomOut,
+  AlertCircle, AlertTriangle, Bell, Download, ExternalLink, Filter, FilterX, GalleryHorizontal, Maximize, Maximize2,
+  Minimize2, Minus, Move, Pause, Pencil, Play, Plus, RefreshCw, SkipBack, SkipForward, Square,
+  Volume2, VolumeX,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
-import { MonitorPreview } from '@/components/monitors/MonitorPreview';
 import type { PagePropsMap } from '@/skins/types';
 import type { StreamProtocol } from '@/types';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
-import { ClassicEventsTable, WATCH_EVENT_COLUMNS } from '@/features/events/ClassicEventsTable';
+import { ClassicEventsTable } from '@/features/events/ClassicEventsTable';
+import { ColumnChooser } from '@/features/events/ColumnChooser';
 import { usePinchZoom } from '@/features/events/usePinchZoom';
-import { MonitorEditor } from '@/features/monitors/editor/MonitorEditor';
-import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
+import { ClassicMonitorEditor } from '@/skins/classic/components/monitor/ClassicMonitorEditor';
+import { stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
 import { useMonitorEvents } from '@/features/monitors/useMonitorEvents';
-import { formatFpsLegacy } from '@/features/monitors/useMonitorStatuses';
 import { useAvailableHeight } from '@/features/monitors/useStageFit';
 import { useWatchPage } from '@/features/monitors/useWatchPage';
+import { SCALE_VALUES } from '@/features/monitors/watchStage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useWatchCycle } from '@/features/cycle/useWatchCycle';
 import { useCanGoBack } from '@/features/nav/useCanGoBack';
+import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { Modal } from '@/components/common/Modal';
 import { useUiStore } from '@/stores/ui';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import { PtzControls } from '@/features/ptz/PtzControls';
+import { MonitorActionButtons } from '@/features/ptz/MonitorActionButtons';
+import type { AlarmState } from '@/features/alarms/alarmWatch';
 import { WatchLoading, WatchNotFound } from '@/skins/modern/layouts/WatchStates';
-import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
   ClassicButton, ClassicFilterRow, ClassicHeader, ClassicIconButton, ClassicPage,
   ClassicSelect, ClassicToolbar, classicButtonClass,
 } from '@/skins/classic/components';
-import { StageSizeSelects } from '@/skins/classic/components/StageSizeSelects';
+
+// Tailwind v4's trailing `!` beats ClassicIconButton's blue.
+const GREY_SQUARE = 'bg-[#8a9299]! border-[#7b838a]! hover:bg-[#6f777e]!';
+const RED_SQUARE = 'bg-[#d9534f]! border-[#d43f3a]! hover:bg-[#c9302c]!';
+/** skin.css `button.btn.btn-zoom-in` & co: translucent grey over the picture. */
+const OVERLAY_BTN = 'pointer-events-auto inline-flex items-center justify-center p-0 rounded-sm bg-[rgba(150,150,150,0.5)] hover:bg-[darkgrey] text-white';
+
+/** watch.css `span.alarm` / `span.alert`: the state word in colour. */
+const STATE_TEXT: Partial<Record<AlarmState, string>> = {
+  alarm: 'text-[#DC143C] font-bold',
+  alert: 'text-[#FF8C00] font-bold',
+};
+/** skin.css `.monitor.alarm .imageFeed` / `.monitor.alert .imageFeed`. */
+const STATE_FRAME: Partial<Record<AlarmState, string>> = {
+  alarm: 'border-[#ff0000]',
+  alert: 'border-[#ffa500]',
+};
+
+/** MonitorStream.js prints fps with `toLocaleString(undefined, {min: 1, max: n})`. */
+function fpsText(fps: number, maxDigits: number): string {
+  return fps.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: maxDigits });
+}
 
 /** watch.php's period labels: seconds under a minute, minutes above. */
 function cyclePeriodLabel(t: (k: string, o?: Record<string, unknown>) => string, seconds: number): string {
@@ -45,35 +69,57 @@ function cyclePeriodLabel(t: (k: string, o?: Record<string, unknown>) => string,
 }
 
 /**
- * Watch — classic skin: legacy `?view=watch&mid=`. Header squares, the
- * action row, the stage (+ PTZ column when the camera is controllable), the
- * transport row, and the newest 20 events for this monitor.
+ * Watch — classic skin: legacy `?view=watch&mid=` as 1.39.41 renders it.
+ * The filter bar, one header row (navigation and alarm squares, the cycle and
+ * PTZ toggles, Scale and Player), the stage with its hover buttons, the
+ * status line, the transport row, and the newest 20 events for this monitor.
  */
 export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['monitors.watch']) {
   const { t } = useTranslation();
-  const navigate = useNavigate();
   const { can } = usePerms();
   const page = useWatchPage(monitorId);
+  const navigate = useNavigate();
   const canGoBack = useCanGoBack();
-  // Legacy watch.php includes `_monitor_filters.php` behind the `#mfbflip`
-  // chevron, and the cycle sidebar's visibility lives in `zmCycleShow`.
-  const [showFilters, setShowFilters] = useState(false);
-  const showCycle = useUiStore((s) => s.classicCycleSidebarOpen);
+  // `zmFilterBarFlip#mfbpanel`: open by default (`filterSettingsInline()`).
+  const showFilters = useUiStore((s) => s.classicMonitorFilterBarOpen);
+  const toggleFilters = useUiStore((s) => s.toggleClassicMonitorFilterBar);
+  // `zmCycleShow`, or `cycle=true` on the URL.
+  const cycleShowSaved = useUiStore((s) => s.classicCycleSidebarOpen);
+  const showCycle = cycleShowSaved || page.cycleRequested;
   const toggleCycle = useUiStore((s) => s.toggleClassicCycleSidebar);
-  // Digital zoom on the received picture (legacy panzoom); the camera is not moved.
-  const { ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom } = usePinchZoom<HTMLDivElement>();
+  const ptzShow = useWatchPrefsStore((s) => s.ptzShow);
+  const togglePtzShow = useWatchPrefsStore((s) => s.togglePtzShow);
+  const stageRef = useRef<HTMLDivElement | null>(null);
+  // Digital zoom on the received picture (legacy panzoom); the camera is not
+  // moved. Double-click on the stream fullscreens it (skin.js
+  // `doubleClickOnStream`) rather than resetting the zoom.
+  const {
+    ref: zoomRef, style: zoomStyle, zoomed, scale: zoomScale, reset: resetZoom, zoomIn, zoomOut,
+  } = usePinchZoom<HTMLDivElement>(true, false, {
+    onDoubleClick: () => page.toggleStageFullscreen(stageRef.current),
+  });
+  // panzoom's Zoom OUT: one step, or straight back to 1x with ctrl held.
+  const zoomOutClick = (e: ReactMouseEvent) => { if (e.ctrlKey) resetZoom(); else zoomOut(); };
   const [stageAreaRef, availableHeight] = useAvailableHeight<HTMLDivElement>();
   // Feed the measurement back so Auto sizes a portrait camera to the space
   // that is actually left, rather than to a constant.
   const { setAvailableHeight } = page.stage;
   useEffect(() => { setAvailableHeight(availableHeight); }, [availableHeight, setAvailableHeight]);
-  const { monitor, monitorLoading, runtime, alarm, ptzState, protocol, viewMode, stage, contentRef } = page;
-  const events = useMonitorEvents(monitorId, page.isAuthenticated && !!monitor);
+  const {
+    monitor, monitorLoading, runtime, alarm, liveAlarm, monitorActions, ptzState, protocol, stage, contentRef,
+  } = page;
+  const canViewEvents = can('events', 'View');
+  const events = useMonitorEvents(monitorId, page.isAuthenticated && !!monitor && canViewEvents);
   const filter = useMonitorFilterRow(page.siblings);
   // Legacy rotates over the monitors the filter bar left, capturing ones only.
   const cycleMonitors = filter.filtered.filter((m) => m.capturing !== 'None');
-  const cycle = useWatchCycle(monitorId, cycleMonitors, showCycle);
-  useDocumentTitle(monitor ? t('Monitor - {{id}} - {{name}}', { id: monitor.id, name: monitor.name }) : t('Watch'));
+  const cycle = useWatchCycle(monitorId, cycleMonitors, showCycle, {
+    autoStart: page.cycleRequested,
+    playing: page.isStreaming && !page.isPaused,
+    failed: page.activeStream.state === 'failed',
+  });
+  // Legacy `<title>`: `ZM - <Name> - Feed`.
+  useSiteTitle(monitor ? `${monitor.name} - ${t('Feed')}` : t('Watch'));
 
   if (!page.isAuthenticated) return null;
   if (monitorLoading) return <WatchLoading />;
@@ -84,127 +130,147 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
   const isConnecting = streamState === 'connecting' || streamState === 'signaling';
   const isStreaming = streamState === 'connected';
   const isActive = streamState !== 'idle';
-  const dims = displayDimensions(monitor);
-  const showPtz = ptzState.status === 'ready';
-
-  const forceAlarm = () => {
-    if (window.confirm(t('Force alarm on "{{name}}"? This creates an event right now.', { name: monitor.name }))) {
-      alarm.force();
+  // watch.php: `Controllable() && canView('Control') && Type != 'WebSite'`,
+  // or a monitor with enabled manual actions (they drive other devices).
+  const hasActions = monitorActions.actions.length > 0;
+  const ptzAvailable = (ptzState.status === 'ready' || hasActions) && can('control', 'View') && monitor.type !== 'WebSite';
+  const ptzOpen = ptzAvailable && ptzShow;
+  const canEditMonitors = can('monitors', 'Edit');
+  // stateStrings[]: the shared-memory state when zmc reports it, otherwise
+  // the capture status from the shared 5 s poll.
+  const stateLabel = (s: AlarmState): string => {
+    switch (s) {
+      case 'idle': return t('Idle');
+      case 'prealarm': return t('Prealarm');
+      case 'alarm': return t('Alarm');
+      case 'alert': return t('Alert');
+    }
+  };
+  const stateText = liveAlarm.state
+    ? stateLabel(liveAlarm.state)
+    : runtime ? runtime.status : isStreaming ? t('Connected') : t('Idle');
+  // watch.php starts the bell's title as DisableAlarms; with Monitors edit
+  // the 1 s status then sets it to DisableAlarms on a greyed bell and
+  // EnableAlarms otherwise (MonitorStream.js:1461-1468). That reads back to
+  // front, but it is what legacy shows; the accessible name says what a
+  // click does.
+  const bellTitle = !canEditMonitors
+    ? t('{{title}}: disabled because cannot edit Monitors', { title: t('Disable Alarms') })
+    : liveAlarm.ready && !liveAlarm.greyed ? t('Enable Alarms') : t('Disable Alarms');
+  const scaleLabel = (v: string): string => {
+    switch (v) {
+      case '0': return t('Auto');
+      case '100': return t('Actual');
+      case 'fit_to_width': return t('Fit to width');
+      default: return t('Max {{size}}', { size: v });
     }
   };
 
   return (
     <AppShell title={monitor.name}>
-      <ClassicPage>
+      {/* Legacy `?view=monitor&mid=` is its own page; the watch page stays mounted, hidden, so the stream survives a round trip. */}
+      {page.editorOpen && (
+        <ClassicMonitorEditor
+          monitor={monitor}
+          // Legacy: Cancel and Save and close go to the console; Back returns here.
+          onClose={() => { void navigate({ to: '/' }); }}
+          onBack={page.closeEditor}
+          initialTab={page.editorTab}
+          onTabChange={page.setEditorTab}
+        />
+      )}
+      <ClassicPage hidden={page.editorOpen}>
+        {/* Legacy `#mfbflip` + `#mfbpanel`: the shared monitor filter bar,
+            open unless the operator folded it away. */}
+        <div className="flex items-start gap-2 mb-2">
+          <ClassicIconButton
+            aria-label={showFilters ? t('Hide filters') : t('Show filters')}
+            title={showFilters ? t('Hide filters') : t('Show filters')}
+            aria-pressed={showFilters}
+            onClick={toggleFilters}
+            className="shrink-0"
+          >
+            {showFilters ? <FilterX size={15} aria-hidden /> : <Filter size={15} aria-hidden />}
+          </ClassicIconButton>
+          {showFilters && (
+            <ClassicFilterRow state={filter} className="flex-1 min-w-0" />
+          )}
+        </div>
+
+        {/* watch.php `#navButtons` | `#headerButtons` | `#sizeControl`. */}
         <ClassicHeader
-          title={t('Monitor - {{id}} - {{name}}', { id: monitor.id, name: monitor.name })}
           // Legacy: `history.back()`, greyed when there is no page to go back to.
           backDisabled={!canGoBack}
           onRefresh={page.refresh}
           end={
             <>
               <ClassicIconButton
-                aria-label={showFilters ? t('Hide filters') : t('Show filters')}
-                title={showFilters ? t('Hide filters') : t('Show filters')}
-                aria-pressed={showFilters}
-                onClick={() => setShowFilters((v) => !v)}
+                aria-label={t('Toggle cycle sidebar')}
+                aria-pressed={showCycle}
+                onClick={toggleCycle}
+                className={showCycle ? undefined : GREY_SQUARE}
               >
-                {showFilters ? <FilterX size={15} aria-hidden /> : <Filter size={15} aria-hidden />}
+                <GalleryHorizontal size={15} aria-hidden />
               </ClassicIconButton>
-              <ClassicIconButton aria-label={t('Fullscreen')} onClick={page.toggleFullscreen}>
-                <Maximize2 size={15} aria-hidden />
+              <ClassicIconButton
+                aria-label={ptzAvailable ? t('Toggle PTZ Controls') : t('PTZ Not available')}
+                aria-pressed={ptzAvailable ? ptzShow : undefined}
+                disabled={!ptzAvailable}
+                onClick={togglePtzShow}
+                className={ptzAvailable && ptzShow ? undefined : GREY_SQUARE}
+              >
+                <Move size={15} aria-hidden />
               </ClassicIconButton>
-              <RequirePerm feature="monitors" level="Edit">
-                <ClassicIconButton aria-label={t('Edit monitor')} onClick={page.openEditor}>
-                  <Pencil size={15} aria-hidden />
-                </ClassicIconButton>
-              </RequirePerm>
+              <ClassicSelect
+                label={t('Scale')}
+                value={stage.size.scale}
+                onChange={stage.setScale}
+                options={SCALE_VALUES.map((v) => ({ value: v, label: scaleLabel(v) }))}
+                className="ms-2"
+              />
+              <ClassicSelect
+                label={t('Player')}
+                value={protocol}
+                onChange={(v) => page.changeProtocol(v as StreamProtocol)}
+                options={[{ value: 'webrtc', label: 'WebRTC' }, { value: 'hls', label: 'HLS' }]}
+              />
             </>
           }
-        />
-
-        {/* Legacy `#mfbpanel`: the shared monitor filter bar, hidden behind
-            the chevron until asked for. */}
-        {showFilters && (
-          <ClassicFilterRow monitors={page.siblings} state={filter} className="mb-2" />
-        )}
-
-        {/* Action row */}
-        <ClassicToolbar
-          label={t('Watch actions')}
-          end={<StageSizeSelects stage={stage} monitors={[monitor]} />}
         >
-          {/* Legacy Watch puts the monitor chooser first in this row, so
-              stepping through cameras never goes via the console. */}
-          {page.siblings.length > 1 && (
-            <ClassicSelect
-              label={t('Monitor')}
-              value={String(monitor.id)}
-              options={page.siblings.map((m) => ({ value: String(m.id), label: m.name }))}
-              onChange={(value) => { void navigate({ to: '/monitors/$monitorId', params: { monitorId: value } }); }}
-            />
-          )}
-          <ClassicButton
-            tone={showCycle ? 'primary' : 'default'}
-            icon={<Repeat size={14} />}
-            aria-pressed={showCycle}
-            onClick={toggleCycle}
-            title={t('Cycle through monitors')}
-          >
-            {t('Cycle')}
-          </ClassicButton>
-          <RequirePerm feature="monitors" level="Edit">
-            <ClassicButton icon={<Pencil size={14} />} onClick={page.openEditor}>{t('Edit')}</ClassicButton>
-            <ClassicButton
-              tone="danger"
-              icon={<Bell size={14} />}
-              onClick={forceAlarm}
-              disabled={!isEnabled || alarm.isPending || !alarm.available}
-              title={t('Force alarm — creates an event immediately')}
+          <div className="flex items-center gap-1">
+            <RequirePerm feature="monitors" level="Edit">
+              <ClassicIconButton aria-label={t('Edit')} onClick={page.openEditor} className={GREY_SQUARE}>
+                <Pencil size={15} aria-hidden />
+              </ClassicIconButton>
+            </RequirePerm>
+            {/* `#enableAlmBtn`: shown to everyone, usable with Monitors edit
+                once the status has arrived; greyed while alarms are off. */}
+            <ClassicIconButton
+              aria-label={liveAlarm.greyed ? t('Enable Alarms') : t('Disable Alarms')}
+              title={bellTitle}
+              aria-pressed={liveAlarm.ready ? !liveAlarm.greyed : undefined}
+              onClick={liveAlarm.toggle}
+              disabled={!canEditMonitors || !liveAlarm.ready || liveAlarm.isPending}
+              className={clsx(GREY_SQUARE, liveAlarm.greyed && 'opacity-65')}
+              data-testid="alarms-toggle"
             >
-              {alarm.forced ? t('Alarm forced') : t('Force Alarm')}
-            </ClassicButton>
-            <ClassicButton
-              icon={<BellOff size={14} />}
-              onClick={alarm.cancel}
-              disabled={!isEnabled || alarm.isPending || !alarm.available}
-              title={t('Cancel forced alarm')}
-            >
-              {t('Cancel Alarm')}
-            </ClassicButton>
-          </RequirePerm>
-          <ClassicButton
-            icon={<ImageIcon size={14} />}
-            onClick={page.downloadImage}
-            disabled={!isEnabled || page.isDownloading}
-            title={t('Download the current snapshot as a JPEG')}
-          >
-            {page.isDownloading ? t('Saving…') : t('Download Image')}
-          </ClassicButton>
-          <div role="group" aria-label={t('View mode')} className="inline-flex">
-            <ClassicButton
-              tone={viewMode === 'stream' ? 'primary' : 'default'}
-              aria-pressed={viewMode === 'stream'}
-              icon={<Video size={14} />}
-              onClick={() => page.setViewMode('stream')}
-              className="rounded-e-none"
-            >
-              {t('Stream')}
-            </ClassicButton>
-            <ClassicButton
-              tone={viewMode === 'stills' ? 'primary' : 'default'}
-              aria-pressed={viewMode === 'stills'}
-              icon={<Camera size={14} />}
-              onClick={() => page.setViewMode('stills')}
-              className="rounded-s-none"
-            >
-              {t('Stills')}
-            </ClassicButton>
+              <Bell size={15} aria-hidden />
+            </ClassicIconButton>
+            <RequirePerm feature="monitors" level="Edit">
+              {/* One button that flips with the alarm, no confirmation —
+                  watch.js `forceAlarm` / `cancelAlarm`. */}
+              <ClassicIconButton
+                aria-label={alarm.forced ? t('Cancel Forced Alarm') : t('Force Alarm')}
+                onClick={alarm.forced ? alarm.cancel : alarm.force}
+                disabled={!isEnabled || alarm.isPending || !alarm.available}
+                aria-pressed={alarm.forced}
+                className={RED_SQUARE}
+              >
+                <AlertCircle size={15} aria-hidden />
+              </ClassicIconButton>
+            </RequirePerm>
           </div>
-          <Link to="/events" search={{ monitor_id: monitor.id }} className={classicButtonClass('default')}>
-            {t('All Events')}
-          </Link>
-        </ClassicToolbar>
+        </ClassicHeader>
 
         {alarm.error && (
           <div role="alert" className="mb-2 px-3 py-2 rounded-sm border border-red-300 bg-red-50 text-red-700 text-sm flex items-center gap-2">
@@ -217,7 +283,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
             PTZ column and the events table, not just the picture. */}
         <div ref={contentRef} className={clsx('bg-white', page.isFullscreen && 'overflow-auto p-3')}>
         {/* Stage + PTZ column */}
-        <div className={clsx('flex flex-col gap-3 items-start', (showPtz || showCycle) && 'lg:flex-row')}>
+        <div className={clsx('flex flex-col gap-3 items-start', (ptzOpen || showCycle) && 'lg:flex-row')}>
           {showCycle && (
             <nav
               className="w-full lg:w-52 shrink-0 bg-white border border-zinc-300 rounded-sm p-3"
@@ -271,122 +337,210 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
           )}
           <div ref={stageAreaRef} className="flex-1 min-w-0 w-full">
             <RequirePerm feature="stream" level="View" fallback="message">
-              <div dir="ltr" data-testid="watch-stage" className="relative bg-black mx-auto overflow-hidden" style={stage.style}>
-                {viewMode === 'stills' ? (
-                  isEnabled ? (
-                    <MonitorPreview
-                      monitorId={monitor.id}
-                      monitorName={monitor.name}
-                      orientation={monitor.orientation}
-                      isActive
-                      rotationFit="fill"
-                    />
-                  ) : (
-                    <p className="absolute inset-0 flex items-center justify-center text-zinc-400 text-sm">{t('Monitor is disabled')}</p>
-                  )
-                ) : (
-                  <>
-                    {/* Pinch, trackpad-pinch or drag once zoomed; double-click resets. */}
-                    <div ref={zoomRef} style={zoomStyle} className="absolute inset-0" data-testid="watch-zoom">
-                      <video
-                        ref={videoRef}
-                        className={clsx(stageVideoClass(monitor, page.isFullscreen), !isActive && 'hidden')}
-                        style={stageVideoStyle(monitor, page.isFullscreen)}
-                        autoPlay
-                        muted={page.isMuted}
-                        playsInline
-                      />
-                    </div>
-                    {isConnecting && (
-                      <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white text-sm" role="status">
-                        {t('Loading…')}
-                      </div>
-                    )}
-                    {streamError && streamState === 'failed' && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/70 text-white" role="alert" data-testid="stream-error">
-                        <AlertTriangle size={28} className="text-amber-400 mb-2" aria-hidden />
-                        <p className="text-sm mb-2 max-w-xs text-center">{streamError}</p>
-                        <ClassicButton tone="primary" onClick={page.retry}>{t('Retry')}</ClassicButton>
-                      </div>
-                    )}
-                    {!isActive && !isConnecting && (
-                      <div className="absolute inset-0 flex flex-col items-center justify-center text-zinc-400">
-                        {isEnabled ? (
-                          <ClassicButton tone="primary" icon={<Play size={14} />} onClick={page.startStream}>{t('Start Stream')}</ClassicButton>
-                        ) : (
-                          <p className="text-sm">{t('Monitor is disabled')}</p>
-                        )}
-                      </div>
-                    )}
-                  </>
+              <div
+                ref={stageRef}
+                dir="ltr"
+                data-testid="watch-stage"
+                data-alarm-state={liveAlarm.state ?? undefined}
+                className="group relative bg-black mx-auto overflow-hidden"
+                style={stage.style}
+              >
+                {/* The frame turns red in Alarm and orange in Alert; drawn
+                    over the picture so the stage does not change size. */}
+                {liveAlarm.state && STATE_FRAME[liveAlarm.state] && (
+                  <div
+                    aria-hidden
+                    data-testid="watch-alarm-frame"
+                    className={clsx('absolute inset-0 z-10 pointer-events-none border-2', STATE_FRAME[liveAlarm.state])}
+                  />
+                )}
+                {page.isWebSite && (
+                  <iframe
+                    key={page.webSiteReloadKey}
+                    src={monitor.path ?? undefined}
+                    title={monitor.name}
+                    sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+                    referrerPolicy="no-referrer"
+                    className="absolute inset-0 w-full h-full bg-white border-0"
+                  />
+                )}
+                {/* Pinch, trackpad-pinch, shift + wheel, or drag once zoomed;
+                    double-click fullscreens the picture. */}
+                <div ref={zoomRef} style={zoomStyle} className={clsx('absolute inset-0', page.isWebSite && 'hidden')} data-testid="watch-zoom">
+                  <video
+                    ref={videoRef}
+                    className={clsx(stageVideoClass(monitor, page.isFullscreen), !isActive && 'hidden')}
+                    style={stageVideoStyle(monitor, page.isFullscreen)}
+                    autoPlay
+                    muted={page.isMuted}
+                    playsInline
+                  />
+                </div>
+                {/* `#button_zoom<mid>`: shown over the picture on hover or
+                    after a click, as `managePanZoomButton` shows it. */}
+                <div
+                  data-testid="watch-stage-buttons"
+                  className="absolute inset-0 z-20 pointer-events-none opacity-0 group-hover:opacity-100 focus-within:opacity-100 transition-opacity"
+                >
+                  <button type="button" onClick={zoomOutClick} title={t('Zoom OUT')} aria-label={t('Zoom OUT')} className={clsx(OVERLAY_BTN, 'absolute start-[3px] top-[3px]')}>
+                    <Minus size={28} aria-hidden />
+                  </button>
+                  <button type="button" onClick={zoomIn} title={t('Zoom IN')} aria-label={t('Zoom IN')} className={clsx(OVERLAY_BTN, 'absolute end-[3px] top-[3px]')}>
+                    <Plus size={28} aria-hidden />
+                  </button>
+                  <div className="absolute top-[2px] inset-x-0 flex justify-center gap-1">
+                    <button type="button" onClick={() => page.toggleStageFullscreen(stageRef.current)} title={t('Open full screen')} aria-label={t('Open full screen')} className={OVERLAY_BTN}>
+                      <Maximize size={24} aria-hidden />
+                    </button>
+                    <Link
+                      to="/monitors/$monitorId"
+                      params={{ monitorId: String(monitor.id) }}
+                      title={t('Open watch page')}
+                      aria-label={t('Open watch page')}
+                      className={OVERLAY_BTN}
+                    >
+                      <ExternalLink size={24} aria-hidden />
+                    </Link>
+                    <RequirePerm feature="monitors" level="Edit">
+                      <button type="button" onClick={page.openEditor} title={t('Edit monitor')} aria-label={t('Edit monitor')} className={OVERLAY_BTN}>
+                        <Pencil size={24} aria-hidden />
+                      </button>
+                    </RequirePerm>
+                  </div>
+                </div>
+                {isConnecting && (
+                  <div className="absolute inset-0 flex items-center justify-center bg-black/60 text-white text-sm" role="status">
+                    {t('Loading…')}
+                  </div>
+                )}
+                {streamError && streamState === 'failed' && (
+                  <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/70 text-white" role="alert" data-testid="stream-error">
+                    <AlertTriangle size={28} className="text-amber-400 mb-2" aria-hidden />
+                    <p className="text-sm mb-2 max-w-xs text-center">{streamError}</p>
+                    <ClassicButton tone="primary" onClick={page.retry}>{t('Retry')}</ClassicButton>
+                  </div>
+                )}
+                {!isActive && !isConnecting && !isEnabled && (
+                  <p className="absolute inset-0 flex items-center justify-center text-zinc-400 text-sm">{t('Monitor is disabled')}</p>
                 )}
               </div>
             </RequirePerm>
 
-            {/* Legacy status line under the picture */}
-            <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 px-1 py-1 text-sm text-zinc-800" data-testid="watch-runtime">
-              <span className="tabular-nums">
-                {runtime
-                  ? t('State: {{state}} {{capture}} {{analysis}}', {
-                      state: runtime.status,
-                      capture: formatFpsLegacy(runtime.captureFpsRaw),
-                      analysis: formatFpsLegacy(runtime.analysisFpsRaw),
-                    })
-                  : t('State: {{state}}', { state: isStreaming ? t('Connected') : t('Idle') })}
+            {/* Legacy `#monitorStatus`: stream info, name, then the state line. */}
+            <div className="flex flex-col items-center gap-0.5 px-1 py-1 text-sm text-zinc-800" data-testid="watch-runtime">
+              <span className="text-xs text-zinc-500" data-testid="watch-stream-info">
+                {protocol === 'webrtc' ? 'WebRTC' : 'HLS'}
+                {streamError ? ` · ${streamError}` : ''}
               </span>
-              {zoomed && (
-                <span className="tabular-nums">{t('Zoom: {{scale}}x', { scale: zoomScale.toFixed(1) })}</span>
-              )}
               <span>{t('{{name}} (id={{id}})', { name: monitor.name, id: monitor.id })}</span>
-              <span className="uppercase">{viewMode === 'stills' ? t('Stills') : protocol === 'webrtc' ? 'WebRTC' : 'HLS'}</span>
+              <span className="flex flex-wrap justify-center gap-x-3 tabular-nums">
+                {/* Monitor.php: `State:<span id="stateValue">`, no space. */}
+                <span>
+                  {t('State')}:<span
+                    data-testid="watch-state"
+                    className={liveAlarm.state ? STATE_TEXT[liveAlarm.state] : undefined}
+                  >{stateText}</span>
+                </span>
+                <span title={t('Viewing FPS')} data-testid="viewing-fps">
+                  {t('{{fps}} fps', { fps: page.viewingFps == null ? '' : fpsText(page.viewingFps, 2) })}
+                </span>
+                <span title={t('Capturing FPS')}>
+                  {t('{{fps}} fps', { fps: runtime ? fpsText(runtime.captureFps, 1) : '' })}
+                </span>
+                {zoomed && (
+                  <span>{t('Zoom: {{scale}}x', { scale: zoomScale.toFixed(1) })}</span>
+                )}
+              </span>
             </div>
 
-            {/* Transport row */}
-            <ClassicToolbar label={t('Stream controls')}>
-              <ClassicButton icon={<Square size={14} />} onClick={page.stopStream} disabled={viewMode !== 'stream' || !isActive}>{t('Stop')}</ClassicButton>
-              <ClassicButton icon={<Play size={14} />} onClick={page.startStream} disabled={viewMode !== 'stream' || isActive || !isEnabled}>{t('Play')}</ClassicButton>
-              <ClassicButton icon={<ZoomOut size={14} />} onClick={resetZoom} disabled={!zoomed}>{t('Zoom Out')}</ClassicButton>
-              {hasAudio && (
-                <ClassicButton icon={page.isMuted ? <VolumeX size={14} /> : <Volume2 size={14} />} onClick={page.toggleMute} aria-pressed={!page.isMuted}>
-                  {page.isMuted ? t('Unmute') : t('Mute')}
-                </ClassicButton>
+            {/* watch.php `#bottomBlock`: `#dvrControls` then `#extButton`. The
+                DVR buttons need the zms replay buffer (zm-api#138). */}
+            <ClassicToolbar label={t('Stream controls')} className="justify-center">
+              {/* A click in `#dvrControls` pauses the cycle (watch.js `handleClick`). */}
+              <span className="inline-flex items-center gap-2" onClickCapture={cycle.pause}>
+              <ClassicButton aria-label={t('Stop')} title={t('Stop')} icon={<Square size={14} />} onClick={page.stopStream} disabled={!isActive} />
+              {isStreaming && !page.isPaused ? (
+                <ClassicButton aria-label={t('Pause')} title={t('Pause')} icon={<Pause size={14} />} onClick={page.pauseStream} />
+              ) : (
+                <ClassicButton aria-label={t('Play')} title={t('Play')} icon={<Play size={14} />} onClick={page.startStream} disabled={!isEnabled || isConnecting} />
               )}
-              <ClassicButton icon={<Maximize2 size={14} />} onClick={page.toggleFullscreen}>{t('Fullscreen')}</ClassicButton>
-              <ClassicSelect
-                label={t('Player')}
-                value={protocol}
-                onChange={(v) => page.changeProtocol(v as StreamProtocol)}
-                options={[{ value: 'webrtc', label: 'WebRTC' }, { value: 'hls', label: 'HLS' }]}
+              </span>
+              <span className="mx-2" aria-hidden />
+              <ClassicButton
+                aria-label={page.isFullscreen ? t('Exit Fullscreen') : t('Fullscreen')}
+                title={page.isFullscreen ? t('Exit Fullscreen') : t('Fullscreen')}
+                icon={page.isFullscreen ? <Minimize2 size={14} /> : <Maximize2 size={14} />}
+                onClick={page.toggleFullscreen}
               />
-              <span className="text-xs text-zinc-500">{dims.width}×{dims.height}</span>
+              <Link
+                to="/events"
+                search={{ monitor_id: monitor.id, sort: 'start_time', dir: 'asc' }}
+                className={classicButtonClass('default')}
+              >
+                {t('All Events')}
+              </Link>
+              {/* `#volumeControls<mid>`: greyed until the stream has audio. */}
+              <span className={clsx('inline-flex items-center gap-1', !hasAudio && 'opacity-50')}>
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={1}
+                  value={Math.round((page.isMuted ? 0 : page.volume) * 100)}
+                  onChange={(e) => page.setVolume(Number(e.target.value) / 100)}
+                  disabled={!hasAudio}
+                  aria-label={t('Volume')}
+                  className="w-24 accent-[#337ab7]"
+                />
+                <button
+                  type="button"
+                  onClick={page.toggleMute}
+                  disabled={!hasAudio}
+                  aria-label={page.isMuted ? t('Unmute') : t('Mute')}
+                  title={page.isMuted ? t('Unmute') : t('Mute')}
+                  aria-pressed={!page.isMuted}
+                  className="p-1 text-zinc-700 disabled:cursor-not-allowed"
+                >
+                  {page.isMuted ? <VolumeX size={18} aria-hidden /> : <Volume2 size={18} aria-hidden />}
+                </button>
+              </span>
             </ClassicToolbar>
           </div>
 
-          {/* Legacy `canView('Control')`: viewing the panel needs View, not Edit. */}
-          {showPtz && (
-            <RequirePerm feature="control" level="View">
-              <aside className="w-full lg:w-80 shrink-0 bg-white border border-zinc-300 rounded-sm p-3" aria-label={t('Camera control')}>
-                <h2 className="text-sm font-bold text-zinc-800 mb-2 flex items-center justify-between">
-                  {t('Camera control')}
-                  {ptzState.capabilities.protocol && (
-                    <span className="text-[11px] font-normal text-zinc-500 uppercase">{ptzState.capabilities.protocol}</span>
-                  )}
-                </h2>
-                <PtzControls monitorId={monitor.id} capabilities={ptzState.capabilities} />
-              </aside>
-            </RequirePerm>
+          {/* `#ptzControls`: `canView('Control')` gates it in `ptzAvailable`,
+              `ptzShow` decides whether it is open. */}
+          {ptzOpen && (
+            <aside className="w-full lg:w-80 shrink-0 bg-white border border-zinc-300 rounded-sm p-3 space-y-4" aria-label={t('Camera control')}>
+              {/* `ptzControls` echoes the action buttons first. */}
+              <MonitorActionButtons state={monitorActions} />
+              {ptzState.status === 'ready' && (
+                <PtzControls monitorId={monitor.id} capabilities={ptzState.capabilities} variant="classic" />
+              )}
+            </aside>
           )}
         </div>
 
         {/* Events for this monitor: legacy `#eventList` — fixed columns, newest
-            20 by Id, no sorting or pager, a trash icon per row. */}
+            20 by Id, no sorting or pager, a trash icon per row. Only with
+            `canView('Events')` and not for a WebSite monitor. */}
+        {canViewEvents && monitor.type !== 'WebSite' && (
         <section className="mt-4" aria-labelledby="watch-events-heading">
           <ClassicToolbar
             label={t('Events toolbar')}
             end={
-              <ClassicIconButton aria-label={t('Refresh events')} onClick={events.refetch}>
-                <RefreshCw size={14} aria-hidden />
-              </ClassicIconButton>
+              <>
+                <ClassicIconButton aria-label={t('Refresh events')} onClick={events.refetch}>
+                  <RefreshCw size={14} aria-hidden />
+                </ClassicIconButton>
+                <ColumnChooser variant="classic" source={events.columnSource} />
+                <ClassicIconButton
+                  aria-label={t('Export visible events as CSV')}
+                  onClick={() => events.exportCsv(monitor.name)}
+                  disabled={events.events.length === 0}
+                >
+                  <Download size={14} aria-hidden />
+                </ClassicIconButton>
+              </>
             }
           >
             <h2 id="watch-events-heading" className="text-sm font-bold text-zinc-800 me-2">{t('Events')}</h2>
@@ -403,7 +557,7 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
               <ClassicEventsTable
                 events={events.events}
                 monitorLookup={{ [monitor.id]: monitor.name }}
-                columns={WATCH_EVENT_COLUMNS}
+                columns={events.columns}
                 selectedIds={events.selectedIds}
                 onToggleSelected={events.toggleSelected}
                 onDeleteRow={can('events', 'Edit') ? events.deleteOne : undefined}
@@ -411,10 +565,13 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
                 showThumbs={events.showThumbs}
                 thumbsAtEnd
                 thumbWidth={events.thumbWidth}
+                showFooter={false}
+                highlightNew
               />
             </div>
           </QueryState>
         </section>
+        )}
         </div>
       </ClassicPage>
 
@@ -424,7 +581,15 @@ export default function ClassicMonitorWatchPage({ monitorId }: PagePropsMap['mon
         <ClassicButton tone="primary" onClick={page.idle.resume}>{t('Yes')}</ClassicButton>
       </Modal>
 
-      {page.editorOpen && <MonitorEditor monitor={monitor} onClose={page.closeEditor} />}
+      {/* `delconfirm`: legacy's delete-confirmation modal for the trash icon. */}
+      <Modal isOpen={events.pendingDeleteId != null} onClose={events.cancelDelete} title={t('Delete Confirmation')}>
+        <p className="text-sm mb-3">{t('Are you sure you wish to delete the selected events?')}</p>
+        <div className="flex justify-end gap-2">
+          <ClassicButton onClick={events.cancelDelete}>{t('Cancel')}</ClassicButton>
+          <ClassicButton tone="danger" onClick={events.confirmDelete}>{t('Delete')}</ClassicButton>
+        </div>
+      </Modal>
+
     </AppShell>
   );
 }

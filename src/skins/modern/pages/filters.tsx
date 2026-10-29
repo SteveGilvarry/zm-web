@@ -14,6 +14,7 @@ import { RequirePerm } from '@/features/auth/RequirePerm';
 import { FILTER_SORT_FIELDS, type FilterColumns } from '@/api/filters';
 import { RuleBuilder } from '@/features/filters/RuleBuilder';
 import { MatchesPreview } from '@/features/filters/MatchesPreview';
+import { ModernFilterLogPanel } from '../components/FilterLogPanel';
 import { useFilterSortFieldLabels } from '@/features/filters/labels';
 import { useFiltersPage, type FlagKey } from '@/features/filters/useFiltersPage';
 import type { ZmStorage } from '@/types';
@@ -55,6 +56,12 @@ export default function FiltersPage() {
           <span className="text-sm text-fg truncate">
             {selectedFilter ? t('Editing — {{name}}', { name: selectedFilter.name }) : t('New filter')}
           </span>
+          {/* Legacy's read-only Id row (filter.php:170). */}
+          {selectedFilter && (
+            <span className="text-xs text-fg-dim font-mono tabular-nums" data-testid="filter-id">
+              {t('Id {{id}}', { id: selectedFilter.id })}
+            </span>
+          )}
           <span className="ms-auto" />
           <button
             type="button"
@@ -167,6 +174,7 @@ export default function FiltersPage() {
                   <input
                     id="filter-name"
                     value={draftName}
+                    maxLength={64}
                     onChange={(e) => setDraftName(e.target.value)}
                     placeholder={t('Untitled filter')}
                     className={clsx(input, 'flex-1 text-sm')}
@@ -333,7 +341,7 @@ export default function FiltersPage() {
                           <option value="Summary">{t('Summary (one email per run)')}</option>
                         </select>
                       </div>
-                      <TextField id="filter-email-server" label={t('Email server')} value={c.email_server ?? ''} onChange={(v) => setColumn('email_server', v || null)} placeholder={t('smtp.example.com (optional override)')} />
+                      <TextField id="filter-email-server" label={t('Email server')} value={c.email_server ?? ''} onChange={(v) => setColumn('email_server', v || null)} placeholder={s.features.emailHost} />
                     </div>
                   )}
 
@@ -402,6 +410,8 @@ export default function FiltersPage() {
                     </pre>
                   </div>
                 )}
+
+                {s.selectedFilter && <ModernFilterLogPanel filterId={s.selectedFilter.id} />}
 
                 {draftQuery && (
                   <details className="text-xs">

@@ -8,7 +8,7 @@ import { configListHandler } from '@/test/msw/handlers';
 import type { ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -45,7 +45,7 @@ function signIn(user: unknown = ADMIN) {
 }
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => {
   server.resetHandlers();
   useToastStore.getState().clear();
@@ -70,8 +70,13 @@ const mkUser = (over: Partial<Record<string, unknown>>) => ({
 
 const USERS = [
   mkUser({ id: 1, username: 'admin', name: 'Site Admin', email: 'admin@example.com', system: 'Edit', monitors: 'Edit', language: 'de_de', api_enabled: 0 }),
-  mkUser({ id: 2, username: 'ops', name: 'Ops Team', email: 'ops@example.com', enabled: 0, system: 'View' }),
+  mkUser({ id: 2, username: 'ops', name: 'Ops Team', email: 'ops@example.com', enabled: 0, system: 'View', role_id: 5 }),
   mkUser({ id: 3, username: 'guest', name: 'Guest', email: 'guest@example.com' }),
+];
+
+const ROLES = [
+  { id: 5, name: 'Operators', description: null, stream: 'View', events: 'View', control: 'None',
+    monitors: 'None', groups: 'None', devices: 'None', snapshots: 'None', system: 'None' },
 ];
 
 let sent: Array<{ method: string; path: string; body: unknown }> = [];
@@ -83,6 +88,7 @@ function seed(over: unknown[] = [], selfEdit = '0') {
     http.get('/api/v3/configs/categories', () => HttpResponse.json([{ category: 'system', count: 2 }])),
     configListHandler({ ZM_USER_SELF_EDIT: selfEdit }),
     http.get('/api/v3/users', () => HttpResponse.json(paged(USERS))),
+    http.get('/api/v3/roles', () => HttpResponse.json(paged(ROLES))),
     http.get('/api/v3/users/:id', ({ params }) =>
       HttpResponse.json(USERS.find((u) => u.id === Number(params.id)) ?? USERS[0])),
     http.put('/api/v3/users/:id', async ({ request, params }) => {
@@ -109,27 +115,29 @@ describe('ClassicSettingsUsersPage', () => {
     await mount();
 
     const row = (await screen.findByRole('button', { name: 'admin' })).closest('tr')!;
-    expect(within(row).getByText('Site Admin')).toBeInTheDocument();
+    // users.php has no Name column.
+    expect(within(row).queryByText('Site Admin')).toBeNull();
     expect(within(row).getByText('admin@example.com')).toBeInTheDocument();
     // The permission columns are the raw level strings.
     expect(within(row).getAllByText('Edit')).toHaveLength(2);   // monitors + system
     // Signed-in row: starred, and its mark checkbox is disabled.
     expect(within(row).getByTitle('You')).toHaveTextContent('*');
     expect(within(row).getByRole('checkbox', { name: 'Mark admin' })).toBeDisabled();
-    // Own enable toggle is not offered — the cell falls back to Yes/No.
+    // Enabled is Yes/No text, as legacy prints it, not a toggle.
     expect(within(row).queryByRole('checkbox', { name: /able admin/ })).toBeNull();
-    // Legacy column order: … Email, Language, Enabled, …perms…, API Enabled.
+    // Legacy column order: … Email, Language, Enabled, Role, …perms…, API Enabled.
     const headers = screen.getAllByRole('columnheader').map((h) => h.textContent);
     expect(headers.slice(1)).toEqual([
-      'Username', 'Name', 'Email', 'Language', 'Enabled',
+      'Username', 'Email', 'Language', 'Enabled', 'Role',
       'Stream', 'Events', 'Control', 'Monitors', 'Groups', 'Snapshots', 'System', 'Devices', 'API Enabled',
     ]);
     const cells = within(row).getAllByRole('cell').map((c) => c.textContent);
-    expect(cells[4]).toBe('de_de');        // Language
-    expect(cells[5]).toBe('Yes');          // Enabled, own row
+    expect(cells[3]).toBe('de_de');        // Language
+    expect(cells[4]).toBe('Yes');          // Enabled, own row
     expect(cells.at(-1)).toBe('No');       // API Enabled
-    const ops = screen.getByText('Ops Team').closest('tr')!;
-    expect(within(ops).getAllByRole('cell').map((c) => c.textContent)[4]).toBe('default');
+    const ops = screen.getByRole('button', { name: 'ops' }).closest('tr')!;
+    expect(within(ops).getAllByRole('cell').map((c) => c.textContent)[3]).toBe('default');
+    expect(within(ops).getAllByRole('cell').map((c) => c.textContent)[4]).toBe('No');
     expect(within(ops).getAllByRole('cell').map((c) => c.textContent).at(-1)).toBe('Yes');
 
     // Sorted by username: guest, then admin/ops around it.
@@ -158,18 +166,6 @@ describe('ClassicSettingsUsersPage', () => {
     await user.type(screen.getByRole('searchbox', { name: 'Search' }), 'zzz');
     await waitFor(() =>
       expect(screen.getByRole('status')).toHaveAttribute('data-state', 'empty'));
-  });
-
-  it('the enable toggle PUTs a 0/1 int', async () => {
-    signIn();
-    seed();
-    const user = userEvent.setup();
-    await mount();
-
-    await user.click(await screen.findByRole('checkbox', { name: 'Enable ops' }));
-    await waitFor(() => expect(sent).toEqual([
-      { method: 'PUT', path: '/users/2', body: { enabled: 1 } },
-    ]));
   });
 
   it('select-all marks everyone but the signed-in user, and Delete confirms then DELETEs', async () => {
@@ -273,6 +269,47 @@ describe('ClassicSettingsUsersPage', () => {
     expect(await screen.findByRole('dialog')).toHaveTextContent('Add User');
   });
 
+  it('Role column names the role and links its editor (_options_users.php:57)', async () => {
+    signIn();
+    seed();
+    await mount();
+    const row = (await screen.findByRole('button', { name: 'ops' })).closest('tr')!;
+    const link = await within(row).findByRole('link', { name: 'Operators' });
+    expect(link).toHaveAttribute('href', '/settings/roles/$roleId');
+    // No role: an empty cell.
+    const guest = screen.getByRole('button', { name: 'guest' }).closest('tr')!;
+    expect(within(guest).queryByRole('link')).toBeNull();
+  });
+
+  it('a System viewer sees the role name without a link', async () => {
+    signIn(VIEWER);
+    seed();
+    await mount();
+    await screen.findByText('Operators');
+    expect(screen.queryByRole('link', { name: 'Operators' })).toBeNull();
+  });
+
+  it('the editor offers NoRole first, saves a cleared role as null, and links the stored role', async () => {
+    signIn();
+    seed();
+    mockSearch = { uid: 2 };
+    const user = userEvent.setup();
+    await mount();
+
+    const dialog = await screen.findByRole('dialog');
+    const select = within(dialog).getByLabelText('Role') as HTMLSelectElement;
+    await waitFor(() => expect(select.value).toBe('5'));
+    expect([...select.options].map((o) => o.textContent)).toEqual(['No Role (Direct Permissions Only)', 'Operators']);
+
+    await user.click(within(dialog).getByRole('button', { name: 'Edit role' }));
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/settings/roles/$roleId', params: { roleId: '5' } });
+
+    await user.selectOptions(select, '');
+    await user.click(within(dialog).getByRole('button', { name: 'Save Changes' }));
+    await waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]).toEqual({ method: 'PUT', path: '/users/2', body: { role_id: null } });
+  });
+
   it('renders the 500 branch as an alert', async () => {
     signIn();
     seed([
@@ -297,7 +334,7 @@ describe('ClassicSettingsUsersPage', () => {
     seed();
     await mount();
 
-    await waitFor(() => expect(screen.getByText('Site Admin')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByText('admin@example.com')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: 'Add New User' })).toBeNull();
     expect(screen.queryByRole('checkbox')).toBeNull();
     // Export stays available to a viewer.

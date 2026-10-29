@@ -1,6 +1,8 @@
+import { Fragment, useRef } from 'react';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, ChevronLeft, ChevronRight, Download, RefreshCw } from 'lucide-react';
+import { ArrowLeft, ChevronLeft, ChevronRight, Download, LayoutGrid, Maximize2, RefreshCw } from 'lucide-react';
+import { useIsFullscreen } from '@/hooks/useIsFullscreen';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -12,6 +14,9 @@ import { useFramesColumnLabels } from '@/features/events/columnLabels';
 import { FRAMES_COLUMNS, type FramesColumnKey, type FramesSortKey } from '@/features/events/framesTable';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
+import { StatsTable } from '../components/StatsTable';
+import { useFrameStats } from '@/features/events/useFrameStats';
+import type { ZmEvent } from '@/types';
 
 const field = clsx(
   'bg-surface border border-border-subtle rounded',
@@ -28,6 +33,12 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
   const labels = useFramesColumnLabels();
   const title = t('Frames — Event {{id}}', { id: eventId });
   useDocumentTitle(title);
+  const regionRef = useRef<HTMLDivElement>(null);
+  const isFullscreen = useIsFullscreen(regionRef);
+  const toggleFullscreen = () => {
+    if (document.fullscreenElement) void document.exitFullscreen();
+    else void regionRef.current?.requestFullscreen?.();
+  };
 
   if (!s.isAuthenticated) return null;
 
@@ -82,6 +93,27 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
             <Download size={14} aria-hidden />
           </button>
 
+          <button
+            type="button"
+            onClick={s.toggleCardView}
+            aria-pressed={s.cardView}
+            aria-label={s.cardView ? t('Hide card view') : t('Show card view')}
+            title={s.cardView ? t('Hide card view') : t('Show card view')}
+            className={clsx('shrink-0 p-1 rounded transition-colors', s.cardView ? 'text-accent' : 'text-fg-dim hover:text-fg')}
+          >
+            <LayoutGrid size={14} aria-hidden />
+          </button>
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-pressed={isFullscreen}
+            aria-label={t('Fullscreen')}
+            title={t('Fullscreen')}
+            className="shrink-0 p-1 rounded text-fg-dim hover:text-fg transition-colors"
+          >
+            <Maximize2 size={14} aria-hidden />
+          </button>
+
           <label className="shrink-0 flex items-center gap-1 text-xs text-fg-dim">
             {t('Per page')}
             <select
@@ -98,7 +130,7 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
         </div>
 
         {/* The table is the page: it scrolls under its own pinned header. */}
-        <div className="flex-1 min-h-0 overflow-auto p-3">
+        <div ref={regionRef} className="flex-1 min-h-0 overflow-auto p-3 bg-bg">
           <QueryState
             isLoading={s.isLoading}
             isError={s.isError}
@@ -107,10 +139,25 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
             empty={s.frames.length === 0}
             emptyMessage={t('No frames recorded for this event.')}
           >
+            {s.cardView ? (
+              <div data-testid="frames-cards" className="grid gap-2 grid-cols-[repeat(auto-fill,minmax(12rem,1fr))]">
+                {s.frames.map((f) => (
+                  <FrameCard
+                    key={f.frame_id}
+                    frame={f}
+                    showThumbs={s.showThumbs}
+                    token={s.token}
+                    onOpen={() => s.openFrame(f.frame_id)}
+                    onStats={() => s.openStats(f.frame_id)}
+                  />
+                ))}
+              </div>
+            ) : (
             <div className="overflow-x-auto rounded border border-border-subtle bg-surface">
               <table className="w-full text-sm" data-testid="frames-table">
                 <thead className="sticky top-0 z-10 bg-surface border-b border-border-subtle">
                   <tr>
+                    <td aria-hidden className="w-8 px-2 py-2" />
                     {FRAMES_COLUMNS.filter((c) => s.isVisible(c.key)).map((col) => (
                       <Th
                         key={col.key}
@@ -125,19 +172,33 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
                 </thead>
                 <tbody>
                   {s.frames.map((f) => (
-                    <FrameRow
-                      key={f.id}
-                      frame={f}
-                      maxScore={s.maxScore}
-                      isVisible={s.isVisible}
-                      showThumbs={s.showThumbs}
-                      thumbWidth={s.thumbWidth}
-                      token={s.token}
-                    />
+                    <Fragment key={f.frame_id}>
+                      <FrameRow
+                        frame={f}
+                        maxScore={s.maxScore}
+                        isVisible={s.isVisible}
+                        showThumbs={s.showThumbs}
+                        thumbWidth={s.thumbWidth}
+                        token={s.token}
+                        expanded={s.isExpanded(f.frame_id)}
+                        onToggle={() => s.toggleExpanded(f.frame_id)}
+                        onOpen={() => s.openFrame(f.frame_id)}
+                        onStats={() => s.openStats(f.frame_id)}
+                        animate={s.animateThumbs}
+                      />
+                      {s.isExpanded(f.frame_id) && (
+                        <tr data-testid={`frame-detail-${f.frame_id}`} className="border-b border-border-subtle bg-bg-sunken">
+                          <td colSpan={s.visibleColumns.length + 1} className="px-3 py-2">
+                            <FrameStatsDetail event={s.event} frameId={f.frame_id} />
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
                   ))}
                 </tbody>
               </table>
             </div>
+            )}
           </QueryState>
         </div>
 
@@ -149,6 +210,23 @@ export default function EventFramesPage({ eventId }: { eventId: number }) {
           </span>
           {s.totalPages > 1 && (
             <div className="ms-auto flex items-center gap-2">
+              <label className="flex items-center gap-1">
+                {t('Page')}
+                <input
+                  type="number"
+                  min={1}
+                  max={s.totalPages}
+                  defaultValue={s.page}
+                  key={s.page}
+                  aria-label={t('Go to page')}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'Enter') return;
+                    const n = Math.trunc(Number(e.currentTarget.value));
+                    if (n >= 1 && n <= s.totalPages) s.setPage(n);
+                  }}
+                  className={clsx(field, 'w-14 px-1 py-0.5 text-xs font-mono tabular-nums')}
+                />
+              </label>
               <PagerBtn
                 onClick={() => s.setPage(s.page - 1)}
                 disabled={s.page <= 1}
@@ -221,16 +299,28 @@ function PagerBtn({
   );
 }
 
+/** A row's stats, opened from its chevron (legacy's "+" detail view). */
+function FrameStatsDetail({ event, frameId }: { event: ZmEvent | undefined; frameId: number }) {
+  const stats = useFrameStats(event, frameId);
+  return <StatsTable rows={stats.rows} isLoading={stats.isLoading} testId={`frame-stats-${frameId}`} />;
+}
+
 function FrameRow({
-  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token,
+  frame: f, maxScore, isVisible, showThumbs, thumbWidth, token, expanded, onToggle, onOpen, onStats, animate,
 }: {
   frame: Frame;
+  animate: boolean;
   maxScore: number;
   isVisible: (key: FramesColumnKey) => boolean;
   showThumbs: boolean;
   thumbWidth: number;
   token: string | null;
+  expanded: boolean;
+  onToggle: () => void;
+  onOpen: () => void;
+  onStats: () => void;
 }) {
+  const { t } = useTranslation();
   const { formatDateTime } = useDateTimeFormat();
   // An alarm frame is state, so it keeps its colour; everything else is grey.
   const alarm = f.type === 'Alarm';
@@ -239,8 +329,20 @@ function FrameRow({
     <tr
       data-testid={`frame-row-${f.frame_id}`}
       data-frame-type={f.type}
-      className="border-b border-border-subtle last:border-0 hover:bg-surface-2 transition-colors"
+      onClick={onOpen}
+      className="border-b border-border-subtle last:border-0 hover:bg-surface-2 transition-colors cursor-pointer"
     >
+      <td className="w-8 px-2 py-1">
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onToggle(); }}
+          aria-expanded={expanded}
+          aria-label={expanded ? t('Hide stats for frame {{n}}', { n: f.frame_id }) : t('Show stats for frame {{n}}', { n: f.frame_id })}
+          className="p-0.5 rounded text-fg-dim hover:text-fg transition-colors"
+        >
+          <ChevronRight size={14} aria-hidden className={clsx('transition-transform rtl:-scale-x-100', expanded && 'rotate-90')} />
+        </button>
+      </td>
       {isVisible('event_id') && (
         <td className="px-3 py-1 text-end font-mono tabular-nums text-fg-muted">{f.event_id}</td>
       )}
@@ -263,7 +365,12 @@ function FrameRow({
         </td>
       )}
       {isVisible('score') && (
-      <td className="px-3 py-1 text-end font-mono tabular-nums">
+      <td
+        className="px-3 py-1 text-end font-mono tabular-nums hover:underline"
+        onClick={(e) => { e.stopPropagation(); onStats(); }}
+        title={t('Stats')}
+        data-testid={`frame-score-${f.frame_id}`}
+      >
         <span className="inline-flex items-center gap-2">
           <span className={alarm ? 'text-danger' : 'text-fg'}>{f.score}</span>
           <span
@@ -282,15 +389,56 @@ function FrameRow({
         <td className="px-3 py-1 whitespace-nowrap">
           {showThumbs && (
             <FrameThumbnail
-              frameId={f.id}
+              eventId={f.event_id}
               frameNumber={f.frame_id}
               token={token}
               width={thumbWidth}
+              animate={animate}
               className="rounded-sm"
             />
           )}
         </td>
       )}
     </tr>
+  );
+}
+
+/** Card view: one tile per frame, its picture first. */
+function FrameCard({
+  frame: f, showThumbs, token, onOpen, onStats,
+}: {
+  frame: Frame;
+  showThumbs: boolean;
+  token: string | null;
+  onOpen: () => void;
+  onStats: () => void;
+}) {
+  const { t } = useTranslation();
+  const alarm = f.type === 'Alarm';
+  return (
+    <div
+      data-testid={`frame-card-${f.frame_id}`}
+      onClick={onOpen}
+      className="rounded border border-border-subtle bg-surface hover:border-border cursor-pointer overflow-hidden"
+    >
+      {showThumbs && (
+        <div className="bg-black">
+          <FrameThumbnail eventId={f.event_id} frameNumber={f.frame_id} token={token} width={192} className="w-full!" />
+        </div>
+      )}
+      <div className="flex items-center gap-2 px-2 py-1 text-xs">
+        <span className="font-mono tabular-nums text-fg">#{f.frame_id}</span>
+        <span className={alarm ? 'text-danger' : 'text-fg-dim'}>{f.type}</span>
+        <span className="font-mono tabular-nums text-fg-dim">{Number(f.delta).toFixed(2)}s</span>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onStats(); }}
+          title={t('Stats')}
+          className="ms-auto font-mono tabular-nums text-fg hover:underline"
+        >
+          {t('score {{score}}', { score: f.score })}
+        </button>
+      </div>
+    </div>
   );
 }

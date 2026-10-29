@@ -23,6 +23,10 @@ const OPTIONS_TABS: Record<string, string> = {
   servers: '/settings/servers',
   storage: '/settings/storage',
   control: '/settings/ptz-controls',
+  roles: '/settings/roles',
+  encoderTemplates: '/settings/encoder-templates',
+  menu: '/settings/menu',
+  privacy: '/settings/privacy',
 };
 
 const toInt = (v: string | null): number | null => {
@@ -90,8 +94,14 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
         ? { to: `/monitors/${mid}`, search: { edit: true } }
         : { to: '/monitors', search: { new: true } };
     case 'zones':
-    case 'zone':
       return mid != null ? { to: `/monitors/${mid}/zones`, search: {} } : { to: '/monitors', search: {} };
+    case 'zone': {
+      if (mid == null) return { to: '/monitors', search: {} };
+      // `zid=0` is legacy's Add New Zone.
+      const zid = params.get('zid');
+      const open = zid == null ? null : zid === '0' ? 'new' : toInt(zid);
+      return { to: `/monitors/${mid}/zones`, search: open != null ? { zid: open } : {} };
+    }
     case 'event':
     case 'frames':
     case 'frame':
@@ -99,11 +109,32 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
     case 'events':
       return eventsTarget(params);
     case 'montage': {
+      const search: Record<string, SearchValue> = {};
       const group = toInt(params.get('group'));
-      return { to: '/montage', search: group != null ? { group } : {} };
+      if (group != null) search.group = group;
+      const layout = toInt(params.get('zmMontageLayout'));
+      if (layout != null) search.layout = layout;
+      const showZones = params.get('showZones');
+      if (showZones != null) search.show_zones = showZones === '1' ? 1 : 0;
+      const position = params.get('monitorStatusPositionSelected');
+      if (position) search.status_position = position;
+      const header = params.get('header');
+      if (header) search.header = header;
+      return { to: '/montage', search };
     }
-    case 'montagereview':
     case 'timeline': {
+      // The events filter it was opened with, plus the chart's window.
+      const search = eventsTarget(params).search;
+      const keys = [['minTime', 'min_time'], ['maxTime', 'max_time'], ['midTime', 'mid_time']] as const;
+      for (const [legacy, ours] of keys) {
+        const value = params.get(legacy);
+        if (value) search[ours] = value;
+      }
+      const range = toInt(params.get('range'));
+      if (range) search.range = range;
+      return { to: '/timeline', search };
+    }
+    case 'montagereview': {
       const search: Record<string, SearchValue> = {};
       const monitorId = toInt(params.get('MonitorId') ?? params.get('mid'));
       if (monitorId != null) search.monitor_id = monitorId;
@@ -131,6 +162,12 @@ export function mapLegacyUrl(pathname: string, searchString: string): LegacyTarg
     }
     case 'state':
       return { to: '/settings/state', search: {} };
+    case 'role': {
+      const rid = toInt(params.get('rid'));
+      return rid != null && rid > 0
+        ? { to: `/settings/roles/${rid}`, search: {} }
+        : { to: '/settings/roles', search: {} };
+    }
     case 'user':
     case 'users': {
       const uid = toInt(params.get('uid'));

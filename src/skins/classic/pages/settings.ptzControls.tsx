@@ -23,7 +23,7 @@ import {
 
 /**
  * Options → Control — classic skin. Legacy `?view=options&tab=control`
- * bootstrap-table (mark column, Id, Name, Type, Protocol, capability
+ * bootstrap-table (mark column, Id, Name, Protocol, capability
  * Yes/No columns, presets) and, with `?id=`, the `?view=controlcap` pill
  * form in its place.
  */
@@ -94,13 +94,16 @@ export default function ClassicSettingsPtzControlsPage() {
                           )}
                           <ClassicSortTh active={p.sortKey === 'id'} dir={p.sortDir} onClick={() => p.toggleSort('id')}>{t('Id')}</ClassicSortTh>
                           <ClassicSortTh active={p.sortKey === 'name'} dir={p.sortDir} onClick={() => p.toggleSort('name')}>{t('Name')}</ClassicSortTh>
-                          <ClassicSortTh active={p.sortKey === 'type'} dir={p.sortDir} onClick={() => p.toggleSort('type')}>{t('Type')}</ClassicSortTh>
                           <ClassicSortTh active={p.sortKey === 'protocol'} dir={p.sortDir} onClick={() => p.toggleSort('protocol')}>{t('Protocol')}</ClassicSortTh>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Move')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Zoom')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Focus')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can Iris')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Can White Bal.')}</th>
+                          {/* `_options_controlcaps.php`: light and audio columns since 1.39 (zm-api#177). */}
+                          <th className={clsx(classicTh, 'text-center')}>{t('Can Light')}</th>
+                          <th className={clsx(classicTh, 'text-center')}>{t('Can Indicator Light')}</th>
+                          <th className={clsx(classicTh, 'text-center')}>{t('Can Play Audio')}</th>
                           <th className={clsx(classicTh, 'text-center')}>{t('Has Presets')}</th>
                           <th className={clsx(classicTh, 'text-end')}>{t('Monitors')}</th>
                         </tr>
@@ -124,13 +127,15 @@ export default function ClassicSettingsPtzControlsPage() {
                                 <button type="button" onClick={() => p.openEdit(c)} className={classicLink}>{c.name}</button>
                               ) : c.name}
                             </td>
-                            <td className={classicTd}>{c.type}</td>
                             <td className={clsx(classicTd, 'font-mono text-xs')}>{c.protocol ?? ''}</td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_move} /></td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_zoom} /></td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_focus} /></td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_iris} /></td>
                             <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_white} /></td>
+                            <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_light} /></td>
+                            <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_indicator_light} /></td>
+                            <td className={clsx(classicTd, 'text-center')}><YesNo value={c.can_audio_play} /></td>
                             <td className={clsx(classicTd, 'text-center font-mono text-xs')}>{presetsCell(c)}</td>
                             <td
                               className={clsx(classicTd, 'text-end font-mono text-xs tabular-nums')}

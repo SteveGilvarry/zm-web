@@ -6,13 +6,16 @@ import {
   getEvents,
   legacySortFieldToApi,
   type EventSortField,
+  type EventsPage,
   type SortDirection,
 } from '@/api/events';
-import { previewFilter, type FilterAstExpr, type FilterTerm } from '@/api/filters';
-import { listGroupMonitors, listGroups, type Group } from '@/api/groups';
-import { getMonitors } from '@/api/monitors';
+import {
+  getFilter, parseFilterQuery, previewFilter, type FilterAstExpr, type FilterTerm,
+} from '@/api/filters';
+import { listGroupMonitors, listGroups, type Group, type GroupMonitor } from '@/api/groups';
+import { getAllMonitors } from '@/api/monitors';
 import { getStorageList } from '@/api/storage';
-import { getTagDetail, listTags, type Tag } from '@/api/tags';
+import { listTags, type Tag } from '@/api/tags';
 import { useAuthStore } from '@/stores/auth';
 import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import { useEventsColumnsStore, EVENTS_COLUMNS, type EventsColumnKey } from '@/stores/eventsColumns';
@@ -21,17 +24,24 @@ import { sumEventDurations, sumEventDiskSpace } from '@/features/events/duration
 import { downloadCsv } from '@/features/logs/csv';
 import { toLocalDatetime } from '@/features/reports/datetime';
 import i18next from '@/i18n';
-import type { Monitor, PaginatedResponse, ZmEvent } from '@/types';
+import type { Monitor, ZmEvent } from '@/types';
 import { eventsToCsv } from './eventsCsv';
 import {
+  groupIdsFromSearch,
+  groupIdsToSearch,
   monitorIdsFromSearch,
   monitorIdsToSearch,
   notesFromSearch,
   notesToSearch,
+  parseTermsParam,
+  tagsFromSearch,
+  tagsToSearch,
   termsFromEventsSearch,
   type EventNavSearch,
   type EventsSearchParams,
 } from './eventsSearch';
+import { pickTags, resolveTagRule, tagPicksToApi, type TagPick } from './tagFilter';
+import { previewReasons, termsToPreviewQuery } from './termsPreview';
 
 /**
  * Lower bound for the default "last hour" start-time filter. Pulled into a
@@ -95,7 +105,7 @@ export function clampPageSize(n: number): number {
 
 /** Keys that mean "the operator asked for a specific set" (no last-hour default). */
 const FILTER_KEYS: (keyof EventsSearchParams)[] = [
-  'monitor_id', 'group', 'storage', 'cause', 'archived', 'start', 'end', 'notes', 'tag', 'q',
+  'monitor_id', 'group', 'storage', 'cause', 'archived', 'start', 'end', 'notes', 'tag', 'q', 'terms', 'filter_id',
 ];
 
 export interface EventsListPageState {
@@ -123,8 +133,12 @@ export interface EventsListPageState {
    * so this is a suggestion list, not the set of legal values.
    */
   causes: string[];
-  /** Σ duration / Σ disk across the visible page. */
-  totals: { duration: number; disk: number };
+  /**
+   * Σ duration / Σ disk for the footer. `scope` says what was summed: the
+   * whole result (`/events?totals=true`, as legacy's `footerData` does) or,
+   * on the `/filters/preview` path that has no totals, the visible page.
+   */
+  totals: { duration: number; disk: number; scope: 'all' | 'page' };
 
   searchQuery: string;
   setSearchQuery: (v: string) => void;
@@ -137,13 +151,18 @@ export interface EventsListPageState {
   /** Selected monitor ids; empty means every monitor (legacy's multi-select). */
   monitorFilter: number[];
   setMonitorFilter: (ids: number[]) => void;
-  groupFilter: number | 'all';
-  setGroupFilter: (v: number | 'all') => void;
+  /** Selected group ids; empty means every group (legacy's multi-select). */
+  groupFilter: number[];
+  setGroupFilter: (ids: number[]) => void;
   /** Substring match on Cause, sent as the API's `cause` param. */
   causeFilter: string;
   setCauseFilter: (v: string) => void;
-  tagFilter: number | 'all';
-  setTagFilter: (v: number | 'all') => void;
+  /**
+   * Tags box picks — ids, `none` (No Tag) or `any` (Any Tag); empty means
+   * no tag condition. The setter keeps a sentinel on its own (`pickTags`).
+   */
+  tagFilter: TagPick[];
+  setTagFilter: (picks: TagPick[]) => void;
   archivedFilter: ArchivedFilter;
   setArchivedFilter: (v: ArchivedFilter) => void;
   /** Full ISO lower bound, or '' for no date filter. */
@@ -188,8 +207,8 @@ export interface EventsListPageState {
 
   /** The active filters as ZoneMinder terms (for the "Filter" button). */
   filterTerms: FilterTerm[];
-  /** Search params for `/filters` that open a new filter seeded with them. */
-  filterLinkSearch: { terms: string };
+  /** Search params for `/filters`: the saved filter on show, or a new one seeded with the terms. */
+  filterLinkSearch: { terms?: string; id?: number };
   /**
    * Search params every link to an event carries, so Prev / Next on the
    * detail page walk this list in this order (legacy `filterQuery` +
@@ -198,6 +217,32 @@ export interface EventsListPageState {
   detailSearch: EventNavSearch;
   /** Download the visible page as CSV (bootstrap-table "Export"). */
   exportCsv: () => void;
+
+  /**
+   * Set when the list was opened with a term list or a saved filter (the
+   * filter editor's List Matches, legacy `?view=events&filter…`). The strip
+   * does not apply then; the page shows these terms instead.
+   */
+  termsMode: EventsTermsMode | null;
+  /** Leave the term list and go back to the strip. */
+  clearTerms: () => void;
+  /**
+   * Search params for `/timeline`: this list's filters with the seeded last
+   * hour resolved, minus paging (legacy's Timeline button carries
+   * `filterQuery`).
+   */
+  timelineSearch: Partial<EventsSearchParams>;
+}
+
+export interface EventsTermsMode {
+  terms: FilterTerm[];
+  /** The saved filter the terms came from, if any. */
+  filterId?: number;
+  filterName?: string;
+  /** Why the terms could not be listed here (empty when they could). */
+  reasons: string[];
+  /** Still fetching the saved filter. */
+  loading: boolean;
 }
 
 /**
@@ -212,13 +257,22 @@ export function groupEventsAst(opts: {
   monitorIds?: number[];
   archived?: boolean;
   startTime?: string;
-  endTime?: string;
+  /** Upper bound on the *start* time — legacy's `StartDateTime <=` term. */
+  startBefore?: string;
   name?: string;
+  /**
+   * The search box. `/filters/preview` has no free-text field, so it becomes
+   * an any-of over the text columns (and the id, for a number) — close to
+   * what `/events?q=` matches, short of its time, score and size columns.
+   */
+  q?: string;
   cause?: string;
   /** One substring, or several ORed together (legacy's Notes multi-select). */
   notes?: string | string[];
   eventIds?: number[];
   storageId?: number;
+  /** Further rules ANDed in (the resolved tag condition). */
+  extra?: FilterAstExpr[];
   sort: EventSortField;
   dir: SortDirection;
 }): { where: FilterAstExpr; sort: { field: EventSortField; dir: SortDirection } } {
@@ -228,8 +282,9 @@ export function groupEventsAst(opts: {
   }
   if (opts.archived !== undefined) rules.push({ field: 'archived', op: 'eq', value: opts.archived ? 1 : 0 });
   if (opts.startTime) rules.push({ field: 'start_time', op: 'gte', value: opts.startTime });
-  if (opts.endTime) rules.push({ field: 'end_time', op: 'lte', value: opts.endTime });
+  if (opts.startBefore) rules.push({ field: 'start_time', op: 'lte', value: opts.startBefore });
   if (opts.name) rules.push({ field: 'name', op: 'like', value: `%${opts.name}%` });
+  if (opts.q) rules.push(searchRule(opts.q));
   if (opts.cause) rules.push({ field: 'cause', op: 'like', value: `%${opts.cause}%` });
   const notes = typeof opts.notes === 'string' ? [opts.notes] : opts.notes ?? [];
   if (notes.length === 1) rules.push({ field: 'notes', op: 'like', value: `%${notes[0]}%` });
@@ -242,7 +297,21 @@ export function groupEventsAst(opts: {
   }
   if (opts.eventIds) rules.push({ field: 'id', op: 'in', value: opts.eventIds });
   if (opts.storageId != null) rules.push({ field: 'storage_id', op: 'eq', value: opts.storageId });
+  if (opts.extra) rules.push(...opts.extra);
   return { where: { match: 'all', rules }, sort: { field: opts.sort, dir: opts.dir } };
+}
+
+/** The search box as a preview rule: any text column contains it, or the id is it. */
+export function searchRule(q: string): FilterAstExpr {
+  const like = `%${q}%`;
+  const rules: FilterAstExpr[] = [
+    { field: 'name', op: 'like', value: like },
+    { field: 'cause', op: 'like', value: like },
+    { field: 'notes', op: 'like', value: like },
+    { field: 'monitor_name', op: 'like', value: like },
+  ];
+  if (/^\d+$/.test(q)) rules.unshift({ field: 'id', op: 'eq', value: Number(q) });
+  return { match: 'any', rules };
 }
 
 /**
@@ -316,11 +385,16 @@ export function useEventsListPage(): EventsListPageState {
   const rawMonitorId = search.monitor_id;
   const monitorFilter = useMemo(() => monitorIdsFromSearch({ monitor_id: rawMonitorId }), [rawMonitorId]);
   const notesFilter = useMemo(() => notesFromSearch({ notes: search.notes }), [search.notes]);
-  const groupFilter: number | 'all' = search.group ?? 'all';
+  const rawGroup = search.group;
+  const groupFilter = useMemo(() => groupIdsFromSearch({ group: rawGroup }), [rawGroup]);
   // Set by the Storage list's Events link; there is no picker for it.
   const storageFilter = search.storage;
   const causeFilter = search.cause ?? '';
-  const tagFilter: number | 'all' = search.tag ?? 'all';
+  const rawTag = search.tag;
+  const tagFilter = useMemo(() => tagsFromSearch({ tag: rawTag }), [rawTag]);
+  // List Matches / a saved filter: the term list replaces the strip.
+  const urlTerms = useMemo(() => parseTermsParam(search.terms), [search.terms]);
+  const filterId = search.filter_id;
   const archivedFilter: ArchivedFilter =
     search.archived === true ? 'archived' : search.archived === false ? 'unarchived' : 'all';
 
@@ -332,7 +406,8 @@ export function useEventsListPage(): EventsListPageState {
   const [deepLinked] = useState(() => FILTER_KEYS.some((k) => search[k] !== undefined));
   const [defaultCleared, setDefaultCleared] = useState(false);
   const [defaultLowerBound] = useState(() => defaultStartTimeLowerBound());
-  const defaultDateActive = !deepLinked && !defaultCleared;
+  const termsActive = urlTerms !== null || filterId !== undefined;
+  const defaultDateActive = !deepLinked && !defaultCleared && !termsActive;
   const dateFilter = search.start
     ? dateInputToStartTime(search.start)
     : defaultDateActive ? defaultLowerBound : '';
@@ -343,12 +418,29 @@ export function useEventsListPage(): EventsListPageState {
   const sortField = search.sort ?? legacySortFieldToApi(configSortField);
   const sortDir = search.dir ?? (configSortOrder.toLowerCase() === 'desc' ? 'desc' : 'asc');
 
-  // Fetch monitors for filter dropdown
+  // Every monitor, for the Monitor box and the name lookup.
   const { data: monitorsData } = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
   });
+
+  // A saved filter opened by id (legacy `?view=events&filter_id=`).
+  const { data: savedFilter, isLoading: savedFilterLoading } = useQuery({
+    queryKey: ['filters', filterId],
+    queryFn: () => getFilter(filterId as number),
+    enabled: isAuthenticated && filterId !== undefined,
+  });
+  const termsMode = useMemo((): EventsTermsMode | null => {
+    if (urlTerms) return { terms: urlTerms, reasons: previewReasons(urlTerms), loading: false };
+    if (filterId === undefined) return null;
+    if (!savedFilter) return { terms: [], filterId, reasons: [], loading: savedFilterLoading };
+    const parsed = parseFilterQuery(savedFilter.query_json);
+    return parsed.ok
+      ? { terms: parsed.query.terms, filterId, filterName: savedFilter.name, reasons: previewReasons(parsed.query.terms), loading: false }
+      : { terms: [], filterId, filterName: savedFilter.name, reasons: [parsed.reason], loading: false };
+  }, [urlTerms, filterId, savedFilter, savedFilterLoading]);
+  const termsHaveGroup = termsMode?.terms.some((term) => term.attr === 'Group') ?? false;
 
   // Groups (legacy "Group" filter) — resolved to monitor ids client-side.
   const { data: groupsData } = useQuery({
@@ -357,19 +449,21 @@ export function useEventsListPage(): EventsListPageState {
     enabled: isAuthenticated,
     staleTime: 60_000,
   });
+  const needGroupMonitors = termsMode ? termsHaveGroup : groupFilter.length > 0;
   const { data: groupMonitorsData } = useQuery({
     queryKey: ['groups-monitors'],
     queryFn: () => listGroupMonitors({ page: 1, page_size: 1000 }),
-    enabled: isAuthenticated && groupFilter !== 'all',
+    enabled: isAuthenticated && needGroupMonitors,
     staleTime: 60_000,
   });
   const groups = useMemo(() => groupsData?.items ?? [], [groupsData]);
+  const groupMonitors: GroupMonitor[] = useMemo(() => groupMonitorsData?.items ?? [], [groupMonitorsData]);
   const groupMonitorIds = useMemo(() => {
-    if (groupFilter === 'all') return null;
-    return (groupMonitorsData?.items ?? [])
-      .filter((gm) => gm.group_id === groupFilter)
-      .map((gm) => gm.monitor_id);
-  }, [groupFilter, groupMonitorsData]);
+    if (groupFilter.length === 0) return null;
+    return Array.from(new Set(
+      groupMonitors.filter((gm) => groupFilter.includes(gm.group_id)).map((gm) => gm.monitor_id),
+    ));
+  }, [groupFilter, groupMonitors]);
 
   // Storage names for the Storage column; id 0 is ZoneMinder's implicit default store.
   const { data: storageData } = useQuery({
@@ -400,9 +494,11 @@ export function useEventsListPage(): EventsListPageState {
   // else the Group's monitors; `null` is every monitor. One monitor goes
   // through `/events`; several have no list parameter, so they run through
   // `/filters/preview` with `monitor_id in […]` — same paging, sort and
-  // ACLs, server-side. Preview has no tag field, so on that path the tag is
-  // resolved to its event ids first (`/tags/{id}` already pages the events
-  // carrying it).
+  // ACLs, server-side. Preview has no tag field, so on that path the tag
+  // picks are resolved to event ids first (`resolveTagRule`).
+  //
+  // A term list (List Matches, a saved filter) always runs through preview,
+  // with its Group and Tags terms rewritten the same way (`termsPreview`).
   const searchQuery = (search.q ?? '').trim();
   const causeQuery = causeFilter.trim();
 
@@ -412,40 +508,48 @@ export function useEventsListPage(): EventsListPageState {
     && (monitorScope.length !== 1 || monitorFilter.length === 0);
   // `/events` takes one `notes` substring; several event types have to be
   // ORed, which only `/filters/preview` can do (legacy's Notes multi-select).
-  const usePreviewPath = monitorNeedsPreview || notesFilter.length > 1;
-  const needTagIds = usePreviewPath && tagFilter !== 'all';
-  const { data: tagDetail } = useQuery({
-    queryKey: ['tag-events', tagFilter],
-    queryFn: () => getTagDetail(tagFilter as number, { page: 1, page_size: 1000 }),
-    enabled: isAuthenticated && needTagIds,
-    staleTime: 60_000,
-  });
-  const groupReady =
-    (groupFilter === 'all' || groupMonitorsData !== undefined) && (!needTagIds || tagDetail !== undefined);
+  // Legacy's second date box is `StartDateTime <=`; `/events` only bounds the
+  // *end* time (which drops events still recording), so a start bound goes
+  // through preview, which can say `start_time <=`.
+  const usePreviewPath = monitorNeedsPreview || notesFilter.length > 1 || endFilter !== '';
+  const groupReady = !needGroupMonitors || groupMonitorsData !== undefined;
+  const termsReady = !termsMode || (!termsMode.loading && termsMode.reasons.length === 0);
+  const termsKey = termsMode ? JSON.stringify(termsMode.terms) : '';
 
   const { data: eventsData, isLoading, isFetching, error, refetch } = useQuery({
     queryKey: [
       'events', page, pageSize, monitorScope, archivedFilter,
       dateFilter, endFilter, sortField, sortDir,
-      searchQuery, causeQuery, notesFilter, tagFilter, tagDetail?.events.length ?? null,
-      storageFilter ?? null,
+      searchQuery, causeQuery, notesFilter, tagFilter,
+      storageFilter ?? null, termsKey,
     ],
-    queryFn: async (): Promise<PaginatedResponse<ZmEvent>> => {
+    queryFn: async (): Promise<EventsPage> => {
+      const empty: EventsPage = { items: [], total: 0, current_page: 1, per_page: pageSize, last_page: 1 };
+      if (termsMode) {
+        const res = await termsToPreviewQuery(termsMode.terms, { groupMonitors, sort: sortField, dir: sortDir });
+        // `termsMode.reasons` already caught what cannot be previewed.
+        if (!res.ok) return empty;
+        return previewFilter(res.ast, { page, page_size: pageSize });
+      }
       const archived = archivedFilter === 'all' ? undefined : archivedFilter === 'archived';
       if (usePreviewPath) {
-        if (monitorScope !== null && monitorScope.length === 0) {
-          return { items: [], total: 0, current_page: 1, per_page: pageSize, last_page: 1 };
-        }
-        return previewFilter(groupEventsAst({
+        if (monitorScope !== null && monitorScope.length === 0) return empty;
+        const tagRule = await resolveTagRule(tagFilter);
+        // `id in ()` matches nothing; `id not in ()` excludes nothing.
+        const noIds = tagRule !== null && 'op' in tagRule
+          && Array.isArray(tagRule.value) && tagRule.value.length === 0;
+        if (noIds && 'op' in tagRule && tagRule.op === 'in') return empty;
+        const ast = groupEventsAst({
           monitorIds: monitorScope ?? undefined, archived,
-          startTime: dateFilter || undefined, endTime: endFilter || undefined,
-          name: searchQuery || undefined,
+          startTime: dateFilter || undefined, startBefore: endFilter || undefined,
+          q: searchQuery || undefined,
           cause: causeQuery || undefined,
           notes: notesFilter,
-          eventIds: needTagIds ? (tagDetail?.events ?? []).map((e) => e.id) : undefined,
+          extra: tagRule && !noIds ? [tagRule] : undefined,
           storageId: storageFilter,
           sort: sortField, dir: sortDir,
-        }), { page, page_size: pageSize });
+        });
+        return previewFilter(ast, { page, page_size: pageSize });
       }
       return getEvents({
         page,
@@ -454,24 +558,28 @@ export function useEventsListPage(): EventsListPageState {
         archived,
         storage_id: storageFilter,
         start_time: dateFilter || undefined,
-        // Legacy "Start Date/Time <=" — the API bounds end_date_time instead,
-        // so an event still running at this instant is left out.
-        end_time: endFilter || undefined,
-        name: searchQuery || undefined,
+        // Legacy's table search box: free text over every column (zm-api `q`).
+        q: searchQuery || undefined,
         cause: causeQuery || undefined,
         notes: notesFilter[0],
-        tag_id: tagFilter === 'all' ? undefined : String(tagFilter),
+        tag_id: tagPicksToApi(tagFilter),
         sort: sortField,
         direction: sortDir,
+        // Footer sums over the whole result, as legacy's `footerData` does.
+        totals: true,
       });
     },
-    enabled: isAuthenticated && groupReady,
-    refetchInterval: 30000,
+    enabled: isAuthenticated && groupReady && termsReady,
+    // No polling: legacy reloads the table on demand and when the page is
+    // shown again (`pageshow`, events.js:540) — Refresh, and a fresh fetch
+    // whenever the list mounts (coming back from an event, say). A poll
+    // would move rows under a pending selection.
+    refetchOnMount: 'always',
   });
 
   const events = useMemo(() => eventsData?.items || [], [eventsData]);
   const totalPages = eventsData?.last_page || 1;
-  const monitors = useMemo(() => monitorsData?.items || [], [monitorsData]);
+  const monitors = useMemo(() => monitorsData ?? [], [monitorsData]);
 
   // Tell the event detail page which set Prev/Next should walk: the one
   // monitor this list is filtered to, or every monitor otherwise. (The
@@ -491,11 +599,16 @@ export function useEventsListPage(): EventsListPageState {
     return lookup;
   }, [monitors]);
 
-  // Footer totals — sum across the visible page.
-  const totals = useMemo(() => ({
-    duration: sumEventDurations(events),
-    disk: sumEventDiskSpace(events),
-  }), [events]);
+  // Footer totals: the whole result when `/events` summed it (`totals=true`),
+  // else — on the preview path, which has no totals — the visible page.
+  const totals = useMemo(() => {
+    const allLength = eventsData?.total_length_seconds;
+    const allDisk = eventsData?.total_disk_space;
+    if (allLength != null || allDisk != null) {
+      return { duration: allLength ?? 0, disk: allDisk ?? 0, scope: 'all' as const };
+    }
+    return { duration: sumEventDurations(events), disk: sumEventDiskSpace(events), scope: 'page' as const };
+  }, [eventsData, events]);
 
   // Suggestions for the Cause box: the distinct causes on this page. There
   // is no distinct-values endpoint, and a second query would only widen the
@@ -518,9 +631,10 @@ export function useEventsListPage(): EventsListPageState {
     setSearch({ monitor_id: monitorIdsToSearch(ids), page: undefined });
   const setNotesFilter = (values: string[]) =>
     setSearch({ notes: notesToSearch(values), page: undefined });
-  const setGroupFilter = (v: number | 'all') =>
-    setSearch({ group: v === 'all' ? undefined : v, page: undefined });
-  const setTagFilter = (v: number | 'all') => setSearch({ tag: v === 'all' ? undefined : v, page: undefined });
+  const setGroupFilter = (ids: number[]) =>
+    setSearch({ group: groupIdsToSearch(ids), page: undefined });
+  const setTagFilter = (picks: TagPick[]) =>
+    setSearch({ tag: tagsToSearch(pickTags(tagFilter, picks)), page: undefined });
   const setArchivedFilter = (v: ArchivedFilter) =>
     setSearch({ archived: v === 'all' ? undefined : v === 'archived', page: undefined });
   const setDateInput = (v: string) => {
@@ -534,7 +648,14 @@ export function useEventsListPage(): EventsListPageState {
     setSearch({
       monitor_id: undefined, group: undefined, storage: undefined, cause: undefined, archived: undefined,
       start: undefined, end: undefined, notes: undefined, tag: undefined, q: undefined, page: undefined,
+      terms: undefined, filter_id: undefined,
     });
+  };
+  const clearTerms = () => {
+    // Back to the strip, unbounded: the operator came here for a filter's
+    // matches, not for the last hour.
+    setDefaultCleared(true);
+    setSearch({ terms: undefined, filter_id: undefined, page: undefined });
   };
   const setPageSize = (n: number) => {
     if (!Number.isFinite(n) || n <= 0) return;
@@ -558,15 +679,21 @@ export function useEventsListPage(): EventsListPageState {
     [pageSize],
   );
 
-  // The effective filter set (including the seeded last hour) as ZM terms.
+  // The effective filter set (including the seeded last hour) as ZM terms;
+  // in terms mode, the terms on show.
   const filterTerms = useMemo(
-    () => termsFromEventsSearch({
+    () => termsMode?.terms ?? termsFromEventsSearch({
       ...search,
       start: dateFilter ? startTimeToDateInput(dateFilter) : undefined,
     }),
-    [search, dateFilter],
+    [termsMode, search, dateFilter],
   );
-  const filterLinkSearch = useMemo(() => ({ terms: JSON.stringify(filterTerms) }), [filterTerms]);
+  // The Filter button: a saved filter reopens itself, anything else seeds a
+  // new filter with these terms.
+  const filterLinkSearch = useMemo(
+    () => (termsMode?.filterId !== undefined ? { id: termsMode.filterId } : { terms: JSON.stringify(filterTerms) }),
+    [termsMode, filterTerms],
+  );
 
   // What every link to an event carries, so Prev / Next over there walk this
   // list in this order (legacy's `filterQuery` + `sortQuery`). The values are
@@ -574,8 +701,10 @@ export function useEventsListPage(): EventsListPageState {
   // page size included — so the detail page can re-fetch this exact page.
   // Several monitors (or a group) can only be listed through
   // `/filters/preview`, which the detail page cannot page, so the monitor
-  // filter only travels when it is a single id.
+  // filter only travels when it is a single id. A term list cannot travel at
+  // all, so in terms mode Prev / Next fall back to time order.
   const detailSearch = useMemo<EventNavSearch>(() => {
+    if (termsMode) return {};
     const out: EventNavSearch = {
       monitor_id: monitorFilter.length === 1 ? monitorFilter[0] : undefined,
       cause: causeFilter || undefined,
@@ -583,7 +712,7 @@ export function useEventsListPage(): EventsListPageState {
       start: dateFilter || undefined,
       end: endFilter || undefined,
       notes: notesToSearch(notesFilter),
-      tag: tagFilter === 'all' ? undefined : tagFilter,
+      tag: tagsToSearch(tagFilter),
       q: search.q || undefined,
       page,
       page_size: pageSize,
@@ -595,9 +724,19 @@ export function useEventsListPage(): EventsListPageState {
     }
     return out;
   }, [
-    monitorFilter, causeFilter, archivedFilter, dateFilter, endFilter,
+    termsMode, monitorFilter, causeFilter, archivedFilter, dateFilter, endFilter,
     notesFilter, tagFilter, search.q, page, pageSize, sortField, sortDir,
   ]);
+
+  // Legacy's Timeline button carries `filterQuery`: the same filters, with
+  // the seeded hour made explicit. Paging means nothing on a timeline.
+  const timelineSearch = useMemo(() => {
+    const out: Partial<EventsSearchParams> = { ...search };
+    delete out.page;
+    delete out.page_size;
+    if (!out.start && dateFilter) out.start = startTimeToDateInput(dateFilter);
+    return out;
+  }, [search, dateFilter]);
 
   const hidden = useEventsColumnsStore((s) => s.hidden);
   const exportCsv = () => {
@@ -679,5 +818,9 @@ export function useEventsListPage(): EventsListPageState {
     filterLinkSearch,
     detailSearch,
     exportCsv,
+
+    termsMode,
+    clearTerms,
+    timelineSearch,
   };
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
-import { screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -25,7 +25,7 @@ const server = setupServer(
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 0, user: 'admin' }, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'bypass' });
+  server.listen({ onUnhandledFrame: 'bypass' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -36,20 +36,20 @@ describe('DiscoveryDialog', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('scan → candidates → inspect → profiles → "Edit first" → prefilled Add dialog → POST /monitors', async () => {
+  it('scan → candidates → inspect → profiles → "Edit first" hands the prefill to the caller', async () => {
     const user = userEvent.setup();
     let probeBody: unknown = null;
     let inspectBody: unknown = null;
-    let created: Record<string, unknown> | null = null;
-    const onCreated = vi.fn();
+    let created = false;
+    const onEditFirst = vi.fn();
     const onClose = vi.fn();
     server.use(
       http.post('/api/v3/discovery/probe', async ({ request }) => { probeBody = await request.json(); return HttpResponse.json(candidates); }),
       http.post('/api/v3/discovery/inspect', async ({ request }) => { inspectBody = await request.json(); return HttpResponse.json(inspectResult); }),
-      http.post('/api/v3/monitors', async ({ request }) => { created = await request.json() as Record<string, unknown>; return HttpResponse.json({ id: 9, ...created }); }),
+      http.post('/api/v3/monitors', () => { created = true; return HttpResponse.json({ id: 9 }); }),
     );
 
-    renderWithProviders(<DiscoveryDialog open onClose={onClose} onCreated={onCreated} />);
+    renderWithProviders(<DiscoveryDialog open onClose={onClose} onEditFirst={onEditFirst} />);
     await user.click(screen.getByRole('button', { name: /^scan$/i }));
     await waitFor(() => expect(probeBody).toEqual({ timeout_ms: 5000 }));
 
@@ -71,21 +71,26 @@ describe('DiscoveryDialog', () => {
     expect(screen.getByText('HIKVISION')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /edit first/i }));
-    // The Add dialog opens prefilled from the profile.
-    const dialog = await screen.findByRole('dialog', { name: /add monitor/i });
-    expect(dialog).toBeInTheDocument();
-    expect(screen.getByDisplayValue('Front cam')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('rtsp://192.168.1.10:554/Streaming/Channels/101')).toBeInTheDocument();
-    expect(screen.getByLabelText('Width (px)')).toHaveValue(3840);
-
-    await user.click(screen.getByRole('button', { name: /create monitor/i }));
-    await waitFor(() => expect(created).not.toBeNull());
-    expect(created!).toMatchObject({
+    // The caller opens the full editor on a new monitor with this prefill; nothing is created here.
+    expect(onEditFirst).toHaveBeenCalledWith(expect.objectContaining({
       name: 'Front cam', type: 'Ffmpeg', path: 'rtsp://192.168.1.10:554/Streaming/Channels/101', user: 'admin', pass: 'pw',
       onvif_url: 'http://192.168.1.10/onvif/device_service', onvif_username: 'admin', onvif_password: 'pw', width: 3840, height: 2160,
-    });
-    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 9 })));
+    }));
     expect(onClose).toHaveBeenCalled();
+    expect(created).toBe(false);
+  });
+
+  it('hides "Edit first" when the caller cannot open an editor', async () => {
+    const user = userEvent.setup();
+    server.use(http.post('/api/v3/discovery/inspect', () => HttpResponse.json(inspectResult)));
+    renderWithProviders(<DiscoveryDialog open onClose={() => {}} />);
+    fireEvent.change(screen.getByPlaceholderText('http://192.168.1.50/onvif/device_service'), {
+      target: { value: 'http://192.168.1.10/onvif/device_service' },
+    });
+    await user.click(screen.getByRole('button', { name: /^inspect$/i }));
+    await screen.findByText('mainStream');
+    expect(screen.queryByRole('button', { name: /edit first/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /add camera/i })).toBeInTheDocument();
   });
 
   it('"Add camera" onboards in one call, with the credentials from the sign-in step', async () => {

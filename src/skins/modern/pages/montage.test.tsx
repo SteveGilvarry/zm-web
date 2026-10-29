@@ -13,10 +13,11 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
+import { configListHandler } from '@/test/msw/handlers';
 import { makeMontageLayout } from '@/test/fixtures';
 import { leaf, split, type LayoutNode } from '@/features/montage/mosaic';
 import { serialisePositions } from '@/features/montage/layoutFormat';
@@ -324,6 +325,53 @@ describe('MontagePage (modern) — toolbar', () => {
     await waitFor(() => {
       expect(useMonitorFilterStore.getState().groupIds).toEqual([1]);
     });
+  });
+
+  it('stops the wall after ZM_WEB_VIEWING_TIMEOUT and asks before starting it again', async () => {
+    const user = userEvent.setup();
+    server.use(configListHandler({ ZM_WEB_VIEWING_TIMEOUT: '1' }));
+    renderRoute('/montage');
+    await findWall();
+
+    const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 3000 });
+    expect(screen.getByTestId('montage-stopped-1')).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: 'Yes' }));
+    await waitFor(() => expect(screen.queryByTestId('montage-stopped-1')).toBeNull());
+  });
+
+  it('puts legacy\'s tile buttons (zoom, full screen, watch, edit) on each tile', async () => {
+    const user = userEvent.setup();
+    renderRoute('/montage');
+    await findWall();
+
+    const controls = await screen.findByTestId('tile-controls-1');
+    expect(within(controls).getByRole('link', { name: 'Open watch page' })).toHaveAttribute('href', '/monitors/1');
+    expect(within(controls).getByRole('button', { name: 'Open full screen' })).toBeInTheDocument();
+    expect(within(controls).getByRole('button', { name: 'Zoom OUT' })).toBeDisabled();
+    await user.click(within(controls).getByRole('button', { name: 'Zoom IN' }));
+    expect(within(controls).getByRole('button', { name: 'Zoom OUT' })).toBeEnabled();
+  });
+
+  it('?header=0 drops the control line (legacy kiosk)', async () => {
+    renderRoute('/montage?header=0');
+    await findWall();
+    expect(screen.queryByRole('button', { name: 'Layout' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'Display' })).toBeNull();
+  });
+
+  it('?layout= loads that saved row into the mosaic', async () => {
+    db.montageLayouts = [savedLayout('Driveway only', leaf(2), 5)];
+    renderRoute('/montage?layout=5');
+    await screen.findByText('Driveway');
+    await waitFor(() => expect(screen.queryByText('Front Door')).toBeNull());
+    expect(cellCountLabel()).toBe('1 cell');
+  });
+
+  it('?show_zones=1 and ?status_position= set the Display choices', async () => {
+    renderRoute('/montage?show_zones=1&status_position=outsideImgBottom');
+    await findWall();
+    await waitFor(() => expect(useMontageStore.getState().showZones).toBe(true));
+    expect(useMontageStore.getState().statusPosition).toBe('outside');
   });
 });
 

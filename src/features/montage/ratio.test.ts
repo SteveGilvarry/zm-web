@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
-  MONTAGE_RATIOS, aspectRatioFor, averageRatio, longSideRatio, ratioValue,
+  MONTAGE_RATIOS, aspectRatioFor, averageRatio, longSideRatio, ratioOptionLabel, ratioValue,
 } from './ratio';
 
 describe('MONTAGE_RATIOS', () => {
@@ -71,5 +71,20 @@ describe('aspectRatioFor', () => {
   it('leaves the tile alone when the choice cannot be resolved', () => {
     expect(aspectRatioFor('nonsense', landscape, 16 / 9)).toBeUndefined();
     expect(aspectRatioFor('16:9', { width: 0, height: 0 }, 16 / 9)).toBeUndefined();
+  });
+});
+
+describe('ratioOptionLabel', () => {
+  it('prints legacy presetRatio values to three places', () => {
+    expect(ratioOptionLabel('16:9')).toBe('16:9 (1.778)');
+    expect(ratioOptionLabel('43:32')).toBe('43:32 (1.344)');
+    expect(ratioOptionLabel('25:16')).toBe('25:16 (1.563)');
+    expect(ratioOptionLabel('64:27')).toBe('64:27 (2.370)');
+    expect(ratioOptionLabel('1:1')).toBe('1:1 (1.000)');
+  });
+
+  it('leaves the computed choices to the caller', () => {
+    expect(ratioOptionLabel('auto')).toBeNull();
+    expect(ratioOptionLabel('real')).toBeNull();
   });
 });

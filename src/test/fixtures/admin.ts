@@ -100,6 +100,9 @@ export function makeConfig(overrides: Partial<ZmConfig> = {}): ZmConfig {
     prompt: 'Web site title',
     pattern: null,
     format: null,
+    requires: null,
+    source: 'db',
+    source_file: null,
     ...overrides,
   };
 }

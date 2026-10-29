@@ -5,8 +5,8 @@
  * `currentTime` are stubbed on HTMLMediaElement.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { act, fireEvent, screen, waitFor } from '@testing-library/react';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -43,7 +43,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'cell.token', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -242,12 +242,69 @@ describe('MontageReviewCell — master clock sync', () => {
     expect(await screen.findByText('No Event')).toBeInTheDocument();
   });
 
-  it('applies the monitor orientation to the video element', async () => {
+  it('a rotated monitor gets a portrait cell and plays the recording as decoded, untouched', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { container } = renderCell({ monitor: monitor({ orientation: 'ROTATE_90' } as Partial<Monitor>) });
+    await screen.findByRole('link', { name: '#9' });
+    expect(screen.getByTestId('review-cell-1').style.aspectRatio).toBe('1080 / 1920');
+    const video = container.querySelector('video')!;
+    // ZoneMinder writes the rotation into the mp4, so the decoder hands back
+    // an upright portrait frame; a CSS turn on top would lay it on its side.
+    expect(video.className).toContain('w-full h-full');
+    expect(video.getAttribute('style')).toBeNull();
+    Object.defineProperty(video, 'videoWidth', { value: 1080, configurable: true });
+    Object.defineProperty(video, 'videoHeight', { value: 1920, configurable: true });
+    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); });
+    expect(video.getAttribute('style')).toBeNull();
+  });
+
+  it('turns the video only when the decoder ignored the rotation and handed back a landscape frame', async () => {
     stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
     const { container } = renderCell({ monitor: monitor({ orientation: 'ROTATE_90' } as Partial<Monitor>) });
     await screen.findByRole('link', { name: '#9' });
     const video = container.querySelector('video')!;
-    expect(video.getAttribute('style')).toContain('rotate');
+    Object.defineProperty(video, 'videoWidth', { value: 1920, configurable: true });
+    Object.defineProperty(video, 'videoHeight', { value: 1080, configurable: true });
+    await act(async () => { video.dispatchEvent(new Event('loadedmetadata')); });
+    // 1920×1080 turned 90°: the element is (1920/1080) wide and (1080/1920)
+    // tall relative to the portrait box, so after the turn it fills it.
+    expect(video.style.width).toBe(`${(1920 / 1080) * 100}%`);
+    expect(video.style.height).toBe(`${(1080 / 1920) * 100}%`);
+    expect(video.style.maxWidth).toBe('none');
+    expect(video.style.transform).toContain('rotate(90deg)');
+  });
+
+  it("classic: a bare black box with legacy's corner marks and no name or event badges", async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    renderCell({ variant: 'classic', onZoom: () => {} });
+    await screen.findByTestId('review-cell-1');
+    const cell = screen.getByTestId('review-cell-1');
+    expect(cell.className).toContain('bg-black');
+    expect(cell.className).not.toContain('rounded');
+    expect(cell.style.containerType).toBe('size');
+    expect(screen.queryByText('Front Door')).toBeNull();
+    expect(screen.queryByRole('link', { name: '#9' })).toBeNull();
+    expect(screen.queryByTitle("Download this event's video")).toBeNull();
+    // `imagedone`: a tenth of the canvas's longer side.
+    expect(screen.getByTestId('review-zoom-in-1').className).toContain('text-[length:max(10cqw,10cqh)]');
+  });
+
+  it('classic: "No Event" written across the box at 15 % of its width', async () => {
+    stubEvents([]);
+    renderCell({ variant: 'classic' });
+    const text = await screen.findByText('No Event');
+    expect(text.className).toContain('text-[length:15cqw]');
+    expect(text.parentElement?.className).toContain('text-white');
+  });
+
+  it('an unrotated monitor keeps a landscape cell and a full-size video', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { container } = renderCell();
+    await screen.findByRole('link', { name: '#9' });
+    expect(screen.getByTestId('review-cell-1').style.aspectRatio).toBe('1920 / 1080');
+    const video = container.querySelector('video')!;
+    expect(video.className).toContain('w-full h-full');
+    expect(video.getAttribute('style')).toBeNull();
   });
 });
 
@@ -277,6 +334,15 @@ describe('MontageReviewCell — click', () => {
     expect(navigate).toHaveBeenCalledWith({ to: '/events/$eventId', params: { eventId: '9' } });
   });
 
+  it('hands the frame under the playhead along when the event has a frame count', async () => {
+    stubEvents([{ ...ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:05:00Z'), frames: 3000 } as ZmEvent]);
+    const { cell } = sizedCell({ currentTime: new Date('2026-08-21T02:01:00Z') });
+    await screen.findByRole('link', { name: '#9' });
+    fireEvent.click(cell, { clientX: 200, clientY: 150 });
+    // 60 s into a 300 s, 3000-frame event: frame 601 (legacy montagereview.js:1179).
+    expect(navigate).toHaveBeenCalledWith({ to: '/events/$eventId', params: { eventId: '9' }, search: { fid: 601 } });
+  });
+
   it('opens the Watch page when the monitor recorded nothing', async () => {
     stubEvents([]);
     const { cell } = sizedCell();
@@ -302,6 +368,23 @@ describe('MontageReviewCell — click', () => {
     fireEvent.click(cell, { clientX: 200, clientY: 150 });
     expect(onZoom).toHaveBeenCalledTimes(2);
     expect(navigate).toHaveBeenCalled();
+  });
+
+  it('marks the zoom corners with + and -, and only when they zoom', async () => {
+    stubEvents([ev(9, '2026-08-21T02:00:00Z', '2026-08-21T02:10:00Z')]);
+    const { unmount } = renderCell({ onZoom: vi.fn() });
+    const link = await screen.findByRole('link', { name: '#9' });
+    expect(screen.getByTestId('review-zoom-in-1')).toHaveTextContent('+');
+    expect(screen.getByTestId('review-zoom-out-1')).toHaveTextContent('-');
+    // The badges give the corners up and sit along the bottom.
+    expect(link.parentElement).toHaveClass('bottom-1.5');
+    expect(screen.getByText('Front Door').parentElement).toHaveClass('bottom-1.5');
+    unmount();
+
+    renderCell();
+    await screen.findByRole('link', { name: '#9' });
+    expect(screen.queryByTestId('review-zoom-in-1')).toBeNull();
+    expect(screen.getByText('Front Door').parentElement).toHaveClass('top-1.5');
   });
 
   it('opens a new tab on Ctrl+click instead of navigating', async () => {

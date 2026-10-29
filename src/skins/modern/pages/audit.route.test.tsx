@@ -2,20 +2,43 @@
  * Event audit through the real router.
  *
  * `audit.test.tsx` mounts the page against a stubbed router and pins the
- * per-monitor statistics. This file drives the chrome that stub cannot
+ * per-monitor statistics from `/reports/event-audit`. This file drives the chrome that stub cannot
  * reach: the `?min_time` / `?max_time` window round-trip, the sortable
  * column headers, the refresh button, and the empty / error states.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
 import { makeEvent, makeMonitor, makeServer } from '@/test/fixtures';
 
 setupMockServer();
+
+/**
+ * `/reports/event-audit` from the seeded events, one entry per monitor that
+ * has any (the shared handlers do not serve this report).
+ */
+beforeEach(() => {
+  server.use(
+    http.get('/api/v3/reports/event-audit', ({ request }) => {
+      const q = new URL(request.url).searchParams;
+      const byMonitor = new Map<number, number[]>();
+      for (const e of db.events) byMonitor.set(e.monitor_id, [...(byMonitor.get(e.monitor_id) ?? []), e.id]);
+      return HttpResponse.json({
+        start: q.get('start'),
+        end: q.get('end'),
+        monitors: [...byMonitor].map(([monitor_id, ids]) => ({
+          monitor_id, event_count: ids.length, first_event_id: Math.min(...ids), last_event_id: Math.max(...ids),
+          first_start: '2026-08-20T01:00:00Z', last_end: '2026-08-20T01:30:00Z',
+          min_gap_seconds: 0, max_gap_seconds: 0, missing_files: [], zero_size: [],
+        })),
+      });
+    }),
+  );
+});
 
 async function auditPage() {
   await screen.findAllByRole('heading', { name: /^Audit Events Report$/ });
@@ -119,19 +142,13 @@ describe('Audit — time window', () => {
     );
   });
 
-  it('bounds the per-monitor event request with the window', async () => {
-    const seen: Array<{ monitor: string | null; start: string | null; end: string | null }> = [];
+  it('bounds the audit request with the window', async () => {
+    const seen: Array<{ start: string | null; end: string | null }> = [];
     server.use(
-      http.get('/api/v3/events', ({ request }) => {
+      http.get('/api/v3/reports/event-audit', ({ request }) => {
         const url = new URL(request.url);
-        seen.push({
-          monitor: url.searchParams.get('monitor_id'),
-          start: url.searchParams.get('start_time'),
-          end: url.searchParams.get('end_time'),
-        });
-        return HttpResponse.json({
-          items: [], total: 0, per_page: 500, current_page: 1, last_page: 1,
-        });
+        seen.push({ start: url.searchParams.get('start'), end: url.searchParams.get('end') });
+        return HttpResponse.json({ start: '', end: '', monitors: [] });
       }),
     );
     db.monitors = [makeMonitor({ id: 7, name: 'Back Gate' })];
@@ -140,7 +157,6 @@ describe('Audit — time window', () => {
     await auditPage();
 
     await waitFor(() => expect(seen.length).toBeGreaterThan(0));
-    expect(seen[0].monitor).toBe('7');
     // The field is local wall clock; the request carries the UTC instant.
     expect(seen[0].start).toBe(apiStamp('2026-08-20T01:00:00'));
     expect(seen[0].end).toBe(apiStamp('2026-08-20T02:00:00'));

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import { useWatchPage } from './useWatchPage';
 
 vi.mock('@tanstack/react-router', () => ({
@@ -51,9 +52,14 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
-afterEach(() => server.resetHandlers());
+afterEach(() => {
+  server.resetHandlers();
+  live.value = {};
+  configs.value = {};
+  useWatchPrefsStore.setState(useWatchPrefsStore.getInitialState());
+});
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -74,9 +80,24 @@ const monitor = {
 
 const alarmCalls: unknown[] = [];
 
+/** What `GET /monitor-status/7` adds on top of the shared row (zm-api#139). */
+const live: { value: Record<string, unknown> } = { value: {} };
+const configs: { value: Record<string, string> } = { value: {} };
+const eventFetches: { count: number } = { count: 0 };
+
 function stubMonitor(overrides: Partial<typeof monitor> = {}) {
   alarmCalls.length = 0;
+  eventFetches.count = 0;
   server.use(
+    http.get('/api/v3/monitor-status/7', () => HttpResponse.json({
+      monitor_id: 7, status: 'Connected', capture_fps: '12.50', analysis_fps: '1.00', capture_bandwidth: 2048, updated_on: 'x',
+      ...live.value,
+    })),
+    http.get('/api/v3/monitors/7/actions', () => HttpResponse.json([])),
+    http.get('/api/v3/configs', () => HttpResponse.json({
+      items: Object.entries(configs.value).map(([name, value], i) => ({ id: i + 1, name, value })),
+      total: 0, per_page: 1000, current_page: 1, last_page: 1,
+    })),
     http.get('/api/v3/monitors/7', () => HttpResponse.json({ ...monitor, ...overrides })),
     http.get('/api/v3/monitor-status', () =>
       HttpResponse.json({
@@ -89,12 +110,13 @@ function stubMonitor(overrides: Partial<typeof monitor> = {}) {
       alarmCalls.push(body);
       return HttpResponse.json({ ...monitor, ...overrides });
     }),
-    http.get('/api/v3/events', () =>
-      HttpResponse.json({
+    http.get('/api/v3/events', () => {
+      eventFetches.count += 1;
+      return HttpResponse.json({
         items: [{ id: 101, name: 'Event-101', monitor_id: 7, start_date_time: '2026-08-21T01:00:00' }],
         total: 1, per_page: 5, current_page: 1, last_page: 1,
-      }),
-    ),
+      });
+    }),
     // The monitor list behind the page's prev/next navigation.
     http.get('/api/v3/monitors', () =>
       HttpResponse.json({
@@ -315,5 +337,147 @@ describe('useWatchPage — toggleFullscreen', () => {
     act(() => result.current.toggleFullscreen());
     expect(exit).toHaveBeenCalledTimes(1);
     expect(contentRequest).not.toHaveBeenCalled();
+  });
+});
+
+describe('useWatchPage — monitor list and preferences', () => {
+  it('walks every page of the monitor list for prev/next', async () => {
+    stubMonitor();
+    server.use(
+      http.get('/api/v3/monitors', ({ request }) => {
+        const page = Number(new URL(request.url).searchParams.get('page'));
+        const items = page === 1
+          ? [{ ...monitor, id: 5, name: 'Drive' }, { ...monitor, id: 7, name: 'Gate' }]
+          : [{ ...monitor, id: 9, name: 'Yard' }];
+        return HttpResponse.json({ items, total: 3, per_page: 2, current_page: page, last_page: 2 });
+      }),
+    );
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.siblings.map((m) => m.id)).toEqual([5, 7, 9]));
+    expect(result.current.nextMonitorId).toBe(9);
+    expect(result.current.prevMonitorId).toBe(5);
+  });
+
+  it('starts on the player picked last time, and a hand pick is remembered', async () => {
+    useWatchPrefsStore.setState({ player: 'hls' });
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.monitor).toBeDefined());
+    expect(result.current.protocol).toBe('hls');
+    act(() => result.current.changeProtocol('webrtc'));
+    expect(useWatchPrefsStore.getState().player).toBe('webrtc');
+  });
+});
+
+
+describe('useWatchPage — live alarm state', () => {
+  it('reads the shared-memory state and the bell from GET /monitor-status/7', async () => {
+    live.value = { alarm_state: 'prealarm', alarms_disabled: false, analysing: true };
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('prealarm'));
+    expect(result.current.liveAlarm.ready).toBe(true);
+    expect(result.current.liveAlarm.greyed).toBe(false);
+    expect(result.current.liveAlarm.alarmsDisabled).toBe(false);
+  });
+
+  it('is not ready while zmc reports nothing', async () => {
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.runtime?.status).toBe('Connected'));
+    expect(result.current.liveAlarm.state).toBeNull();
+    expect(result.current.liveAlarm.ready).toBe(false);
+  });
+
+  it('disables alarms from a lit bell and enables them from a greyed one', async () => {
+    live.value = { alarm_state: 'idle', alarms_disabled: false, analysing: true };
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.liveAlarm.ready).toBe(true));
+    live.value = { alarm_state: 'idle', alarms_disabled: true, analysing: true };
+    act(() => result.current.liveAlarm.toggle());
+    await waitFor(() => expect(alarmCalls).toContainEqual({ action: 'disable_alarms' }));
+    // The status is asked again after the toggle, and the bell greys.
+    await waitFor(() => expect(result.current.liveAlarm.greyed).toBe(true));
+    act(() => result.current.liveAlarm.toggle());
+    await waitFor(() => expect(alarmCalls).toContainEqual({ action: 'enable_alarms' }));
+  });
+
+  it('raises the window and refreshes the events on a new alarm when ZM_WEB_POPUP_ON_ALARM is on', async () => {
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {});
+    configs.value = { ZM_WEB_POPUP_ON_ALARM: '1' };
+    live.value = { alarm_state: 'idle', alarms_disabled: false, analysing: true };
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('idle'));
+    await waitFor(() => expect(result.current.events).toHaveLength(1));
+    // Let the config table land before the alarm does.
+    await new Promise((r) => setTimeout(r, 50));
+    const before = eventFetches.count;
+    expect(focus).not.toHaveBeenCalled();
+
+    live.value = { alarm_state: 'alarm', alarms_disabled: false, analysing: true };
+    act(() => result.current.liveAlarm.toggle()); // any refetch of the status will do
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('alarm'));
+    await waitFor(() => expect(focus).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(eventFetches.count).toBeGreaterThan(before));
+
+    // And the table is refreshed again when the alarm ends.
+    const during = eventFetches.count;
+    live.value = { alarm_state: 'idle', alarms_disabled: false, analysing: true };
+    act(() => result.current.liveAlarm.toggle());
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('idle'));
+    await waitFor(() => expect(eventFetches.count).toBeGreaterThan(during));
+    expect(focus).toHaveBeenCalledTimes(1);
+    focus.mockRestore();
+  });
+
+  it('leaves the window alone on an alarm with ZM_WEB_POPUP_ON_ALARM off', async () => {
+    const focus = vi.spyOn(window, 'focus').mockImplementation(() => {});
+    live.value = { alarm_state: 'alarm', alarms_disabled: false, analysing: true };
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('alarm'));
+    expect(focus).not.toHaveBeenCalled();
+    focus.mockRestore();
+  });
+
+  it('flips Force Alarm to Cancel while the stream is in Alarm or Alert, whoever raised it', async () => {
+    live.value = { alarm_state: 'alert', alarms_disabled: false, analysing: true };
+    stubMonitor();
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('alert'));
+    // MonitorStream.js:1474: the button offers Cancel in Alarm and Alert.
+    expect(result.current.alarm.forced).toBe(true);
+    live.value = { alarm_state: 'idle', alarms_disabled: false, analysing: true };
+    act(() => result.current.liveAlarm.toggle());
+    await waitFor(() => expect(result.current.liveAlarm.state).toBe('idle'));
+    expect(result.current.alarm.forced).toBe(false);
+  });
+});
+
+describe('useWatchPage — manual monitor actions', () => {
+  it('lists the enabled Manual actions labelled with their target, and runs one', async () => {
+    const runs: string[] = [];
+    stubMonitor();
+    server.use(
+      http.get('/api/v3/monitors/7/actions', () => HttpResponse.json([
+        { id: 2, monitor_id: 7, target_monitor_id: 9, action_type: 'AudioStop', trigger_on: 'Manual', label: null, enabled: true, sequence: 1 },
+        { id: 1, monitor_id: 7, target_monitor_id: 9, action_type: 'IndicatorLightOff', trigger_on: 'Manual', label: '', enabled: true, sequence: 1 },
+        { id: 3, monitor_id: 7, target_monitor_id: 404, action_type: 'LightOn', trigger_on: 'Manual', label: '', enabled: true, sequence: 0 },
+      ])),
+      http.post('/api/v3/monitors/7/actions/:aid/run', ({ params }) => {
+        runs.push(String(params.aid));
+        return HttpResponse.json({ success: true });
+      }),
+    );
+    const { result } = renderHook(() => useWatchPage(7), { wrapper: makeWrapper() });
+    // Same sequence: by id. A target that is not a known monitor is skipped.
+    await waitFor(() => expect(result.current.monitorActions.actions).toEqual([
+      { id: 1, label: 'Turn indicator off - Yard' },
+      { id: 2, label: 'Stop sound - Yard' },
+    ]));
+    await act(() => result.current.monitorActions.run(2));
+    expect(runs).toEqual(['2']);
   });
 });

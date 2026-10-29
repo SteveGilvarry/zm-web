@@ -1,13 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { getMonitors } from '@/api/monitors';
+import { getAllMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import { useMontageStore, type MontageStatusPosition } from '@/stores/montage';
 import { useUiStore } from '@/stores/ui';
 import { useRouteSearch, searchInt } from '@/features/monitors/useRouteSearch';
+import { listMontageLayouts, type MontageLayout } from '@/api/montageLayouts';
 import { autoColumns } from './classicPresets';
+import { parsePositions } from './layoutFormat';
+import { presetColumnsFromName } from './useClassicMontage';
+import { useMontageUrlParams } from './useMontageUrlParams';
 import {
   bannerLayout,
   gridLayout,
@@ -89,6 +93,8 @@ export function useMontageGroupParam(): void {
 
 export interface MontagePageState {
   isAuthenticated: boolean;
+  /** `?header=0` (legacy kiosk): leave the control line out. */
+  headerHidden: boolean;
   tree: LayoutNode;
   setTree: (next: LayoutNode | ((prev: LayoutNode) => LayoutNode)) => void;
   protocol: StreamProtocol;
@@ -141,15 +147,17 @@ export function useMontagePage(): MontagePageState {
   // streams fresh.
   const [streamGeneration, setStreamGeneration] = useState(0);
 
+  // Every monitor, paged (a box with more than 100 used to lose the rest).
   const { data: monitorsData } = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: 30_000,
   });
-  // react-query keeps `items` identity across unchanged refetches (structural
-  // sharing), so memoising on it gives the hydration effect a stable dep.
-  const monitors: Monitor[] = useMemo(() => monitorsData?.items ?? [], [monitorsData?.items]);
+  // react-query keeps the array identity across unchanged refetches
+  // (structural sharing), so memoising on it gives the hydration effect a
+  // stable dep.
+  const monitors: Monitor[] = useMemo(() => monitorsData ?? [], [monitorsData]);
   const enabledMonitors = useMemo(
     () => monitors.filter((m) => m.capturing !== 'None'),
     [monitors],
@@ -192,6 +200,24 @@ export function useMontagePage(): MontagePageState {
     });
     setTree(filled);
   }, [enabledMonitors, tree, setTree]);
+
+  // `?layout=` (legacy `zmMontageLayout`): load that row into the mosaic once
+  // both it and the fleet are known. A legacy preset row (`4 Wide`, `Auto`,
+  // old `Freeform`) carries no positions, so it becomes the same grid here.
+  const { layoutId: urlLayoutId, headerHidden } = useMontageUrlParams();
+  const urlLayoutsQ = useQuery({
+    queryKey: ['montageLayouts'],
+    queryFn: () => listMontageLayouts({ page: 1, page_size: 200 }),
+    enabled: isAuthenticated && urlLayoutId != null,
+  });
+  const appliedUrlLayout = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (urlLayoutId == null || !urlLayoutsQ.isSuccess || appliedUrlLayout.current === urlLayoutId) return;
+    if (enabledMonitors.length === 0) return;
+    appliedUrlLayout.current = urlLayoutId;
+    const next = treeForLayoutRow(urlLayoutsQ.data.items, urlLayoutId, enabledMonitors.map((m) => m.id));
+    if (next) setTree(next);
+  }, [urlLayoutId, urlLayoutsQ.isSuccess, urlLayoutsQ.data, enabledMonitors, setTree]);
 
   /* ----- Layout edit handlers ------------------------------------- */
 
@@ -246,6 +272,7 @@ export function useMontagePage(): MontagePageState {
 
   return {
     isAuthenticated,
+    headerHidden,
     tree,
     setTree,
     protocol,
@@ -303,8 +330,8 @@ export function useMontageWallPage(): MontageWallPageState {
   const { isAuthenticated } = useAuthStore();
   useMontageGroupParam();
   const { data: monitorsData, isLoading, isError, error, refetch } = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: 30_000,
   });
@@ -312,10 +339,7 @@ export function useMontageWallPage(): MontageWallPageState {
   // identity on each render even when the rows are unchanged, so wrap in
   // useMemo keyed on the array reference to keep downstream memoisation
   // useful.
-  const monitors: Monitor[] = useMemo(
-    () => monitorsData?.items ?? [],
-    [monitorsData?.items],
-  );
+  const monitors: Monitor[] = useMemo(() => monitorsData ?? [], [monitorsData]);
   // Legacy ZM only shows capturing monitors on the wall.
   const capturingMonitors = useMemo(
     () => monitors.filter((m) => m.capturing !== 'None'),
@@ -354,6 +378,27 @@ export function autoLayout(monitorIds: number[]): LayoutNode {
   const cols = autoColumns(monitorIds.length);
   const rows = Math.ceil(monitorIds.length / cols);
   return gridLayout(cols, rows, monitorIds);
+}
+
+/**
+ * The mosaic for a MontageLayouts row: its own tree when its positions
+ * parse, else the grid its preset name describes (`N Wide`, `Auto`, the old
+ * `Freeform`). Null when the row is missing or neither applies.
+ */
+export function treeForLayoutRow(
+  rows: Array<Pick<MontageLayout, 'id' | 'name' | 'positions'>>,
+  id: number,
+  monitorIds: number[],
+): LayoutNode | null {
+  const row = rows.find((r) => r.id === id);
+  if (!row) return null;
+  const parsed = parsePositions(row.positions);
+  if (parsed) return parsed.tree;
+  const name = row.name.trim().toLowerCase();
+  if (name === 'auto' || name === 'freeform') return autoLayout(monitorIds);
+  const cols = presetColumnsFromName(row.name);
+  if (cols == null || monitorIds.length === 0) return null;
+  return gridLayout(cols, Math.ceil(monitorIds.length / cols), monitorIds);
 }
 
 /** Walk the tree and replace each leaf with the result of `f`. */

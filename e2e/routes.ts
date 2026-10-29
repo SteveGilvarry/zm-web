@@ -35,6 +35,9 @@ export const ROUTES: readonly RouteEntry[] = [
   { key: 'events.list', path: '/events', auth: true },
   { key: 'events.detail', path: `/events/${SEED.events.withFrames[0]}`, auth: true },
   { key: 'events.frames', path: `/events/${SEED.events.withFrames[0]}/frames`, auth: true },
+  { key: 'events.frame', path: `/events/${SEED.events.withFrames[0]}/frames/1`, auth: true },
+  { key: 'events.stats', path: `/events/${SEED.events.withFrames[0]}/stats?fid=1`, auth: true },
+  { key: 'timeline', path: '/timeline', auth: true },
   { key: 'filters', path: '/filters', auth: true },
   { key: 'groups', path: '/groups', auth: true },
   { key: 'logs', path: '/logs', auth: true },
@@ -48,6 +51,12 @@ export const ROUTES: readonly RouteEntry[] = [
   { key: 'settings.state', path: '/settings/state', auth: true },
   { key: 'settings.ptzControls', path: '/settings/ptz-controls', auth: true },
   { key: 'settings.apiTokens', path: '/settings/api-tokens', auth: true },
+  { key: 'settings.roles', path: '/settings/roles', auth: true },
+  // `new` opens an empty editor, so the sweep needs no seeded role.
+  { key: 'settings.roles.edit', path: '/settings/roles/new', auth: true },
+  { key: 'settings.encoderTemplates', path: '/settings/encoder-templates', auth: true },
+  { key: 'settings.menu', path: '/settings/menu', auth: true },
+  { key: 'settings.privacy', path: '/settings/privacy', auth: true },
   // Three URLs, one page key: /settings/ai/{datasets,models,classes}. The
   // sweeps take the tab the nav opens on.
   { key: 'settings.ai', path: '/settings/ai/datasets', auth: true },

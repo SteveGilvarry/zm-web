@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import {
   apiGet, apiPost, apiDelete, ApiClientError, apiErrorMessage, classifyApiError,
@@ -8,7 +8,7 @@ import {
 import { useAuthStore } from '@/stores/auth';
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 

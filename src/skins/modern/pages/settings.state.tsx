@@ -188,7 +188,8 @@ export default function SettingsStatePage() {
                                     type="button"
                                     onClick={() => rs.togglePreview(s.id)}
                                     aria-expanded={expanded}
-                                    aria-label={t('Show definition of {{name}}', { name: s.name })}
+                                    // Visible text first, so the name contains it (WCAG 2.5.3).
+                                    aria-label={`${preview}, ${t('Show definition of {{name}}', { name: s.name })}`}
                                     className="inline-flex items-center gap-1 hover:text-fg"
                                   >
                                     {expanded ? <ChevronDown size={10} /> : <ChevronRight size={10} className="rtl:-scale-x-100" />}

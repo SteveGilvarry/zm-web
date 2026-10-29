@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeEach, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { renderWithProviders } from '@/test/render';
 import { server, setupMockServer } from '@/test/msw/server';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
@@ -93,6 +93,21 @@ describe('filterMonitors — pure logic', () => {
     expect(out.map((m) => m.id)).toEqual([4]);
   });
 
+  it('shows soft-deleted monitors only with the Deleted token once a status is picked', () => {
+    const gone = mk(9, 'Old Gate', { deleted: 1 });
+    const pool = [...MONS, gone];
+    // No status picked: the pool is passed through (the hook decides what is in it).
+    expect(filterMonitors(pool, EMPTY_SEL, NO_GROUPS).map((m) => m.id)).toEqual([1, 2, 3, 4, 9]);
+    // Active alone: deleted rows drop.
+    expect(filterMonitors(pool, { ...EMPTY_SEL, status: ['active'] }, NO_GROUPS).map((m) => m.id)).toEqual([1, 2, 3]);
+    // Deleted alone: only the deleted rows (legacy's `… OR Deleted=true` with an empty status list).
+    expect(filterMonitors(pool, { ...EMPTY_SEL, status: ['deleted'] }, NO_GROUPS).map((m) => m.id)).toEqual([9]);
+    // Deleted with Active: live active monitors plus the deleted ones.
+    expect(filterMonitors(pool, { ...EMPTY_SEL, status: ['active', 'deleted'] }, NO_GROUPS).map((m) => m.id)).toEqual([1, 2, 3, 9]);
+    // Other chips still apply to deleted rows.
+    expect(filterMonitors(pool, { ...EMPTY_SEL, status: ['deleted'], source: ['Local'] }, NO_GROUPS)).toEqual([]);
+  });
+
   it('groupIds narrows to the union of selected groups', () => {
     const groups = new Map<number, Set<number>>([
       [10, new Set([1, 2])],
@@ -159,17 +174,25 @@ describe('MonitorFilterBar — component', () => {
     );
   });
 
+  it("a chip's accessible name is its visible text: the label and the summary, then the count", async () => {
+    renderWithProviders(<MonitorFilterBar monitors={MONS} onChange={() => {}} />);
+    // WCAG 2.5.3: what is read must contain what is seen. 'Groups filter'
+    // hid the summary; the name is now the content.
+    expect(screen.getByRole('button', { name: 'Groups All groups' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /groups filter/i })).not.toBeInTheDocument();
+  });
+
   it('renders all seven chip groups', async () => {
     renderWithProviders(
       <MonitorFilterBar monitors={MONS} onChange={() => {}} />,
     );
-    expect(screen.getByRole('button', { name: /groups filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /capturing filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /analysing filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /recording filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /status filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /source filter/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /monitor filter/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Groups All groups' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Capturing Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Analysing Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Recording Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Status Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Source Any' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Monitor Any' })).toBeInTheDocument();
   });
 
   it('selecting a Capturing option narrows the filtered set', async () => {
@@ -183,7 +206,7 @@ describe('MonitorFilterBar — component', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     onChange.mockClear();
 
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     const list = await screen.findByRole('listbox', { name: /capturing options/i });
     await user.click(within(list).getByLabelText('None'));
 
@@ -192,6 +215,35 @@ describe('MonitorFilterBar — component', () => {
       expect(lastCall).toBeDefined();
       expect((lastCall![0] as Monitor[]).map((m) => m.id)).toEqual([4]);
     });
+  });
+
+  it('Deleted fetches the soft-deleted monitors on demand and adds them to the result', async () => {
+    const user = userEvent.setup();
+    const onChange = vi.fn<(m: Monitor[]) => void>();
+    const hits: string[] = [];
+    server.use(
+      http.get('/api/v3/monitors', ({ request }) => {
+        hits.push(new URL(request.url).search);
+        return HttpResponse.json({
+          items: [...MONS, mk(9, 'Old Gate', { deleted: 1 })],
+          total: 5, per_page: 500, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    renderWithProviders(<MonitorFilterBar monitors={MONS} onChange={onChange} />);
+    await waitFor(() => expect(onChange).toHaveBeenCalled());
+    // Nothing asks for deleted rows until the chip does.
+    expect(hits).toEqual([]);
+
+    await user.click(screen.getByRole('button', { name: 'Status Any' }));
+    const list = await screen.findByRole('listbox', { name: /status options/i });
+    await user.click(within(list).getByLabelText('Deleted'));
+
+    await waitFor(() => {
+      const last = onChange.mock.calls.at(-1)![0] as Monitor[];
+      expect(last.map((m) => m.id)).toEqual([9]);
+    });
+    expect(hits.some((q) => q.includes('include_deleted=true'))).toBe(true);
   });
 
   it('multi-select inside a chip OR-combines values', async () => {
@@ -203,7 +255,7 @@ describe('MonitorFilterBar — component', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalled());
     onChange.mockClear();
 
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     const list = await screen.findByRole('listbox', { name: /capturing options/i });
     await user.click(within(list).getByLabelText('Always'));
     await user.click(within(list).getByLabelText('Ondemand'));
@@ -224,7 +276,7 @@ describe('MonitorFilterBar — component', () => {
     await waitFor(() => expect(onChange).toHaveBeenCalled());
 
     // Capturing: Always
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
         .getByLabelText('Always'),
@@ -233,7 +285,7 @@ describe('MonitorFilterBar — component', () => {
     await user.click(document.body);
 
     // Source: Ffmpeg
-    await user.click(screen.getByRole('button', { name: /source filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Source Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /source options/i }))
         .getByLabelText('Ffmpeg'),
@@ -252,7 +304,7 @@ describe('MonitorFilterBar — component', () => {
       <MonitorFilterBar monitors={MONS} onChange={() => {}} />,
     );
 
-    const capturingBtn = screen.getByRole('button', { name: /capturing filter/i });
+    const capturingBtn = screen.getByRole('button', { name: 'Capturing Any' });
     await user.click(capturingBtn);
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
@@ -273,7 +325,7 @@ describe('MonitorFilterBar — component', () => {
     );
 
     // Apply a capturing filter first.
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
         .getByLabelText('Always'),
@@ -306,7 +358,7 @@ describe('MonitorFilterBar — component', () => {
       expect(onChange).toHaveBeenCalled();
     });
 
-    await user.click(screen.getByRole('button', { name: /groups filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Groups All groups' }));
     const list = await screen.findByRole('listbox', { name: /groups options/i });
     // "Outdoor" has monitors 1 + 2.
     await user.click(within(list).getByLabelText('Outdoor'));
@@ -323,7 +375,7 @@ describe('MonitorFilterBar — component', () => {
     const { unmount } = renderWithProviders(
       <MonitorFilterBar monitors={MONS} onChange={onChange1} />,
     );
-    await user.click(screen.getByRole('button', { name: /capturing filter/i }));
+    await user.click(screen.getByRole('button', { name: 'Capturing Any' }));
     await user.click(
       within(await screen.findByRole('listbox', { name: /capturing options/i }))
         .getByLabelText('Always'),

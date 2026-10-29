@@ -1,13 +1,18 @@
 import { useRef } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Maximize, Pencil, Save, Shapes, Trash2, X } from 'lucide-react';
+import { isDeleted } from '@/types';
+import { Funnel, FunnelX, Maximize, Pencil, Save, Shapes, Trash2, X } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
+import { Modal } from '@/components/common/Modal';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { MontageClassicGrid } from '@/features/montage/MontageClassicGrid';
-import { MONTAGE_RATIOS } from '@/features/montage/ratio';
+import { MONTAGE_RATIOS, ratioOptionLabel } from '@/features/montage/ratio';
 import { useClassicMontage } from '@/features/montage/useClassicMontage';
+import { useMontageUrlParams } from '@/features/montage/useMontageUrlParams';
+import { useMontageIdle } from '@/features/montage/useMontageIdle';
 import { useMontageWallPage } from '@/features/montage/useMontagePage';
 import { useMonitorFilterRow } from '@/features/monitors/useMonitorFilterRow';
 import { useMonitorStatuses } from '@/features/monitors/useMonitorStatuses';
@@ -30,9 +35,16 @@ export default function ClassicMontagePage() {
   const { byId: runtimeById } = useMonitorStatuses(page.isAuthenticated);
   const filter = useMonitorFilterRow(page.monitors, runtimeById);
   const filteredIds = new Set(filter.filtered.map((m) => m.id));
-  const visible = page.capturingMonitors.filter((m) => filteredIds.has(m.id));
-  const montage = useClassicMontage(visible);
+  // Deleted monitors reach the wall only through the filter row's own pool
+  // (Status: Deleted), so they are appended rather than looked up here.
+  const visible = [
+    ...page.capturingMonitors.filter((m) => filteredIds.has(m.id)),
+    ...filter.filtered.filter((m) => isDeleted(m)),
+  ];
+  const url = useMontageUrlParams();
+  const montage = useClassicMontage(visible, { urlLayoutId: url.layoutId });
   const { can } = usePerms();
+  const idle = useMontageIdle(page.isAuthenticated && montage.monitors.length > 0);
   // The wall element the Fullscreen button expands. Owned here rather than by
   // the hook: a ref reached through the hook's result would make every read of
   // that object a ref read (react-hooks/refs).
@@ -53,89 +65,112 @@ export default function ClassicMontagePage() {
 
   return (
     <AppShell title={t('Montage')}>
-      <div className="bg-[#485a6b] px-3 py-2 flex flex-col gap-2 text-white">
-        <ClassicFilterRow monitors={page.monitors} state={filter} tone="dark" />
-        <div className="flex flex-wrap items-center justify-center gap-3">
-          <ClassicSelect
-            label={t('Monitor status position')}
-            value={montage.statusPosition}
-            onChange={(v) => montage.setStatusPosition(v as MontageStatusPosition)}
-            options={(['inside', 'outside', 'hidden', 'hover'] as const).map((p) => ({ value: p, label: positionLabel(p) }))}
-          />
-          <ClassicSelect
-            label={t('Player')}
-            value={montage.protocol}
-            onChange={(v) => montage.setProtocol(v as StreamProtocol)}
-            options={[{ value: 'webrtc', label: 'WebRTC' }, { value: 'hls', label: 'HLS' }]}
-          />
-          <StageSizeSelects stage={montage.stage} monitors={visible} tone="dark" />
-          <ClassicSelect
-            label={t('Ratio')}
-            value={montage.ratio}
-            onChange={montage.setRatio}
-            options={MONTAGE_RATIOS.map((r) => ({
-              value: r,
-              label: r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : r,
-            }))}
-          />
-          <ClassicSelect
-            label={t('Layout')}
-            value={montage.layoutId}
-            onChange={montage.setLayoutId}
-            options={montage.layoutOptions}
-          />
-          {/* Legacy lets any user save their own layout; only Delete needs
-              System Edit (`delete_layout` → `enoperm()`). */}
-          {montage.editMode ? (
-            <>
-              <label className="flex flex-col items-center gap-0.5 text-sm">
-                <span className="font-semibold">{t('Name')}</span>
-                <input
-                  type="text"
-                  value={montage.saveName}
-                  onChange={(e) => montage.setSaveName(e.target.value)}
-                  placeholder={t('Layout name')}
-                  // The filter row has a `Name` field too; this one says
-                  // which name it means.
-                  aria-label={t('Layout name')}
-                  className={clsx(classicInputClass, 'w-44 text-zinc-900')}
+      {/* Legacy `#header`; `?header=0` (kiosk) leaves it out. */}
+      {!url.headerHidden && (
+        <div className="relative bg-[#485a6b] px-3 py-2 text-white">
+          {/* Legacy `#mfbflip`: filter_alt_off while open, filter_alt while
+              closed, floated to the end of the band. */}
+          <button
+            type="button"
+            onClick={() => montage.setPanelOpen(!montage.panelOpen)}
+            aria-expanded={montage.panelOpen}
+            aria-controls="mfbpanel"
+            aria-label={montage.panelOpen ? t('Hide filters') : t('Show filters')}
+            title={montage.panelOpen ? t('Hide filters') : t('Show filters')}
+            className="absolute top-1 end-1 p-1 rounded-sm text-white hover:bg-white/10"
+          >
+            {montage.panelOpen ? <FunnelX size={18} aria-hidden /> : <Funnel size={18} aria-hidden />}
+          </button>
+          {montage.panelOpen ? (
+            <div id="mfbpanel" className="flex flex-col gap-2 pe-8">
+              <ClassicFilterRow state={filter} tone="dark" />
+              <div className="flex flex-wrap items-center justify-center gap-3">
+                <ClassicSelect
+                  label={t('Monitor status position')}
+                  value={montage.statusPosition}
+                  onChange={(v) => montage.setStatusPosition(v as MontageStatusPosition)}
+                  options={(['inside', 'outside', 'hidden', 'hover'] as const).map((p) => ({ value: p, label: positionLabel(p) }))}
                 />
-              </label>
-              <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save Layout')}</ClassicButton>
-              <ClassicButton size="sm" icon={<X size={13} />} onClick={montage.cancelEdit}>{t('Cancel')}</ClassicButton>
-              {montage.saveError && (
-                <span role="alert" className="text-xs text-red-200">{montage.saveError}</span>
-              )}
-            </>
+                <ClassicSelect
+                  label={t('Player')}
+                  value={montage.protocol}
+                  onChange={(v) => montage.setProtocol(v as StreamProtocol)}
+                  options={[{ value: 'webrtc', label: 'WebRTC' }, { value: 'hls', label: 'HLS' }]}
+                />
+                <StageSizeSelects stage={montage.stage} monitors={visible} tone="dark" />
+                <ClassicSelect
+                  label={t('Ratio')}
+                  value={montage.ratio}
+                  onChange={montage.setRatio}
+                  options={MONTAGE_RATIOS.map((r) => ({
+                    value: r,
+                    label: r === 'auto' ? t('Auto') : r === 'real' ? t('Real') : (ratioOptionLabel(r) ?? r),
+                  }))}
+                />
+                <ClassicSelect
+                  label={t('Layout')}
+                  value={montage.layoutId}
+                  onChange={montage.setLayoutId}
+                  options={montage.layoutOptions}
+                />
+                {/* Legacy lets any user save their own layout; only Delete needs
+                    System Edit (`delete_layout` → `enoperm()`). */}
+                {montage.editMode ? (
+                  <>
+                    <label className="flex flex-col items-center gap-0.5 text-sm">
+                      <input
+                        type="text"
+                        value={montage.saveName}
+                        onChange={(e) => montage.setSaveName(e.target.value)}
+                        placeholder={t('Enter new name for layout if desired')}
+                        autoComplete="off"
+                        // The filter row has a `Name` field too; this one says
+                        // which name it means.
+                        aria-label={t('Layout name')}
+                        className={clsx(classicInputClass, 'w-64 text-zinc-900')}
+                      />
+                    </label>
+                    <ClassicButton tone="primary" size="sm" icon={<Save size={13} />} onClick={montage.save} disabled={montage.busy}>{t('Save')}</ClassicButton>
+                    <ClassicButton size="sm" icon={<X size={13} />} onClick={montage.cancelEdit}>{t('Cancel')}</ClassicButton>
+                    {montage.saveError && (
+                      <span role="alert" className="text-xs text-red-200">{montage.saveError}</span>
+                    )}
+                  </>
+                ) : (
+                  <ClassicButton tone="primary" size="sm" icon={<Pencil size={13} />} onClick={montage.beginEdit}>{t('Edit Layout')}</ClassicButton>
+                )}
+                {/* Always rendered, disabled on a preset; without System Edit the
+                    click answers with legacy's "no permission" modal. */}
+                <ClassicButton
+                  tone="danger"
+                  size="sm"
+                  icon={<Trash2 size={13} />}
+                  onClick={montage.remove}
+                  disabled={!montage.isSavedLayout || montage.busy}
+                  aria-label={t('Delete layout')}
+                  title={t('Delete layout')}
+                />
+                <ClassicIconButton onClick={() => toggleFullscreen(wallEl.current)} aria-label={t('Fullscreen')}>
+                  <Maximize size={14} aria-hidden />
+                </ClassicIconButton>
+                {can('system', 'View') && (
+                  <ClassicIconButton
+                    onClick={() => montage.setShowZones(!montage.showZones)}
+                    aria-label={t('Show Zones')}
+                    aria-pressed={montage.showZones}
+                    className={montage.showZones ? 'bg-[#286090]' : undefined}
+                  >
+                    <Shapes size={14} aria-hidden />
+                  </ClassicIconButton>
+                )}
+              </div>
+            </div>
           ) : (
-            <ClassicButton tone="primary" size="sm" icon={<Pencil size={13} />} onClick={montage.beginEdit}>{t('Edit Layout')}</ClassicButton>
-          )}
-          {montage.canDelete && (
-            <ClassicButton
-              tone="danger"
-              size="sm"
-              icon={<Trash2 size={13} />}
-              onClick={montage.remove}
-              disabled={!montage.isSavedLayout || montage.busy}
-              aria-label={t('Delete layout')}
-              title={t('Delete layout')}
-            />
-          )}
-          <ClassicIconButton onClick={() => toggleFullscreen(wallEl.current)} aria-label={t('Fullscreen')}>
-            <Maximize size={14} aria-hidden />
-          </ClassicIconButton>
-          {can('system', 'View') && (
-            <ClassicIconButton
-              onClick={() => montage.setShowZones(!montage.showZones)}
-              aria-label={t('Show Zones')}
-              aria-pressed={montage.showZones}
-              className={montage.showZones ? 'bg-[#286090]' : undefined}
-            >
-              <Shapes size={14} aria-hidden />
-            </ClassicIconButton>
+            // Closed: the band keeps just the flip icon's line.
+            <div className="h-5" />
           )}
         </div>
-      </div>
+      )}
 
       <div ref={wallEl} className="flex-1 min-w-0 flex flex-col bg-white">
         <ClassicPage>
@@ -162,11 +197,40 @@ export default function ClassicMontagePage() {
                 showZones={montage.showZones}
                 ratioFor={montage.ratioFor}
                 onRatioChange={montage.setRatioFor}
+                streamsStopped={idle.prompted}
               />
             </QueryState>
           </RequirePerm>
         </ClassicPage>
       </div>
+
+      {/* Legacy `delconfirm` modal with key ConfirmDeleteLayout. */}
+      <ConfirmDialog
+        isOpen={montage.deleteConfirmOpen}
+        onClose={montage.cancelDelete}
+        onConfirm={montage.confirmDelete}
+        title={t('Delete Confirmation')}
+        message={t('Are you sure you wish to delete current layout?')}
+        confirmText={t('Delete')}
+        isLoading={montage.busy}
+      />
+      {/* `ZM_WEB_VIEWING_TIMEOUT` — legacy's `areyoustillwatching` modal. */}
+      <Modal isOpen={idle.prompted} onClose={idle.resume} title={t('Are you still watching?')}>
+        <p className="text-sm mb-3">{t('Video paused. Continue watching?')}</p>
+        <ClassicButton tone="primary" onClick={idle.resume}>{t('Yes')}</ClassicButton>
+      </Modal>
+      {/* Legacy `#messageModal`, for a layout saved before May 2024. */}
+      <Modal isOpen={montage.layoutErrorOpen} onClose={montage.closeLayoutError} title={t('Error reading Layout')}>
+        <p className="text-sm">{t('This Layout was saved in previous version of ZoneMinder!')}</p>
+        <p className="text-sm mb-3">{t('It is necessary to place monitors again and resave the Layout.')}</p>
+        <ClassicButton onClick={montage.closeLayoutError}>{t('Close')}</ClassicButton>
+      </Modal>
+      {/* Legacy `enoperm()`. */}
+      <Modal isOpen={montage.noPermOpen} onClose={montage.closeNoPerm} title={t('ZoneMinder Error')}>
+        <p className="text-sm mb-1">{t('You do not have permissions to access this resource.')}</p>
+        <p className="text-sm mb-3">{t('Please contact your adminstrator for details.')}</p>
+        <ClassicButton onClick={montage.closeNoPerm}>{t('Close')}</ClassicButton>
+      </Modal>
     </AppShell>
   );
 }

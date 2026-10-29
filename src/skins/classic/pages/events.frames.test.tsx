@@ -4,7 +4,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -42,7 +42,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => {
   server.resetHandlers();
@@ -60,7 +60,7 @@ async function mount() {
 
 function frame(frame_id: number, over: Record<string, unknown> = {}) {
   return {
-    id: 1000 + frame_id, event_id: 42, frame_id, type: 'Normal', score: 0,
+    event_id: 42, frame_id, type: 'Normal', score: 0, audio_level: 0,
     time_stamp: `2026-06-03T12:00:${String(frame_id).padStart(2, '0')}Z`,
     delta: (frame_id * 0.5).toFixed(3), ...over,
   };
@@ -131,11 +131,11 @@ describe('EventFramesPage — classic skin', () => {
     await mount();
     await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
 
-    // Legacy keys the image off the `Frames` row id, not the frame number.
+    // Fetched by event and frame number (`Frames.Id` is gone in 1.39.36).
     const thumbs = screen.getAllByTestId(/^frame-thumb-/);
     expect(thumbs).toHaveLength(3);
     expect(thumbs[0]).toHaveAttribute(
-      'src', '/api/v3/frames/1001/image?token=test',
+      'src', '/api/v3/events/42/frames/1/image?token=test',
     );
     expect(thumbs[0]).toHaveAttribute('alt', 'Frame 1');
   });
@@ -266,5 +266,109 @@ describe('EventFramesPage — classic toolbar', () => {
       search: (p: Record<string, unknown>) => Record<string, unknown>;
     };
     expect(call.search({ page: 3 })).toEqual({ page_size: 0 });
+  });
+});
+
+describe('EventFramesPage — classic stats and frame links', () => {
+  function stubStats() {
+    const seen: string[] = [];
+    server.use(
+      http.get('/api/v3/events/:id', () =>
+        HttpResponse.json({ id: 42, monitor_id: 1, storage_id: 1, name: 'Front Door Motion', width: 640, height: 480 }),
+      ),
+      http.get('/api/v3/monitors/:id/zones', () =>
+        HttpResponse.json({
+          items: [{ id: 3, monitor_id: 1, name: 'Driveway', area: 5000, coords: '0,0 50,0 50,100 0,100' }],
+          total: 1, per_page: 100, current_page: 1, last_page: 1,
+        }),
+      ),
+      http.get('/api/v3/stats', ({ request }) => {
+        seen.push(new URL(request.url).search);
+        return HttpResponse.json({
+          items: [{
+            id: 9, monitor_id: 1, zone_id: 3, event_id: 42, frame_id: 2,
+            pixel_diff: 25, alarm_pixels: 15360, filter_pixels: 10000, blob_pixels: 9999, blobs: 2,
+            min_blob_size: 1000, max_blob_size: 8000, min_x: 12, max_x: 300, min_y: 34, max_y: 400, score: 37,
+          }],
+          total: 1, per_page: 100, current_page: 1, last_page: 1,
+        });
+      }),
+    );
+    return seen;
+  }
+
+  it('opens the frame\'s stats under its row from the "+"', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    const seen = stubStats();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Show stats for frame 2' }));
+    const table = await screen.findByTestId('frame-stats-2');
+    expect(within(table).getByText('Stats - 42 - 2')).toBeInTheDocument();
+    const row = await within(table).findByTestId('stats-row-3');
+    expect(within(row).getByText('Driveway')).toBeInTheDocument();
+    expect(within(row).getByText('15360 (10%)')).toBeInTheDocument();
+    expect(within(row).getByText('1000-8000 (0%-5%)')).toBeInTheDocument();
+    expect(seen[0]).toContain('event_id=42');
+    expect(seen[0]).toContain('frame_id=2');
+    // The "+" does not also open the frame.
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: 'Hide stats for frame 2' }));
+    expect(screen.queryByTestId('frame-detail-2')).not.toBeInTheDocument();
+  });
+
+  it('opens the stats page from Score and the frame from anywhere else on the row', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.click(screen.getByTestId('frame-score-2'));
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/events/$eventId/stats', params: { eventId: '42' }, search: { fid: 2 },
+    });
+
+    await user.click(within(screen.getByTestId('frame-row-3')).getByText('Normal'));
+    expect(mockNavigate).toHaveBeenLastCalledWith({
+      to: '/events/$eventId/frames/$frameId', params: { eventId: '42', frameId: '3' },
+    });
+  });
+});
+
+describe('EventFramesPage — classic card view and fullscreen', () => {
+  it('stacks each row as label / value pairs, and back', async () => {
+    const user = userEvent.setup();
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+
+    await user.click(screen.getByRole('button', { name: 'Show card view' }));
+    expect(screen.queryAllByRole('columnheader')).toHaveLength(0);
+    const row = screen.getByTestId('frame-row-2');
+    expect(row).toHaveTextContent('Frame Id2');
+    expect(row).toHaveTextContent('TypeAlarm');
+    // Score still opens the stats page in card view.
+    await user.click(screen.getByTestId('frame-score-2'));
+    expect(mockNavigate).toHaveBeenLastCalledWith(expect.objectContaining({ to: '/events/$eventId/stats' }));
+
+    await user.click(screen.getByRole('button', { name: 'Hide card view' }));
+    expect(screen.getAllByRole('columnheader').length).toBeGreaterThan(0);
+  });
+
+  it('fullscreens the table', async () => {
+    const user = userEvent.setup();
+    const requestFullscreen = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', {
+      value: requestFullscreen, configurable: true, writable: true,
+    });
+    stubEndpoints();
+    await mount();
+    await waitFor(() => expect(screen.getByTestId('frames-table')).toBeInTheDocument());
+    await user.click(screen.getByRole('button', { name: 'Fullscreen' }));
+    expect(requestFullscreen).toHaveBeenCalled();
+    expect(requestFullscreen.mock.contexts[0]).toContainElement(screen.getByTestId('frames-table'));
   });
 });

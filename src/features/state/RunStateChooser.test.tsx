@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { renderHook, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
@@ -20,7 +20,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); requests.length = 0; });
 afterAll(() => {
@@ -151,19 +151,40 @@ describe('useRunStateChooser', () => {
 });
 
 describe('RunStateChooser — the modal', () => {
-  it('offers the three daemon verbs plus every saved state', async () => {
+  it('while running offers Stop (chosen) and Restart plus every saved state', async () => {
     stubStates();
-    renderChooser();
+    renderChooser({ running: true });
 
     const select = screen.getByLabelText('Change State');
     await waitFor(() => expect(within(select).getByRole('option', { name: 'Night' })).toBeInTheDocument());
 
-    expect(within(select).getByRole('option', { name: 'Start' })).toBeInTheDocument();
+    expect(within(select).queryByRole('option', { name: 'Start' })).toBeNull();
     expect(within(select).getByRole('option', { name: 'Stop' })).toBeInTheDocument();
     expect(within(select).getByRole('option', { name: 'Restart' })).toBeInTheDocument();
+    expect(select).toHaveValue('stop');
     // The active row is marked.
     expect(within(select).getByRole('option', { name: 'default (active)' })).toBeInTheDocument();
-    expect(within(select).getByRole('option', { name: 'Choose…' })).toBeInTheDocument();
+    expect(within(select).queryByRole('option', { name: 'Choose…' })).toBeNull();
+  });
+
+  it('while stopped offers only Start, chosen', async () => {
+    stubStates();
+    renderChooser({ running: false });
+    const select = screen.getByLabelText('Change State');
+    await waitFor(() => expect(select).toHaveValue('start'));
+    expect(within(select).queryByRole('option', { name: 'Stop' })).toBeNull();
+    expect(within(select).queryByRole('option', { name: 'Restart' })).toBeNull();
+  });
+
+  it('with the status unknown offers all three and asks for a choice', async () => {
+    stubStates();
+    renderChooser({ running: null });
+    const select = screen.getByLabelText('Change State');
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Night' })).toBeInTheDocument());
+    for (const verb of ['Start', 'Stop', 'Restart', 'Choose…']) {
+      expect(within(select).getByRole('option', { name: verb })).toBeInTheDocument();
+    }
+    expect(select).toHaveValue('');
   });
 
   it('tells the operator when ZoneMinder is already stopped', async () => {
@@ -180,7 +201,7 @@ describe('RunStateChooser — the modal', () => {
 
   it('disables Apply until a choice is made', async () => {
     stubStates();
-    renderChooser();
+    renderChooser({ running: null });
     const apply = screen.getByRole('button', { name: 'Apply' });
     expect(apply).toBeDisabled();
 
@@ -195,7 +216,7 @@ describe('RunStateChooser — the modal', () => {
     renderChooser();
     await waitFor(() => expect(screen.queryByText('Loading states…')).toBeNull());
     expect(screen.queryByRole('option', { name: 'Night' })).toBeNull();
-    expect(screen.getByRole('option', { name: 'Start' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Stop' })).toBeInTheDocument();
   });
 
   it('shows a loading note while the states are in flight', () => {
@@ -266,7 +287,8 @@ describe('RunStateChooser — daemon actions', () => {
   ])('%s confirms with its own copy and POSTs /server/control/%s', async (action, title, copy) => {
     const user = userEvent.setup();
     stubStates();
-    renderChooser();
+    // Start is only offered while stopped; Stop and Restart while running.
+    renderChooser({ running: action !== 'start' });
 
     await waitFor(() => expect(screen.getByRole('option', { name: 'Night' })).toBeInTheDocument());
     await user.selectOptions(screen.getByLabelText('Change State'), action);
@@ -450,8 +472,8 @@ describe('RunStateChooser — delete a state', () => {
     await waitFor(() => expect(requests).toEqual([
       { method: 'DELETE', url: '/api/v3/states/2', body: null },
     ]));
-    // Deleting is not applying: the modal stays open and nothing closed it.
-    await waitFor(() => expect(screen.getByLabelText('Change State')).toHaveValue(''));
+    // Deleting is not applying: the modal stays open, back on its default.
+    await waitFor(() => expect(screen.getByLabelText('Change State')).toHaveValue('stop'));
     expect(onClose).not.toHaveBeenCalled();
   });
 

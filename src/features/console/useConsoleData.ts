@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
-import { getMonitors, getLiveSessions } from '@/api/monitors';
+import { getAllMonitors, getLiveSessions } from '@/api/monitors';
 import {
   getEvents,
   getEventCounts,
@@ -10,6 +10,7 @@ import { getDaemons, getSystemStatus } from '@/api/system';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorStatuses, type MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import { useZmConfigTable } from '@/features/config/useZmConfig';
+import { useStorageAreas, type StorageArea } from '@/features/storage/useStorageAreas';
 import { bucketEventsByHour } from './bucketEvents';
 import { CONSOLE_REFRESH_CONFIG, consoleRefreshInterval } from './refreshInterval';
 import type { Monitor, ZmEvent, DaemonStatus } from '@/types';
@@ -23,6 +24,8 @@ export interface ConsoleData {
   daemons: DaemonStatus[];
   isSystemRunning: boolean | undefined;
   systemStats: SystemStats | undefined;
+  /** Enabled storage areas and how full each is (legacy `getStorageHTML`). */
+  storageAreas: StorageArea[];
   /**
    * Per-monitor event summaries — event counts AND disk_space for each of
    * total / hour / day / week / month / archived. Sourced from a single
@@ -74,9 +77,12 @@ export function useConsoleData(): ConsoleData {
   const tableRefresh = (fallbackMs: number) =>
     consoleRefreshInterval(zmConfig?.[CONSOLE_REFRESH_CONFIG], fallbackMs);
 
+  // Every page of monitors: one page of 100 dropped rows on a bigger
+  // install. Its own key, because other `['monitors']` queries cache a
+  // single paginated response; invalidating `['monitors']` still reaches it.
   const monitorsQ = useQuery({
-    queryKey: ['monitors'],
-    queryFn: () => getMonitors({ page: 1, page_size: 100 }),
+    queryKey: ['monitors', 'all'],
+    queryFn: () => getAllMonitors(),
     enabled: isAuthenticated,
     refetchInterval: tableRefresh(30_000),
   });
@@ -136,6 +142,7 @@ export function useConsoleData(): ConsoleData {
   });
 
   const { byId: runtimeById } = useMonitorStatuses();
+  const { areas: storageAreas } = useStorageAreas({ enabled: isAuthenticated, refetchInterval: 60_000 });
 
   // Bucket the last-24h events into a per-monitor × per-hour histogram.
   // Pure logic lives in bucketEventsByHour for testability.
@@ -146,13 +153,14 @@ export function useConsoleData(): ConsoleData {
   );
 
   return {
-    monitors: monitorsQ.data?.items ?? [],
+    monitors: monitorsQ.data ?? EMPTY_MONITORS,
     liveSessions: liveSessionsQ.data ?? [],
     events: eventsQ.data?.items ?? [],
     eventCount24h: counts24Q.data?.total ?? 0,
     daemons: daemonsQ.data?.daemons ?? [],
     isSystemRunning: systemQ.data?.running,
     systemStats: systemQ.data?.stats,
+    storageAreas,
     summariesByMonitor: summariesQ.data?.items ?? [],
     hourlyByMonitor,
     runtimeById,
@@ -165,6 +173,8 @@ export function useConsoleData(): ConsoleData {
     refetch: () => { void monitorsQ.refetch(); },
   };
 }
+
+const EMPTY_MONITORS: Monitor[] = [];
 
 /** Empty-summary placeholder so callers can rely on a row always existing. */
 const EMPTY_SUMMARY: EventSummary = {

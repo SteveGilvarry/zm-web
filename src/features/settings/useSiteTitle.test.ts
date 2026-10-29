@@ -10,7 +10,7 @@ import { formatSiteTitle, useSiteTitle } from './useSiteTitle';
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {

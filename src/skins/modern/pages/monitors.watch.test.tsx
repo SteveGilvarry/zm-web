@@ -15,12 +15,15 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import { cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { delay, http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
+import { delay } from 'msw/utils/delay';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
+import { configListHandler } from '@/test/msw/handlers';
 import { makeMonitor, makePtzCapabilities } from '@/test/fixtures';
 import { useToastStore } from '@/components/common/toastStore';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 import type { StreamConnectionState } from '@/types';
 
 const { streamCalls, stream } = vi.hoisted(() => ({
@@ -59,7 +62,10 @@ beforeEach(() => {
 
 // Toasts live in a module-level store the shell renders as role="alert",
 // so an error raised by one test would otherwise be found by the next.
-afterEach(() => useToastStore.getState().clear());
+afterEach(() => {
+  useToastStore.getState().clear();
+  useWatchPrefsStore.setState(useWatchPrefsStore.getInitialState());
+});
 
 /** The page is a lazy chunk; the header <h1> is the first thing it names. */
 async function findWatch(name: string) {
@@ -491,6 +497,14 @@ describe('modern Watch page', () => {
     expect(screen.getByRole('button', { name: 'Move up' })).toBeInTheDocument();
   });
 
+  it('shows the PTZ panel to a control:View user, as legacy canView(Control) does', async () => {
+    renderRoute('/monitors/2', { perms: { control: 'View' } });
+
+    await findWatch('Driveway');
+    expect(await screen.findByRole('heading', { name: 'Camera control' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Move up' })).toBeInTheDocument();
+  });
+
   it('hides the PTZ surface from a user without control permission', async () => {
     renderRoute('/monitors/2', { perms: { control: 'None' } });
 
@@ -534,7 +548,7 @@ describe('modern Watch page', () => {
     const user = userEvent.setup();
     renderRoute('/monitors/2');
 
-    const closer = await screen.findByRole('button', { name: /Closer/ }, { timeout: 5_000 });
+    const closer = await screen.findByRole('button', { name: /Tele/ }, { timeout: 5_000 });
     fireEvent.pointerDown(closer, { pointerId: 1 });
     await waitFor(() => expect(paths).toContain('/api/v3/ptz/monitors/2/zoom/in'));
 
@@ -692,7 +706,7 @@ describe('modern Watch page — PTZ capability gaps', () => {
     renderRoute('/monitors/2');
 
     await screen.findByRole('heading', { name: 'Camera control' }, { timeout: 5_000 });
-    expect(screen.queryByRole('button', { name: /Closer/ })).toBeNull();
+    expect(screen.queryByRole('button', { name: /Tele/ })).toBeNull();
     expect(screen.queryByRole('button', { name: /Go to preset/ })).toBeNull();
     // Focus is still advertised.
     expect(screen.getByRole('button', { name: /Near/ })).toBeInTheDocument();
@@ -775,3 +789,204 @@ describe('modern Watch page — digital zoom and volume', () => {
     expect(screen.getByRole('button', { name: 'Mute' })).toBeInTheDocument();
   });
 });
+
+describe('modern Watch page — stage controls, pause and idle', () => {
+  it('steps the digital zoom from the buttons over the picture', async () => {
+    stream.state = 'connected';
+    const user = userEvent.setup();
+    const { container } = renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    const surface = container.querySelector('video')!.parentElement!;
+    const buttons = screen.getByTestId('watch-zoom-buttons');
+    expect(within(buttons).getByRole('button', { name: 'Zoom out' })).toBeDisabled();
+    await user.click(within(buttons).getByRole('button', { name: 'Zoom in' }));
+    await waitFor(() => expect(surface.style.transform).toMatch(/scale\(1\.3\)/));
+    await user.click(within(buttons).getByRole('button', { name: 'Zoom out' }));
+    await waitFor(() => expect(surface.style.transform).toBe(''));
+  });
+
+  it('fullscreens the picture on a double-click instead of resetting the zoom', async () => {
+    const request = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(HTMLElement.prototype, 'requestFullscreen', { configurable: true, value: request });
+    try {
+      stream.state = 'connected';
+      const { container } = renderRoute('/monitors/1');
+      await findWatch('Front Door');
+      await settleAutoStart();
+      fireEvent.doubleClick(container.querySelector('video')!.parentElement!);
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(request.mock.contexts[0]).toBe(screen.getByTestId('watch-stage'));
+    } finally {
+      delete (HTMLElement.prototype as { requestFullscreen?: unknown }).requestFullscreen;
+    }
+  });
+
+  it('pauses the picture in place and plays it again without a new session', async () => {
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    stream.state = 'connected';
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    await user.click(screen.getByRole('button', { name: 'Pause' }));
+    expect(pause).toHaveBeenCalled();
+    await user.click(screen.getByRole('button', { name: 'Play' }));
+    expect(streamCalls).toEqual([]);
+    expect(screen.getByRole('button', { name: 'Pause' })).toBeInTheDocument();
+    pause.mockRestore();
+  });
+
+  it('asks whether anyone is watching after ZM_WEB_VIEWING_TIMEOUT and resumes on the answer', async () => {
+    server.use(configListHandler({ ZM_WEB_VIEWING_TIMEOUT: '1' }));
+    stream.state = 'connected';
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await settleAutoStart();
+
+    const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 4_000 });
+    expect(streamCalls).toContain('webrtc:stop');
+    await user.click(within(dialog).getByRole('button', { name: 'Continue watching' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(streamCalls).toContain('webrtc:start');
+  });
+});
+
+describe('modern Watch page — cycle and PTZ toggles', () => {
+  it('opens the cycle cluster paused, and plays it on demand', async () => {
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    const toggle = await screen.findByRole('button', { name: 'Cycle through monitors' });
+    expect(toggle).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.queryByRole('combobox', { name: 'Cycle period' })).toBeNull();
+
+    await user.click(toggle);
+    expect(screen.getByRole('combobox', { name: 'Cycle period' })).toBeInTheDocument();
+    // Showing the cycle does not start it: legacy only does with cycle=true.
+    expect(screen.queryByTestId('seconds-to-cycle')).toBeNull();
+    await user.click(screen.getByRole('button', { name: 'Play Cycle' }));
+    expect(screen.getByRole('button', { name: 'Pause Cycle' })).toBeInTheDocument();
+    expect(screen.getByTestId('seconds-to-cycle')).toHaveTextContent(/\d+/);
+  });
+
+  it('starts the rotation on cycle=true', async () => {
+    renderRoute('/monitors/1?cycle=true');
+    await findWatch('Front Door');
+    expect(await screen.findByRole('button', { name: 'Pause Cycle' })).toBeInTheDocument();
+  });
+
+  it('folds the PTZ panel away from its toggle, remembered', async () => {
+    const user = userEvent.setup();
+    renderRoute('/monitors/2');
+    await findWatch('Driveway');
+    await screen.findByRole('heading', { name: 'Camera control' });
+
+    await user.click(screen.getByRole('button', { name: 'Toggle PTZ Controls' }));
+    expect(screen.queryByRole('heading', { name: 'Camera control' })).toBeNull();
+    expect(useWatchPrefsStore.getState().ptzShow).toBe(false);
+  });
+});
+
+describe('modern Watch page — live alarm, alarms toggle, actions, light', () => {
+  /** The per-id status with the shared-memory fields of zm-api#139. */
+  const liveStatus = (live: Record<string, unknown>) =>
+    http.get('/api/v3/monitor-status/:id', ({ params }) =>
+      HttpResponse.json({ ...db.monitorStatuses.find((s) => s.monitor_id === Number(params.id)), ...live }));
+
+  it('reports Alarm in the status rail and draws the frame in the alarm colour', async () => {
+    server.use(liveStatus({ alarm_state: 'alarm', alarms_disabled: false, analysing: true }));
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    const stateTerm = await screen.findByText('State', { selector: 'dt' });
+    expect(stateTerm.nextElementSibling).toHaveTextContent('Alarm');
+    expect(stateTerm.nextElementSibling).toHaveClass('text-danger');
+    expect(screen.getByText('Alarms', { selector: 'dt' }).nextElementSibling).toHaveTextContent('Enabled');
+    expect(document.querySelector('[data-alarm-state="alarm"]')).toHaveClass('border-alarm');
+  });
+
+  it('disables alarms from the toolbar, and offers them back in amber once off', async () => {
+    const bodies: unknown[] = [];
+    server.use(
+      liveStatus({ alarm_state: 'idle', alarms_disabled: false, analysing: true }),
+      http.patch('/api/v3/monitors/:id/alarm', async ({ request }) => {
+        bodies.push(await request.json());
+        return HttpResponse.json(db.monitors[0]);
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    const toggle = await screen.findByTestId('alarms-toggle');
+    expect(toggle).toHaveTextContent('Disable Alarms');
+    // The status answers with alarms off from here on.
+    server.use(liveStatus({ alarm_state: 'idle', alarms_disabled: true, analysing: true }));
+    await user.click(toggle);
+    await waitFor(() => expect(bodies).toContainEqual({ action: 'disable_alarms' }));
+    await waitFor(() => expect(screen.getByTestId('alarms-toggle')).toHaveTextContent('Enable Alarms'));
+    expect(screen.getByTestId('alarms-toggle')).toHaveClass('text-warn');
+
+    await user.click(screen.getByTestId('alarms-toggle'));
+    await waitFor(() => expect(bodies).toContainEqual({ action: 'enable_alarms' }));
+  });
+
+  it('hides the alarms toggle while zmc reports no state', async () => {
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+    await screen.findByRole('heading', { name: 'Status' });
+    expect(screen.queryByTestId('alarms-toggle')).toBeNull();
+  });
+
+  it('opens the control panel for manual actions on a camera without PTZ', async () => {
+    const runs: string[] = [];
+    server.use(
+      http.get('/api/v3/monitors/:id/actions', () => HttpResponse.json([
+        { id: 5, monitor_id: 1, target_monitor_id: 2, action_type: 'LightOn', trigger_on: 'Manual', label: null, enabled: true, sequence: 0 },
+      ])),
+      http.post('/api/v3/monitors/:id/actions/:actionId/run', ({ params }) => {
+        runs.push(`${params.id}/${params.actionId}`);
+        return HttpResponse.json({ success: true });
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/monitors/1');
+    await findWatch('Front Door');
+
+    await screen.findByRole('heading', { name: 'Camera control' }, { timeout: 5_000 });
+    await user.click(screen.getByRole('button', { name: 'Turn light on - Driveway' }));
+    await waitFor(() => expect(runs).toEqual(['1/5']));
+    expect(screen.queryByRole('button', { name: 'Move up' })).toBeNull();
+  });
+
+  it('switches the camera light from its status', async () => {
+    const posts: string[] = [];
+    server.use(
+      http.get('/api/v3/ptz/monitors/:id/capabilities', ({ params }) =>
+        HttpResponse.json(makePtzCapabilities({
+          monitor_id: Number(params.id),
+          light: { can_light: true, can_indicator_light: false },
+        }))),
+      http.get('/api/v3/ptz/monitors/:id/light', () => HttpResponse.json({ light: 'on', indicator_light: null })),
+      http.post('/api/v3/ptz/monitors/:id/light/:state', ({ params }) => {
+        posts.push(String(params.state));
+        return HttpResponse.json({ success: true });
+      }),
+    );
+    const user = userEvent.setup();
+    renderRoute('/monitors/2');
+    await findWatch('Driveway');
+
+    const light = await screen.findByRole('button', { name: 'Light' }, { timeout: 5_000 });
+    await waitFor(() => expect(light).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.queryByRole('button', { name: 'Indicator' })).toBeNull();
+    await user.click(light);
+    await waitFor(() => expect(posts).toEqual(['off']));
+  });
+});
+

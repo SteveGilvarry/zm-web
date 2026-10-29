@@ -5,6 +5,7 @@ import { ChevronDown, Filter, X } from 'lucide-react';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 import type { Monitor } from '@/types';
 import { useMonitorFilter } from './useMonitorFilter';
+import { DELETED_TOKEN } from './filterMonitors';
 
 /* -------------------------------------------------------------------------- */
 /*  Enum option sets                                                          */
@@ -20,14 +21,16 @@ const RECORDING_OPTS = ['None', 'OnMotion', 'Always'] as const;
 
 // Monitor.type values come from the legacy ZM source-camera-driver list.
 // Anything else (newer backend additions) shows up as a freeform string.
-const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'Libvlc', 'cURL', 'WebSite', 'VNC'] as const;
+const SOURCE_OPTS = ['Local', 'Remote', 'File', 'Ffmpeg', 'cURL', 'WebSite', 'VNC'] as const;
 
 // "Status" in legacy ZM is a derived boolean: capturing != None ⇒ Active.
-const STATUS_OPTS = ['active', 'disabled'] as const;
+// `Deleted` is legacy's pseudo-status for soft-deleted monitors, which are
+// fetched only while it is picked (`GET /monitors?include_deleted`).
+const STATUS_OPTS = ['active', 'disabled', DELETED_TOKEN] as const;
 
 /**
  * Display labels for the enum wire values above. Mode values get translated;
- * source-driver names (Ffmpeg, Libvlc, …) are product names and stay as-is.
+ * source-driver names (Ffmpeg, cURL, …) are product names and stay as-is.
  */
 function useEnumLabel(): (value: string) => string {
   const { t } = useTranslation();
@@ -41,6 +44,7 @@ function useEnumLabel(): (value: string) => string {
     File: t('File'),
     active: t('Active'),
     disabled: t('Disabled'),
+    deleted: t('Deleted'),
   };
   return (value) => labels[value] ?? value;
 }
@@ -245,9 +249,8 @@ export function Chip({ label, emptyLabel, options, selected, onChange }: ChipPro
         onClick={() => setOpen((v) => !v)}
         aria-haspopup="listbox"
         aria-expanded={open}
-        aria-label={count > 0
-          ? t('{{label}} filter, {{count}} selected', { label, count })
-          : t('{{label}} filter', { label })}
+        // No aria-label: the name is the content (label, then the summary or
+        // the count's own label), so it contains the visible text (WCAG 2.5.3).
         className={clsx(
           'flex items-center gap-1.5 px-2.5 py-1 text-xs rounded border transition-colors',
           // The accent marks a chip that is *selected*; an untouched chip is
@@ -257,7 +260,9 @@ export function Chip({ label, emptyLabel, options, selected, onChange }: ChipPro
             : 'border-border-subtle bg-surface text-fg-muted hover:border-border hover:text-fg',
         )}
       >
-        <span className="font-medium">{label}</span>
+        {/* The spaces are text nodes so the name reads "Groups All groups",
+            not "GroupsAll groups"; flex layout does not draw them. */}
+        <span className="font-medium">{label}</span>{' '}
         {count > 0 && (
           <span
             className="px-1 min-w-[1rem] text-center text-xs font-mono tabular-nums"

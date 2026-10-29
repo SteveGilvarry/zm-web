@@ -56,12 +56,30 @@ describe('RuleBuilder — the value cell writes back per attribute kind', () => 
 
   it('an All / No / Yes select for a boolean attribute', async () => {
     const user = userEvent.setup();
-    const onChange = mount([{ attr: 'Archived', op: '=', val: '' }]);
+    const onChange = mount([{ attr: 'Emailed', op: '=', val: '' }]);
     const cell = valueCell();
     expect(within(cell).getByRole('option', { name: 'All' })).toBeInTheDocument();
     expect(within(cell).getByRole('option', { name: 'No' })).toBeInTheDocument();
     await user.selectOptions(cell, '1');
-    expect(firstTerm(onChange)).toMatchObject({ attr: 'Archived', val: '1' });
+    expect(firstTerm(onChange)).toMatchObject({ attr: 'Emailed', val: '1' });
+  });
+
+  it('Archived reads "equal to" Unarchived / Archived, as legacy does', async () => {
+    const user = userEvent.setup();
+    const onChange = mount([{ attr: 'Archived', op: '=', val: '0' }]);
+    expect(screen.queryByLabelText('Operator')).toBeNull();
+    expect(screen.getByTestId('fixed-operator')).toHaveTextContent('equal to');
+    const cell = valueCell();
+    expect(within(cell).getAllByRole('option').map((o) => o.textContent)).toEqual(['Unarchived', 'Archived']);
+    await user.selectOptions(cell, '1');
+    expect(firstTerm(onChange)).toMatchObject({ attr: 'Archived', op: '=', val: '1' });
+  });
+
+  it('switching a term to Archived starts it at "equal to Unarchived"', async () => {
+    const user = userEvent.setup();
+    const onChange = mount([{ attr: 'Cause', op: 'LIKE', val: 'x' }]);
+    await user.selectOptions(screen.getByLabelText('Attribute'), 'Archived');
+    expect(firstTerm(onChange)).toMatchObject({ attr: 'Archived', op: '=', val: '0' });
   });
 
   it('a monitor picker keyed by id for MonitorId', async () => {
@@ -158,6 +176,14 @@ describe('RuleBuilder — row structure controls', () => {
     expect(screen.getAllByLabelText('Conjunction')).toHaveLength(1);
   });
 
+  it('classic leaves the first conjunction cell blank, as legacy does', () => {
+    renderWithProviders(
+      <RuleBuilder variant="classic" query={{ terms: twoTerms }} monitors={monitors} storage={storage} onChange={vi.fn()} />,
+    );
+    expect(screen.queryByText('where')).toBeNull();
+    expect(screen.getAllByLabelText('Conjunction')).toHaveLength(1);
+  });
+
   it('switching a conjunction to "or" rewrites that term only', async () => {
     const user = userEvent.setup();
     const onChange = mount(twoTerms);
@@ -180,17 +206,39 @@ describe('RuleBuilder — row structure controls', () => {
     expect(ops[0]).toBe('LIKE');
   });
 
+  // Legacy only offers brackets once there are more than two terms, 0…n−2 of them.
+  const fourTerms = [
+    { attr: 'Cause', op: '=', val: 'x', obr: '0', cbr: '0' },
+    { cnj: 'and', attr: 'Cause', op: '=', val: 'y', obr: '0', cbr: '0' },
+    { cnj: 'or', attr: 'Cause', op: '=', val: 'z', obr: '0', cbr: '0' },
+    { cnj: 'and', attr: 'Cause', op: '=', val: 'w', obr: '0', cbr: '0' },
+  ] as const;
+
   it('the close-bracket select emits a count as a string', async () => {
     const user = userEvent.setup();
-    const onChange = mount([{ attr: 'Cause', op: '=', val: 'x', obr: '0', cbr: '0' }]);
-    await user.selectOptions(screen.getByLabelText('Close brackets'), '2');
+    const onChange = mount([...fourTerms]);
+    await user.selectOptions(screen.getAllByLabelText('Close brackets')[0], '2');
     expect(firstTerm(onChange)).toMatchObject({ cbr: '2' });
   });
 
   it('the open-bracket select emits a count as a string', async () => {
     const user = userEvent.setup();
-    const onChange = mount([{ attr: 'Cause', op: '=', val: 'x', obr: '0', cbr: '0' }]);
-    await user.selectOptions(screen.getByLabelText('Open brackets'), '3');
-    expect(firstTerm(onChange)).toMatchObject({ obr: '3' });
+    const onChange = mount([...fourTerms]);
+    await user.selectOptions(screen.getAllByLabelText('Open brackets')[0], '1');
+    expect(firstTerm(onChange)).toMatchObject({ obr: '1' });
+  });
+
+  it('offers no brackets for two terms and 0…n−2 for more', () => {
+    mount([fourTerms[0], fourTerms[1]]);
+    expect(screen.queryByLabelText('Open brackets')).toBeNull();
+    expect(screen.queryByLabelText('Close brackets')).toBeNull();
+  });
+
+  it('lists 0…n−2 brackets, keeping a saved count above that', () => {
+    mount([{ ...fourTerms[0], obr: '5' }, fourTerms[1], fourTerms[2]]);
+    const [first, second] = screen.getAllByLabelText('Open brackets');
+    expect(within(second).getAllByRole('option').map((o) => o.getAttribute('value'))).toEqual(['0', '1']);
+    expect(within(first).getAllByRole('option')).toHaveLength(6);
+    expect(first).toHaveValue('5');
   });
 });

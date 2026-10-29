@@ -9,7 +9,7 @@ import type { ZmConfig } from '@/types';
 
 const row = (over: Partial<ZmConfig>): ZmConfig => ({
   id: 1, name: 'ZM_X', value: '', type: 'string', category: 'system',
-  readonly: 0, private: 0, system: 0, ...over,
+  readonly: 0, private: 0, system: 0, source: 'db', ...over,
 });
 
 describe('perlPatternToRegExp', () => {

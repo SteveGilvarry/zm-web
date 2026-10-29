@@ -5,7 +5,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -34,7 +34,7 @@ beforeAll(() => {
     accessToken: 'test', refreshToken: 'test',
     user: { iat: 0, exp: 0, user: 'admin' }, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -48,7 +48,7 @@ async function mount() {
 }
 
 const reports = [
-  { id: 1, name: 'Weekly motion', filter_id: 7, start_date_time: '2026-05-25T00:00:00Z', end_date_time: '2026-06-01T00:00:00Z', interval: 60 },
+  { id: 1, name: 'Weekly motion', filter_id: 7, start_date_time: '2026-05-25T00:00:00Z', end_date_time: '2026-06-01T00:00:00Z', interval: 86400 },
   { id: 2, name: 'Archived only', filter_id: null, start_date_time: null, end_date_time: null, interval: null },
 ];
 const filters = [
@@ -75,18 +75,21 @@ describe('ReportsListPage — classic skin', () => {
     const headers = within(screen.getByTestId('reports-table'))
       .getAllByRole('columnheader')
       .map((th) => th.textContent);
-    expect(headers.slice(0, 5)).toEqual(['Name', 'Filter', 'Start', 'End', 'Interval']);
+    // reports.php: mark, Id, Name, (Description, not served), Starting, Ending, Interval.
+    expect(headers).toEqual(['', 'Id', 'Name', 'Starting', 'Ending', 'Interval']);
 
     expect(screen.getByRole('link', { name: 'Weekly motion' }).getAttribute('href')).toBe('/reports/1');
+    expect(screen.getByRole('link', { name: '1' }).getAttribute('href')).toBe('/reports/1');
     expect(screen.getByText('Archived only')).toBeInTheDocument();
 
+    // Interval prints as stored: seconds.
     const row = screen.getByTestId('report-row-1');
-    expect(within(row).getByText('High-score motion')).toBeInTheDocument();
-    expect(within(row).getByText('60 min')).toBeInTheDocument();
-    expect(within(screen.getByTestId('report-row-2')).getByText('one-off')).toBeInTheDocument();
+    expect(within(row).getByText('86400')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 
-  it('toggles the inline create form from the New button', async () => {
+  it('toggles the inline create form from Add New Report', async () => {
     stub();
     const user = userEvent.setup();
     await mount();
@@ -94,7 +97,7 @@ describe('ReportsListPage — classic skin', () => {
 
     expect(screen.queryByTestId('report-create-form')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: '+ New' }));
+    await user.click(screen.getByRole('button', { name: 'Add New Report' }));
     const form = screen.getByTestId('report-create-form');
     expect(within(form).getByLabelText('Name')).toBeInTheDocument();
     expect(within(form).getByLabelText('Filter')).toBeInTheDocument();

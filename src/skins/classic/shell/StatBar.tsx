@@ -7,21 +7,23 @@ import { useUiStore } from '@/stores/ui';
 import { usePerms } from '@/features/auth/usePerms';
 import { useZmConfig, useZmConfigTable } from '@/features/config/useZmConfig';
 import { humanFilesize } from '@/lib/format';
-import {
-  DB_THRESHOLDS, RAM_THRESHOLDS, STAT_TONE_CLASS, STORAGE_THRESHOLDS, statTone,
-} from './statTone';
+import { consoleRefreshInterval } from '@/features/console/refreshInterval';
+import { useStorageAreas } from '@/features/storage/useStorageAreas';
+import { DB_THRESHOLDS, RAM_THRESHOLDS, STAT_TONE_CLASS, statTone } from './statTone';
+import { ClassicStorageStats } from './StorageStats';
 import { versionState } from './versionState';
+import { ClassicVersionReminder } from './VersionReminder';
 
 /**
  * Classic sub-header stat strip (legacy navbar-two): Load / Cpu / DB /
  * storage / Memory / Swap / version, each with the tooltip and colour
- * `skins/classic/includes/functions.php` gives it. Shown only with
- * `ZM_WEB_SHOW_SERVER_STATS` and `canView('System')`, as legacy gates it.
+ * `skins/classic/includes/functions.php` gives it. Every entry needs
+ * `canView('System')`; `ZM_WEB_SHOW_SERVER_STATS` off drops the server
+ * stats but keeps the version (`buildStatisticsBar`). Polls every
+ * `ZM_WEB_H_REFRESH_NAVBAR` seconds (legacy `navBarRefresh`).
  *
  * The bandwidth-profile chip is deliberately absent (out of scope). Storage
- * is one global figure, not one entry per area: `/api/v3/storage` reports the
- * configured `disk_space` only, so per-area used/total — and legacy's
- * "X used by events" half of the tooltip — has no backend data yet.
+ * is one entry per enabled area (`getStorageHTML`, see `StorageStats`).
  */
 export function ClassicStatBar() {
   const { t } = useTranslation();
@@ -31,25 +33,29 @@ export function ClassicStatBar() {
   const showStats = useZmConfig('ZM_WEB_SHOW_SERVER_STATS', true);
   // The navbar's flip chevron (legacy cookie `zmHeaderFlip`).
   const flippedOpen = useUiStore((s) => s.classicStatBarOpen);
-  const enabled = isAuthenticated && canViewSystem && showStats;
+  const enabled = isAuthenticated && canViewSystem;
+  const { data: configs } = useZmConfigTable();
+  // The bandwidth switcher is out of scope, so the high-bandwidth row
+  // stands in for all three, as for the console's own refresh.
+  const navbarRefresh = consoleRefreshInterval(configs?.ZM_WEB_H_REFRESH_NAVBAR, 10_000);
 
   const { data: status } = useQuery({
     queryKey: ['systemStatus'],
     queryFn: getSystemStatus,
-    enabled,
-    refetchInterval: 10_000,
+    enabled: enabled && showStats,
+    refetchInterval: navbarRefresh,
   });
+  const storage = useStorageAreas({ enabled: enabled && showStats, refetchInterval: navbarRefresh });
   const { data: version } = useQuery({
     queryKey: ['version'],
     queryFn: getVersion,
     enabled,
     refetchInterval: 60_000,
   });
-  const { data: configs } = useZmConfigTable();
 
   if (!enabled || !flippedOpen) return null;
 
-  const stats = status?.stats;
+  const stats = showStats ? status?.stats : undefined;
   const pct = (used: number, total: number) =>
     total > 0 ? Math.round((used / total) * 100) : null;
   // Legacy reads /proc/meminfo and subtracts Buffers and Cached as well;
@@ -95,18 +101,7 @@ export function ClassicStatBar() {
           {t('DB')}: {dbCount}/{dbMax}
         </span>
       )}
-      {stats?.disk_usage_percent != null && (
-        <span
-          className={STAT_TONE_CLASS[statTone(stats.disk_usage_percent, STORAGE_THRESHOLDS)]}
-          title={t('{{used}} of {{total}}', {
-            used: humanFilesize(stats.used_disk),
-            total: humanFilesize(stats.total_disk),
-          })}
-          data-testid="stat-storage"
-        >
-          {t('Default')}: {stats.disk_usage_percent.toFixed(0)}%
-        </span>
-      )}
+      {showStats && <ClassicStorageStats areas={storage.areas} tone={storage.tone} />}
       {memUsedPct != null && (
         <span
           className={STAT_TONE_CLASS[statTone(memUsedPct, RAM_THRESHOLDS)]}
@@ -131,13 +126,22 @@ export function ClassicStatBar() {
           {t('Swap')}: {swapUsedPct}%
         </span>
       )}
-      <span
-        className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
-        title={versionTitle}
-        data-testid="stat-version"
-      >
-        {version?.version ? `v${version.version}` : ''}
-      </span>
+      {ver.status === 'update-available' && can('system', 'Edit') && version?.version ? (
+        <ClassicVersionReminder
+          version={version.version}
+          lastVersion={configs?.ZM_DYN_LAST_VERSION ?? ''}
+          title={versionTitle}
+          className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
+        />
+      ) : (
+        <span
+          className={clsx('ms-auto opacity-80', STAT_TONE_CLASS[ver.tone])}
+          title={versionTitle}
+          data-testid="stat-version"
+        >
+          {version?.version ? `v${version.version}` : ''}
+        </span>
+      )}
     </div>
   );
 }

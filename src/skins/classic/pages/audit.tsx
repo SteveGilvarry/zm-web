@@ -18,7 +18,8 @@ import { classicInput, classicLink } from '../components/events/styles';
 export default function ClassicAuditPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Audit Events Report'));
-  const s = useAuditPage();
+  // `/reports/event-audit`: counts, gaps and the file checks per monitor in one request.
+  const s = useAuditPage({ fromServer: true });
   const cells = useAuditCells(s);
 
   if (!s.isAuthenticated) return null;
@@ -41,7 +42,7 @@ export default function ClassicAuditPage() {
             <input type="datetime-local" step={1} aria-label={t('Window end')} value={s.maxInput} onChange={(e) => s.setWindow(s.minInput, e.target.value)} className={classicInput} />
           </div>
           <p className="text-xs text-zinc-500">
-            {t('Events that start after the window opens and have ended by the time it closes. MissingFiles / ZeroSize need per-event file checks (zm-api#36).')}
+            {t('Events that overlap the window; the last event is the one that ended last. MissingFiles and ZeroSize are checked on the server.')}
             {s.truncatedMonitorIds.length > 0 && (
               <span className="ms-1 text-[#856404]">
                 {t('Monitors {{ids}} have more events than the audit reads; their counts are lower bounds.', { ids: s.truncatedMonitorIds.join(', ') })}
@@ -87,8 +88,8 @@ export default function ClassicAuditPage() {
                       <ClassicTd className="whitespace-nowrap">{c.last}</ClassicTd>
                       <ClassicTd numeric>{c.minGap}</ClassicTd>
                       <ClassicTd numeric>{c.maxGap}</ClassicTd>
-                      <ClassicTd center className="text-zinc-400">{c.placeholder}</ClassicTd>
-                      <ClassicTd center className="text-zinc-400">{c.placeholder}</ClassicTd>
+                      <ClassicTd numeric data-testid="audit-missing" className={c.missingCount > 0 ? 'text-[#d9534f]' : undefined}>{c.missing}</ClassicTd>
+                      <ClassicTd numeric data-testid="audit-zero-size" className={c.zeroSizeCount > 0 ? 'text-[#d9534f]' : undefined}>{c.zeroSize}</ClassicTd>
                     </tr>
                   );
                 })}

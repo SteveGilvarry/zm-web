@@ -150,14 +150,52 @@ export function sortRows(rows: ConsoleRow[], key: ConsoleSortKey, dir: SortDir, 
   return dir === 'asc' ? sorted : sorted.reverse();
 }
 
-/** bootstrap-table's client-side search: substring over the text cells. */
+/**
+ * The console search box (ajax/console.php): substring over Name, Function,
+ * Path, Device, Host, Id and the runtime Status, plus the text the Function
+ * and Source cells show.
+ */
 export function searchRows(rows: ConsoleRow[], query: string): ConsoleRow[] {
   const q = query.trim().toLowerCase();
   if (!q) return rows;
   return rows.filter(({ monitor: m, runtime }) =>
-    [String(m.id), m.name, monitorSource(m), m.type, ...functionLines(m, runtime)]
-      .some((v) => v.toLowerCase().includes(q)),
+    [
+      String(m.id), m.name, m.function, m.path, m.device, m.host, runtime?.status,
+      monitorSource(m), ...functionLines(m, runtime),
+    ].some((v) => (v ?? '').toLowerCase().includes(q)),
   );
+}
+
+/**
+ * The status console.php counts a row under: `Deleted` for a soft-deleted
+ * monitor (its runtime row is stale), the runtime status, or with no runtime
+ * row `NotRunning` (`Running` for a WebSite monitor, which has no capture
+ * process).
+ */
+export function consoleStatus(m: Monitor, runtime: MonitorRuntime | undefined): string {
+  if (isDeleted(m)) return 'Deleted';
+  if (runtime?.status) return runtime.status;
+  return m.type === 'WebSite' ? 'Running' : 'NotRunning';
+}
+
+/**
+ * The toolbar's status breakdown (console.php `$status_counts`): one entry
+ * per status in order of first appearance down the sequence order, the
+ * share printed as PHP's `round(…, 1)` does (`100`, `33.3`).
+ */
+export function statusBreakdown(rows: ConsoleRow[]): Array<{ status: string; pct: string }> {
+  if (rows.length === 0) return [];
+  const bySequence = [...rows].sort((a, b) =>
+    (a.monitor.sequence ?? 0) - (b.monitor.sequence ?? 0) || a.monitor.id - b.monitor.id);
+  const counts = new Map<string, number>();
+  for (const r of bySequence) {
+    const st = consoleStatus(r.monitor, r.runtime);
+    counts.set(st, (counts.get(st) ?? 0) + 1);
+  }
+  return [...counts].map(([status, n]) => ({
+    status,
+    pct: String(Math.round((1000 * n) / rows.length) / 10),
+  }));
 }
 
 export function pageSlice<T>(rows: T[], page: number, pageSize: number): T[] {
@@ -187,53 +225,6 @@ export function totalsFor(rows: ConsoleRow[]): ConsoleTotals {
     acc.zones += m.zone_count ?? 0;
   }
   return acc;
-}
-
-/* ------------------------------------------------------------------------ */
-/*  Export (bootstrap-table's CSV / JSON)                                   */
-/* ------------------------------------------------------------------------ */
-
-export interface ExportColumn { key: string; label: string; value: (row: ConsoleRow) => string | number }
-
-export function exportColumns(ctx: SortContext = {}): ExportColumn[] {
-  return [
-    { key: 'id', label: 'Id', value: (r) => r.monitor.id },
-    { key: 'name', label: 'Name', value: (r) => r.monitor.name },
-    { key: 'manufacturer', label: 'Manufacturer', value: (r) => ctx.manufacturerName?.(r.monitor.manufacturer_id) ?? '' },
-    { key: 'model', label: 'Model', value: (r) => ctx.modelName?.(r.monitor.model_id) ?? '' },
-    { key: 'function', label: 'Function', value: (r) => functionLines(r.monitor, r.runtime).join(' ') },
-    { key: 'status', label: 'Status', value: (r) => r.runtime?.status ?? 'Unknown' },
-    { key: 'capture_fps', label: 'CaptureFPS', value: (r) => r.runtime?.captureFps ?? '' },
-    { key: 'source', label: 'Source', value: (r) => monitorSource(r.monitor) },
-    { key: 'resolution', label: 'Resolution', value: (r) => `${r.monitor.width}x${r.monitor.height}` },
-    { key: 'events', label: 'Events', value: (r) => r.summary.total_events },
-    { key: 'hour', label: 'Hour', value: (r) => r.summary.hour_events },
-    { key: 'day', label: 'Day', value: (r) => r.summary.day_events },
-    { key: 'week', label: 'Week', value: (r) => r.summary.week_events },
-    { key: 'month', label: 'Month', value: (r) => r.summary.month_events },
-    { key: 'archived', label: 'Archived', value: (r) => r.summary.archived_events },
-    { key: 'zones', label: 'Zones', value: (r) => r.monitor.zone_count ?? 0 },
-    { key: 'sequence', label: 'Sequence', value: (r) => r.monitor.sequence ?? '' },
-  ];
-}
-
-const csvCell = (v: string | number): string => {
-  const s = String(v);
-  return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-};
-
-export function rowsToCsv(rows: ConsoleRow[], columns: ExportColumn[]): string {
-  const head = columns.map((c) => csvCell(c.label)).join(',');
-  const body = rows.map((r) => columns.map((c) => csvCell(c.value(r))).join(','));
-  return [head, ...body].join('\n');
-}
-
-export function rowsToJson(rows: ConsoleRow[], columns: ExportColumn[]): string {
-  return JSON.stringify(
-    rows.map((r) => Object.fromEntries(columns.map((c) => [c.key, c.value(r)]))),
-    null,
-    2,
-  );
 }
 
 /** Hand the browser a file. Not exercised in jsdom. */

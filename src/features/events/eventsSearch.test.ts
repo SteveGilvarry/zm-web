@@ -6,6 +6,7 @@ import {
   termsFromEventsSearch,
   toApiTimestamp,
   toZmDateTime,
+  parseEventNavSearch,
 } from './eventsSearch';
 
 describe('parseEventsSearch', () => {
@@ -44,7 +45,7 @@ describe('parseEventsSearch', () => {
   });
 
   it('rejects sort fields the backend does not know', () => {
-    expect(parseEventsSearch({ sort: 'disk_space', dir: 'sideways', page: 0 })).toEqual({});
+    expect(parseEventsSearch({ sort: 'tags', dir: 'sideways', page: 0 })).toEqual({});
   });
 
   it('accepts the sort fields zm-api#20 added', () => {
@@ -118,5 +119,14 @@ describe('toApiTimestamp', () => {
   it('gives back nothing for an empty or unparseable value', () => {
     expect(toApiTimestamp('')).toBe('');
     expect(toApiTimestamp('garbage')).toBe('');
+  });
+});
+
+describe('parseEventNavSearch — fid', () => {
+  it('keeps a positive frame number and drops anything else', () => {
+    expect(parseEventNavSearch({ fid: '42' })).toEqual({ fid: 42 });
+    expect(parseEventNavSearch({ fid: 7, monitor_id: '3' })).toMatchObject({ fid: 7 });
+    expect(parseEventNavSearch({ fid: '0' })).toEqual({});
+    expect(parseEventNavSearch({ fid: 'x' })).toEqual({});
   });
 });

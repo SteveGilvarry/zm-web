@@ -13,6 +13,9 @@ export type MonitorCreatePayload = Omit<Monitor, 'id' | 'deleted'> & {
   deleted: boolean;
   pass: string | null;
   onvif_password: string;
+  /** Not on `Monitor` yet; the response and both requests carry them (zm-api#159). */
+  encoder_hw_accel_name?: string | null;
+  encoder_hw_accel_device?: string | null;
 };
 
 /**
@@ -74,6 +77,9 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   decoder_hw_accel_name: null,
   encoder: null,
   encoder_parameters: null,
+  encoder_hw_accel_name: null,
+  encoder_hw_accel_device: null,
+  wall_clock_timestamps: 0,
   default_codec: 'auto',
   output_container: 'auto',
   output_codec: null,
@@ -181,6 +187,11 @@ export const MONITOR_CREATE_DEFAULTS: MonitorCreatePayload = {
   rtsp2_web_type: 'MSE',
   rtsp_server: 0,
   rtsp_stream_name: '',
+  // zm_create.sql.in: Go2RTCEnabled false, StreamChannel 'Restream', WhatDisplay 'OnlyVideo', and DefaultPlayer '' (Auto), which is what legacy's form saves.
+  go2rtc_enabled: 0,
+  stream_channel: 'Restream',
+  what_display: 'OnlyVideo',
+  default_player: '',
   mqtt_enabled: 0,
   mqtt_subscriptions: '',
 };
@@ -231,7 +242,7 @@ export function toCreatePayload(
 export type MonitorCreateInput =
   Partial<Omit<MonitorCreatePayload, 'name' | 'type' | 'function' | 'storage_id'>> & {
     name: string;
-    type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'Libvlc' | 'cURL' | 'WebSite' | 'VNC';
+    type?: 'Local' | 'Remote' | 'File' | 'Ffmpeg' | 'cURL' | 'WebSite' | 'VNC';
     function?: 'None' | 'Monitor' | 'Modect' | 'Record' | 'Mocord' | 'Nodect';
     /** Defaults to 0 — ZoneMinder's "Default" storage area. */
     storage_id?: number;
@@ -257,6 +268,15 @@ export async function createMonitor(input: MonitorCreateInput): Promise<Monitor>
     recording: (fn === 'Record' || fn === 'Mocord') ? 'Always'
               : (fn === 'Modect') ? 'OnMotion' : 'None',
   };
+  return apiPost<MonitorCreatePayload, Monitor>('/monitors', payload);
+}
+
+/**
+ * POST a complete create body as-is. The full editor uses this: it already
+ * holds every field, so unlike {@link createMonitor} nothing is derived
+ * from `function`.
+ */
+export async function postMonitor(payload: MonitorCreatePayload): Promise<Monitor> {
   return apiPost<MonitorCreatePayload, Monitor>('/monitors', payload);
 }
 

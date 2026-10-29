@@ -1,8 +1,11 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import {
   clearLogs, getLog, isLogMinLevel, levelColor, levelLabel, levelRowTint, listLogs,
+  listLogComponents,
+  isLogSortField,
+  LOG_SORT_FIELDS,
 } from './logs';
 import { useAuthStore } from '@/stores/auth';
 
@@ -11,7 +14,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -21,6 +24,48 @@ afterAll(() => {
 
 // ZoneMinder's Logger scale, as written to the Logs table on a live box:
 // level -1 rows carry code WAR and level 0 rows carry INF.
+describe('logs — zm-api#142 additions', () => {
+  it('sends level lists, ids, sort_by and unfiltered_total, and surfaces total_unfiltered', async () => {
+    let url: URL | undefined;
+    server.use(
+      http.get('*/api/v3/logs', ({ request }) => {
+        url = new URL(request.url);
+        return HttpResponse.json({ items: [], total: 3, current_page: 1, per_page: 25, last_page: 1, total_unfiltered: 1200 });
+      }),
+    );
+    const page = await listLogs({ level: '-1,-5', ids: '101,102', sort_by: 'component', sort: 'asc', unfiltered_total: true });
+    expect(url?.searchParams.get('level')).toBe('-1,-5');
+    expect(url?.searchParams.get('ids')).toBe('101,102');
+    expect(url?.searchParams.get('sort_by')).toBe('component');
+    expect(url?.searchParams.get('unfiltered_total')).toBe('true');
+    expect(page.total_unfiltered).toBe(1200);
+  });
+
+  it('DELETEs /logs?ids= to clear exactly the ticked rows', async () => {
+    let url: URL | undefined;
+    server.use(
+      http.delete('*/api/v3/logs', ({ request }) => {
+        url = new URL(request.url);
+        return HttpResponse.json({ message: 'Deleted 2 log entries' });
+      }),
+    );
+    await clearLogs({ ids: '101,102' });
+    expect(url?.searchParams.get('ids')).toBe('101,102');
+    expect(url?.searchParams.has('level')).toBe(false);
+  });
+
+  it('GETs /logs/components and returns the sorted names', async () => {
+    server.use(http.get('*/api/v3/logs/components', () => HttpResponse.json(['web_php', 'zma_m1', 'zmc_m1'])));
+    await expect(listLogComponents()).resolves.toEqual(['web_php', 'zma_m1', 'zmc_m1']);
+  });
+
+  it('accepts only the sort fields the backend enum takes', () => {
+    expect(LOG_SORT_FIELDS).toContain('time');
+    expect(isLogSortField('message')).toBe(true);
+    expect(isLogSortField('time_key')).toBe(false);
+  });
+});
+
 describe('levelLabel (pure)', () => {
   it('maps ZoneMinder severity numbers to labels', () => {
     expect(levelLabel(-4)).toBe('PANIC');

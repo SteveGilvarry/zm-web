@@ -12,9 +12,9 @@ import { handlers, resetDb } from './handlers';
 export const server = setupServer(...handlers);
 
 export function setupMockServer(
-  options: { onUnhandledRequest?: 'warn' | 'error' | 'bypass' } = {},
+  options: { onUnhandledFrame?: 'warn' | 'error' | 'bypass' } = {},
 ) {
-  beforeAll(() => server.listen({ onUnhandledRequest: options.onUnhandledRequest ?? 'warn' }));
+  beforeAll(() => server.listen({ onUnhandledFrame: options.onUnhandledFrame ?? 'warn' }));
   afterEach(() => {
     server.resetHandlers();
     resetDb();

@@ -188,13 +188,13 @@ test.describe('Filters — legacy format, actions and preview', () => {
       await expect(page.getByRole('button', { name: /^save$/i })).toBeDisabled();
     });
 
-    test(`${skin}: List matches previews what the filter would act on @route:filters`, async ({
+    test(`${skin}: Preview matches lists what the filter would act on @route:filters`, async ({
       loggedInPage: page,
     }) => {
       await gotoSkin(page, '/filters', skin);
       await openSeededFilter(page, skin, SEED.filters.recentMotion, 'e2e-Recent motion');
 
-      await page.getByRole('button', { name: /^list matches$/i }).click();
+      await page.getByRole('button', { name: /^preview matches$/i }).click();
 
       // The count is reported either way — `useFilterPreview` asks the
       // backend when the conditions translate to query params and otherwise
@@ -203,6 +203,11 @@ test.describe('Filters — legacy format, actions and preview', () => {
         timeout: 20_000,
       });
       await expect(page.getByRole('button', { name: /^hide matches$/i })).toBeVisible();
+      // List Matches opens the events list on the same terms, as legacy does…
+      await expect(page.getByRole('link', { name: /^list matches$/i })).toHaveAttribute(
+        'href',
+        /\/events\?.*terms=/,
+      );
       // …and Montage Review is reachable, framed by the same conditions.
       await expect(page.getByRole('link', { name: /view matches/i })).toHaveAttribute(
         'href',

@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -38,7 +38,7 @@ function signIn(user: UserClaims = ALL_EDIT) {
 }
 
 const server = setupServer();
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => { signIn(); });
 afterEach(() => {
   server.resetHandlers();
@@ -149,7 +149,7 @@ describe('ClassicGroupsPage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Cannot reach the server.');
   });
 
-  it('drops the verbs and the Mark column for a groups-View user', async () => {
+  it('greys the verbs and drops the Mark column for a groups-View user, as legacy does', async () => {
     signIn(VIEW_ONLY);
     stub();
     await mount();
@@ -157,8 +157,9 @@ describe('ClassicGroupsPage', () => {
     const table = await screen.findByRole('table');
     expect(within(table).getAllByRole('columnheader').map((th) => th.textContent))
       .toEqual(['Name', 'Monitors']);
-    expect(screen.queryByRole('button', { name: 'New' })).toBeNull();
-    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull();
+    // groups.php renders New with disabled="disabled", and Delete starts disabled.
+    expect(screen.getByRole('button', { name: 'New' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Delete' })).toBeDisabled();
     expect(screen.queryByRole('checkbox')).toBeNull();
     // Plain text, no edit link.
     expect(screen.getByText('Outside')).toBeInTheDocument();
@@ -184,11 +185,18 @@ describe('ClassicGroupsPage', () => {
     await screen.findByRole('table');
     await user.click(screen.getByRole('button', { name: 'New' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Create group' });
+    // Legacy's title for a new group is just "Group".
+    const dialog = await screen.findByRole('dialog', { name: 'Group' });
+    const save = within(dialog).getByRole('button', { name: 'Save' });
+    expect(save).toBeDisabled();
     await user.type(within(dialog).getByLabelText('Name'), 'Side Gate');
-    await user.selectOptions(within(dialog).getByLabelText('Parent'), '1');
-    await user.selectOptions(within(dialog).getByLabelText('Monitors'), '1');
-    await user.click(within(dialog).getByRole('button', { name: 'Save' }));
+    expect(save).toBeEnabled();
+    await user.selectOptions(within(dialog).getByLabelText('Parent Group'), '1');
+    // The chosen-style picker: type to filter, pick from the list.
+    await user.type(within(dialog).getByRole('combobox', { name: 'Monitor' }), 'front');
+    await user.click(within(dialog).getByRole('option', { name: 'Front Door' }));
+    expect(within(dialog).getByRole('button', { name: 'Remove Front Door' })).toBeInTheDocument();
+    await user.click(save);
 
     await waitFor(() => expect(body).toEqual({ name: 'Side Gate', parent_id: 1 }));
     await waitFor(() => expect(attached).toEqual([{ group_id: 9, monitor_id: 1 }]));
@@ -211,11 +219,11 @@ describe('ClassicGroupsPage', () => {
     await screen.findByRole('table');
     await user.click(screen.getByRole('button', { name: '3 Garage' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Edit group' });
+    const dialog = await screen.findByRole('dialog', { name: 'Group - Garage' });
     const name = within(dialog).getByLabelText('Name');
     await user.clear(name);
     await user.type(name, 'Garage Bay');
-    await user.selectOptions(within(dialog).getByLabelText('Parent'), '1');
+    await user.selectOptions(within(dialog).getByLabelText('Parent Group'), '1');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(requests).toHaveLength(1));
@@ -249,23 +257,23 @@ describe('ClassicGroupsPage', () => {
     await screen.findByRole('table');
     await user.click(screen.getByRole('button', { name: '1 Outside' }));
 
-    const dialog = await screen.findByRole('dialog', { name: 'Edit group' });
-    const select = within(dialog).getByLabelText('Monitors') as HTMLSelectElement;
-    // Both of Outside's monitors arrive selected.
-    expect(Array.from(select.selectedOptions, (o) => o.value)).toEqual(['1', '2']);
+    const dialog = await screen.findByRole('dialog', { name: 'Group - Outside' });
+    // Both of Outside's monitors arrive picked.
+    expect(within(dialog).getByRole('button', { name: 'Remove Front Door' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Remove Driveway' })).toBeInTheDocument();
 
     // Keep only Driveway (2): row 100 (Front Door) is detached, nothing added.
-    await user.deselectOptions(select, '1');
+    await user.click(within(dialog).getByRole('button', { name: 'Remove Front Door' }));
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(detached).toEqual(['100']));
     expect(attached).toEqual([]);
   });
 
-  it('confirms (listing marked groups) before DELETEing them', async () => {
+  it('asks in legacy\'s confirmation modal before DELETEing the marked groups', async () => {
     const user = userEvent.setup();
     stub();
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+    const confirm = vi.spyOn(window, 'confirm');
     const deleted: string[] = [];
     server.use(
       http.delete('/api/v3/groups/:id', ({ params }) => {
@@ -281,15 +289,19 @@ describe('ClassicGroupsPage', () => {
     await user.click(screen.getByRole('checkbox', { name: 'Mark Garage' }));
     await user.click(screen.getByRole('button', { name: 'Delete' }));
 
+    const modal = await screen.findByRole('dialog', { name: 'Delete' });
+    expect(modal).toHaveTextContent('Are you sure you wish to delete the selected groups?');
+    expect(deleted).toEqual([]);
+    await user.click(within(modal).getByRole('button', { name: 'Delete' }));
+
     await waitFor(() => expect(deleted.sort()).toEqual(['1', '3']));
-    expect(confirm.mock.calls[0][0]).toContain('Outside');
-    expect(confirm.mock.calls[0][0]).toContain('Garage');
+    expect(screen.queryByRole('dialog')).toBeNull();
+    expect(confirm).not.toHaveBeenCalled();
   });
 
-  it('does not DELETE when the confirm is dismissed', async () => {
+  it('does not DELETE when the confirmation is cancelled', async () => {
     const user = userEvent.setup();
     stub();
-    vi.spyOn(window, 'confirm').mockReturnValue(false);
     const deleted: string[] = [];
     server.use(
       http.delete('/api/v3/groups/:id', ({ params }) => {
@@ -302,9 +314,13 @@ describe('ClassicGroupsPage', () => {
     await screen.findByRole('table');
     await user.click(screen.getByRole('checkbox', { name: 'Mark Garage' }));
     await user.click(screen.getByRole('button', { name: 'Delete' }));
+    const modal = await screen.findByRole('dialog', { name: 'Delete' });
+    await user.click(within(modal).getByRole('button', { name: 'Cancel' }));
 
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(deleted).toEqual([]);
+    // The marks survive a cancel.
+    expect(screen.getByRole('checkbox', { name: 'Mark Garage' })).toBeChecked();
   });
 
   it('surfaces a create failure in the dialog instead of closing it', async () => {
@@ -318,11 +334,72 @@ describe('ClassicGroupsPage', () => {
 
     await screen.findByRole('table');
     await user.click(screen.getByRole('button', { name: 'New' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Create group' });
+    const dialog = await screen.findByRole('dialog', { name: 'Group' });
     await user.type(within(dialog).getByLabelText('Name'), 'Outside');
     await user.click(within(dialog).getByRole('button', { name: 'Save' }));
 
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('name already taken');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
+  });
+
+  it('lists parent groups as legacy does: None, then by name, indented, never itself or below', async () => {
+    const user = userEvent.setup();
+    stub({
+      groups: [
+        { id: 1, name: 'Outside', parent_id: null },
+        { id: 2, name: 'Front', parent_id: 1 },
+        { id: 4, name: 'Porch', parent_id: 2 },
+        { id: 3, name: 'Garage', parent_id: null },
+        { id: 5, name: 'Attic', parent_id: null },
+      ],
+    });
+    await mount();
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('button', { name: '2 Front' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'Group - Front' });
+    const parent = within(dialog).getByLabelText('Parent Group') as HTMLSelectElement;
+    // Front and its child Porch are left out; the rest by name.
+    expect(Array.from(parent.options, (o) => o.textContent)).toEqual(['None', 'Attic', 'Garage', 'Outside']);
+    expect(parent).toHaveValue('1');
+  });
+
+  it('indents a nested parent option by its depth', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('button', { name: 'New' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Group' });
+    const parent = within(dialog).getByLabelText('Parent Group') as HTMLSelectElement;
+    expect(Array.from(parent.options, (o) => o.textContent))
+      .toEqual(['None', '\u00a0\u00a0Front', 'Garage', 'Outside']);
+  });
+
+  it('picks monitors from the keyboard and drops the last with Backspace, as chosen does', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+    await screen.findByRole('table');
+    await user.click(screen.getByRole('button', { name: 'New' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Group' });
+    const box = within(dialog).getByRole('combobox', { name: 'Monitor' });
+
+    await user.click(box);
+    await user.keyboard('{ArrowDown}{Enter}');
+    expect(within(dialog).getByRole('button', { name: 'Remove Driveway' })).toBeInTheDocument();
+
+    await user.type(box, 'zzz');
+    expect(within(dialog).getByText('No results match "zzz"')).toBeInTheDocument();
+    await user.clear(box);
+    await user.keyboard('{Backspace}');
+    expect(within(dialog).queryByRole('button', { name: 'Remove Driveway' })).toBeNull();
+  });
+
+  it('renders no heading of its own: legacy\'s groups page starts at the toolbar', async () => {
+    stub();
+    await mount();
+    await screen.findByRole('table');
+    expect(screen.queryByRole('heading', { name: 'Groups' })).toBeNull();
   });
 });

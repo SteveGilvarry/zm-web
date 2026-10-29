@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -22,7 +22,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -115,6 +115,22 @@ describe('SystemStatus — storage', () => {
     expect(screen.getByText(/15% used/)).toBeInTheDocument();
     // 1.5 GB / 10 GB in the storage row
     expect(screen.getByText(/1\.5 GB \/ 10\.0 GB/)).toBeInTheDocument();
+  });
+
+  it('reads DB connections out of the pool, warned over 90 %', () => {
+    const base = {
+      cpu_load: 0, cpu_usage_percent: 0, total_mem: 0, free_mem: 0, total_swap: 0, free_swap: 0,
+      total_disk: 0, used_disk: 0, free_disk: 0, disk_usage_percent: 0,
+    };
+    const view = renderWithProviders(
+      <SystemStatus daemons={[]} isRunning stats={{ ...base, db_connections: 15, db_max_connections: 151 }} />,
+    );
+    expect(screen.getByText('15 / 151')).not.toHaveClass('text-warn');
+    view.unmount();
+    renderWithProviders(
+      <SystemStatus daemons={[]} isRunning stats={{ ...base, db_connections: 140, db_max_connections: 151 }} />,
+    );
+    expect(screen.getByText('140 / 151')).toHaveClass('text-warn');
   });
 
   it('does not render the storage section when stats is omitted', () => {

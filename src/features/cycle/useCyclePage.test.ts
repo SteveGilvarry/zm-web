@@ -1,12 +1,12 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import type { Monitor } from '@/types';
 import { useAuthStore } from '@/stores/auth';
-import { CYCLE_DEFAULT_INTERVAL_S, useCyclePage, useCycleRotation } from './useCyclePage';
+import { CYCLE_DEFAULT_INTERVAL_S, cycleStageStyle, useCyclePage, useCycleRotation } from './useCyclePage';
 
 let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({ useSearch: () => mockSearch, useNavigate: () => vi.fn() }));
@@ -64,6 +64,73 @@ describe('useCycleRotation', () => {
     rerender({ list: [m(1), m(2)] });
     expect(result.current.index).toBe(0);
   });
+
+  it('follows the monitor on stage when the list changes around it', () => {
+    const { result, rerender } = renderHook(({ list }: { list: Monitor[] }) => useCycleRotation(list), {
+      initialProps: { list: [m(1), m(2), m(3)] },
+    });
+    act(() => result.current.jumpTo(1)); // Cam 2
+    act(() => result.current.togglePause());
+    rerender({ list: [m(2), m(3)] });
+    expect(result.current.current?.id).toBe(2);
+    // Without reloadOnMove a pause survives.
+    expect(result.current.isPaused).toBe(true);
+    act(() => result.current.next());
+    expect(result.current.isPaused).toBe(true);
+  });
+
+  it('keeps its place across an emptied list (the Watch sidebar closing)', () => {
+    const { result, rerender } = renderHook(({ list }: { list: Monitor[] }) => useCycleRotation(list), {
+      initialProps: { list: [m(1), m(2), m(3)] },
+    });
+    act(() => result.current.jumpTo(2));
+    rerender({ list: [] });
+    rerender({ list: [m(1), m(2), m(3)] });
+    expect(result.current.current?.id).toBe(3);
+  });
+
+  it('reloadOnMove: a step resumes, a list change restarts from the first monitor', () => {
+    const { result, rerender } = renderHook(
+      ({ list }: { list: Monitor[] }) => useCycleRotation(list, { reloadOnMove: true }),
+      { initialProps: { list: [m(1), m(2), m(3)] } },
+    );
+    act(() => result.current.togglePause());
+    act(() => result.current.next());
+    expect(result.current.current?.id).toBe(2);
+    expect(result.current.isPaused).toBe(false);
+
+    act(() => result.current.togglePause());
+    rerender({ list: [m(2), m(3)] });
+    expect(result.current.current?.id).toBe(2);
+    expect(result.current.index).toBe(0);
+    expect(result.current.isPaused).toBe(false);
+  });
+
+  it('a start monitor that survives a list change is kept', () => {
+    const { result, rerender } = renderHook(
+      ({ list }: { list: Monitor[] }) => useCycleRotation(list, { startMonitorId: 3, reloadOnMove: true }),
+      { initialProps: { list: [m(1), m(2), m(3)] } },
+    );
+    expect(result.current.current?.id).toBe(3);
+    rerender({ list: [m(1), m(3)] });
+    expect(result.current.current?.id).toBe(3);
+  });
+});
+
+describe('cycleStageStyle', () => {
+  const auto = { width: 'auto', height: 'auto', scale: '0' };
+  it('on all-auto fits the measured height, clamped to the column', () => {
+    expect(cycleStageStyle(auto, { width: 1920, height: 1080 }, 540)).toEqual({
+      aspectRatio: '1920 / 1080', width: '960px', maxWidth: '100%',
+    });
+    // Portrait the same way: the height decides.
+    expect(cycleStageStyle(auto, { width: 1080, height: 1920 }, 960).width).toBe('540px');
+  });
+  it('leaves any explicit choice, or an unmeasured page, to stageStyle', () => {
+    expect(cycleStageStyle({ ...auto, width: '640px' }, { width: 1920, height: 1080 }, 540).width).toBe('640px');
+    expect(cycleStageStyle({ ...auto, scale: '100' }, { width: 1920, height: 1080 }, 540).width).toBe('1920px');
+    expect(cycleStageStyle(auto, { width: 1920, height: 1080 }).width).toBe('100%');
+  });
 });
 
 const configs = (rows: Array<{ name: string; value: string }>) =>
@@ -76,7 +143,7 @@ const server = setupServer(
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); mockSearch = {}; });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });

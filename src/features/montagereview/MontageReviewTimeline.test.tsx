@@ -6,7 +6,7 @@
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -18,7 +18,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -164,6 +164,73 @@ describe('MontageReviewTimeline — tracks and bars', () => {
     await waitFor(() =>
       expect(screen.getByTitle('Event-601 — 2026-08-21T03:00:00Z')).toBeInTheDocument());
     expect(screen.getByTitle('Event-602 — 2026-08-21T05:00:00Z')).toBeInTheDocument();
+  });
+});
+
+/**
+ * The layout the browser check measured (2026-10-18): the timeline body at
+ * x=12, 1257 px wide; every track's bar region inset by the 128 px name
+ * column, so x=124, 1145 px wide. Any box carrying the inset class gets the
+ * inset rect, everything else the body's.
+ */
+function stubMeasuredLayout() {
+  const rect = (left: number, width: number) => ({
+    width, height: 32, left, right: left + width, top: 0, bottom: 32, x: left, y: 0,
+    toJSON: () => ({}),
+  } as DOMRect);
+  return vi
+    .spyOn(HTMLElement.prototype, 'getBoundingClientRect')
+    .mockImplementation(function (this: HTMLElement) {
+      return this.classList.contains('start-32') ? rect(124, 1145) : rect(12, 1257);
+    });
+}
+
+/** Where an element positioned by `left: N%` lands on screen, in px. */
+function screenX(el: HTMLElement): number {
+  const pct = parseFloat(el.style.left) / 100;
+  const box = el.parentElement!.getBoundingClientRect();
+  return box.left + pct * box.width;
+}
+
+describe('MontageReviewTimeline — one time axis for bars, playhead and seek', () => {
+  it('draws the playhead on the same x as a bar starting at the same instant', async () => {
+    stubEvents([ev(701, 1, '2026-08-21T06:00:00Z', '2026-08-21T06:30:00Z')]);
+    const spy = stubMeasuredLayout();
+    try {
+      renderTimeline({ currentTime: new Date('2026-08-21T06:00:00Z') });
+      const bar = await screen.findByTestId('review-event-bar-701');
+      const playhead = screen.getByTestId('review-timeline-playhead');
+      const label = screen.getByTestId('review-timeline-playhead-label');
+      // Half way through the bars' 1145 px from x=124.
+      expect(screenX(bar)).toBeCloseTo(124 + 1145 / 2);
+      expect(screenX(playhead)).toBeCloseTo(screenX(bar));
+      expect(screenX(label)).toBeCloseTo(screenX(bar));
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('a press at the bars\' left edge seeks to the window start, and a quarter in to a quarter in', async () => {
+    stubEvents([]);
+    const spy = stubMeasuredLayout();
+    try {
+      const { onSeek, container } = renderTimeline();
+      await screen.findByText('Front Door');
+      const body = container.querySelector('[style*="touch-action"]') as HTMLElement;
+      body.setPointerCapture = vi.fn();
+
+      fireEvent.pointerDown(body, { pointerId: 1, clientX: 124, buttons: 1 });
+      expect(onSeek).toHaveBeenLastCalledWith(RANGE_START);
+
+      fireEvent.pointerMove(body, { pointerId: 1, clientX: 124 + 1145 / 4, buttons: 1 });
+      expect(onSeek).toHaveBeenLastCalledWith(new Date('2026-08-21T03:00:00Z'));
+
+      // On the name column: clamped to the start, not a time before it.
+      fireEvent.pointerDown(body, { pointerId: 1, clientX: 40, buttons: 1 });
+      expect(onSeek).toHaveBeenLastCalledWith(RANGE_START);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });
 
@@ -444,5 +511,50 @@ describe('MontageReviewTimeline — legacy fidelity', () => {
 
     fireEvent.click(toggle);
     expect(await screen.findByText('Front Door')).toBeInTheDocument();
+  });
+
+  it('classic: a bordered strip with no header, the names over the bars and the edges along the bottom', () => {
+    stubEvents([]);
+    const start = new Date('2026-08-21T02:00:00Z');
+    const end = new Date('2026-08-21T03:00:00Z');
+    renderWithProviders(
+      <MontageReviewTimeline
+        variant="classic"
+        collapsible={false}
+        monitors={[monitor(1, 'Front Door')]}
+        rangeStart={start}
+        rangeEnd={end}
+        currentTime={start}
+        onSeek={() => {}}
+      />,
+    );
+    const root = screen.getByTestId('review-timeline');
+    expect(root.className).toContain('border-white');
+    expect(root.className).not.toContain('rounded');
+    expect(screen.queryByText('Timeline')).toBeNull();
+    expect(screen.getByText('Front Door').className).toContain('text-white');
+    // The axis starts at the edge, as legacy draws the names over the bars.
+    expect(screen.getByTestId('review-timeline-lane').className).toContain('start-0');
+    // Legacy's scrub labels sit along the bottom of the canvas.
+    const lane = screen.getByTestId('review-timeline-label-lane');
+    expect(lane.compareDocumentPosition(screen.getByTestId('review-timeline-lane')) & Node.DOCUMENT_POSITION_PRECEDING).toBeTruthy();
+  });
+
+  it('drops the edge label the playhead label would cover, as legacy hides scrubleft / scrubright', () => {
+    stubEvents([]);
+    const start = new Date('2026-08-21T02:00:00Z');
+    const end = new Date('2026-08-21T03:00:00Z');
+    const { rerender } = renderWithProviders(
+      <MontageReviewTimeline monitors={[monitor(1, 'Front Door')]} rangeStart={start} rangeEnd={end} currentTime={start} onSeek={() => {}} />,
+    );
+    expect(screen.queryByTestId('review-timeline-min')).toBeNull();
+    expect(screen.getByTestId('review-timeline-max')).toBeInTheDocument();
+    expect(screen.getByTestId('review-timeline-playhead-label').className).toContain('translate-x-0');
+    rerender(
+      <MontageReviewTimeline monitors={[monitor(1, 'Front Door')]} rangeStart={start} rangeEnd={end} currentTime={end} onSeek={() => {}} />,
+    );
+    expect(screen.getByTestId('review-timeline-min')).toBeInTheDocument();
+    expect(screen.queryByTestId('review-timeline-max')).toBeNull();
+    expect(screen.getByTestId('review-timeline-playhead-label').className).toContain('-translate-x-full');
   });
 });

@@ -26,19 +26,12 @@ export interface StorageWritePayload {
   server_id?: number | null;
   /** s3fs / remote URL; null for a plain local path. */
   url?: string | null;
-}
-
-/**
- * `CreateStorageRequest` carries `do_delete`; `UpdateStorageRequest` does not,
- * and the backend silently drops it from a PATCH (verified on the dev box:
- * `PATCH /storage/{id} {do_delete: 1}` answers 200 with `do_delete` unchanged).
- * So it is a create-time choice only, and the type says so rather than letting
- * a caller send an update that looks like it worked.
- */
-export interface StorageCreatePayload extends StorageWritePayload {
-  /** 1 = deleting an event may reclaim its media here; 0 = never. */
+  /** 1 = deleting an event may reclaim its media here; 0 = never. On update since zm-api#185. */
   do_delete?: number | null;
 }
+
+/** Create body: the same fields; `do_delete` is accepted on both since zm-api#185. */
+export type StorageCreatePayload = StorageWritePayload;
 
 export async function getStorageList(params?: {
   page?: number;

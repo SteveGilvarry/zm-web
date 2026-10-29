@@ -13,7 +13,11 @@ import {
   X,
   Download,
   FilterX,
+  History,
 } from 'lucide-react';
+import { EventsTermsBanner } from '@/features/events/EventsTermsBanner';
+import { tagPickFromOption } from '@/features/events/tagFilter';
+import { timelineLink } from '@/features/events/timelineLink';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { useDocumentTitle } from '../layouts/useDocumentTitle';
@@ -62,7 +66,7 @@ export default function EventsListPage() {
     sortField, sortDir, toggleSort,
     page, pageSize, pageSizeOptions, setPageSize, totalPages, setPage, prevPage, nextPage,
     selectedIds, toggleSelected, clearSelection, showThumbs, monitorLookup,
-    filterLinkSearch, exportCsv, detailSearch,
+    filterLinkSearch, exportCsv, detailSearch, termsMode, clearTerms, timelineSearch,
   } = state;
   const noteTypes = useNoteTypeOptions();
   const view = useEventsColumnsStore((st) => st.view);
@@ -79,8 +83,8 @@ export default function EventsListPage() {
   // What is actually narrowing the list right now — the number the Filters
   // button shows, so a filter set from a deep link is never invisible.
   const activeFilters = [
-    groupFilter !== 'all', causeFilter !== '', dateInputValue !== '',
-    endInputValue !== '', notesFilter.length > 0, tagFilter !== 'all',
+    groupFilter.length > 0, causeFilter !== '', dateInputValue !== '',
+    endInputValue !== '', notesFilter.length > 0, tagFilter.length > 0,
   ].filter(Boolean).length;
 
   return (
@@ -91,15 +95,20 @@ export default function EventsListPage() {
           <div className="relative">
             <Search className="absolute start-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-fg-faint" aria-hidden />
             <input
-              type="text"
-              aria-label={t('Name contains')}
-              placeholder={t('Name contains…')}
+              type="search"
+              aria-label={t('Search events')}
+              placeholder={t('Search')}
+              title={t('Matches id, monitor, name, cause, notes, times, scores and more')}
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               className={clsx(field, 'ps-7 pe-2 py-1 w-44 text-sm')}
             />
           </div>
 
+          {/* A term list from the filter editor replaces the strip (see the
+              banner below), as on legacy's events page. */}
+          {!termsMode && (
+          <>
           {/* Legacy's Monitor box is a multi-select, so this one is too: a
               checkbox chip, empty meaning every monitor. */}
           <Chip
@@ -130,20 +139,17 @@ export default function EventsListPage() {
           <ToolbarDisclosure label={t('Filters')} icon={Filter} count={activeFilters}>
             <div className="grid grid-cols-2 gap-3">
               {groups.length > 0 && (
-                <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                // Several groups at once, as legacy's Group box allows.
+                <div className="flex flex-col gap-1 text-xs text-fg-dim">
                   {t('Group')}
-                  <select
-                    aria-label={t('Group')}
-                    value={groupFilter}
-                    onChange={(e) => setGroupFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                    className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
-                  >
-                    <option value="all">{t('All Groups')}</option>
-                    {groups.map((g) => (
-                      <option key={g.id} value={g.id}>{g.name}</option>
-                    ))}
-                  </select>
-                </label>
+                  <Chip
+                    label={t('Group')}
+                    emptyLabel={t('All Groups')}
+                    options={groups.map((g) => ({ value: String(g.id), label: g.name }))}
+                    selected={groupFilter.map(String)}
+                    onChange={(vals) => setGroupFilter(vals.map(Number))}
+                  />
+                </div>
               )}
 
               {/* Substring match, server-side. The datalist only suggests the
@@ -180,7 +186,6 @@ export default function EventsListPage() {
                 <input
                   type="datetime-local"
                   aria-label={t('Events starting before')}
-                  title={t('The API bounds the end time, so an event still running at this instant is left out.')}
                   value={endInputValue}
                   onChange={(e) => setEndInput(e.target.value)}
                   className={clsx(field, 'px-2 py-1 text-sm')}
@@ -200,23 +205,27 @@ export default function EventsListPage() {
                 />
               </div>
 
-              <label className="flex flex-col gap-1 text-xs text-fg-dim">
+              {/* Several tags, or No Tag / Any Tag on their own — legacy's
+                  Tags box (Filter.php:1211). */}
+              <div className="flex flex-col gap-1 text-xs text-fg-dim">
                 {t('Tag')}
-                <select
-                  aria-label={t('Tag')}
-                  value={tagFilter}
-                  onChange={(e) => setTagFilter(e.target.value === 'all' ? 'all' : parseInt(e.target.value))}
-                  className={clsx(field, 'px-2 py-1 text-sm cursor-pointer')}
-                >
-                  <option value="all">{t('All Tags')}</option>
-                  {tags.map((tag) => (
-                    <option key={tag.id} value={tag.id}>
-                      {tag.name}
-                      {tag.event_count != null ? ` (${tag.event_count})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                <Chip
+                  label={t('Tag')}
+                  emptyLabel={t('All Tags')}
+                  options={[
+                    { value: 'none', label: t('No Tag') },
+                    { value: 'any', label: t('Any Tag') },
+                    ...tags.map((tag) => ({
+                      value: String(tag.id),
+                      label: tag.event_count != null ? `${tag.name} (${tag.event_count})` : tag.name,
+                    })),
+                  ]}
+                  selected={tagFilter.map(String)}
+                  onChange={(vals) => setTagFilter(
+                    vals.map(tagPickFromOption).filter((p) => p !== undefined),
+                  )}
+                />
+              </div>
             </div>
 
             <div className="mt-3 pt-3 border-t border-border-subtle flex items-center justify-between">
@@ -238,6 +247,8 @@ export default function EventsListPage() {
               </button>
             </div>
           </ToolbarDisclosure>
+          </>
+          )}
 
           <span className="ms-auto" />
 
@@ -278,10 +289,18 @@ export default function EventsListPage() {
             <Download className="w-4 h-4" />
           </button>
 
+          <Link {...timelineLink(timelineSearch)} className={toolBtn} aria-label={t('Show Timeline')} title={t('Show Timeline')}>
+            <History className="w-4 h-4" />
+          </Link>
+
           <button type="button" onClick={() => refetch()} className={toolBtn} aria-label={t('Refresh events')}>
             <RefreshCw className="w-4 h-4" />
           </button>
         </div>
+
+        {termsMode && (
+          <EventsTermsBanner mode={termsMode} editSearch={filterLinkSearch} onClear={clearTerms} />
+        )}
 
         {showDefaultHourHint && (
           <div
@@ -325,6 +344,7 @@ export default function EventsListPage() {
             <EventsTable
               events={events}
               monitorName={(id) => monitorLookup[id] || t('Monitor {{id}}', { id })}
+              storageName={state.storageName}
               token={accessToken ?? undefined}
               selectedIds={selectedIds}
               onToggleSelected={toggleSelected}
@@ -358,17 +378,26 @@ export default function EventsListPage() {
         </QueryState>
         </div>
 
-        <BulkActionBar selectedIds={selectedIds} events={events} onClear={clearSelection} />
+        <BulkActionBar selectedIds={selectedIds} events={events} onClear={clearSelection} monitorName={(id) => monitorLookup[id] ?? String(id)} />
 
         {/* Status bar: what this page is showing, and how to leave it. */}
         <div className="flex items-center gap-3 px-3 py-2 shrink-0 border-t border-border-subtle bg-surface text-xs text-fg-dim">
           <span>{t('Showing {{shown}} of {{total}} events', { shown: events.length, total })}</span>
           {events.length > 0 && (
             <>
-              <span data-testid="modern-total-duration" className="font-mono tabular-nums">
+              {/* Over the whole result when the API summed it, else the page. */}
+              <span
+                data-testid="modern-total-duration"
+                className="font-mono tabular-nums"
+                title={totals.scope === 'all' ? t('All matching events') : t('Events on this page')}
+              >
                 {t('Σ Duration {{duration}}', { duration: formatDuration(totals.duration) })}
               </span>
-              <span data-testid="modern-total-disk" className="font-mono tabular-nums">
+              <span
+                data-testid="modern-total-disk"
+                className="font-mono tabular-nums"
+                title={totals.scope === 'all' ? t('All matching events') : t('Events on this page')}
+              >
                 {t('Σ Disk {{size}}', { size: formatBytes(totals.disk) })}
               </span>
             </>

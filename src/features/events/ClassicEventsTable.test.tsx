@@ -8,8 +8,8 @@ import type { ZmEvent } from '@/types';
 // a Router context. The QueryClientProvider comes from `renderWithProviders`
 // — the table reads ZoneMinder's date/time settings through `useZmConfig`.
 vi.mock('@tanstack/react-router', () => ({
-  Link: ({ children, to, ...rest }: { children: React.ReactNode; to?: string }) => (
-    <a href={to ?? '#'} {...rest}>
+  Link: ({ children, to, params, ...rest }: { children: React.ReactNode; to?: string; params?: unknown }) => (
+    <a href={to ?? '#'} data-params={params ? JSON.stringify(params) : undefined} {...rest}>
       {children}
     </a>
   ),
@@ -119,24 +119,35 @@ describe('ClassicEventsTable — header', () => {
     // The active column carries the direction for assistive tech.
     const cause = screen.getByRole('button', { name: /^Cause/ }).closest('th')!;
     expect(cause).toHaveAttribute('aria-sort', 'descending');
-    // Tags and DiskSpace still have no backend column, so they stay inert.
+    // Tags still has no backend column, so it stays inert; DiskSpace gained
+    // one with zm-api#136.
     expect(screen.queryByRole('button', { name: /^Tags/ })).toBeNull();
-    expect(screen.queryByRole('button', { name: /^DiskSpace/ })).toBeNull();
+    await user.click(screen.getByRole('button', { name: /^DiskSpace/ }));
+    expect(onSort).toHaveBeenLastCalledWith('disk_space');
   });
 
-  it('links Frames / Alarm Frames / Max Score cells to the frames view', () => {
+  it('links Frames / Alarm Frames to the frames view and Max Score to the max-score frame', () => {
     render(
       <ClassicEventsTable
-        events={[makeEvent({ id: 5, frames: 321, alarm_frames: 17, max_score: 99 })]}
+        events={[
+          makeEvent({ id: 5, frames: 321, alarm_frames: 17, max_score: 99, max_score_frame_id: 44 }),
+          makeEvent({ id: 6, max_score: 7, max_score_frame_id: null }),
+        ]}
         monitorLookup={noopMonitorLookup}
         selectedIds={new Set()}
         onToggleSelected={() => {}}
       />,
     );
-    for (const text of ['321', '17', '99']) {
+    // Legacy events.js:108 links Max to `?view=frame&fid=0`; zm-api names the frame.
+    const max = screen.getByRole('link', { name: '99' });
+    expect(max.getAttribute('href')).toBe('/events/$eventId/frames/$frameId');
+    expect(JSON.parse(max.getAttribute('data-params')!)).toEqual({ eventId: '5', frameId: '44' });
+    // No id from the backend: frame 0, which the frame view reads as the max.
+    expect(JSON.parse(screen.getByRole('link', { name: '7' }).getAttribute('data-params')!)).toEqual({ eventId: '6', frameId: '0' });
+    for (const text of ['321', '17']) {
       expect(screen.getByRole('link', { name: text }).getAttribute('href')).toBe('/events/$eventId/frames');
     }
-    expect(screen.getByRole('link', { name: 'Event-0001' }).getAttribute('href')).toBe('/events/$eventId');
+    expect(screen.getAllByRole('link', { name: 'Event-0001' })[0].getAttribute('href')).toBe('/events/$eventId');
   });
 
   it('shows the storage name and HH:MM:SS duration with a totals footer', () => {
@@ -155,6 +166,23 @@ describe('ClassicEventsTable — header', () => {
     expect(screen.getByTestId('events-total-duration').textContent).toBe('00:01:10');
     // ZoneMinder's `human_filesize()`: two decimals, no space, lowercase k.
     expect(screen.getByTestId('events-total-disk-space').textContent).toBe('3.00kB');
+    // Legacy links both cells to the event (events.js:110-111).
+    expect(screen.getByRole('link', { name: 'Store 3' }).getAttribute('href')).toBe('/events/$eventId');
+    expect(screen.getByRole('link', { name: '2.00kB' }).getAttribute('href')).toBe('/events/$eventId');
+  });
+
+  it('footers the totals it is given for the whole result instead of the rows', () => {
+    render(
+      <ClassicEventsTable
+        events={[makeEvent({ id: 1, length: 65, disk_space: 2048 })]}
+        monitorLookup={noopMonitorLookup}
+        selectedIds={new Set()}
+        onToggleSelected={() => {}}
+        totals={{ duration: 3600, disk: 1024 ** 2 }}
+      />,
+    );
+    expect(screen.getByTestId('events-total-duration').textContent).toBe('01:00:00');
+    expect(screen.getByTestId('events-total-disk-space').textContent).toBe('1.00MB');
   });
 });
 
@@ -174,7 +202,7 @@ describe('ClassicEventsTable — rows', () => {
     expect(screen.getByText('Front Door')).toBeInTheDocument();
     expect(screen.getByText('Driveway')).toBeInTheDocument();
     // Each event row links via its id
-    expect(screen.getByRole('link', { name: '1' })).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: '1' })[0]).toBeInTheDocument();
     expect(screen.getByRole('link', { name: '2' })).toBeInTheDocument();
     // Unique scores from row 2
     expect(screen.getByText('555')).toBeInTheDocument();

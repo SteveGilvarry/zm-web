@@ -4,9 +4,11 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { getReport, updateReport, deleteReport, type Report } from '@/api/reports';
-import { listFilters, getFilter, parseFilterQuery } from '@/api/filters';
+import { listFilters, getFilter, parseFilterQuery, previewFilter, type FilterAstQuery } from '@/api/filters';
 import { getEvents } from '@/api/events';
 import { evaluateFilter } from '@/features/filters/evaluate';
+import { termsToAst } from '@/features/filters/toAst';
+import type { ZmEvent } from '@/types';
 import { bucketEventsByHour, type DailyBucket } from './bucketEventsByHour';
 import { toLocalDatetime, toApiDateTime} from './datetime';
 
@@ -156,43 +158,86 @@ export interface ReportChartState {
   isLoading: boolean;
   filterError: boolean;
   buckets: DailyBucket[];
+  /**
+   * `server`: the filter ran on the backend over every matching event.
+   * `client`: its terms need the browser evaluator, which only sees the
+   * newest {@link REPORT_CHART_CLIENT_WINDOW} events.
+   */
+  mode: 'server' | 'client';
+  /** Events charted, and how many matched; they differ only past the page cap. */
+  charted: number;
+  matched: number;
+}
+
+export const REPORT_CHART_PAGE_SIZE = 1000;
+/** 20 pages of 1000: past that the chart says it is partial. */
+export const REPORT_CHART_MAX_PAGES = 20;
+export const REPORT_CHART_CLIENT_WINDOW = 500;
+
+/** Page through `/filters/preview` until every match is in, or the cap. */
+async function fetchAllMatches(ast: FilterAstQuery): Promise<{ items: ZmEvent[]; total: number }> {
+  const items: ZmEvent[] = [];
+  let total = 0;
+  for (let page = 1; page <= REPORT_CHART_MAX_PAGES; page++) {
+    const res = await previewFilter(ast, { page, page_size: REPORT_CHART_PAGE_SIZE });
+    items.push(...res.items);
+    total = res.total;
+    if (page >= res.last_page || res.items.length === 0) break;
+  }
+  return { items, total };
 }
 
 /**
- * Re-runs the linked filter's query_json against the most recent events and
- * buckets the matches per hour. Idle (no fetches) when `filterId` is null.
+ * The legacy chart (`report.js`): every event the report's filter matches,
+ * summed per hour of each day. The filter runs on the backend whenever its
+ * terms map to the preview AST; otherwise the browser evaluates it against
+ * the newest events. Idle (no fetches) when `filterId` is null.
  */
 export function useReportChart(filterId: number | null): ReportChartState {
-  // Fetch the underlying filter row so we can re-run its query_json against
-  // the event list. No filter selected → render the empty state.
   const filterQ = useQuery({
     queryKey: ['filter', filterId],
     queryFn: () => getFilter(filterId!),
     enabled: filterId != null,
   });
 
-  // Pull a generous slice of recent events for client-side evaluation. The
-  // legacy chart sums against every matching event — page_size=500 keeps
-  // the request manageable while still covering a typical install's
-  // last-month dataset.
-  const eventsQ = useQuery({
-    queryKey: ['events', 'reportChart'],
-    queryFn: () => getEvents({ page: 1, page_size: 500 }),
-    enabled: filterId != null,
+  const parsed = useMemo(
+    () => (filterQ.data ? parseFilterQuery(filterQ.data.query_json) : null),
+    [filterQ.data],
+  );
+  const astRes = useMemo(() => (parsed?.ok ? termsToAst(parsed.query) : null), [parsed]);
+  const ast = astRes?.ok ? astRes.ast : null;
+  const astKey = ast ? JSON.stringify(ast) : null;
+
+  const serverQ = useQuery({
+    queryKey: ['reports', 'chart', astKey],
+    queryFn: () => fetchAllMatches(ast!),
+    enabled: filterId != null && ast != null,
   });
 
-  const buckets = useMemo<DailyBucket[]>(() => {
-    if (!filterQ.data || !eventsQ.data) return [];
-    const parsed = parseFilterQuery(filterQ.data.query_json);
+  // Terms the AST cannot carry: evaluate them here over the newest events.
+  const clientNeeded = filterId != null && parsed != null && ast == null;
+  const eventsQ = useQuery({
+    queryKey: ['events', 'reportChart', REPORT_CHART_CLIENT_WINDOW],
+    queryFn: () => getEvents({ page: 1, page_size: REPORT_CHART_CLIENT_WINDOW }),
+    enabled: clientNeeded,
+  });
+
+  const matchedEvents = useMemo<ZmEvent[]>(() => {
+    if (ast) return serverQ.data?.items ?? [];
+    if (!parsed || !eventsQ.data) return [];
     // An unreadable query_json cannot be evaluated; chart nothing rather than
     // "everything matched".
-    const matched = parsed.ok ? evaluateFilter(parsed.query, eventsQ.data.items) : [];
-    return bucketEventsByHour(matched);
-  }, [filterQ.data, eventsQ.data]);
+    return parsed.ok ? evaluateFilter(parsed.query, eventsQ.data.items) : [];
+  }, [ast, serverQ.data, parsed, eventsQ.data]);
+
+  const buckets = useMemo(() => bucketEventsByHour(matchedEvents), [matchedEvents]);
 
   return {
-    isLoading: filterQ.isLoading || eventsQ.isLoading,
-    filterError: filterQ.isError,
+    isLoading: filterQ.isLoading || (ast ? serverQ.isLoading : clientNeeded && eventsQ.isLoading),
+    filterError: filterQ.isError || serverQ.isError,
     buckets,
+    mode: ast ? 'server' : 'client',
+    charted: matchedEvents.length,
+    matched: ast ? serverQ.data?.total ?? 0 : matchedEvents.length,
   };
 }

@@ -11,7 +11,7 @@
 import { describe, expect, it } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
@@ -94,7 +94,7 @@ describe('Settings → Options — category rail', () => {
     await optionsPage();
     await screen.findByText('ZM_WEB_TITLE');
 
-    await user.click(categoryButton('Web', 1));
+    await user.click(categoryButton('Display', 1));
     await waitFor(() => expect(router.state.location.search).toEqual({ category: 'web' }));
     expect(screen.queryByText('ZM_OPT_USE_AUTH')).not.toBeInTheDocument();
 

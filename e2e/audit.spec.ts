@@ -42,7 +42,7 @@ test.describe('Audit', () => {
       // A window that covers the whole seeded set (~46 h of events).
       const start = new Date(Date.now() - 7 * 24 * 3600_000).toISOString().slice(0, 16);
       const pending = page.waitForResponse(
-        (r) => /\/api\/v3\/events(\?|$)/.test(r.url()) && r.request().method() === 'GET',
+        (r) => /\/api\/v3\/reports\/event-audit(\?|$)/.test(r.url()) && r.request().method() === 'GET',
         { timeout: 20_000 },
       );
       await page.getByLabel(/window start/i).fill(start);

@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { alarmSoundUrl, isAlarming, newlyAlarming, statusMap } from './alarmWatch';
+import {
+  alarmSoundUrl, alarmTransition, isAlarmedState, isAlarming, newlyAlarming, parseAlarmState, statusMap,
+} from './alarmWatch';
 import type { MonitorStatusRecord } from '@/api/monitorStatus';
 
 const s = (monitor_id: number, status: string) => ({ monitor_id, status }) as MonitorStatusRecord;
@@ -41,5 +43,32 @@ describe('isAlarming / alarmSoundUrl', () => {
   it('points at legacy’s sounds directory and escapes the name', () => {
     expect(alarmSoundUrl('snap.ogg')).toBe('/zm/sounds/snap.ogg');
     expect(alarmSoundUrl('my sound.wav')).toBe('/zm/sounds/my%20sound.wav');
+  });
+});
+
+describe('alarm state transitions', () => {
+  it('parses the wire value and rejects anything else', () => {
+    expect(parseAlarmState('alarm')).toBe('alarm');
+    expect(parseAlarmState('Prealarm')).toBe('prealarm');
+    expect(parseAlarmState('tape')).toBeNull();
+    expect(parseAlarmState(null)).toBeNull();
+    expect(parseAlarmState(undefined)).toBeNull();
+  });
+
+  it('counts Alarm and Alert as alarmed, not Prealarm', () => {
+    expect(isAlarmedState('alarm')).toBe(true);
+    expect(isAlarmedState('alert')).toBe(true);
+    expect(isAlarmedState('prealarm')).toBe(false);
+    expect(isAlarmedState(null)).toBe(false);
+  });
+
+  it('starts on the way into Alarm and ends on the way out of Alert', () => {
+    expect(alarmTransition('idle', 'alarm')).toBe('start');
+    expect(alarmTransition('prealarm', 'alarm')).toBe('start');
+    expect(alarmTransition(null, 'alert')).toBe('start');
+    expect(alarmTransition('alarm', 'alert')).toBeNull();
+    expect(alarmTransition('alert', 'idle')).toBe('end');
+    expect(alarmTransition('alarm', null)).toBe('end');
+    expect(alarmTransition('idle', 'prealarm')).toBeNull();
   });
 });

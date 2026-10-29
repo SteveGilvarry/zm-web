@@ -1,4 +1,5 @@
-import { useEffect, useRef, type MouseEvent as ReactMouseEvent } from 'react';
+import { useEffect, useRef, useState, type CSSProperties, type MouseEvent as ReactMouseEvent } from 'react';
+import { frameAtTime } from '@/features/events/frameSeek';
 import { Link, useNavigate, useRouter } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 import { Download, Video } from 'lucide-react';
@@ -6,7 +7,8 @@ import { useReviewEvents, findEventAt, DEFAULT_REVIEW_FILTERS, type ReviewEventF
 import { playbackRateFor } from './useReviewClock';
 import { getEventVideoUrl } from '@/api/events';
 import { getAuthToken } from '@/api/client';
-import { getOrientationStyle } from '@/types';
+import { displayDimensions, stageVideoClass, stageVideoStyle } from '@/features/monitors/orientation';
+import { clsx } from 'clsx';
 import type { Monitor } from '@/types';
 
 interface MontageReviewCellProps {
@@ -29,6 +31,13 @@ interface MontageReviewCellProps {
    * the rest of the cell (the modern grid sizes its own cells).
    */
   onZoom?: (factor: number) => void;
+  /**
+   * `classic` draws the cell as legacy's canvas does: a bare black box with
+   * the `+` / `-` corner marks at a tenth of its size and "No Event" written
+   * across it, no name or event badges (the wrapper's title carries the
+   * name; the event opens on click). `modern` (default) keeps the overlays.
+   */
+  variant?: 'modern' | 'classic';
 }
 
 /** Legacy `clickMonitor`: ±15 % per corner click. */
@@ -54,7 +63,9 @@ export function MontageReviewCell({
   filters = DEFAULT_REVIEW_FILTERS,
   fill = false,
   onZoom,
+  variant = 'modern',
 }: MontageReviewCellProps) {
+  const classic = variant === 'classic';
   const { t } = useTranslation();
   const navigate = useNavigate();
   const router = useRouter();
@@ -62,6 +73,34 @@ export function MontageReviewCell({
   const currentEvent = findEventAt(events, currentTime);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  // What the decoder produced. ZoneMinder writes the camera's orientation
+  // into the recording (`zm_videostore.cpp` sets the stream's display
+  // matrix for passthrough, and rotates the frames themselves otherwise), so
+  // a Rotate90 event plays back upright on its own: Chromium reports
+  // `videoWidth`/`videoHeight` portrait. Turning it again by CSS is what laid
+  // the picture on its side inside a correctly portrait cell.
+  const [decoded, setDecoded] = useState<{ w: number; h: number } | null>(null);
+  useEffect(() => {
+    const el = videoRef.current;
+    if (!el) return;
+    const note = () => {
+      if (el.videoWidth > 0 && el.videoHeight > 0) {
+        setDecoded((prev) =>
+          prev && prev.w === el.videoWidth && prev.h === el.videoHeight
+            ? prev
+            : { w: el.videoWidth, h: el.videoHeight },
+        );
+      }
+    };
+    note();
+    el.addEventListener('loadedmetadata', note);
+    el.addEventListener('resize', note);
+    return () => {
+      el.removeEventListener('loadedmetadata', note);
+      el.removeEventListener('resize', note);
+    };
+  }, [currentEvent?.id]);
 
   // Sync to the master clock — only re-seek when the drift would be visible.
   useEffect(() => {
@@ -93,8 +132,10 @@ export function MontageReviewCell({
   // one monitor, anything else opens what is under the playhead — the event
   // if the monitor was recording, its Watch page otherwise. Ctrl/⌘ opens a
   // new tab.
+  // Legacy hands the frame under the playhead along (`montagereview.js:1179`).
+  const fid = currentEvent ? frameAtTime(currentEvent, currentTime) : undefined;
   const target = currentEvent
-    ? { to: '/events/$eventId' as const, params: { eventId: String(currentEvent.id) } }
+    ? { to: '/events/$eventId' as const, params: { eventId: String(currentEvent.id) }, ...(fid && fid > 1 ? { search: { fid } } : {}) }
     : { to: '/monitors/$monitorId' as const, params: { monitorId: String(monitor.id) } };
 
   const handleClick = (e: ReactMouseEvent<HTMLDivElement>) => {
@@ -114,7 +155,23 @@ export function MontageReviewCell({
     void navigate(target);
   };
 
+  // With corner zoom on, legacy draws `+` / `-` in those corners
+  // (`imagedone`), so the name and event badges move to the bottom edge.
+  const overlayEdge = onZoom ? 'bottom-1.5' : 'top-1.5';
+
   const token = getAuthToken();
+  // The box takes the camera's displayed shape, so a Rotate90 monitor gets a
+  // portrait cell. A `fill` cell leaves the shape to its parent, which sized
+  // it the same way. The <video> fills the box as decoded; only a decoder
+  // that ignored the rotation (a landscape frame in a portrait cell) gets the
+  // swap-and-turn treatment the Watch stage gives its raw live stream.
+  const dims = displayDimensions(monitor);
+  const decodedUpright =
+    decoded == null || decoded.w === decoded.h || (decoded.w < decoded.h) === (dims.width < dims.height);
+  const turnVideo = dims.rotated && !decodedUpright;
+  // Legacy `imagedone` / `writeText`: the marks are a tenth of the canvas's
+  // longer side, the placeholder text 15 % of its width.
+  const classicBox: CSSProperties | undefined = classic ? { containerType: 'size' } : undefined;
   const downloadHref = currentEvent
     ? getEventVideoUrl(currentEvent.id, token ?? undefined)
     : null;
@@ -122,14 +179,48 @@ export function MontageReviewCell({
   return (
     <div
       dir="ltr"
-      className={`relative bg-bg-sunken rounded overflow-hidden border border-border-subtle cursor-pointer ${fill ? 'w-full h-full' : 'aspect-video'}`}
+      className={clsx(
+        'relative overflow-hidden cursor-pointer',
+        classic ? 'bg-black' : 'bg-bg-sunken rounded border border-border-subtle',
+        fill && 'w-full h-full',
+      )}
+      style={{ ...classicBox, ...(fill ? undefined : { aspectRatio: `${dims.width} / ${dims.height}` }) }}
       onClick={handleClick}
       data-testid={`review-cell-${monitor.id}`}
     >
-      {/* Monitor name overlay */}
-      <div className="absolute top-1.5 start-1.5 z-10 px-1.5 py-0.5 rounded bg-black/60">
-        <span className="text-xs font-medium text-white">{monitor.name}</span>
-      </div>
+      {onZoom && (
+        <>
+          {/* White, inverted against the picture, as legacy's canvas draws them. */}
+          <span
+            aria-hidden
+            data-testid={`review-zoom-in-${monitor.id}`}
+            className={clsx(
+              'absolute z-10 font-semibold leading-none text-white mix-blend-difference pointer-events-none select-none',
+              classic ? 'top-[0.2em] start-[0.2em] text-[length:max(10cqw,10cqh)]' : 'top-0.5 start-1.5 text-2xl',
+            )}
+          >
+            +
+          </span>
+          <span
+            aria-hidden
+            data-testid={`review-zoom-out-${monitor.id}`}
+            className={clsx(
+              'absolute z-10 font-semibold leading-none text-white mix-blend-difference pointer-events-none select-none',
+              classic ? 'top-[0.2em] end-[0.2em] text-[length:max(10cqw,10cqh)]' : 'top-0.5 end-1.5 text-2xl',
+            )}
+          >
+            -
+          </span>
+        </>
+      )}
+
+      {/* Monitor name overlay. Legacy's canvas carries the name only as its
+          title; the timeline row is where it is read. */}
+      {!classic && (
+        <div className={`absolute ${overlayEdge} start-1.5 z-10 px-1.5 py-0.5 rounded bg-black/60`}>
+          <span className="text-xs font-medium text-white">{monitor.name}</span>
+        </div>
+      )}
 
       {currentEvent ? (
         <>
@@ -137,14 +228,15 @@ export function MontageReviewCell({
             ref={videoRef}
             key={currentEvent.id}
             src={getEventVideoUrl(currentEvent.id, token ?? undefined)}
-            className="w-full h-full object-contain bg-black"
-            style={getOrientationStyle(monitor.orientation)}
+            className={turnVideo ? stageVideoClass(monitor) : 'w-full h-full object-contain bg-black'}
+            style={turnVideo ? stageVideoStyle(monitor) : undefined}
             muted
             playsInline
             preload="auto"
           />
           {/* Download + event info */}
-          <div className="absolute top-1.5 end-1.5 z-10 flex items-center gap-1">
+          {!classic && (
+          <div className={`absolute ${overlayEdge} end-1.5 z-10 flex items-center gap-1`}>
             <Link
               to="/events/$eventId"
               params={{ eventId: String(currentEvent.id) }}
@@ -164,7 +256,16 @@ export function MontageReviewCell({
               </a>
             )}
           </div>
+          )}
         </>
+      ) : classic ? (
+        <div className="absolute inset-0 flex items-center justify-center text-white font-semibold whitespace-nowrap">
+          {isLoading ? (
+            <span className="text-xs">{t('Loading…')}</span>
+          ) : (
+            <span className="text-[length:15cqw]">{t('No Event')}</span>
+          )}
+        </div>
       ) : (
         <div className="absolute inset-0 flex items-center justify-center text-fg-faint">
           {isLoading ? (

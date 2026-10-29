@@ -54,18 +54,30 @@ export interface ReviewClock {
  * that all per-monitor cells render to. Advances at `speed × wall time`
  * while playing, clamps to the range bounds, and exposes scrub setters.
  */
-export function useReviewClock(initialStart: Date, initialEnd: Date): ReviewClock {
+export interface ReviewClockOptions {
+  /**
+   * Start in motion at the stored speed, as legacy's page does on load
+   * (`montagereview.js` `initPage` → `setSpeed(speedIndex)`). A skin with a
+   * Play button leaves this off so a fresh page sits still until asked.
+   */
+  autoplay?: boolean;
+}
+
+export function useReviewClock(
+  initialStart: Date,
+  initialEnd: Date,
+  { autoplay = false }: ReviewClockOptions = {},
+): ReviewClock {
   const [rangeStart, setRangeStart] = useState(initialStart);
   const [rangeEnd, setRangeEnd] = useState(initialEnd);
   const [currentTime, setCurrentTimeState] = useState(initialStart);
-  const [started, setStarted] = useState(false);
+  const [started, setStarted] = useState(autoplay);
   // Legacy keeps `speed` in a cookie, so it survives a reload.
   const speed = useMontageStore((st) => st.reviewSpeed);
   const setStoredSpeed = useMontageStore((st) => st.setReviewSpeed);
   // Legacy has no transport: speed 0 IS pause, and moving the slider off 0
-  // starts playing. The extra `started` flag only keeps a freshly opened page
-  // still (legacy reloads into motion; here that would start every cell
-  // fetching video before the operator asked for anything).
+  // starts playing. The extra `started` flag keeps a freshly opened page
+  // still unless the skin asked for `autoplay`.
   const isPlaying = started && speed > 0;
   // What `play()` resumes at after a pause, or after the window end zeroed
   // the speed.

@@ -7,7 +7,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { createContext, useContext, useState, type ReactNode } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -16,6 +16,7 @@ import { useAuthStore } from '@/stores/auth';
 import { useEventsColumnsStore } from '@/stores/eventsColumns';
 import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import { useUiStore } from '@/stores/ui';
+import { chosenChips, pickChosen } from '@/test/chosen';
 
 /* ---------------------------------------------------------------- router */
 
@@ -151,7 +152,7 @@ function signIn(perms: unknown = ALL_EDIT) {
   });
 }
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => { signIn(); });
 afterEach(() => {
   server.resetHandlers();
@@ -188,6 +189,14 @@ async function mountAndSettle() {
 
 /* ----------------------------------------------------------------- tests */
 
+/** Open a chosen box and read its option labels, then close it again. */
+async function chosenOptions(user: ReturnType<typeof userEvent.setup>, name: string): Promise<string[]> {
+  await user.click(screen.getByRole('combobox', { name }));
+  const labels = within(screen.getByRole('listbox', { name })).getAllByRole('option').map((o) => o.textContent ?? '');
+  await user.keyboard('{Escape}');
+  return labels;
+}
+
 describe('ClassicEventsListPage — rendering', () => {
   it('renders the legacy table with the events and the monitor name', async () => {
     stub();
@@ -207,12 +216,20 @@ describe('ClassicEventsListPage — rendering', () => {
   });
 
   it('offers the legacy filter fields with the fetched options', async () => {
+    const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    expect(within(screen.getByLabelText(/^Group/)).getByRole('option', { name: 'Front Yard' })).toBeInTheDocument();
-    expect(within(screen.getByLabelText(/^Monitor =/)).getByRole('option', { name: 'Driveway' })).toBeInTheDocument();
-    expect(within(screen.getByLabelText(/^Tags/)).getByRole('option', { name: 'person' })).toBeInTheDocument();
+    // Legacy's chosen boxes, each with its data-placeholder.
+    expect(screen.getByRole('combobox', { name: 'Group' })).toHaveAttribute('placeholder', 'All Groups');
+    expect(screen.getByRole('combobox', { name: 'Monitor' })).toHaveAttribute('placeholder', 'All Monitors');
+    expect(screen.getByRole('combobox', { name: 'Notes' })).toHaveAttribute('placeholder', 'Event Type');
+    expect(screen.getByRole('combobox', { name: 'Tags' })).toHaveAttribute('placeholder', 'All Tags');
+    // The sibling labels still bind by id.
+    expect(screen.getByLabelText(/^Monitor =/)).toBe(screen.getByRole('combobox', { name: 'Monitor' }));
+    expect(await chosenOptions(user, 'Group')).toContain('Front Yard');
+    expect(await chosenOptions(user, 'Monitor')).toContain('2 Driveway');
+    expect(await chosenOptions(user, 'Tags')).toContain('person');
     const archived = screen.getByLabelText(/Archive Status/);
     expect(within(archived).getByRole('option', { name: 'Unarchived Only' })).toBeInTheDocument();
     expect(within(archived).getByRole('option', { name: 'Archived Only' })).toBeInTheDocument();
@@ -242,7 +259,7 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Monitor =/), '2');
+    await pickChosen(user, 'Monitor', '2 Driveway');
     await waitFor(() =>
       expect(eventRequests.at(-1)?.get('monitor_id')).toBe('2'));
   });
@@ -256,13 +273,17 @@ describe('ClassicEventsListPage — filters', () => {
     await waitFor(() => expect(eventRequests.at(-1)?.get('archived')).toBe('true'));
   });
 
-  it('sends the name search box to the backend', async () => {
+  it('sends the table search box to the backend as free text', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    await user.type(screen.getByRole('searchbox', { name: 'Name contains' }), 'continuous');
-    await waitFor(() => expect(eventRequests.at(-1)?.get('name')).toBe('continuous'));
+    // bootstrap-table's search box (events.php:157), run server-side as `q`.
+    const box = screen.getByRole('searchbox', { name: 'Search events' });
+    expect(box).toHaveAttribute('placeholder', 'Search');
+    await user.type(box, 'continuous');
+    await waitFor(() => expect(eventRequests.at(-1)?.get('q')).toBe('continuous'));
+    expect(eventRequests.at(-1)?.has('name')).toBe(false);
     // The old "applies within this page" caveat is gone with the workaround.
     expect(screen.queryByText(/within this page/)).toBeNull();
   });
@@ -273,9 +294,8 @@ describe('ClassicEventsListPage — filters', () => {
     await mountAndSettle();
 
     // Legacy's Notes box is a fixed multi-select, not a free-text field.
-    const notes = screen.getByLabelText(/^Notes/);
-    expect(within(notes).getByRole('option', { name: 'Any Object' })).toBeInTheDocument();
-    await user.selectOptions(notes, ['detected']);
+    expect(await chosenOptions(user, 'Notes')).toContain('Any Object');
+    await pickChosen(user, 'Notes', 'Any Object');
     await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('detected'));
   });
 
@@ -289,7 +309,7 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Notes/), ['Motion', 'Linked']);
+    await pickChosen(user, 'Notes', 'Motion', 'Linked');
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(JSON.stringify(previewBody)).toContain('%Motion%');
     expect(JSON.stringify(previewBody)).toContain('%Linked%');
@@ -301,9 +321,9 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Notes/), ['Motion']);
+    await pickChosen(user, 'Notes', 'Motion');
     await waitFor(() => expect(eventRequests.at(-1)?.get('notes')).toBe('Motion'));
-    await user.click(screen.getByRole('button', { name: 'Clear Notes' }));
+    await user.click(screen.getByRole('button', { name: 'Clear notes' }));
     await waitFor(() => expect(eventRequests.at(-1)?.has('notes')).toBe(false));
   });
 
@@ -321,11 +341,11 @@ describe('ClassicEventsListPage — filters', () => {
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Monitor =/), '2');
-    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue(['2']));
+    await pickChosen(user, 'Monitor', '2 Driveway');
+    await waitFor(() => expect(chosenChips('Monitor')).toEqual(['2 Driveway']));
 
     await user.click(screen.getByRole('button', { name: 'Reset filters' }));
-    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue([]));
+    await waitFor(() => expect(chosenChips('Monitor')).toEqual([]));
   });
 
   it('keeps two picked monitors in the search and lists them through /filters/preview', async () => {
@@ -338,13 +358,13 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Monitor =/), ['1', '2']);
-    await waitFor(() => expect(screen.getByLabelText(/^Monitor =/)).toHaveValue(['1', '2']));
+    await pickChosen(user, 'Monitor', '2 Driveway', '1 Front Door');
+    await waitFor(() => expect(chosenChips('Monitor')).toEqual(['2 Driveway', '1 Front Door']));
 
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(previewBody).toMatchObject({
       where: { rules: expect.arrayContaining([
-        { field: 'monitor_id', op: 'in', value: [1, 2] },
+        { field: 'monitor_id', op: 'in', value: [2, 1] }, // in pick order
       ]) },
     });
     expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
@@ -360,7 +380,7 @@ describe('ClassicEventsListPage — filters', () => {
     }));
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Group/), '3');
+    await pickChosen(user, 'Group', 'Front Yard');
     await waitFor(() => expect(previewBody).not.toBeNull());
     expect(JSON.stringify(previewBody)).toContain('monitor_id');
     expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
@@ -371,12 +391,100 @@ describe('ClassicEventsListPage — filters', () => {
     stub({ events: [event(1, { tags: [] }), event(2, { tags: [{ id: 5, name: 'person' }] })] });
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText(/^Tags/), '5');
+    await pickChosen(user, 'Tags', 'person');
     await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5'));
+  });
+
+  it('lists No Tag and Any Tag first in the chosen Tags box, as legacy does', async () => {
+    const user = userEvent.setup();
+    stub({ tags: [{ id: 5, name: 'person' }, { id: 6, name: 'car' }] });
+    await mountAndSettle();
+
+    expect(await chosenOptions(user, 'Tags')).toEqual(['No Tag', 'Any Tag', 'person', 'car']);
+
+    await pickChosen(user, 'Tags', 'person', 'car');
+    await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('5,6'));
+    // A sentinel only means something on its own (FilterTerm.php:468).
+    await pickChosen(user, 'Tags', 'No Tag');
+    await waitFor(() => expect(eventRequests.at(-1)?.get('tag_id')).toBe('none'));
+    await waitFor(() => expect(chosenChips('Tags')).toEqual(['No Tag']));
+  });
+
+  it('takes several groups in the chosen Group box', async () => {
+    const user = userEvent.setup();
+    stub({ groups: [{ id: 3, name: 'Front Yard' }, { id: 4, name: 'Back Yard' }] });
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/v3/groups-monitors', () => HttpResponse.json(paged(
+        [{ id: 1, group_id: 3, monitor_id: 1 }, { id: 2, group_id: 4, monitor_id: 2 }], { per_page: 1000 }))),
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json(paged([event(9)], { total: 1 }));
+      }),
+    );
+    await mountAndSettle();
+
+    await pickChosen(user, 'Group', 'Front Yard', 'Back Yard');
+    await waitFor(() => expect(JSON.stringify(previewBody)).toContain('"value":[1,2]'));
+  });
+
+  it('totals Duration and DiskSpace over the whole result, not the page', async () => {
+    stub();
+    server.use(http.get('/api/v3/events', ({ request }) => {
+      eventRequests.push(new URL(request.url).searchParams);
+      return HttpResponse.json(paged([event(1)], {
+        total: 400, last_page: 16, total_length_seconds: 3725, total_disk_space: 3 * 1024 ** 3,
+      }));
+    }));
+    await mountAndSettle();
+    expect(eventRequests.at(-1)?.get('totals')).toBe('true');
+    expect(screen.getByTestId('events-total-duration')).toHaveTextContent('01:02:05');
+    expect(screen.getByTestId('events-total-disk-space')).toHaveTextContent('3.00GB');
+  });
+
+  it('links the Timeline button to /timeline with the filters', async () => {
+    initialSearch = { monitor_id: 2, archived: true, page: 2 };
+    stub();
+    await mountAndSettle();
+    const link = screen.getByRole('link', { name: 'Show Timeline' });
+    const url = new URL(link.getAttribute('href')!, 'http://x');
+    expect(url.pathname).toBe('/timeline');
+    expect(url.searchParams.get('monitor_id')).toBe('2');
+    expect(url.searchParams.get('archived')).toBe('true');
+    expect(url.searchParams.has('page')).toBe(false);
+  });
+
+  it('shows a term list from the filter editor in place of the strip', async () => {
+    const user = userEvent.setup();
+    initialSearch = { terms: JSON.stringify([{ attr: 'MonitorId', op: '=', val: '2' }]) };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      previewBody = (await request.json()) as Record<string, unknown>;
+      return HttpResponse.json(paged([event(9)], { total: 1 }));
+    }));
+    await mount();
+    expect(await screen.findByRole('link', { name: 'Event-9' })).toBeInTheDocument();
+    expect(JSON.stringify(previewBody)).toContain('"field":"monitor_id","op":"eq","value":2');
+
+    const banner = screen.getByTestId('events-terms-banner');
+    expect(banner).toHaveTextContent('Monitor Id equal to 2');
+    expect(screen.getByTestId('events-filter-bar')).toHaveClass('hidden');
+    // No last-hour seed: the operator asked for the filter's matches.
+    expect(screen.queryByTestId('default-hour-hint')).toBeNull();
+
+    await user.click(within(banner).getByRole('button', { name: /Back to the filter bar/ }));
+    await waitFor(() => expect(screen.queryByTestId('events-terms-banner')).toBeNull());
+    expect(screen.getByTestId('events-filter-bar')).not.toHaveClass('hidden');
   });
 
   it('bounds the window with the two Start Date/Time fields', async () => {
     stub();
+    let previewBody: unknown = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      previewBody = await request.json();
+      return HttpResponse.json(paged([event(9)], { total: 1 }));
+    }));
     await mountAndSettle();
 
     // `user.type` cannot drive a datetime-local field segment by segment in
@@ -384,9 +492,12 @@ describe('ClassicEventsListPage — filters', () => {
     fireEvent.change(screen.getByLabelText('Events starting after'), { target: { value: '2026-08-21T10:00' } });
     await waitFor(() =>
       expect(eventRequests.at(-1)?.get('start_time')).toBe(new Date('2026-08-21T10:00').toISOString().replace(/\.\d{3}Z$/, 'Z')));
+    // Start <= bounds the *start*, so it goes through preview (`/events`
+    // only bounds the end time).
     fireEvent.change(screen.getByLabelText('Events starting before'), { target: { value: '2026-08-21T11:00' } });
-    await waitFor(() =>
-      expect(eventRequests.at(-1)?.get('end_time')).toBe(new Date('2026-08-21T11:00').toISOString().replace(/\.\d{3}Z$/, 'Z')));
+    await waitFor(() => expect(JSON.stringify(previewBody)).toContain(JSON.stringify({
+      field: 'start_time', op: 'lte', value: new Date('2026-08-21T11:00').toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    })));
   });
 
   it('refetches from the filter-row refresh button', async () => {
@@ -424,6 +535,21 @@ describe('ClassicEventsListPage — toolbar, sort and pager', () => {
 
     await user.click(screen.getByRole('button', { name: /^Id/ }));
     await waitFor(() => expect(eventRequests.at(-1)?.get('direction')).toBe('desc'));
+  });
+
+  it('sorts by Archived, Emailed and DiskSpace, and reads those sorts back from the URL', async () => {
+    const user = userEvent.setup();
+    initialSearch = { sort: 'disk_space', dir: 'desc' };
+    useEventsColumnsStore.getState().showAll();
+    stub();
+    await mountAndSettle();
+    expect(eventRequests.at(-1)?.get('sort')).toBe('disk_space');
+    expect(eventRequests.at(-1)?.get('direction')).toBe('desc');
+
+    await user.click(screen.getByRole('button', { name: /^Archived/ }));
+    await waitFor(() => expect(eventRequests.at(-1)?.get('sort')).toBe('archived'));
+    await user.click(screen.getByRole('button', { name: /^Emailed/ }));
+    await waitFor(() => expect(eventRequests.at(-1)?.get('sort')).toBe('emailed'));
   });
 
   it('refetches from the toolbar refresh button', async () => {

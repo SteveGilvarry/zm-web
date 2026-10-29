@@ -12,28 +12,31 @@
  * "not implemented" — so those two are stubbed here rather than in the shared
  * setup, which no other page needs.
  */
-import { describe, expect, it, beforeAll, beforeEach, vi } from 'vitest';
-import { screen, waitFor, within } from '@testing-library/react';
+import { describe, expect, it, beforeEach, vi } from 'vitest';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import i18next from 'i18next';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
 import { makeEvent } from '@/test/fixtures';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMontageStore, useReviewRangeStore } from '@/stores/montage';
+import { DEFAULT_REVIEW_FILTERS } from '@/features/montagereview/useReviewEvents';
 
 setupMockServer();
 
-beforeAll(() => {
+beforeEach(() => {
+  // Per test: `restoreMocks` undoes spies after each one.
   vi.spyOn(window.HTMLMediaElement.prototype, 'play').mockImplementation(async () => {});
   vi.spyOn(window.HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
-});
-
-beforeEach(() => {
   window.localStorage.clear();
   window.sessionStorage.clear();
   useMonitorFilterStore.getState().reset();
+  // The stores outlive the cleared storage; empty them too.
+  useReviewRangeStore.setState({ range: null });
+  useMontageStore.setState({ reviewFilters: DEFAULT_REVIEW_FILTERS });
 });
 
 /** The page's own range formatter, so assertions don't hard-code a locale. */
@@ -74,14 +77,23 @@ describe('MontageReviewPage (modern) — rendering', () => {
     expect(screen.getAllByText('No Event')).toHaveLength(2);
   });
 
-  it('opens on the last 24 hours', async () => {
+  it('lays the wall out in max-content rows so portrait cells never overlap the row below', async () => {
+    renderRoute('/montagereview');
+    const grid = await screen.findByTestId('review-modern-grid');
+    expect(grid.className).toContain('auto-rows-max');
+    expect(grid.className).toContain('overflow-auto');
+  });
+
+  it('opens on the last hour', async () => {
     renderRoute('/montagereview');
     await findChips();
 
-    expect(within(rangeGroup()).getByRole('button', { name: '24 hours' })).toHaveAttribute(
+    expect(within(rangeGroup()).getByRole('button', { name: '1 hour' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
+    // History view offers the window's videos (legacy's Download Video).
+    expect(screen.getByRole('button', { name: 'Download Video' })).toBeEnabled();
   });
 
   it('asks for monitors when every chip is switched off', async () => {
@@ -197,11 +209,11 @@ describe('MontageReviewPage (modern) — legacy deep link', () => {
     });
   });
 
-  it('ignores an unparsable range and falls back to 24 hours', async () => {
+  it('ignores an unparsable range and falls back to the last hour', async () => {
     renderRoute('/montagereview?min_time=not-a-date&max_time=also-not');
     await findChips();
 
-    expect(within(rangeGroup()).getByRole('button', { name: '24 hours' })).toHaveAttribute(
+    expect(within(rangeGroup()).getByRole('button', { name: '1 hour' })).toHaveAttribute(
       'aria-pressed',
       'true',
     );
@@ -320,6 +332,7 @@ describe('MontageReviewPage (modern) — range controls', () => {
     await waitFor(() => {
       expect(screen.queryByRole('button', { name: 'Zoom in' })).not.toBeInTheDocument();
     });
+    expect(screen.queryByRole('button', { name: 'Download Video' })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Play' })).not.toBeInTheDocument();
     expect(screen.queryByText('Timeline')).not.toBeInTheDocument();
     expect(within(rangeGroup()).getByRole('button', { name: 'Live' })).toHaveAttribute(
@@ -411,10 +424,56 @@ describe('MontageReviewPage (modern) — event filters', () => {
     await user.selectOptions(screen.getByLabelText('Archive Status'), 'unarchived');
     await waitFor(() => expect(seen.some((q) => q.get('archived') === 'false')).toBe(true));
 
-    await user.selectOptions(screen.getByLabelText('Notes'), 'Motion');
-    await waitFor(() => expect(seen.some((q) => q.get('notes') === 'Motion')).toBe(true));
+    await user.click(screen.getByRole('button', { name: 'Notes Any' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Motion' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Person' }));
+    await waitFor(() => {
+      const asked = new Set(seen.map((q) => q.get('notes')));
+      expect(asked.has('Motion') && asked.has('person')).toBe(true);
+    });
 
     // Both show on the Filters badge.
-    expect(screen.getAllByRole('button', { name: /Filters/ })[0]).toHaveTextContent('2');
+    expect(screen.getAllByRole('button', { name: /^Filters/ })[0]).toHaveTextContent('2');
+  });
+
+  it('Tags is a multi-select led by No Tag and Any Tag, sent as tag_id with tag_op=in', async () => {
+    const user = userEvent.setup();
+    const seen: URLSearchParams[] = [];
+    server.use(http.get('*/api/v3/events', ({ request }) => {
+      seen.push(new URL(request.url).searchParams);
+      return HttpResponse.json({ items: [], total: 0, per_page: 500, current_page: 1, last_page: 1 });
+    }));
+    renderRoute(`/montagereview${WIDE_RANGE}`);
+    await findChips();
+
+    await user.click(screen.getByRole('button', { name: 'Filters' }));
+    await user.click(screen.getByRole('button', { name: 'Tags All Tags' }));
+    const list = screen.getByRole('listbox', { name: 'Tags options' });
+    const labels = within(list).getAllByRole('checkbox').map((c) => c.getAttribute('aria-label'));
+    expect(labels.slice(0, 2)).toEqual(['No Tag', 'Any Tag']);
+
+    await user.click(within(list).getByRole('checkbox', { name: 'No Tag' }));
+    await waitFor(() => expect(seen.some((q) => q.get('tag_id') === 'none' && q.get('tag_op') === 'in')).toBe(true));
+    await user.click(within(list).getByRole('checkbox', { name: 'No Tag' }));
+    await user.click(within(list).getByRole('checkbox', { name: 'Any Tag' }));
+    await waitFor(() => expect(seen.some((q) => q.get('tag_id') === 'any')).toBe(true));
+    expect(useMontageStore.getState().reviewFilters.tagIds).toEqual([-1]);
+  });
+});
+
+describe('MontageReviewPage (modern) — From / To', () => {
+  it('the window opens From / To inputs that set it, capped at 24 h', async () => {
+    const user = userEvent.setup();
+    renderRoute(`/montagereview${WIDE_RANGE}`);
+    await findChips();
+
+    await user.click(screen.getByRole('button', { name: new RegExp(`^${fmt(WIDE_START)}`) }));
+    const from = screen.getByLabelText('From') as HTMLInputElement;
+    const to = screen.getByLabelText('To') as HTMLInputElement;
+    expect(from.value).toBe('2026-08-01T00:00');
+
+    // A month-wide window, one end edited: legacy keeps a day after it.
+    fireEvent.change(from, { target: { value: '2026-08-10T00:00' } });
+    await waitFor(() => expect(to.value).toBe('2026-08-11T00:00'));
   });
 });

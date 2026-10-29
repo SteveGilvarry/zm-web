@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { server, setupMockServer } from '@/test/msw/server';
 import { useAuthStore } from '@/stores/auth';
 import { getMe } from './me';

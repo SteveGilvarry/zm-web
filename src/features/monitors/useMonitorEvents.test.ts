@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
@@ -26,7 +26,7 @@ const server = setupServer(
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'tok', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); requests.length = 0; deleted.length = 0; useToastStore.getState().clear(); });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -50,16 +50,24 @@ describe('useMonitorEvents', () => {
     expect(result.current.accessToken).toBe('tok');
   });
 
-  it('deleteOne confirms first, and skips the confirm on shift+click', async () => {
-    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+  it('deleteOne asks through the confirmation modal, and shift+click skips it', async () => {
+    const confirm = vi.spyOn(window, 'confirm');
     const { result } = renderHook(() => useMonitorEvents(1), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
     act(() => result.current.deleteOne(11));
-    expect(confirm).toHaveBeenCalledOnce();
+    expect(result.current.pendingDeleteId).toBe(11);
     expect(deleted).toEqual([]);
+    act(() => result.current.cancelDelete());
+    expect(result.current.pendingDeleteId).toBeNull();
+
+    act(() => result.current.deleteOne(11));
+    act(() => result.current.confirmDelete());
+    await waitFor(() => expect(deleted).toEqual(['11']));
+    expect(result.current.pendingDeleteId).toBeNull();
+
     act(() => result.current.deleteOne(12, true));
-    await waitFor(() => expect(deleted).toEqual(['12']));
-    expect(confirm).toHaveBeenCalledOnce();
+    await waitFor(() => expect(deleted).toEqual(['11', '12']));
+    expect(confirm).not.toHaveBeenCalled();
   });
 
   it('pages, sorts (same field flips), and resets to page 1 on a sort change', async () => {

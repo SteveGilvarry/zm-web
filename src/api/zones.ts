@@ -128,6 +128,21 @@ export interface ZonePreset {
   type: string;
   units: string;
   check_method: string;
+  /* The thresholds the preset applies (zm-api#188), as legacy's `applyPreset` writes them. */
+  min_pixel_threshold?: number | null;
+  max_pixel_threshold?: number | null;
+  filter_x?: number | null;
+  filter_y?: number | null;
+  min_alarm_pixels?: number | null;
+  max_alarm_pixels?: number | null;
+  min_filter_pixels?: number | null;
+  max_filter_pixels?: number | null;
+  min_blob_pixels?: number | null;
+  max_blob_pixels?: number | null;
+  min_blobs?: number | null;
+  max_blobs?: number | null;
+  overload_frames?: number | null;
+  extend_alarm_frames?: number | null;
 }
 
 export async function listZonePresets(): Promise<PaginatedResponse<ZonePreset>> {

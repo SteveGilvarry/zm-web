@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -44,7 +44,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => {
   server.resetHandlers();
@@ -105,7 +105,8 @@ describe('Settings → Options page', () => {
     expect(screen.getByText('Running')).toBeInTheDocument();
     // categories are humanised in the sidebar
     expect(screen.getByRole('button', { name: /System\s*1/ })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Web\s*2/ })).toBeInTheDocument();
+    // 1.39.41 calls the web category Display.
+    expect(screen.getByRole('button', { name: /Display\s*2/ })).toBeInTheDocument();
     // both configs listed under "All"
     expect(screen.getByText('ZM_OPT_USE_AUTH')).toBeInTheDocument();
     expect(screen.getByText('ZM_WEB_TITLE')).toBeInTheDocument();
@@ -190,7 +191,7 @@ describe('Settings → Options page', () => {
     expect(screen.queryByText('ZM_OPT_USE_AUTH')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /System\s*1/ }));
-    expect(screen.getByPlaceholderText('Search in system...')).toHaveValue('');
+    expect(screen.getByPlaceholderText('Search in System...')).toHaveValue('');
     expect(screen.getByText('ZM_OPT_USE_AUTH')).toBeInTheDocument();
     expect(screen.queryByText('ZM_WEB_TITLE')).not.toBeInTheDocument();
   });

@@ -34,9 +34,12 @@ export type PageKey =
   | 'montage'
   | 'montagereview'
   | 'cycle'
+  | 'timeline'
   | 'events.list'
   | 'events.detail'
   | 'events.frames'
+  | 'events.frame'
+  | 'events.stats'
   | 'filters'
   | 'groups'
   | 'logs'
@@ -50,7 +53,12 @@ export type PageKey =
   | 'settings.state'
   | 'settings.ptzControls'
   | 'settings.apiTokens'
-  | 'settings.ai';
+  | 'settings.ai'
+  | 'settings.roles'
+  | 'settings.roles.edit'
+  | 'settings.encoderTemplates'
+  | 'settings.menu'
+  | 'settings.privacy';
 
 /** Props a route passes into a page. Pages without params take `{}`. */
 export interface PagePropsMap {
@@ -62,9 +70,14 @@ export interface PagePropsMap {
   montage: Record<never, never>;
   montagereview: Record<never, never>;
   cycle: Record<never, never>;
+  timeline: Record<never, never>;
   'events.list': Record<never, never>;
   'events.detail': { eventId: number };
   'events.frames': { eventId: number };
+  /** `frameId` 0 is legacy's `fid=0`: the frame with the max score. */
+  'events.frame': { eventId: number; frameId: number };
+  /** No `frameId` opens the max-score frame. */
+  'events.stats': { eventId: number; frameId?: number };
   filters: Record<never, never>;
   groups: Record<never, never>;
   logs: Record<never, never>;
@@ -79,6 +92,16 @@ export interface PagePropsMap {
   'settings.ptzControls': Record<never, never>;
   'settings.apiTokens': Record<never, never>;
   'settings.ai': { section: AiSection };
+  'settings.roles': Record<never, never>;
+  /** `roleId` 0 is legacy's `rid=0`: a new role. */
+  'settings.roles.edit': { roleId: number };
+  'settings.encoderTemplates': Record<never, never>;
+  'settings.menu': Record<never, never>;
+  /**
+   * `gate`: shown over whatever page the operator opened, while
+   * `ZM_SHOW_PRIVACY` is on. `page`: opened from the Options rail.
+   */
+  'settings.privacy': { variant: 'gate' | 'page' };
 }
 
 export type PageComponent<K extends PageKey> = ComponentType<PagePropsMap[K]>;

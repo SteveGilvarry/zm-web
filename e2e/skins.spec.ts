@@ -43,10 +43,14 @@ test.describe('Skin switching', () => {
     await expect(page.getByText('ZoneMinder', { exact: true }).first()).toBeVisible({ timeout: 10_000 });
     await expect(page.getByRole('complementary', { name: 'Sidebar' })).toHaveCount(0);
 
-    // Switch back to Modern from the classic settings page.
-    // The Appearance panel is still on /settings under the classic skin.
+    // Switch back to Modern from the classic Options page: legacy's This
+    // Session tab (options.php:52-110) holds a Skin select and Save. Options
+    // opens on System, as legacy does, so pick the tab first.
     await page.goto('/settings');
-    await page.getByRole('button', { name: /modern/i }).click();
+    await page.getByRole('button', { name: 'This Session', exact: true }).click();
+    const session = page.getByRole('form', { name: 'This Session' });
+    await session.getByLabel('Skin', { exact: true }).selectOption('modern');
+    await session.getByRole('button', { name: /^save$/i }).click();
 
     // Modern shell remounts: the sidebar comes back.
     await expect(page.getByRole('complementary', { name: 'Sidebar' }))

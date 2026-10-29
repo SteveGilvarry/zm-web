@@ -1,6 +1,6 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
@@ -17,7 +17,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -103,16 +103,18 @@ describe('useMonitorsListPage', () => {
     await waitFor(() => expect(deleted).toEqual(['3']));
   });
 
-  it('toggles view mode and the add dialog', async () => {
+  it('toggles view mode and seeds the Add editor', async () => {
     stubList();
     const { result } = renderHook(() => useMonitorsListPage(), { wrapper: makeWrapper() });
     expect(result.current.viewMode).toBe('grid');
     act(() => result.current.setViewMode('list'));
     expect(result.current.viewMode).toBe('list');
-    expect(result.current.showAdd).toBe(false);
+    expect(result.current.addSeed).toBeNull();
     act(() => result.current.openAdd());
-    expect(result.current.showAdd).toBe(true);
+    // The seed names the monitor after the next id across every monitor.
+    await waitFor(() => expect(result.current.addSeed).not.toBeNull());
+    expect(result.current.addSeed!.values.name).toMatch(/^Monitor-\d+$/);
     act(() => result.current.closeAdd());
-    expect(result.current.showAdd).toBe(false);
+    expect(result.current.addSeed).toBeNull();
   });
 });

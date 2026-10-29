@@ -57,13 +57,17 @@ test.describe('Bulk events', () => {
       try {
         for (const id of ids) await selectEvent(page, skin, id);
 
-        // The selection is reported before anything destructive happens.
-        await expect(page.getByText(`${ids.length} selected`).first()).toBeVisible();
-
-        await page
-          .getByRole('button', { name: /^archive$/i })
-          .first()
-          .click();
+        const archive = page
+          .getByRole('region', { name: 'Bulk event actions' })
+          .getByRole('button', { name: /^archive$/i });
+        // Modern reports the selection before anything destructive happens.
+        // Classic reproduces legacy's #rightButtons, which carry no count:
+        // the buttons just enable once rows are ticked (events.php:134-140).
+        if (skin === 'modern') {
+          await expect(page.getByText(`${ids.length} selected`).first()).toBeVisible();
+        }
+        await expect(archive).toBeEnabled();
+        await archive.click();
 
         // Every selected row produced its own PATCH…
         await expect(() => expect([...patched].sort()).toEqual([...ids].sort())).toPass({

@@ -1,10 +1,10 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach, beforeEach, vi } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from './auth';
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'warn' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'warn' }));
 afterEach(() => server.resetHandlers());
 afterAll(() => server.close());
 

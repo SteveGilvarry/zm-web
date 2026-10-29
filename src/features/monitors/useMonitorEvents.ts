@@ -5,6 +5,11 @@ import { deleteEvent, getEvents, type EventSortField, type SortDirection } from 
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { useZmConfig } from '@/features/config/useZmConfig';
+import { WATCH_EVENT_COLUMNS, type EventsColumnKey } from '@/stores/eventsColumns';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
+import { downloadCsv } from '@/features/logs/csv';
+import { eventsToCsv } from '@/features/events/eventsCsv';
+import type { ColumnChooserSource } from '@/features/events/ColumnChooser';
 import type { ZmEvent } from '@/types';
 
 export interface MonitorEventsState {
@@ -27,14 +32,25 @@ export interface MonitorEventsState {
   /** Confirms, then deletes every selected event. */
   deleteSelected: () => void;
   /**
-   * The per-row trash icon. Confirms first; `skipConfirm` is legacy's
-   * shift+click, which deletes straight away.
+   * The per-row trash icon. Asks first through `pendingDeleteId` (legacy's
+   * `delconfirm` modal); `skipConfirm` is legacy's shift+click, which
+   * deletes straight away.
    */
   deleteOne: (id: number, skipConfirm?: boolean) => void;
+  /** The event the delete-confirmation modal is asking about, or null. */
+  pendingDeleteId: number | null;
+  confirmDelete: () => void;
+  cancelDelete: () => void;
   busy: boolean;
   showThumbs: boolean;
   thumbWidth: number;
   accessToken: string | null;
+  /** The watch columns the operator left visible, in legacy order. */
+  columns: EventsColumnKey[];
+  /** Feeds the table's Columns menu (bootstrap-table `showColumns`). */
+  columnSource: ColumnChooserSource;
+  /** bootstrap-table Export: the rows on screen, visible columns, as CSV. */
+  exportCsv: (monitorName: string) => void;
 }
 
 /**
@@ -61,6 +77,10 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
   const [sortField, setSortField] = useState<EventSortField>('id');
   const [sortDir, setSortDir] = useState<SortDirection>('desc');
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
+  const columnsHidden = useWatchPrefsStore((s) => s.eventColumnsHidden);
+  const toggleColumn = useWatchPrefsStore((s) => s.toggleEventColumn);
+  const showAllColumns = useWatchPrefsStore((s) => s.showAllEventColumns);
+  const columns = WATCH_EVENT_COLUMNS.filter((k) => !columnsHidden.includes(k));
 
   const q = useQuery({
     queryKey: ['monitorEvents', monitorId, page, pageSize, sortField, sortDir],
@@ -108,10 +128,15 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
     }
   };
 
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
   const deleteOne = (id: number, skipConfirm = false) => {
-    if (skipConfirm || window.confirm(t('Delete {{count}} event? This cannot be undone.', { count: 1 }))) {
-      deleteMutation.mutate([id]);
-    }
+    if (skipConfirm) deleteMutation.mutate([id]);
+    else setPendingDeleteId(id);
+  };
+  const confirmDelete = () => {
+    if (pendingDeleteId == null) return;
+    deleteMutation.mutate([pendingDeleteId]);
+    setPendingDeleteId(null);
   };
 
   return {
@@ -138,9 +163,27 @@ export function useMonitorEvents(monitorId: number, enabled = true): MonitorEven
     clearSelection: () => setSelectedIds(new Set()),
     deleteSelected,
     deleteOne,
+    pendingDeleteId,
+    confirmDelete,
+    cancelDelete: () => setPendingDeleteId(null),
     busy: deleteMutation.isPending,
     showThumbs,
     thumbWidth,
     accessToken,
+    columns,
+    columnSource: {
+      columns: WATCH_EVENT_COLUMNS,
+      hidden: columnsHidden,
+      toggle: toggleColumn,
+      showAll: showAllColumns,
+    },
+    exportCsv: (monitorName) => {
+      const csv = eventsToCsv(q.data?.items ?? [], columns, {
+        monitorName: () => monitorName,
+        storageName: (id) => String(id),
+      });
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      downloadCsv(`zm-events-${stamp}.csv`, csv);
+    },
   };
 }

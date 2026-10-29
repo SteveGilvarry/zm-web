@@ -9,7 +9,8 @@ import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { STORAGE_SCHEMES, STORAGE_TYPES, useStoragePage } from '@/features/storage/useStoragePage';
-import { formatBytes } from '@/lib/format';
+import { humanFilesize } from '@/lib/format';
+import { storageDiskSpaceText } from '@/features/storage/storageUsage';
 import { useOptionsTabs } from '@/features/settings/useOptionsTabs';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { OptionsRail } from '../components/settings/OptionsRail';
@@ -71,7 +72,7 @@ export default function ClassicSettingsStoragePage() {
                     </tr>
                   </thead>
                   <tbody>
-                    {st.rows.map(({ storage, serverId, serverName, diskPercent }) => (
+                    {st.rows.map(({ storage, serverId, serverName, usage, eventCount }) => (
                       <tr key={storage.id}>
                         <td className={clsx(classicTd, 'font-mono text-xs')}>{storage.id}</td>
                         <td className={classicTd}>
@@ -87,31 +88,15 @@ export default function ClassicSettingsStoragePage() {
                         <td className={clsx(classicTd, 'text-xs')}>
                           {serverName ?? (serverId === null ? t('Local') : t('Server {{id}}', { id: serverId }))}
                         </td>
-                        <td className={clsx(classicTd, 'text-xs whitespace-nowrap')}>
-                          {storage.disk_space == null ? (
-                            <span title={t('zmaudit has not cached a size for this storage area yet.')}>&mdash;</span>
-                          ) : (
-                            <span
-                              className="inline-block min-w-24"
-                              title={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
-                            >
-                              <span className="font-mono">{formatBytes(storage.disk_space)}</span>
-                              <span
-                                role="progressbar"
-                                aria-valuenow={diskPercent ?? 0}
-                                aria-valuemin={0}
-                                aria-valuemax={100}
-                                aria-label={t('{{size}} of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.', { size: formatBytes(storage.disk_space) })}
-                                className="block mt-0.5 h-1.5 rounded bg-zinc-200 overflow-hidden"
-                              >
-                                <span className="block h-full rounded bg-zinc-500" style={{ width: `${diskPercent ?? 0}%` }} />
-                              </span>
-                            </span>
-                          )}
+                        {/* `_options_storage.php:47-52`: "64% 152.63GB of 235.67GB". */}
+                        <td className={clsx(classicTd, 'text-xs whitespace-nowrap')} data-testid="storage-disk-space">
+                          {storageDiskSpaceText(usage, t)}
                         </td>
                         <td className={clsx(classicTd, 'text-xs')}>
                           <Link to="/events" search={{ storage: storage.id }} className={classicLink}>
-                            {t('Events')}
+                            {eventCount == null
+                              ? t('Events')
+                              : t('{{count}} using {{size}}', { count: eventCount, size: humanFilesize(storage.disk_space ?? 0) })}
                           </Link>
                         </td>
                         <td className={classicTd}>
@@ -119,8 +104,14 @@ export default function ClassicSettingsStoragePage() {
                             type="checkbox"
                             checked={st.marked.has(storage.id)}
                             onChange={() => st.toggleMark(storage.id)}
-                            disabled={!canEdit || st.isProtected(storage)}
-                            title={st.isProtected(storage) ? t('The Default storage area cannot be deleted') : undefined}
+                            disabled={!canEdit || st.isProtected(storage) || (eventCount ?? 0) > 0}
+                            title={
+                              st.isProtected(storage)
+                                ? t('The Default storage area cannot be deleted')
+                                : (eventCount ?? 0) > 0
+                                  ? t("Can't delete as long as there are events stored here.")
+                                  : undefined
+                            }
                             aria-label={t('Mark {{name}}', { name: storage.name })}
                           />
                         </td>
@@ -143,59 +134,61 @@ export default function ClassicSettingsStoragePage() {
         </div>
       </main>
 
-      <Modal isOpen={st.modalOpen} onClose={st.closeModal} title={editingStorage ? t('Edit Storage') : t('Add Storage')}>
+      <Modal
+        isOpen={st.modalOpen}
+        onClose={st.closeModal}
+        title={t('Storage - {{name}}', { name: editingStorage ? editingStorage.name : t('New Storage') })}
+      >
+        {/* Legacy `ajax/modals/storage.php`, row for row: Name, Path, Url,
+            Server, Type, Scheme, then Do Deletes and Enabled as Yes/No radios. */}
         <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-2 items-center text-sm">
-          <label htmlFor="cst-name" className="text-text-secondary">{t('Name')}</label>
+          <label htmlFor="cst-name" className="text-end font-semibold text-zinc-800">{t('Name')}</label>
           <input id="cst-name" value={formData.name} onChange={(e) => st.setField('name', e.target.value)} className={input} placeholder={t('Storage name')} />
-          <label htmlFor="cst-path" className="text-text-secondary">{t('Path')}</label>
-          <input id="cst-path" value={formData.path} onChange={(e) => st.setField('path', e.target.value)} className={clsx(input, 'font-mono')} placeholder="/var/cache/zoneminder" />
-          <label htmlFor="cst-type" className="text-text-secondary">{t('Type')}</label>
-          <select id="cst-type" value={formData.type} onChange={(e) => st.setField('type', e.target.value)} className={input}>
-            {STORAGE_TYPES.map((type) => <option key={type} value={type}>{type}</option>)}
-          </select>
-          <label htmlFor="cst-scheme" className="text-text-secondary">{t('Scheme')}</label>
-          <select id="cst-scheme" value={formData.scheme} onChange={(e) => st.setField('scheme', e.target.value)} className={input}>
-            {STORAGE_SCHEMES.map((scheme) => <option key={scheme} value={scheme}>{scheme}</option>)}
-          </select>
-          <label htmlFor="cst-server" className="text-text-secondary">{t('Server')}</label>
+          <label htmlFor="cst-path" className="text-end font-semibold text-zinc-800">{t('Path')}</label>
+          <input id="cst-path" value={formData.path} onChange={(e) => st.setField('path', e.target.value)} className={clsx(input, 'font-mono')} placeholder="/var/cache/zoneminder/events" />
+          <label htmlFor="cst-url" className="text-end font-semibold text-zinc-800">{t('Url')}</label>
+          <input id="cst-url" value={formData.url} onChange={(e) => st.setField('url', e.target.value)} className={clsx(input, 'font-mono')} />
+          <label htmlFor="cst-server" className="text-end font-semibold text-zinc-800">{t('Server')}</label>
           <select
             id="cst-server"
             value={formData.server_id ?? ''}
             onChange={(e) => st.setField('server_id', e.target.value === '' ? null : Number(e.target.value))}
             className={input}
           >
-            <option value="">{t('Any / local')}</option>
+            <option value="">{t('Remote / No Specific Server')}</option>
             {st.servers.map((srv) => <option key={srv.id} value={srv.id}>{srv.name}</option>)}
           </select>
-          <label htmlFor="cst-url" className="text-text-secondary">{t('URL')}</label>
-          <input id="cst-url" value={formData.url} onChange={(e) => st.setField('url', e.target.value)} className={clsx(input, 'font-mono')} placeholder={t('s3://bucket/prefix (optional)')} />
-          <label htmlFor="cst-enabled" className="text-text-secondary">{t('Enabled')}</label>
-          <input id="cst-enabled" type="checkbox" checked={formData.enabled === 1} onChange={st.toggleFormEnabled} className="justify-self-start" />
-          {/* Legacy's StorageDoDelete radio (ajax/modals/storage.php:85-90). Only
-              `CreateStorageRequest` carries it, so an edit shows the stored value
-              and says why it is fixed rather than pretending to save it. */}
-          <label htmlFor="cst-dodelete" className="text-text-secondary">{t('Delete events')}</label>
+          <label htmlFor="cst-type" className="text-end font-semibold text-zinc-800">{t('Type')}</label>
+          <select id="cst-type" value={formData.type} onChange={(e) => st.setField('type', e.target.value)} className={input}>
+            {STORAGE_TYPES.map((type) => <option key={type} value={type}>{type === 'local' ? t('Local') : type}</option>)}
+          </select>
+          <label htmlFor="cst-scheme" className="text-end font-semibold text-zinc-800">{t('Scheme')}</label>
+          <select id="cst-scheme" value={formData.scheme} onChange={(e) => st.setField('scheme', e.target.value)} className={input}>
+            {STORAGE_SCHEMES.map((scheme) => <option key={scheme} value={scheme}>{scheme}</option>)}
+          </select>
+          {/* Only `CreateStorageRequest` carries DoDelete, so an edit shows the
+              stored value and says why it is fixed rather than pretending to save it. */}
+          <span id="cst-dodelete" className="text-end font-semibold text-zinc-800">{t('Do Deletes')}</span>
           <span className="justify-self-start">
-            <input
-              id="cst-dodelete"
-              type="checkbox"
-              checked={formData.do_delete === 1}
-              onChange={st.toggleFormDoDelete}
-              disabled={st.doDeleteLocked}
+            <YesNoRadios
+              name="cst-dodelete"
+              labelledBy="cst-dodelete"
+              value={formData.do_delete}
+              onChange={(v) => { if (v !== formData.do_delete) st.toggleFormDoDelete(); }}
             />
-            <span className="block text-xs text-text-muted">
-              {st.doDeleteLocked
-                ? t('Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.')
-                : t('Deleting an event may remove its media from here.')}
-            </span>
           </span>
+          <span id="cst-enabled" className="text-end font-semibold text-zinc-800">{t('Enabled')}</span>
+          <YesNoRadios
+            name="cst-enabled"
+            labelledBy="cst-enabled"
+            value={formData.enabled}
+            onChange={(v) => { if (v !== formData.enabled) st.toggleFormEnabled(); }}
+          />
         </div>
-        {st.saveError && <p role="alert" className="mt-2 text-xs text-crimson">{t('Save failed: {{message}}', { message: st.saveError })}</p>}
+        {st.saveError && <p role="alert" className="mt-2 text-xs text-red-700">{t('Save failed: {{message}}', { message: st.saveError })}</p>}
         <div className="flex items-center justify-end gap-2 pt-4">
-          <button type="button" onClick={st.closeModal} className="px-3 py-1.5 text-xs rounded border border-border-subtle text-text-muted hover:bg-surface">{t('Cancel')}</button>
-          <button type="button" onClick={st.submitForm} disabled={st.submitDisabled} className="px-3 py-1.5 text-xs rounded border border-cyan/50 bg-cyan/15 text-cyan hover:bg-cyan/25 disabled:opacity-50">
-            {editingStorage ? t('Save Changes') : t('Create Storage')}
-          </button>
+          <ClassicButton tone="primary" onClick={st.submitForm} disabled={st.submitDisabled}>{t('Save')}</ClassicButton>
+          <ClassicButton onClick={st.closeModal}>{t('Cancel')}</ClassicButton>
         </div>
       </Modal>
 
@@ -229,5 +222,26 @@ export default function ClassicSettingsStoragePage() {
         />
       )}
     </AppShell>
+  );
+}
+
+/** Legacy's Yes / No radio pair (`ajax/modals/storage.php:85-97`). */
+function YesNoRadios({ name, labelledBy, value, onChange, disabled }: {
+  name: string;
+  labelledBy: string;
+  value: number;
+  onChange: (v: number) => void;
+  disabled?: boolean;
+}) {
+  const { t } = useTranslation();
+  return (
+    <span role="radiogroup" aria-labelledby={labelledBy} className="inline-flex items-center gap-3 justify-self-start">
+      {[1, 0].map((v) => (
+        <label key={v} className="inline-flex items-center gap-1">
+          <input type="radio" name={name} checked={value === v} disabled={disabled} onChange={() => onChange(v)} />
+          {v === 1 ? t('Yes') : t('No')}
+        </label>
+      ))}
+    </span>
   );
 }

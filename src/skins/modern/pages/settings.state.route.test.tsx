@@ -9,7 +9,7 @@
 import { describe, expect, it } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 
 import { renderRoute } from '@/test/renderRoute';
 import { setupMockServer, server, db } from '@/test/msw/server';
@@ -51,7 +51,7 @@ describe('Run State — saved states', () => {
     renderRoute('/settings/state');
     await runStatePage();
 
-    await user.click(await screen.findByRole('button', { name: /Show definition of away/i }));
+    await user.click(await screen.findByRole('button', { name: /^\d+ monitors?, Show definition of away$/i }));
 
     const table = await screen.findByRole('table', { name: /Definition of away/i });
     expect(within(table).getByText('Front Door')).toBeInTheDocument();
@@ -175,7 +175,8 @@ describe('Run State — envelope', () => {
   it('reads the states out of the {items,total,…} envelope', async () => {
     server.use(
       http.get('/api/v3/states', () =>
-        HttpResponse.json(paginated([makeState({ id: 5, name: 'night' })], { total: 1 })),
+        // Inactive, so the header's run-state label does not read 'night' too.
+        HttpResponse.json(paginated([makeState({ id: 5, name: 'night', is_active: 0 })], { total: 1 })),
       ),
     );
     renderRoute('/settings/state');

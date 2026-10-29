@@ -1,12 +1,12 @@
 /**
  * MatchesPreview — the toolbar verbs the first suite did not press: Export
- * matches (which only exports once the list is open), and the archive /
+ * matches (the whole match set into the Export dialog), and the archive /
  * unarchive halves of Execute now, including the "nothing to act on" guard.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -27,7 +27,7 @@ beforeAll(() => {
     accessToken: 'test', refreshToken: 'test',
     user: { user: 'admin', iat: 0, exp: 0 } as never, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); useToastStore.getState().clear(); });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -55,41 +55,40 @@ const noActions = { archive: false, unarchive: false, delete: false };
 /* ======================================================================== */
 
 describe('MatchesPreview — export', () => {
-  it('the first press opens the list; the second downloads a CSV of what is listed', async () => {
+  it('exports the whole match set through the Export dialog, as a zip under the server name', async () => {
     const user = userEvent.setup();
-    stubPreview();
-
-    const createObjectURL = vi.fn<(blob: Blob) => string>(() => 'blob:matches');
-    const revokeObjectURL = vi.fn();
-    Object.defineProperty(URL, 'createObjectURL', { value: createObjectURL, configurable: true });
-    Object.defineProperty(URL, 'revokeObjectURL', { value: revokeObjectURL, configurable: true });
-    const clicks: Array<{ download: string; href: string }> = [];
+    const pageSizes: string[] = [];
+    server.use(http.post('/api/v3/filters/preview', ({ request }) => {
+      pageSizes.push(new URL(request.url).searchParams.get('page_size') ?? '');
+      return HttpResponse.json({ items: events, total: 2, per_page: 500, current_page: 1, last_page: 1 });
+    }));
+    let exportBody: unknown = null;
+    server.use(http.post('/api/v3/events/export', async ({ request }) => {
+      exportBody = await request.json();
+      return new HttpResponse(new Blob(['PK']), {
+        headers: { 'Content-Type': 'application/zip', 'Content-Disposition': 'attachment; filename="zm-events-1.zip"' },
+      });
+    }));
+    Object.defineProperty(URL, 'createObjectURL', { value: vi.fn(() => 'blob:zip'), configurable: true });
+    Object.defineProperty(URL, 'revokeObjectURL', { value: vi.fn(), configurable: true });
+    const downloads: string[] = [];
     const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      clicks.push({ download: this.download, href: this.href });
+      downloads.push(this.download);
     });
 
     renderWithProviders(<MatchesPreview query={query} monitors={monitors} actions={noActions} />);
+    // No need to list the matches first: legacy goes straight to the export view.
+    await user.click(screen.getByRole('button', { name: /export matches/i }));
+    await waitFor(() => expect(screen.getByText('Export the following 2 events:')).toBeInTheDocument());
+    expect(pageSizes).toEqual(['500']);
+    expect(screen.getByText('Front Door')).toBeInTheDocument();
+    expect(screen.queryByTestId('export-cap-notice')).toBeNull();
 
-    const exportBtn = screen.getByRole('button', { name: /export matches/i });
-    expect(screen.queryByRole('button', { name: /hide matches/i })).toBeNull();
-
-    await user.click(exportBtn);           // opens the list, exports nothing yet
-    await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
-    expect(click).not.toHaveBeenCalled();
-    expect(screen.getByRole('button', { name: /hide matches/i })).toBeInTheDocument();
-
-    await user.click(exportBtn);           // now it downloads
-    await waitFor(() => expect(clicks).toHaveLength(1));
-    expect(clicks[0].download).toMatch(/^zm-filter-matches-.*\.csv$/);
-    expect(createObjectURL).toHaveBeenCalledTimes(1);
-
-    // The CSV carries the resolved monitor and storage names, not raw ids.
-    const blob = createObjectURL.mock.calls[0][0];
-    const text = await blob.text();
-    expect(text).toContain('Front Door');   // known monitor
-    expect(text).toContain('9');            // unknown monitor falls back to its id
-    expect(text).toContain('Default');      // storage 0 is the default area
-    expect(text).toContain('Event 11');
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    await waitFor(() => expect(downloads).toEqual(['zm-events-1.zip']));
+    expect(exportBody).toEqual({ ids: [11, 12], include: ['details', 'frames', 'images', 'video', 'misc'] });
+    expect(screen.getByText(/Export Succeeded/)).toBeInTheDocument();
+    click.mockRestore();
   });
 
   it('pages backwards as well as forwards through server results', async () => {
@@ -105,7 +104,7 @@ describe('MatchesPreview — export', () => {
     }));
     renderWithProviders(<MatchesPreview query={query} monitors={monitors} actions={noActions} />);
 
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event on page 1')).toBeInTheDocument());
     expect(screen.getByRole('button', { name: /previous page/i })).toBeDisabled();
 
@@ -117,14 +116,31 @@ describe('MatchesPreview — export', () => {
     expect(pages).toEqual([1, 2, 1]);
   });
 
-  it('is disabled once the list is open and empty', async () => {
+  it('says when more than 500 events match and only the first 500 go', async () => {
     const user = userEvent.setup();
-    stubPreview([]);
+    server.use(http.post('/api/v3/filters/preview', () =>
+      HttpResponse.json({ items: events, total: 750, per_page: 500, current_page: 1, last_page: 2 })));
     renderWithProviders(<MatchesPreview query={query} monitors={monitors} actions={noActions} />);
 
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
-    await waitFor(() => expect(screen.getByText(/no events match/i)).toBeInTheDocument());
-    expect(screen.getByRole('button', { name: /export matches/i })).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: /export matches/i }));
+    expect(await screen.findByTestId('export-cap-notice')).toHaveTextContent(
+      '750 events match; only the first 500 can be exported at once.',
+    );
+  });
+
+  it('falls back to the client evaluator for terms the preview cannot run', async () => {
+    const user = userEvent.setup();
+    let pageSize = '';
+    server.use(http.get('/api/v3/events', ({ request }) => {
+      pageSize = new URL(request.url).searchParams.get('page_size') ?? '';
+      return HttpResponse.json({ items: events, total: 2, per_page: 500, current_page: 1, last_page: 1 });
+    }));
+    const regex: FilterQuery = { terms: [{ attr: 'Name', op: '=~', val: '11$' }], sort_field: '', limit: '0' };
+    renderWithProviders(<MatchesPreview query={regex} monitors={monitors} actions={noActions} />);
+
+    await user.click(screen.getByRole('button', { name: /export matches/i }));
+    expect(await screen.findByText('Export the following 1 event:')).toBeInTheDocument();
+    expect(pageSize).toBe('500');
   });
 });
 
@@ -150,7 +166,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -160,6 +176,28 @@ describe('MatchesPreview — execute archive and unarchive', () => {
     expect(patched[0].body).toMatchObject({ archived: true });
     await waitFor(() =>
       expect(useToastStore.getState().toasts.some((t) => /Applied to 2 event/.test(t.message))).toBe(true));
+  });
+
+  it('is enabled by the ticked action alone, listing the matches before it asks', async () => {
+    const user = userEvent.setup();
+    stubPreview();
+    const patched: string[] = [];
+    server.use(http.patch('/api/v3/events/:id', ({ params }) => {
+      patched.push(String(params.id));
+      return HttpResponse.json({ id: Number(params.id) });
+    }));
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(true);
+
+    renderWithProviders(
+      <MatchesPreview query={query} monitors={monitors} actions={{ archive: true, unarchive: false, delete: false }} />,
+    );
+    const execute = screen.getByRole('button', { name: /execute/i });
+    expect(execute).toBeEnabled();
+    await user.click(execute);
+
+    await waitFor(() => expect(confirm).toHaveBeenCalledWith('Archive 2 listed events?'));
+    await waitFor(() => expect(patched).toEqual(['11', '12']));
+    expect(screen.getByText('Event 11')).toBeInTheDocument();
   });
 
   it('unarchives when that is the draft action', async () => {
@@ -179,7 +217,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: false, unarchive: true, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -202,7 +240,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
     expect(patchHits).toBe(0);
@@ -222,7 +260,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     await user.click(screen.getByRole('button', { name: /execute/i }));
 
@@ -242,7 +280,7 @@ describe('MatchesPreview — execute archive and unarchive', () => {
         actions={{ archive: true, unarchive: false, delete: false }}
       />,
     );
-    await user.click(screen.getByRole('button', { name: /list matches/i }));
+    await user.click(screen.getByRole('button', { name: /preview matches/i }));
     await waitFor(() => expect(screen.getByText('Event 11')).toBeInTheDocument());
     expect(screen.queryByRole('button', { name: /execute/i })).toBeNull();
 

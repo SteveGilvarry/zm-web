@@ -3,18 +3,19 @@ import { clsx } from 'clsx';
 
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
-import { RequirePerm } from '@/features/auth/RequirePerm';
+import { Modal } from '@/components/common/Modal';
 import { usePerms } from '@/features/auth/usePerms';
-import { GroupEditDialog } from '@/features/groups/GroupEditDialog';
 import { useGroupsPage } from '@/features/groups/useGroupsPage';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { ClassicButton, ClassicTable, classicLink, classicTd, classicTh } from '../components/settings/primitives';
+import { ClassicGroupModal } from '../components/ClassicGroupModal';
 
 /**
  * Groups — classic skin. Legacy `?view=groups`: Mark / Name / Monitors,
  * the name reading "Id Name" and indented by depth, New and Delete in the
  * toolbar, and membership edited in the modal's `MonitorIds[]` multi-select
- * rather than a side panel.
+ * rather than a side panel. Without Groups edit, New and Delete stay on the
+ * toolbar greyed, as legacy renders them.
  */
 export default function ClassicGroupsPage() {
   const { t } = useTranslation();
@@ -30,16 +31,12 @@ export default function ClassicGroupsPage() {
     <AppShell title={t('Groups')}>
       <main className="flex-1 p-4 overflow-auto bg-zinc-50">
         <div className="max-w-screen-2xl mx-auto space-y-4">
-          <h1 className="text-xl text-zinc-800 font-semibold">{t('Groups')}</h1>
-
-          <RequirePerm feature="groups" level="Edit">
-            <div className="flex items-center gap-2">
-              <ClassicButton tone="primary" onClick={s.openCreate}>{t('New')}</ClassicButton>
-              <ClassicButton tone="danger" onClick={s.deleteMarked} disabled={s.marked.size === 0}>
-                {t('Delete')}
-              </ClassicButton>
-            </div>
-          </RequirePerm>
+          <div className="flex items-center gap-2">
+            <ClassicButton tone="primary" onClick={s.openCreate} disabled={!canEdit}>{t('New')}</ClassicButton>
+            <ClassicButton tone="danger" onClick={s.deleteMarked} disabled={!canEdit || s.marked.size === 0}>
+              {t('Delete')}
+            </ClassicButton>
+          </div>
 
           <QueryState
             isLoading={s.isLoading}
@@ -86,7 +83,7 @@ export default function ClassicGroupsPage() {
         </div>
       </main>
 
-      <GroupEditDialog
+      <ClassicGroupModal
         open={s.dialogOpen}
         editing={editing}
         groups={groups}
@@ -97,6 +94,15 @@ export default function ClassicGroupsPage() {
         pending={s.dialogPending}
         error={s.dialogError}
       />
+
+      {/* Legacy `getDelConfirmModal('ConfirmDeleteGroups', 'Delete')`. */}
+      <Modal isOpen={s.deleteConfirmOpen} onClose={s.cancelDeleteMarked} title={t('Delete')}>
+        <p className="text-sm text-zinc-800">{t('Are you sure you wish to delete the selected groups?')}</p>
+        <div className="flex justify-end gap-2 mt-4 pt-3 border-t border-zinc-200">
+          <ClassicButton onClick={s.cancelDeleteMarked}>{t('Cancel')}</ClassicButton>
+          <ClassicButton tone="danger" onClick={s.confirmDeleteMarked}>{t('Delete')}</ClassicButton>
+        </div>
+      </Modal>
     </AppShell>
   );
 }

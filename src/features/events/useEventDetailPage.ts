@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type CSSProperties, type RefObject } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
+import { frameSeekSeconds } from './frameSeek';
 import { useTranslation } from 'react-i18next';
 import {
   getEvent,
@@ -29,7 +30,8 @@ import type { Monitor, ZmEvent } from '@/types';
 import { toLocalDatetime } from '@/features/reports/datetime';
 import { useEventHotkeys } from './useEventHotkeys';
 import type { TagChipsApi } from './TagChips';
-import { notesFromSearch, monitorIdsFromSearch, toApiTimestamp, toZmDateTime, type EventNavSearch } from './eventsSearch';
+import { notesFromSearch, monitorIdsFromSearch, tagsFromSearch, toApiTimestamp, toZmDateTime, type EventNavSearch } from './eventsSearch';
+import { tagPicksToApi } from './tagFilter';
 
 export function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -132,6 +134,9 @@ export interface EventDetailPageState {
   playbackError: ReturnType<typeof useEventVideo>['error'];
   isPlaying: boolean;
   isMuted: boolean;
+  /** 0–1, video.js's volume slider. */
+  volume: number;
+  setVolume: (v: number) => void;
   currentTime: number;
   duration: number;
   setCurrentTime: (t: number) => void;
@@ -194,6 +199,9 @@ export interface EventDetailPageState {
   /** Legacy `tagAndPrev` / `tagAndNext`: apply the first free tag, then move. */
   tagAndPrev: () => void;
   tagAndNext: () => void;
+
+  /** Legacy's Refresh, without reloading the app: refetch everything this page shows. */
+  refresh: () => void;
 
   handleVideoEnded: () => void;
   handlePlayPause: () => void;
@@ -270,7 +278,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const {
     replayMode, setReplayMode,
     scaleByMonitor, setScale: setMonitorScale,
-    showZones, setShowZones,
+    zonesByMonitor, setShowZones: setMonitorZones,
     showStats, setShowStats,
     rate, setRate,
     codec, setCodec,
@@ -279,6 +287,7 @@ export function useEventDetailPage(id: number): EventDetailPageState {
 
   const [isPlaying, setIsPlaying] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolumeState] = useState(1);
   const [currentTime, setCurrentTime] = useState(0);
   // Precise duration from the <video> loadedmetadata event; 0 until it fires.
   const [metaDuration, setMetaDuration] = useState(0);
@@ -350,6 +359,8 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     id,
     videoInfo,
     codec,
+    // No end time yet: still recording, so its playlist is retried.
+    !!event && !event.end_date_time,
   );
 
   // Seed the scrubber length from /info up front; the precise duration from
@@ -431,15 +442,17 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   // The list's Notes box is a multi-select; `/events` takes one substring,
   // so a multi-type list narrows Prev/Next by its first type only.
   const urlNote = notesFromSearch(listSearch)[0];
+  // Tags is a multi-select too (No Tag / Any Tag included); `/events` takes the list.
+  const urlTags = tagPicksToApi(tagsFromSearch(listSearch));
   /** The list filters this URL carries, as `/events` query params. */
   const urlFilters: EventQueryParams = useMemo(() => ({
     monitor_id: urlMonitorId,
     archived: listSearch.archived,
     cause: listSearch.cause || undefined,
     notes: urlNote,
-    name: listSearch.q || undefined,
-    tag_id: listSearch.tag != null ? String(listSearch.tag) : undefined,
-  }), [urlMonitorId, listSearch.archived, listSearch.cause, urlNote, listSearch.q, listSearch.tag]);
+    q: listSearch.q || undefined,
+    tag_id: urlTags,
+  }), [urlMonitorId, listSearch.archived, listSearch.cause, urlNote, listSearch.q, urlTags]);
 
   // Page + sort is what makes a URL a *list position*; without both there is
   // nothing to take a row above/below from.
@@ -508,16 +521,18 @@ export function useEventDetailPage(id: number): EventDetailPageState {
   const listPrev = listReversed ? rowAfter : rowBefore;
   const listNext = listReversed ? rowBefore : rowAfter;
 
-  // Scope for the time-based fallback: the monitor this URL is filtered to,
-  // the one the events list was filtered to, every monitor when it was
-  // unfiltered, or — before the list has been visited — the event's own
-  // monitor. The timestamp goes back to the backend verbatim, so the dev
-  // box's server-local-stamped-Z values and the fixed build's true UTC both
-  // stay self-consistent.
+  // Scope for the time-based fallback, as legacy's `getNearEvents` builds
+  // it from the URL: the monitor this URL is filtered to; every monitor when
+  // the URL carries an unfiltered list (or several monitors, which `/events`
+  // cannot narrow to); and with no list context at all — arriving from the
+  // console, a montage or a link — the event's own monitor (event.php:167,
+  // the `MonitorId = <this event's>` default term). The timestamp goes back
+  // to the backend verbatim, so the dev box's server-local-stamped-Z values
+  // and the fixed build's true UTC both stay self-consistent.
   const navMonitorId: number | null = urlMonitorIds.length === 1
     ? urlMonitorIds[0]
-    : listCtx || navScope !== null
-      ? (navScope?.monitorId ?? null)
+    : listCtx || urlMonitorIds.length > 1
+      ? null
       : (event?.monitor_id ?? null);
   const scopeMonitor = navMonitorId ?? undefined;
   const startAt = event?.start_date_time ?? null;
@@ -604,7 +619,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     }
   };
   const navPrev = () => goTo(prevEventId);
-  const navNext = () => goTo(nextEventId);
+  // Legacy keeps Next live at the end of the run; pressing it says so
+  // (`streamNext`, event.js:725).
+  const navNext = () => {
+    if (nextEventId != null) goTo(nextEventId);
+    else if (event) setNoMoreEvents(true);
+  };
 
   // ----- End of playback ---------------------------------------------------
   //
@@ -786,6 +806,19 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     ? Math.round((eventLength / frameCount) * 1e6) / 1e6
     : 0;
   const canStep = !isPlaying && !rewinding && secondsPerFrame > 0;
+
+  // `?fid=`: seek to that frame once per event, as soon as the player and
+  // the event's frame count are there (legacy opens the stream at `fid`).
+  const requestedFrame = listSearch.fid;
+  const seekedFor = useRef<string | null>(null);
+  useEffect(() => {
+    const key = `${event?.id ?? ''}:${requestedFrame ?? ''}`;
+    if (!event || seekedFor.current === key) return;
+    const t = frameSeekSeconds(requestedFrame, frameCount, eventLength);
+    if (t == null || !videoRef.current) return;
+    seekedFor.current = key;
+    seekTo(t);
+  }, [event, requestedFrame, frameCount, eventLength]);
   const stepForward = () => {
     const el = videoRef.current;
     if (el && secondsPerFrame > 0) seekTo(el.currentTime + secondsPerFrame);
@@ -955,6 +988,17 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     playbackError,
     isPlaying,
     isMuted,
+    volume,
+    setVolume: (v: number) => {
+      const next = Math.min(1, Math.max(0, v));
+      setVolumeState(next);
+      const el = videoRef.current;
+      if (el) {
+        el.volume = next;
+        // Dragging the slider up unmutes, as video.js's does.
+        if (next > 0 && el.muted) { el.muted = false; setIsMuted(false); }
+      }
+    },
     currentTime,
     duration,
     setCurrentTime,
@@ -965,8 +1009,9 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     setReplayMode,
     scale,
     setScale,
-    showZones,
-    setShowZones,
+    // Remembered per monitor, as legacy's `zmEventShowZones<mid>` cookie is.
+    showZones: event ? (zonesByMonitor[event.monitor_id] ?? false) : false,
+    setShowZones: (v: boolean) => { if (event) setMonitorZones(event.monitor_id, v); },
     showStats,
     setShowStats,
     playerMaxWidth,
@@ -995,6 +1040,12 @@ export function useEventDetailPage(id: number): EventDetailPageState {
     tagApiRef,
     tagAndPrev,
     tagAndNext,
+
+    refresh: () => {
+      for (const key of ['event', 'eventInfo', 'eventData', 'eventFrames']) {
+        void queryClient.invalidateQueries({ queryKey: [key, id] });
+      }
+    },
 
     handleVideoEnded,
     handlePlayPause,

@@ -4,6 +4,7 @@ import { useMutation } from '@tanstack/react-query';
 import { createUser, updateUser } from '@/api/users';
 import { useToast } from '@/components/common/toastStore';
 import { LANGUAGES } from '@/i18n/languages';
+import { useZmConfig } from '@/features/config/useZmConfig';
 import type { User } from '@/types';
 
 /** Legacy `user.php` input pattern for Username. */
@@ -48,10 +49,18 @@ export interface AccountFormData {
   language: string;
   homeView: string;
   apiEnabled: number;
+  /** `Roles.Id` as select value; '' is legacy's "NoRole". */
+  roleId: string;
 }
 
 /** What an admin may edit on any account. Self-edit (below) is a subset. */
 export type AccountField = Exclude<keyof AccountFormData, 'confirmPassword'>;
+
+/** '' (no role) → null; anything else → the role id. */
+export function parseRoleId(value: string): number | null {
+  const n = Number(value);
+  return value !== '' && Number.isInteger(n) && n > 0 ? n : null;
+}
 
 /** `ZM_USER_SELF_EDIT` (legacy `actions/user.php`): password, language, home view only. */
 const SELF_EDIT_FIELDS: ReadonlySet<AccountField> = new Set(['password', 'language', 'homeView']);
@@ -82,6 +91,8 @@ export function editPatch(editing: User, form: AccountFormData, selfEdit: boolea
   if ((editing.phone ?? '') !== form.phone) patch.phone = form.phone;
   if (editing.enabled !== form.enabled) patch.enabled = form.enabled;
   if ((editing.api_enabled ?? 1) !== form.apiEnabled) patch.api_enabled = form.apiEnabled;
+  const roleId = parseRoleId(form.roleId);
+  if ((editing.role_id ?? null) !== roleId) patch.role_id = roleId;
   return patch;
 }
 
@@ -105,8 +116,13 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
     language: editing?.language ?? '',
     homeView: editing?.home_view || 'console',
     apiEnabled: editing?.api_enabled ?? 1,
+    roleId: editing?.role_id != null ? String(editing.role_id) : '',
   });
   const [error, setError] = useState<string | null>(null);
+  // `ZM_PASSWORD_MIN_LENGTH` (1.39.41, `b631d2efc`): legacy puts it on the
+  // password inputs as `minlength`. 0 or unset means no minimum.
+  const passwordMinLength = Math.max(0, useZmConfig('ZM_PASSWORD_MIN_LENGTH', 0));
+  const passwordTooShort = !!formData.password && formData.password.length < passwordMinLength;
 
   const createMutation = useMutation({
     mutationFn: createUser,
@@ -153,6 +169,10 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
       setError(usernameError);
       return;
     }
+    if (passwordTooShort) {
+      setError(t('Password must be at least {{count}} characters.', { count: passwordMinLength }));
+      return;
+    }
     if (formData.password && formData.password !== formData.confirmPassword) {
       setError(t('Passwords do not match.'));
       return;
@@ -175,6 +195,7 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
         language: formData.language || undefined,
         home_view: formData.homeView,
         api_enabled: formData.apiEnabled,
+        ...(parseRoleId(formData.roleId) != null ? { role_id: parseRoleId(formData.roleId) } : {}),
       });
     }
   };
@@ -188,7 +209,7 @@ export function useAccountForm(editing: User | null, onSaved: () => void, option
 
   return {
     formData, setField, toggleEnabled, toggleApiEnabled, error, usernameError, isSaving, submitDisabled, submit,
-    canChange, selfEdit,
+    canChange, selfEdit, passwordMinLength: passwordMinLength || undefined,
     languages: languageOptions(editing?.language, t('Default')),
     homeViews: HOME_VIEWS,
   };

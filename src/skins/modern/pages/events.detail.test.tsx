@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, beforeEach, afterEach } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -64,7 +64,7 @@ beforeAll(() => {
     // No `perms` claim → every feature reads as Edit (pre-RBAC token).
     user: { user: 'admin', iat: 0, exp: 0 } as never,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 beforeEach(() => {
   mockNavigate.mockReset();
@@ -72,7 +72,7 @@ beforeEach(() => {
   // Reset session-store between tests so cross-test bleed doesn't change
   // the dropdown defaults.
   useEventPlaybackStore.setState({
-    replayMode: 'none', scaleByMonitor: {}, showZones: false, showStats: false, rate: 1,
+    replayMode: 'none', scaleByMonitor: {}, zonesByMonitor: {}, showStats: false, rate: 1,
     navScope: null,
   });
   mockSearch = {};
@@ -260,6 +260,8 @@ describe('EventDetailPage — prev/next navigation', () => {
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /previous event/i })).toBeDisabled();
+    // WCAG 2.5.3: the name leads with the visible "Prev".
+    expect(screen.getByRole('button', { name: /previous event/i })).toHaveAccessibleName(/^Prev ?, /);
     });
     expect(screen.getByRole('button', { name: /next event/i })).toBeEnabled();
   });
@@ -342,7 +344,8 @@ describe('EventDetailPage — time-bounded neighbours', () => {
   });
 
   it('walks every monitor when the list was unfiltered', async () => {
-    useEventPlaybackStore.setState({ navScope: { monitorId: null } });
+    // The list's position, with no monitor filter.
+    mockSearch = { page: 1, page_size: 25, sort: 'start_time', dir: 'asc' };
     const queries: URLSearchParams[] = [];
     stubBase();
     server.use(
@@ -354,6 +357,21 @@ describe('EventDetailPage — time-bounded neighbours', () => {
     await mount();
     await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
     expect(queries.every((q) => !q.has('monitor_id'))).toBe(true);
+  });
+
+  it('stays on the event\'s own monitor without a list in the URL, whatever list was last open', async () => {
+    useEventPlaybackStore.setState({ navScope: { monitorId: null } });
+    const queries: URLSearchParams[] = [];
+    stubBase();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        queries.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [], total: 0, per_page: 10, current_page: 1, last_page: 1 });
+      }),
+    );
+    await mount();
+    await waitFor(() => expect(queries.length).toBeGreaterThanOrEqual(2));
+    expect(queries.every((q) => q.get('monitor_id') === '1')).toBe(true);
     useEventPlaybackStore.setState({ navScope: null });
   });
 });
@@ -580,7 +598,20 @@ describe('EventDetailPage — stats panel toggle', () => {
     const panel = await screen.findByTestId('event-stats-panel');
     expect(panel.textContent).toMatch(/42/);
     expect(panel.textContent).toMatch(/99/);
-    expect(panel.textContent).toMatch(/25\.0 MB/);
+    // Size on the storage it lives on, once /storage has answered.
+    await waitFor(() => expect(panel.textContent).toMatch(/25\.0 MB on Default/));
+    // Max score opens the max-score frame, as legacy's Max link does.
+    expect(within(panel).getByRole('link', { name: '99' })).toHaveAttribute('href', '/events/100/frames/0');
+    expect(panel.textContent).toMatch(/Emailed/);
+  });
+
+  it('links the monitor\'s events and reads the wall-clock time in the status line', async () => {
+    stubBase();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(screen.getByRole('link', { name: 'All Events' })).toHaveAttribute('href', '/events');
+    expect(screen.getByTestId('event-replay-status').textContent).toMatch(/Time: /);
+    expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
   });
 });
 
@@ -911,5 +942,47 @@ describe('EventDetailPage — overlay, status line and codec', () => {
 
     await user.selectOptions(select, 'mp4hls');
     expect(useEventPlaybackStore.getState().codec).toBe('mp4hls');
+  });
+});
+
+describe('EventDetailPage — files, export and video', () => {
+  const audit = (missing: number[]) => server.use(
+    http.get('/api/v3/reports/event-audit', () => HttpResponse.json({
+      start: '', end: '',
+      monitors: [{ monitor_id: 1, event_count: 1, first_event_id: 100, last_event_id: 100, missing_files: missing, zero_size: [] }],
+    })),
+  );
+
+  it('shows the path, links Max to the named frame and warns when the files are gone', async () => {
+    stubBase({ event: { ...makeEvent({ id: 100, monitor_id: 1 }), path: '/var/cache/zoneminder/events/1/100', max_score_frame_id: 12 } });
+    audit([100]);
+    const user = userEvent.setup();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(screen.getByTestId('event-path')).toHaveTextContent('/var/cache/zoneminder/events/1/100');
+    expect(await screen.findByTestId('event-missing-files')).toHaveTextContent(
+      'Event was not found at /var/cache/zoneminder/events/1/100. It is unlikely that playback will be possible.',
+    );
+    await user.click(screen.getByRole('button', { name: /^stats$/i }));
+    const panel = await screen.findByTestId('event-stats-panel');
+    expect(within(panel).getByRole('link', { name: '25' })).toHaveAttribute('href', '/events/100/frames/12');
+  });
+
+  it('opens Export and Generate Video from the actions panel', async () => {
+    stubBase();
+    audit([]);
+    server.use(http.get('/api/v3/events/:id/videos', () => HttpResponse.json([])));
+    const user = userEvent.setup();
+    await mount();
+    await waitFor(() => expect(screen.getByText('Event 100')).toBeInTheDocument());
+    expect(screen.queryByTestId('event-missing-files')).toBeNull();
+
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    expect(await screen.findByRole('dialog', { name: 'Export Options' })).toHaveTextContent('Export the following 1 event:');
+    await user.keyboard('{Escape}');
+
+    await user.click(screen.getByRole('button', { name: 'Generate Video' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Video' });
+    expect(await within(dialog).findByText('No Video Files Found')).toBeInTheDocument();
   });
 });

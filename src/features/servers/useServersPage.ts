@@ -98,20 +98,46 @@ export function useServersPage() {
   const [expandedId, setExpandedId] = useState<number | null>(null);
   const toggleDetail = (id: number) => setExpandedId((cur) => (cur === id ? null : id));
 
+  /** The add/edit form, which legacy opens as a modal. */
+  const [formOpen, setFormOpen] = useState(false);
+
+  /** Legacy's Mark column: rows ticked for Delete. Gone rows drop out. */
+  const [marked, setMarked] = useState<Set<number>>(() => new Set());
+  const selectedIds = new Set(servers.filter((sv) => marked.has(sv.id)).map((sv) => sv.id));
+  const toggleSelected = (id: number) => setMarked((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    return next;
+  });
+  const toggleAll = () => setMarked(
+    selectedIds.size === servers.length ? new Set() : new Set(servers.map((sv) => sv.id)),
+  );
+
   const deleteMutation = useMutation({
-    mutationFn: (id: number) => deleteServer(id),
-    onSuccess: (_r, id) => {
+    mutationFn: async (ids: number[]) => {
+      for (const id of ids) await deleteServer(id);
+    },
+    onSuccess: (_r, ids) => {
       toast.success(t('Server deleted'));
-      if (editing?.id === id) setEditing(null);
+      if (editing && ids.includes(editing.id)) setEditing(null);
+      setMarked((prev) => new Set([...prev].filter((id) => !ids.includes(id))));
       invalidateServers();
     },
-    onError: (err) => toast.apiError(err),
+    onError: (err) => {
+      invalidateServers();
+      toast.apiError(err);
+    },
   });
 
+  /** One server (a row's own Delete) or every marked one. */
   const [deleteTarget, setDeleteTarget] = useState<Server | null>(null);
+  const [deleteMarked, setDeleteMarked] = useState(false);
   const confirmDelete = () => {
-    if (deleteTarget) deleteMutation.mutate(deleteTarget.id);
+    if (deleteTarget) deleteMutation.mutate([deleteTarget.id]);
+    else if (deleteMarked && selectedIds.size > 0) deleteMutation.mutate([...selectedIds]);
     setDeleteTarget(null);
+    setDeleteMarked(false);
   };
 
   return {
@@ -125,7 +151,15 @@ export function useServersPage() {
     localLoad,
     deleteTarget,
     requestDelete: setDeleteTarget,
-    cancelDelete: () => setDeleteTarget(null),
+    deleteMarked,
+    requestDeleteMarked: () => setDeleteMarked(true),
+    cancelDelete: () => {
+      setDeleteTarget(null);
+      setDeleteMarked(false);
+    },
+    selectedIds,
+    toggleSelected,
+    toggleAll,
     isDeleting: deleteMutation.isPending,
     statsError: statsQ.error?.message ?? null,
     confirmDelete,
@@ -133,11 +167,23 @@ export function useServersPage() {
     expandedId,
     toggleDetail,
     editing,
-    startEdit: setEditing,
-    cancelEdit: () => setEditing(null),
+    startEdit: (server: Server) => {
+      setEditing(server);
+      setFormOpen(true);
+    },
+    formOpen,
+    openCreate: () => {
+      setEditing(null);
+      setFormOpen(true);
+    },
+    cancelEdit: () => {
+      setEditing(null);
+      setFormOpen(false);
+    },
     onSaved: () => {
       invalidateServers();
       setEditing(null);
+      setFormOpen(false);
     },
   };
 }

@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
+import { useUiStore } from '@/stores/ui';
 
 vi.mock('@/skins/AppShell', () => ({
   AppShell: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
@@ -14,6 +15,7 @@ vi.mock('@/skins/registry', () => ({
     modern: { id: 'modern', name: 'Modern', description: 'A live wall and dense tables.', colorSchemes: ['light', 'dark'] },
     classic: { id: 'classic', name: 'Classic ZoneMinder', description: 'Legacy tables.', colorSchemes: ['light'] },
   },
+  skinIds: ['modern', 'classic'],
   useSkin: () => ({ id: 'classic', name: 'Classic ZoneMinder', description: 'Legacy tables.', colorSchemes: ['light'] }),
 }));
 
@@ -37,7 +39,7 @@ const { default: ClassicOptionsPage } = await import('./settings.options');
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => {
   server.resetHandlers();
@@ -77,24 +79,22 @@ function seed(x10 = '0') {
 describe('Classic Options page', () => {
   it('renders the legacy tab rail without bandwidth tabs and with the sub-pages', async () => {
     seed();
-    // The page opens on Display (skin chooser) like legacy; pick a category
-    // so the config table is what gets asserted.
-    mockSearch.category = 'system';
+    // Legacy opens on System; no ?category= needed.
     renderWithProviders(<ClassicOptionsPage />);
     await waitFor(() => expect(screen.getByText('Authenticate user logins')).toBeInTheDocument());
     const rail = screen.getByRole('navigation', { name: 'Options' });
     const labels = within(rail).getAllByRole('listitem').map((li) => li.textContent);
     expect(labels).toEqual([
-      'Display', 'System', 'API', 'Servers', 'Storage', 'Web', 'Control', 'MQTT',
-      'Users', 'Groups', 'AI Datasets', 'AI Models', 'AI Classes', 'Run State',
+      'This Session', 'System', 'API', 'Servers', 'Storage', 'Display', 'Users', 'Roles', 'Groups',
+      'Control', 'Encoder Templates', 'Privacy', 'MQTT', 'Menu', 'AI Datasets', 'AI Models', 'AI Classes', 'Run State',
     ]);
     expect(within(rail).getByRole('link', { name: 'API' })).toHaveAttribute('href', '/settings/api-tokens');
     expect(within(rail).getByRole('link', { name: 'AI Models' })).toHaveAttribute('href', '/settings/ai/models');
     expect(within(rail).getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/settings/users');
     expect(within(rail).getByRole('link', { name: 'Groups' })).toHaveAttribute('href', '/groups');
-    // bandwidth rows never show, even under "All"
-    expect(screen.queryByText('ZM_WEB_H_REFRESH_MAIN')).not.toBeInTheDocument();
-    // prompt is the Description column
+    // bandwidth rows never show
+    expect(screen.queryByText('WEB_H_REFRESH_MAIN')).not.toBeInTheDocument();
+    // the prompt sits under the input
     expect(screen.getByText('Authenticate user logins')).toBeInTheDocument();
   });
 
@@ -110,17 +110,26 @@ describe('Classic Options page', () => {
     const user = userEvent.setup();
     mockSearch.category = 'web';
     renderWithProviders(<ClassicOptionsPage />);
-    await waitFor(() => expect(screen.getByText('ZM_WEB_TITLE')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByLabelText('WEB_TITLE')).toHaveValue('ZoneMinder'));
     const rail = screen.getByRole('navigation', { name: 'Options' });
     await user.click(within(rail).getByRole('button', { name: 'MQTT' }));
     expect(mockSearch.category).toBe('MQTT');
   });
 
-  it('?category=display shows the skin chooser instead of the table', async () => {
+  it('?category=display is This Session: the hint, Save and the Skin select', async () => {
     seed();
+    const user = userEvent.setup();
     mockSearch.category = 'display';
+    useUiStore.setState({ skin: 'classic' });
     renderWithProviders(<ClassicOptionsPage />);
-    await waitFor(() => expect(screen.getByText('Classic ZoneMinder')).toBeInTheDocument());
-    expect(screen.queryByText('ZM_WEB_TITLE')).not.toBeInTheDocument();
+    const select = await screen.findByLabelText('Skin');
+    expect(select).toHaveValue('classic');
+    expect(screen.getByText(/apply to this browser only/)).toBeInTheDocument();
+    expect(screen.queryByLabelText('WEB_TITLE')).not.toBeInTheDocument();
+
+    await user.selectOptions(select, 'modern');
+    expect(useUiStore.getState().skin).not.toBe('modern');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    expect(useUiStore.getState().skin).toBe('modern');
   });
 });

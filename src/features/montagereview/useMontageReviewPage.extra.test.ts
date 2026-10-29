@@ -3,13 +3,15 @@
  * the translated preset list, custom ranges, pan/zoom, the URL-driven
  * preselection, and the backend-down branches.
  */
-import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
+import { useMontageStore, useReviewRangeStore } from '@/stores/montage';
+import { DEFAULT_REVIEW_FILTERS } from './useReviewEvents';
 
 let mockSearch: Record<string, unknown> = {};
 vi.mock('@tanstack/react-router', () => ({
@@ -35,12 +37,19 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => {
   server.resetHandlers();
   mockSearch = {};
 });
+// The window and the event filters persist (legacy cookies); start each test
+// from nothing stored.
+beforeEach(() => {
+  useReviewRangeStore.setState({ range: null });
+  useMontageStore.setState({ reviewFilters: DEFAULT_REVIEW_FILTERS });
+});
+
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
@@ -182,11 +191,11 @@ describe('useMontageReviewPage — custom range, pan and zoom', () => {
     const before = result.current.clock.rangeStart;
 
     act(() => result.current.setCustomRange(new Date('2026-01-02T05:00:00Z'), new Date('2026-01-02T03:00:00Z')));
-    expect(result.current.preset).toBe('24h');
+    expect(result.current.preset).toBe('1h');
     expect(result.current.clock.rangeStart).toBe(before);
 
     act(() => result.current.setCustomRange(new Date('2026-01-02T05:00:00Z'), new Date('2026-01-02T05:00:00Z')));
-    expect(result.current.preset).toBe('24h');
+    expect(result.current.preset).toBe('1h');
   });
 
   it('pan slides the window and re-clamps the playhead into it', () => {
@@ -270,13 +279,39 @@ describe('useMontageReviewPage — URL search params', () => {
       .toBe(60 * 60 * 1000);
   });
 
-  it('an inverted URL window falls back to the default 24 h', () => {
+  it('an inverted URL window falls back to the default last hour', () => {
     mockSearch = { min_time: '2026-08-21 09:00:00', max_time: '2026-08-21 08:00:00' };
     stubMonitors();
     const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
-    expect(result.current.preset).toBe('24h');
+    expect(result.current.preset).toBe('1h');
     expect(result.current.clock.rangeEnd.getTime() - result.current.clock.rangeStart.getTime())
-      .toBe(24 * 60 * 60 * 1000);
+      .toBe(60 * 60 * 1000);
+  });
+
+  it('a URL window wins over the stored one', () => {
+    useReviewRangeStore.setState({ range: { start: '2026-01-01T00:00:00.000Z', end: '2026-01-01T01:00:00.000Z' } });
+    mockSearch = { min_time: '2026-08-21T08:00:00Z', max_time: '2026-08-21T09:00:00Z' };
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    expect(result.current.clock.rangeStart).toEqual(new Date('2026-08-21T08:00:00Z'));
+  });
+
+  it('editing a Date Time bound caps the window at 24 h, as legacy changeFilters does', () => {
+    stubMonitors();
+    const { result } = renderHook(() => useMontageReviewPage(), { wrapper: makeWrapper() });
+    act(() => result.current.setCustomRange(new Date('2026-08-21T00:00:00Z'), new Date('2026-08-21T06:00:00Z')));
+
+    act(() => result.current.setRangeBound('start', new Date('2026-08-10T00:00:00Z')));
+    expect(result.current.clock.rangeStart).toEqual(new Date('2026-08-10T00:00:00Z'));
+    expect(result.current.clock.rangeEnd).toEqual(new Date('2026-08-11T00:00:00Z'));
+
+    act(() => result.current.setRangeBound('end', new Date('2026-08-20T00:00:00Z')));
+    expect(result.current.clock.rangeStart).toEqual(new Date('2026-08-19T00:00:00Z'));
+    expect(result.current.preset).toBe('custom');
+
+    // Unparsable input changes nothing.
+    act(() => result.current.setRangeBound('end', new Date('nope')));
+    expect(result.current.clock.rangeEnd).toEqual(new Date('2026-08-20T00:00:00Z'));
   });
 
   it('?monitor_id=2 preselects only that monitor', async () => {

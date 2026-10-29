@@ -28,8 +28,9 @@ describe('buildOptionsTabs', () => {
     const keys = buildOptionsTabs(DEV_BOX, true).map((t) => t.key);
     expect(keys).toEqual([
       'display', 'system', 'auth', 'config', 'api', 'servers', 'storage', 'web', 'images',
-      'logging', 'network', 'mail', 'upload', 'x10', 'control', 'mqtt', 'telemetry',
-      'version', 'users', 'groups', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'logging', 'network', 'mail', 'upload', 'x10', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'mqtt', 'telemetry', 'version', 'menu',
+      'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 
@@ -42,7 +43,7 @@ describe('buildOptionsTabs', () => {
     const tabs = buildOptionsTabs([...DEV_BOX, { name: 'onvif', count: 2 }], false);
     const keys = tabs.map((t) => t.key);
     expect(keys.indexOf('onvif')).toBe(keys.indexOf('version') + 1);
-    expect(keys.indexOf('onvif')).toBeLessThan(keys.indexOf('users'));
+    expect(keys.indexOf('onvif')).toBeLessThan(keys.indexOf('ai_datasets'));
     expect(keys).not.toContain('x10');
   });
 });

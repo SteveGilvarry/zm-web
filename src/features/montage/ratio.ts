@@ -67,3 +67,12 @@ export function aspectRatioFor(
   // Portrait cameras keep their orientation: the ratio applies to the long side.
   return size.width >= size.height ? `${value} / 1` : `1 / ${value}`;
 }
+
+/**
+ * Legacy `buildRatioSelect` option text, `16:9 (1.778)`. `auto` and `real`
+ * give null so the caller can translate `Auto` / `Real`.
+ */
+export function ratioOptionLabel(ratio: string): string | null {
+  const value = ratioValue(ratio);
+  return value == null ? null : `${ratio} (${value.toFixed(3)})`;
+}

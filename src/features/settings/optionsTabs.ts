@@ -42,15 +42,20 @@ export type OptionsTab =
   | { kind: 'page'; key: string; to: string };
 
 /**
- * Legacy tab order (`getOptionsHTML` in
- * `skins/classic/includes/functions.php`), bandwidth tabs removed. Category
- * tabs only render when the backend actually has rows in that category, and
- * unknown categories are appended before the page tabs so nothing the
- * backend serves becomes unreachable.
+ * Legacy tab order (`getOptionsHTML` in 1.39.41
+ * `skins/classic/includes/functions.php`), bandwidth tabs removed.
+ * Category tabs only render when the backend actually has rows in that
+ * category, and unknown categories are appended before the AI pages so
+ * nothing the backend serves becomes unreachable.
+ *
+ * Roles, Encoder Templates, Privacy and Menu are pages: legacy renders
+ * them from `_options_roles.php`, `_options_encoderTemplates.php`,
+ * `privacy.php` (the tab redirects there) and `_options_menu.php`.
  *
  * `api` is a page, not a config category: legacy's API tab is
  * `_options_api.php`, the per-user token table. The AI tabs are pages for
- * the same reason (`_options_ai_*.php`).
+ * the same reason (`_options_ai_*.php`). Run State is ours; legacy keeps
+ * it in a navbar modal.
  */
 const LEGACY_ORDER: ReadonlyArray<
   | { key: string; category: string }
@@ -70,17 +75,24 @@ const LEGACY_ORDER: ReadonlyArray<
   { key: 'mail', category: 'mail' },
   { key: 'upload', category: 'upload' },
   { key: 'x10', category: 'x10' },
+  { key: 'users', to: '/settings/users' },
+  { key: 'roles', to: '/settings/roles' },
+  { key: 'groups', to: '/groups' },
   { key: 'control', to: '/settings/ptz-controls' },
+  { key: 'encoderTemplates', to: '/settings/encoder-templates' },
+  { key: 'privacy', to: '/settings/privacy' },
   { key: 'mqtt', category: 'mqtt' },
   { key: 'telemetry', category: 'telemetry' },
   { key: 'version', category: 'version' },
-  { key: 'users', to: '/settings/users' },
-  { key: 'groups', to: '/groups' },
+  { key: 'menu', to: '/settings/menu' },
   { key: 'ai_datasets', to: '/settings/ai/datasets' },
   { key: 'ai_models', to: '/settings/ai/models' },
   { key: 'ai_classes', to: '/settings/ai/classes' },
   { key: 'state', to: '/settings/state' },
 ];
+
+/** The tab the Options page opens on, as legacy `options.php:28` does. */
+export const DEFAULT_OPTIONS_TAB = 'system';
 
 export function buildOptionsTabs(
   categories: readonly CategoryCount[],
@@ -112,23 +124,28 @@ export function buildOptionsTabs(
       extras.push({ kind: 'category', key: c.name.toLowerCase(), category: c.name });
     }
   }
-  // Extras slot in after the last category tab, ahead of Users/Groups/Run State.
+  // Extras slot in after the last category tab, ahead of the AI and Run State pages.
   const lastCategory = tabs.map((t) => t.kind).lastIndexOf('category');
   tabs.splice(lastCategory + 1, 0, ...extras);
   return tabs;
 }
 
-/** Legacy tab captions; falls back to the raw key for unknown categories. */
+/**
+ * Legacy tab captions; falls back to the raw key for unknown categories.
+ * Since `7f7c9cc81` three tabs are named after what they hold, not their
+ * key (`ZM_Menu::$categoryLabels`): `display` is This Session (a cookie,
+ * not stored config), `web` is Display, and `auth` reads Authentication.
+ */
 export function optionsTabLabel(t: TFunction, key: string): string {
   switch (key) {
-    case DISPLAY_TAB: return t('Display');
+    case DISPLAY_TAB: return t('This Session');
     case 'system': return t('System');
-    case 'auth': return t('Auth');
+    case 'auth': return t('Authentication');
     case 'config': return t('Config');
     case 'api': return t('API');
     case 'servers': return t('Servers');
     case 'storage': return t('Storage');
-    case 'web': return t('Web');
+    case 'web': return t('Display');
     case 'images': return t('Images');
     case 'logging': return t('Logging');
     case 'network': return t('Network');
@@ -141,6 +158,10 @@ export function optionsTabLabel(t: TFunction, key: string): string {
     case 'version': return t('Versions');
     case 'users': return t('Users');
     case 'groups': return t('Groups');
+    case 'roles': return t('Roles');
+    case 'encoderTemplates': return t('Encoder Templates');
+    case 'privacy': return t('Privacy');
+    case 'menu': return t('Menu');
     case 'ai_datasets': return t('AI Datasets');
     case 'ai_models': return t('AI Models');
     case 'ai_classes': return t('AI Classes');

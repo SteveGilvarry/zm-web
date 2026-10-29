@@ -6,10 +6,11 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
+import { chosenChips, pickChosen } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import type { LogsSearchParams } from '@/features/logs/useLogsPage';
 import type { UserClaims } from '@/types';
@@ -55,8 +56,12 @@ function stub(opts: { logs?: unknown[]; servers?: unknown[]; total?: number; las
   const { logs = LOGS, servers = [], total = logs.length, lastPage = 1 } = opts;
   logQueries = [];
   server.use(
+    http.get('/api/v3/logs/components', () => HttpResponse.json(['zmc_m1', 'zmc_m3', 'zmc_m4'])),
     http.get('/api/v3/logs', ({ request }) => {
-      logQueries.push(new URL(request.url).searchParams);
+      const q = new URL(request.url).searchParams;
+      // The State readout's per-severity counts (`useLogState`) are
+      // page_size=1 reads; only the table's own request is recorded.
+      if (q.get('page_size') !== '1') logQueries.push(q);
       return HttpResponse.json({ items: logs, total, per_page: 50, current_page: 1, last_page: lastPage });
     }),
     http.get('/api/v3/servers', () =>
@@ -75,7 +80,7 @@ function stub(opts: { logs?: unknown[]; servers?: unknown[]; total?: number; las
   );
 }
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   useAuthStore.setState({
     accessToken: 't', refreshToken: 't', isAuthenticated: true,
@@ -103,37 +108,36 @@ describe('ClassicLogsPage — extra paths', () => {
     await mount();
     await screen.findByTestId('log-row-1');
 
-    await user.selectOptions(screen.getByLabelText('Component'), 'zmc_m3');
+    await pickChosen(user, 'Component', 'zmc_m3');
     expect(lastSearch({ page: 4 })).toEqual({ component: 'zmc_m3' });
   });
 
-  it('pushes the severity threshold into the URL and the request', async () => {
+  it('pushes exact levels into the URL and the request as a level list', async () => {
     stub();
     const user = userEvent.setup();
     await mount();
     await screen.findByTestId('log-row-1');
 
-    await user.selectOptions(screen.getByLabelText('Level'), 'warning');
-    expect(lastSearch()).toEqual({ min_level: 'warning' });
+    await pickChosen(user, 'Level', 'ERR');
+    expect(lastSearch({ page: 2 })).toEqual({ level: 'ERR' });
 
-    // Re-render as the router would, with the threshold applied.
+    // Re-render as the router would, with two levels applied.
     cleanup();
-    mockSearch = { min_level: 'warning' };
+    mockSearch = { level: 'WAR,PNC' };
     await mount();
-    await waitFor(() => expect(logQueries.at(-1)?.get('min_level')).toBe('warning'));
-    // No page-local caveat: the backend did the filtering.
-    expect(screen.queryByText(/current page only/)).toBeNull();
+    await waitFor(() => expect(logQueries.at(-1)?.get('level')).toBe('-1,-4'));
+    expect(chosenChips('Level')).toEqual(['WAR', 'PNC']);
   });
 
-  it('clears the threshold again when All is chosen', async () => {
-    mockSearch = { min_level: 'warning' };
+  it('empties the level pick from the clear button, which means All', async () => {
+    mockSearch = { level: 'WAR' };
     stub();
     const user = userEvent.setup();
     await mount();
     await screen.findByTestId('log-row-2');
 
-    await user.selectOptions(screen.getByLabelText('Level'), '');
-    expect(lastSearch({ min_level: 'warning' })).toEqual({});
+    await user.click(screen.getByRole('button', { name: 'Clear level' }));
+    expect(lastSearch({ level: 'WAR' })).toEqual({});
   });
 
   it('commits the message search on submit and sends it as ?search=', async () => {
@@ -270,10 +274,11 @@ describe('ClassicLogsPage — extra paths', () => {
     await mount();
 
     const row = await screen.findByTestId('log-row-3');
+    // Cell 0 is the row checkbox.
     const cells = within(row).getAllByRole('cell');
-    expect(cells[2]).toHaveTextContent('');
-    expect(cells[5]).toHaveTextContent('');
+    expect(cells[3]).toHaveTextContent('');
     expect(cells[6]).toHaveTextContent('');
+    expect(cells[7]).toHaveTextContent('');
   });
 
   it('links every `event NNN` in a message to that event', async () => {
@@ -314,5 +319,7 @@ describe('ClassicLogsPage — extra paths', () => {
 
     await screen.findByTestId('log-row-1');
     expect(screen.queryByRole('button', { name: /clear logs/i })).toBeNull();
+    // No checkbox column either, as legacy drops it without System edit.
+    expect(screen.queryByRole('checkbox')).toBeNull();
   });
 });

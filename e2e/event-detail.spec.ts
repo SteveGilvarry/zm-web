@@ -57,10 +57,21 @@ test.describe('Event detail', () => {
       await gotoSkin(page, `/events/${EVENT}`, skin);
 
       // 9002 is the newest event on its monitor, so Next is at the end of
-      // the walk and starts disabled; step back first, then forward.
-      const prev = page.getByRole('button', { name: /^previous event$/i });
+      // the walk. Modern disables it; classic keeps it live as legacy does
+      // and says "No more events" when pressed (event.js streamNext).
+      // Then step back and forward again.
+      // Modern's Prev is named "Prev, Previous event" (its visible text leads,
+      // WCAG 2.5.3; Chrome puts a space before the comma, jsdom does not);
+      // classic's icon button is still just "Previous event".
+      const prev = page.getByRole('button', { name: /^(prev ?, )?previous event$/i });
       const next = page.getByRole('button', { name: /^next event$/i });
-      await expect(next).toBeDisabled();
+      if (skin === 'modern') {
+        await expect(next).toBeDisabled();
+      } else {
+        await next.click();
+        await expect(page.getByTestId('event-replay-message')).toHaveText('No more events');
+        await expect(page).toHaveURL(new RegExp(`/events/${EVENT}(\\?|$)`));
+      }
       await expect(prev).toBeEnabled();
 
       await prev.click();

@@ -47,13 +47,13 @@ export function makeEvent(overrides: Partial<ZmEvent> = {}): ZmEvent {
 /** A frame row (`GET /api/v3/frames?event_id=`). `delta` is a decimal string. */
 export function makeFrame(overrides: Partial<Frame> = {}): Frame {
   return {
-    id: 1,
     event_id: 1,
     frame_id: 1,
     type: 'Normal',
     score: 0,
     time_stamp: '2026-08-21T09:00:00Z',
     delta: '0.00',
+    audio_level: 0,
     ...overrides,
   };
 }

@@ -22,6 +22,7 @@ import { fieldClasses } from '@/components/common/styles';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { usePerms } from '@/features/auth/usePerms';
 import { humanizeIdent } from '@/features/settings/configFormat';
+import { optionsTabLabel } from '@/features/settings/optionsTabs';
 import { formatBytes, useSettingsOptionsPage } from '@/features/settings/useSettingsOptionsPage';
 import { useSiteTitle } from '@/features/settings/useSiteTitle';
 import { ConfigRow } from '../components/settings/ConfigRow';
@@ -55,6 +56,11 @@ export default function SettingsOptionsPage() {
   const canEdit = can('system', 'Edit');
 
   if (!s.isAuthenticated) return null;
+
+  const tabLabel = (category: string) => {
+    const tab = s.tabs.find((x) => x.kind === 'category' && x.category === category);
+    return tab ? optionsTabLabel(t, tab.key) : humanizeIdent(category);
+  };
 
   const railItem = (selected: boolean) =>
     clsx(
@@ -140,7 +146,7 @@ export default function SettingsOptionsPage() {
             <div className="flex items-center justify-between gap-3">
               <h2 className={heading}>{t('ZoneMinder Configuration')}</h2>
               {selectedCategory && (
-                <span className="text-xs text-fg-dim">{humanizeIdent(selectedCategory)}</span>
+                <span className="text-xs text-fg-dim">{tabLabel(selectedCategory)}</span>
               )}
             </div>
 
@@ -160,15 +166,17 @@ export default function SettingsOptionsPage() {
 
                   <div className="mx-3 my-1 border-t border-border-subtle" />
 
-                  {s.categoryList.map(({ name, count }) => (
+                  {/* The config tabs of the legacy rail, in its order and with its names. */}
+                  {s.tabs.flatMap((tab) => (tab.kind === 'category' ? [tab] : [])).map((tab) => (
                     <button
-                      key={name}
-                      onClick={() => s.selectCategory(name)}
-                      className={railItem(selectedCategory === name)}
+                      key={tab.key}
+                      onClick={() => s.selectCategory(tab.category)}
+                      aria-current={selectedCategory === tab.category ? 'page' : undefined}
+                      className={railItem(selectedCategory === tab.category)}
                     >
-                      <span className="truncate">{humanizeIdent(name)}</span>
+                      <span className="truncate">{optionsTabLabel(t, tab.key)}</span>
                       <span className="text-xs font-mono tabular-nums text-fg-dim flex-shrink-0">
-                        {count}
+                        {s.categoryList.find((c) => c.name === tab.category)?.count ?? ''}
                       </span>
                     </button>
                   ))}
@@ -184,7 +192,7 @@ export default function SettingsOptionsPage() {
                       type="text"
                       placeholder={
                         selectedCategory
-                          ? t('Search in {{category}}...', { category: selectedCategory })
+                          ? t('Search in {{category}}...', { category: tabLabel(selectedCategory) })
                           : t('Search all configs...')
                       }
                       value={s.configSearch}
@@ -217,7 +225,7 @@ export default function SettingsOptionsPage() {
                       className="inline-flex items-center gap-1 px-2 py-1 rounded bg-accent text-accent-fg font-medium disabled:opacity-50"
                     >
                       {s.isSavingAll ? <Loader2 size={12} className="animate-spin" /> : <Save size={12} />}
-                      {t('Save all')}
+                      {selectedCategory ? t('Save {{tab}}', { tab: tabLabel(selectedCategory) }) : t('Save all')}
                     </button>
                   </div>
                 )}
@@ -257,6 +265,7 @@ export default function SettingsOptionsPage() {
                             onReset={canEdit ? () => s.resetToDefault(config) : undefined}
                             isSaving={s.savingConfig === config.name}
                             dirtyValue={s.dirty[config.name]}
+                            lock={s.lockOf(config, canEdit)}
                           />
                         ))}
                       </tbody>

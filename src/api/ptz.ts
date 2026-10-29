@@ -57,6 +57,27 @@ export interface ScanCapabilities {
   num_scan_paths: number;
 }
 
+/** `LightCapabilities` (zm-api#190): legacy's Light / Indicator Light buttons. */
+export interface LightCapabilities {
+  can_light: boolean;
+  can_indicator_light: boolean;
+}
+
+/** `AudioCapabilities` (zm-api#190): play one of the device's sounds, stop it, volume. */
+export interface AudioCapabilities {
+  can_play: boolean;
+  can_volume: boolean;
+  /** The sound numbers `audio/play` accepts. */
+  min_file?: number | null;
+  max_file?: number | null;
+}
+
+/** `LightStatusResponse`: `on` / `off` per light, as the camera reports it. */
+export interface LightStatus {
+  light?: string | null;
+  indicator_light?: string | null;
+}
+
 export interface PtzCapabilities {
   control_id: number;
   name: string;
@@ -70,6 +91,9 @@ export interface PtzCapabilities {
   presets: PresetCapabilities;
   power: PowerCapabilities;
   scan: ScanCapabilities;
+  /** Absent on builds before zm-api#190. */
+  light?: LightCapabilities;
+  audio?: AudioCapabilities;
 }
 
 export interface PtzPositionResponse {
@@ -199,4 +223,17 @@ export const ptz = {
 
   moveAbsolute: (monitorId: number, body: PtzAbsoluteRequest) =>
     apiPost<PtzAbsoluteRequest, PtzCommandResponse>(`${base(monitorId)}/absolute`, body),
+  // Light and audio (zm-api#190) — no bodies.
+  getLightStatus: (monitorId: number) =>
+    apiGet<LightStatus>(`${base(monitorId)}/light`),
+  light: (monitorId: number, state: 'on' | 'off') =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/light/${state}`, {}),
+  indicatorLight: (monitorId: number, state: 'on' | 'off') =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/indicator-light/${state}`, {}),
+  playAudio: (monitorId: number, file: number) =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/audio/play/${file}`, {}),
+  stopAudio: (monitorId: number) =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/audio/stop`, {}),
+  audioVolume: (monitorId: number, direction: 'up' | 'down') =>
+    apiPost<Record<string, never>, PtzCommandResponse>(`${base(monitorId)}/audio/volume/${direction}`, {}),
 };

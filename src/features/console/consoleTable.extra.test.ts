@@ -1,16 +1,16 @@
 /**
  * Coverage for the console table helpers the first pass left untouched:
  * every `compareRows` branch (including the four name-lookup columns and
- * the five event buckets), the `pageSlice` edges, every `exportColumns`
- * value function, and `downloadText`'s anchor dance.
+ * the five event buckets), the `pageSlice` edges, and `downloadText`'s
+ * anchor dance.
  */
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { Monitor } from '@/types';
 import type { EventSummary } from '@/api/eventSummaries';
 import type { MonitorRuntime } from '@/features/monitors/useMonitorStatuses';
 import {
-  compareRows, downloadText, exportColumns, pageSlice, rowsToCsv, rowsToJson,
-  searchRows, sortRows, totalsFor, type ConsoleRow, type ConsoleSortKey,
+  compareRows, consoleStatus, downloadText, pageSlice,
+  searchRows, sortRows, statusBreakdown, totalsFor, type ConsoleRow, type ConsoleSortKey,
 } from './consoleTable';
 
 const summary = (monitor_id: number, over: Partial<EventSummary> = {}): EventSummary => ({
@@ -132,68 +132,6 @@ describe('sortRows / searchRows / pageSlice edges', () => {
   });
 });
 
-describe('exportColumns — every value function', () => {
-  const runtime: MonitorRuntime = {
-    monitorId: 1, status: 'Connected', captureFps: 10.5, analysisFps: 5, captureFpsRaw: '0', analysisFpsRaw: '5', bandwidth: 2048,
-    updatedOn: new Date().toISOString(),
-  };
-  const full = row(
-    { id: 7, name: 'Front', manufacturer_id: 1, model_id: 2, zone_count: 3, sequence: 4, width: 640, height: 480 },
-    {
-      total_events: 30, hour_events: 1, day_events: 2, week_events: 3, month_events: 4, archived_events: 5,
-    },
-    runtime,
-  );
-  const ctx = {
-    manufacturerName: () => 'Axis',
-    modelName: () => 'P3245',
-  };
-
-  it('renders every column for a fully populated row', () => {
-    const cols = exportColumns(ctx);
-    const out = Object.fromEntries(cols.map((c) => [c.key, c.value(full)]));
-    expect(out).toEqual({
-      id: 7,
-      name: 'Front',
-      manufacturer: 'Axis',
-      model: 'P3245',
-      function: 'Analysing: Always Recording: OnMotion',
-      status: 'Connected',
-      capture_fps: 10.5,
-      source: '10.0.0.1',
-      resolution: '640x480',
-      events: 30,
-      hour: 1,
-      day: 2,
-      week: 3,
-      month: 4,
-      archived: 5,
-      zones: 3,
-      sequence: 4,
-    });
-  });
-
-  it('falls back to Unknown / blank when runtime, lookups and sequence are absent', () => {
-    const bare = row({ id: 8, zone_count: undefined, sequence: null });
-    const out = Object.fromEntries(exportColumns().map((c) => [c.key, c.value(bare)]));
-    expect(out.status).toBe('Unknown');
-    expect(out.capture_fps).toBe('');
-    expect(out.manufacturer).toBe('');
-    expect(out.model).toBe('');
-    expect(out.zones).toBe(0);
-    expect(out.sequence).toBe('');
-  });
-
-  it('quotes newline-bearing CSV cells and emits a header-only file for no rows', () => {
-    const cols = exportColumns().filter((c) => c.key === 'name');
-    expect(rowsToCsv([row({ name: 'line1\nline2' })], cols).split('\n')).toEqual([
-      'Name', '"line1', 'line2"',
-    ]);
-    expect(rowsToCsv([], cols)).toBe('Name');
-    expect(rowsToJson([], cols)).toBe('[]');
-  });
-});
-
 describe('downloadText', () => {
   afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -228,5 +166,43 @@ describe('downloadText', () => {
       click.mockRestore();
       vi.useRealTimers();
     }
+  });
+});
+
+describe('console status breakdown (console.php $status_counts)', () => {
+  const rt = (status: string): MonitorRuntime => ({
+    monitorId: 0, status, captureFps: 0, analysisFps: 0, captureFpsRaw: '0', analysisFpsRaw: '0', bandwidth: 0, updatedOn: '',
+  });
+
+  it('counts deleted, missing-row and WebSite monitors as legacy does', () => {
+    expect(consoleStatus(monitor({ deleted: true } as Partial<Monitor>), rt('Connected'))).toBe('Deleted');
+    expect(consoleStatus(monitor({}), undefined)).toBe('NotRunning');
+    expect(consoleStatus(monitor({ type: 'WebSite' } as Partial<Monitor>), undefined)).toBe('Running');
+    expect(consoleStatus(monitor({}), rt('Connected'))).toBe('Connected');
+  });
+
+  it('lists statuses by first appearance in sequence order, rounded like PHP round(x, 1)', () => {
+    const rows = [
+      row({ id: 1, sequence: 3 }, {}, rt('Connected')),
+      row({ id: 2, sequence: 1 }, {}, rt('Running')),
+      row({ id: 3, sequence: 2 }, {}, rt('Running')),
+    ];
+    expect(statusBreakdown(rows)).toEqual([
+      { status: 'Running', pct: '66.7' },
+      { status: 'Connected', pct: '33.3' },
+    ]);
+    expect(statusBreakdown([rows[0]])).toEqual([{ status: 'Connected', pct: '100' }]);
+    expect(statusBreakdown([])).toEqual([]);
+  });
+
+  it('searches Path, Device, Host and the runtime Status too', () => {
+    const rows = [
+      row({ id: 1, path: 'rtsp://cam/Streaming/Channels/101', host: 'gate.local' } as Partial<Monitor>, {}, rt('Connected')),
+      row({ id: 2, device: '/dev/video3', host: null } as Partial<Monitor>, {}, rt('NotRunning')),
+    ];
+    expect(searchRows(rows, 'channels/101').map((r) => r.monitor.id)).toEqual([1]);
+    expect(searchRows(rows, 'gate.local').map((r) => r.monitor.id)).toEqual([1]);
+    expect(searchRows(rows, 'video3').map((r) => r.monitor.id)).toEqual([2]);
+    expect(searchRows(rows, 'notrunning').map((r) => r.monitor.id)).toEqual([2]);
   });
 });

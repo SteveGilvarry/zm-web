@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 
@@ -17,7 +18,8 @@ import {
 
 /**
  * Options → Users — classic skin. Legacy `?view=options&tab=users`: mark
- * column, the permission columns as plain text, the signed-in user starred,
+ * column, the role linked to its editor, the permission columns as plain
+ * text, the signed-in user starred,
  * [Add New User] [Delete] on the start side and Export on the end.
  */
 export default function ClassicSettingsUsersPage() {
@@ -87,10 +89,10 @@ export default function ClassicSettingsUsersPage() {
                           </th>
                         )}
                         <th className={classicTh}>{t('Username')}</th>
-                        <th className={classicTh}>{t('Name')}</th>
                         <th className={classicTh}>{t('Email')}</th>
                         <th className={classicTh}>{t('Language')}</th>
                         <th className={classicTh}>{t('Enabled')}</th>
+                        <th className={classicTh}>{t('Role')}</th>
                         {permCols.map((k) => <th key={k} className={classicTh}>{permLabel[k]}</th>)}
                         <th className={classicTh}>{t('API Enabled')}</th>
                       </tr>
@@ -99,6 +101,7 @@ export default function ClassicSettingsUsersPage() {
                       {u.filteredUsers.map((user) => {
                         const self = u.isCurrentUser(user);
                         const editable = u.canEditUser(user);
+                        const roleName = u.roleName(user);
                         return (
                           <tr key={user.id}>
                             {u.canEdit && (
@@ -120,18 +123,15 @@ export default function ClassicSettingsUsersPage() {
                               ) : user.username}
                               {self && <span title={t('You')} className="ms-0.5">*</span>}
                             </td>
-                            <td className={classicTd}>{user.name}</td>
                             <td className={clsx(classicTd, 'font-mono text-xs')}>{user.email}</td>
                             <td className={clsx(classicTd, 'text-xs')}>{user.language || t('default')}</td>
+                            <td className={classicTd}>{user.enabled === 1 ? t('Yes') : t('No')}</td>
                             <td className={classicTd}>
-                              {u.canEdit && !self ? (
-                                <input
-                                  type="checkbox"
-                                  checked={user.enabled === 1}
-                                  onChange={() => u.toggleEnabled(user)}
-                                  aria-label={user.enabled === 1 ? t('Disable {{name}}', { name: user.username }) : t('Enable {{name}}', { name: user.username })}
-                                />
-                              ) : (user.enabled === 1 ? t('Yes') : t('No'))}
+                              {roleName && u.canEdit ? (
+                                <Link to="/settings/roles/$roleId" params={{ roleId: String(user.role_id) }} className={classicLink}>
+                                  {roleName}
+                                </Link>
+                              ) : roleName}
                             </td>
                             {permCols.map((k) => <td key={k} className={clsx(classicTd, 'text-xs')}>{user[k]}</td>)}
                             <td className={classicTd}>{(user.api_enabled ?? 1) === 1 ? t('Yes') : t('No')}</td>
@@ -167,6 +167,7 @@ export default function ClassicSettingsUsersPage() {
           mode={u.editorMode}
           onClose={u.closeEditor}
           onChangePassword={u.editingSelf ? u.openPasswordChange : undefined}
+          onEditRole={u.openRole}
         />
       )}
 

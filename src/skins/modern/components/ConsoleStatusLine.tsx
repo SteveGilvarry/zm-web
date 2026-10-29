@@ -19,6 +19,8 @@ export interface StatusReading {
   label: string;
   value: string;
   tone?: 'normal' | 'warn' | 'danger';
+  /** Hover text with the detail behind the number. */
+  title?: string;
   /** A state mark rendered before the value — a recording dot, say. */
   mark?: ReactNode;
 }
@@ -81,7 +83,8 @@ export function ConsoleStatusLine({
           type="button"
           onClick={() => setOpen(open === 'system' ? null : 'system')}
           aria-expanded={open === 'system'}
-          aria-label={t('System detail')}
+          // The visible run state leads the name (WCAG 2.5.3).
+          aria-label={`${running === null ? '…' : running ? t('Running') : t('Stopped')}, ${t('System detail')}`}
           className="flex items-center gap-2 text-sm shrink-0 rounded hover:text-fg transition-colors"
         >
           <span
@@ -100,7 +103,7 @@ export function ConsoleStatusLine({
         <div className="w-px h-5 bg-border-subtle shrink-0" aria-hidden />
 
         {readings.map((r) => (
-          <span key={r.label} className="flex items-baseline gap-1.5 text-sm shrink-0">
+          <span key={r.label} className="flex items-baseline gap-1.5 text-sm shrink-0" title={r.title}>
             <span className="text-fg-dim">{r.label}</span>
             {r.mark}
             <span className={clsx('font-mono tabular-nums', toneClass[r.tone ?? 'normal'])}>
@@ -142,7 +145,8 @@ export function ConsoleStatusLine({
                 key={String(mode)}
                 type="button"
                 aria-pressed={protocol === mode}
-                aria-label={label}
+                // The short visible text is the name; the title describes it.
+                // An aria-label hiding the visible text fails WCAG 2.5.3.
                 title={label}
                 onClick={() => onProtocol(mode)}
                 className={clsx(

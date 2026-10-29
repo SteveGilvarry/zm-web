@@ -1,10 +1,11 @@
 import { describe, expect, it, vi } from 'vitest';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { makeServer, makeStorage } from '@/test/fixtures/admin';
+import { makeStorageArea } from '@/test/fixtures/storageAreas';
 import { useAuthStore } from '@/stores/auth';
 
 vi.mock('@/skins/AppShell', () => ({
@@ -25,7 +26,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 4102444800, user: 'admin', uid: 1 }, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'warn' });
+  server.listen({ onUnhandledFrame: 'warn' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -75,32 +76,34 @@ describe('Storage page', () => {
     expect(within(dflt).getByText('Medium')).toBeInTheDocument();
     // ServerId 0 is ZoneMinder's "every server can reach this path".
     expect(within(dflt).getByText('Local')).toBeInTheDocument();
-    expect(within(dflt).getByText('40.0 GB')).toBeInTheDocument();
 
     expect(within(archive).getByText('Deep')).toBeInTheDocument();
     await waitFor(() => expect(within(archive).getByText('zm-edge-01')).toBeInTheDocument());
-    expect(within(archive).getByText('10.0 GB')).toBeInTheDocument();
   });
 
-  it('scales the disk bar against the largest area and says so', async () => {
-    seedStorage();
+  it('shows how full each filesystem is, coloured past legacy\'s thresholds', async () => {
+    seedStorage(0, [
+      makeStorageArea({ id: 1, name: 'Default' }, { total: 250 * GIB, usedPercent: 64.4 }),
+      makeStorageArea({ id: 2, name: 'Archive', path: '/mnt/archive' }, { total: 100 * GIB, usedPercent: 97 }),
+    ]);
     renderWithProviders(<StoragePage />);
-    await waitFor(() => expect(screen.getByText('Archive')).toBeInTheDocument());
+    const archive = (await screen.findByText('Archive')).closest('tr')!;
+    const dflt = screen.getByText('Default').closest('tr')!;
 
+    expect(within(dflt).getByText('64%')).not.toHaveClass('text-warn');
+    expect(dflt).toHaveTextContent('64% · 161 GB of 250 GB');
+    expect(within(archive).getByText('97%')).toHaveClass('text-warn');
     const bars = screen.getAllByRole('progressbar');
-    expect(bars.map((b) => b.getAttribute('aria-valuenow'))).toEqual(['100', '25']);
-    // Honest label: no percentage-of-disk is claimed.
-    expect(bars[1]).toHaveAccessibleName(
-      '10.0 GB of events on this storage area, as last cached by zmaudit. The bar compares it with the largest storage area listed, not with the size of the disk.',
-    );
+    expect(bars.map((b) => b.getAttribute('aria-valuenow'))).toEqual(['64', '97']);
+    expect(bars[1]).toHaveAccessibleName('Archive disk usage');
   });
 
-  it('shows an em dash and no bar when zmaudit has no figure', async () => {
-    seedStorage(0, [makeStorage({ disk_space: null })]);
+  it('shows an em dash and no bar when zm-api has no filesystem figures', async () => {
+    seedStorage(0, [makeStorage({ filesystem: null })]);
     renderWithProviders(<StoragePage />);
     await waitFor(() => expect(screen.getByText('Default')).toBeInTheDocument());
     expect(screen.queryByRole('progressbar')).not.toBeInTheDocument();
-    expect(screen.getByText('\u2014')).toBeInTheDocument();
+    expect(screen.getByTitle('zm-api reports no filesystem figures for this path.')).toHaveTextContent('\u2014');
   });
 
   it('filters by name or path client-side', async () => {
@@ -243,11 +246,11 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     await waitFor(() => expect(body).not.toBeNull());
     expect(body).toEqual({
       name: 'Archive', path: '/mnt/archive', type: 's3fs', enabled: 0,
-      scheme: 'Deep', server_id: 4, url: 's3://bucket/zm',
+      scheme: 'Deep', server_id: 4, url: 's3://bucket/zm', do_delete: 0,
     });
   });
 
-  it('shows DoDelete as stored and locked while editing', async () => {
+  it('shows DoDelete as stored and lets an edit change it (zm-api#185)', async () => {
     seedStorage();
     const user = userEvent.setup();
     renderWithProviders(<StoragePage />);
@@ -257,11 +260,8 @@ describe('Storage page — scheme / server / url (ST2)', () => {
     const dialog = screen.getByRole('dialog');
     const doDelete = within(dialog).getByRole('switch', { name: 'Delete events' });
     expect(doDelete).toHaveAttribute('aria-checked', 'false');
-    // `UpdateStorageRequest` has no `do_delete`; the PATCH would be ignored.
-    expect(doDelete).toBeDisabled();
-    expect(within(dialog).getByText(
-      'Deleting an event may remove its media from here. Fixed at creation; the API cannot change it.',
-    )).toBeInTheDocument();
+    expect(doDelete).toBeEnabled();
+    expect(within(dialog).getByText('Deleting an event may remove its media from here.')).toBeInTheDocument();
   });
 
   it('lets create choose DoDelete and sends it', async () => {

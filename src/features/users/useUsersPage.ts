@@ -2,18 +2,17 @@ import { useMemo, useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
-import { getUsers, getUser, updateUser, deleteUser } from '@/api/users';
+import { getUser, updateUser, deleteUser } from '@/api/users';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import { usePerms } from '@/features/auth/usePerms';
 import { useMe } from '@/features/auth/useMe';
 import { useZmConfig } from '@/features/config/useZmConfig';
 import type { User } from '@/types';
+import { useAllRoles, useAllUsers } from '@/features/roles/queries';
 import { exportUsers as exportUsersFile } from './usersExport';
 
 export const USERS_PAGE_SIZE = 25;
-/** The API caps `page_size` at 1000; one request covers any real install. */
-const ALL_USERS_PAGE_SIZE = 1000;
 
 /** `?uid=0` is the create form (legacy `?view=user&uid=0`), `?uid=<n>` edits. */
 export type UserEditorTarget = number | null;
@@ -55,12 +54,14 @@ export function useUsersPage() {
   /** Admins edit anyone; with self-edit on, a user may edit their own row. */
   const canEditUser = (u: User) => canEdit || (selfEditEnabled && isCurrentUser(u));
 
-  const usersQ = useQuery({
-    queryKey: ['users', 'all'],
-    queryFn: () => getUsers({ page: 1, page_size: ALL_USERS_PAGE_SIZE }),
-    enabled: isAuthenticated,
-  });
+  const usersQ = useAllUsers();
   const users = useMemo(() => usersQ.data?.items ?? [], [usersQ.data]);
+
+  // Legacy's Role column (`_options_users.php:57`): the name, linked to the
+  // role editor. A role id the list does not know shows nothing, as there.
+  const rolesQ = useAllRoles();
+  const roleNames = useMemo(() => new Map((rolesQ.data ?? []).map((r) => [r.id, r.name])), [rolesQ.data]);
+  const roleName = (u: Pick<User, 'role_id'>) => (u.role_id != null ? roleNames.get(u.role_id) ?? null : null);
   const total = usersQ.data?.total ?? users.length;
 
   const [page, setPage] = useState(1);
@@ -215,6 +216,9 @@ export function useUsersPage() {
     openCreate: () => setEditorTarget(0),
     openEdit: (user: User) => setEditorTarget(user.id),
     closeEditor: () => setEditorTarget(null),
+    roleName,
+    /** Legacy `?view=role&rid=`. */
+    openRole: (roleId: number) => void navigate({ to: '/settings/roles/$roleId', params: { roleId: String(roleId) } }),
     invalidateUsers,
 
     selectedIds,

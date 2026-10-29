@@ -7,7 +7,7 @@
 import { describe, expect, it, vi, beforeAll, beforeEach, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, fireEvent } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -24,7 +24,7 @@ const paged = (items: unknown[]) =>
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 beforeEach(() => {
   server.use(http.get('/api/v3/zone-presets', () => paged([])));
@@ -109,7 +109,9 @@ describe('ZoneEditor — saving an existing zone', () => {
       body: {
         name: 'Driveway West',
         type: 'Active',
-        units: 'Pixels',
+        // Legacy's hidden input: Units goes back as Percent, while the
+        // coords stay the pixels they were (zone.php:278, plan F-3).
+        units: 'Percent',
         coords: '100,100 500,100 500,400 100,400',
         check_method: 'AlarmedPixels',
         alarm_rgb: 16711680,
@@ -182,26 +184,49 @@ describe('ZoneEditor — type labels and hints', () => {
   });
 });
 
-describe('ZoneEditor — units toggle no-op', () => {
-  it('clicking the already-active unit changes nothing', async () => {
+describe('ZoneEditor — a zone legacy 1.39.41 saved in percent', () => {
+  // Half the frame each way, thresholds as percent of the zone; 150000 is a
+  // pixel count legacy never converted (zone.php:112-122).
+  const percentZone = {
+    ...quad, id: 11, name: 'Porch',
+    units: 'Percent',
+    coords: '0.00,0.00 50.00,0.00 50.00,50.00 0.00,50.00',
+    min_alarm_pixels: 5, max_alarm_pixels: 150000,
+  };
+
+  it('draws it in pixels and reads its thresholds as pixels of the zone', async () => {
+    const user = userEvent.setup();
+    stubZones([percentZone]);
+    mount();
+    await waitFor(() => screen.getByText('Porch'));
+    await user.click(screen.getByText('Porch'));
+
+    expect(screen.getByLabelText('Point 3 X')).toHaveValue(960);
+    expect(screen.getByLabelText('Point 3 Y')).toHaveValue(540);
+    // 5% of 960×540 = 25,920 px.
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (px)')).toHaveValue(25920);
+    expect(screen.getByLabelText('Min/Max Alarmed Area (min) (%)')).toHaveValue(5);
+    expect(screen.getByLabelText('Min/Max Alarmed Area (max) (px)')).toHaveValue(150000);
+  });
+
+  it('saves it back as integer pixels with pixel thresholds', async () => {
     const user = userEvent.setup();
     let body: Record<string, unknown> = {};
-    stubZones([]);
-    server.use(http.post('/api/v3/monitors/1/zones', async ({ request }) => {
+    stubZones([percentZone]);
+    server.use(http.put('/api/v3/zones/:id', async ({ request }) => {
       body = await request.json() as Record<string, unknown>;
-      return HttpResponse.json({ id: 99 });
+      return HttpResponse.json(percentZone);
     }));
     mount();
-    await waitFor(() => screen.getByText(/no zones yet/i));
-
-    await user.click(screen.getByRole('button', { name: /new/i }));
-    // Pixels is already the draft's units — clicking it is an early return.
-    await user.click(screen.getByRole('button', { name: 'Pixels' }));
-    await user.click(screen.getByRole('button', { name: 'Pixels' }));
+    await waitFor(() => screen.getByText('Porch'));
+    await user.click(screen.getByText('Porch'));
+    // Opening it is not a change.
+    expect(screen.getByRole('button', { name: 'Reset' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: /save/i }));
 
-    await waitFor(() => expect(body.units).toBe('Pixels'));
-    expect(body.coords).toBe('384,216 1536,216 1536,864 384,864');
+    await waitFor(() => expect(body.coords).toBe('0,0 960,0 960,540 0,540'));
+    expect(body.min_alarm_pixels).toBe(25920);
+    expect(body.max_alarm_pixels).toBe(150000);
   });
 });
 

@@ -6,12 +6,14 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
+import { pickChosen } from '@/test/chosen';
 import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useMontageStore } from '@/stores/montage';
 import { serialisePositions } from '@/features/montage/layoutFormat';
 import { gridLayout } from '@/features/montage/mosaic';
@@ -57,7 +59,7 @@ function signIn(user: UserClaims = perms()) {
 }
 
 const server = setupServer();
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => { signIn(); });
 afterEach(() => {
   server.resetHandlers();
@@ -65,9 +67,10 @@ afterEach(() => {
   streamProps.length = 0;
   useToastStore.getState().clear();
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useMontageStore.setState({
     protocol: 'webrtc', statusPosition: 'inside', showZones: false,
-    montageRatio: 'auto', montageRatioById: {},
+    montageRatio: 'auto', montageRatioById: {}, classicLayoutId: 'preset:auto',
   });
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -176,7 +179,7 @@ describe('ClassicMontagePage', () => {
     await mount();
 
     await screen.findByTestId('montage-classic-cell-2');
-    await user.selectOptions(screen.getByRole('listbox', { name: 'Monitor' }), '2');
+    await pickChosen(user, 'Monitor', /^2 /);
 
     await waitFor(() => expect(screen.queryByTestId('montage-classic-cell-1')).toBeNull());
     expect(screen.getByTestId('montage-classic-cell-2')).toBeInTheDocument();
@@ -218,16 +221,30 @@ describe('ClassicMontagePage', () => {
   });
 
   it('lets a system-View user save their own layout but not delete one', async () => {
+    const user = userEvent.setup();
     signIn(perms({ system: 'View' }));
     stub();
+    const deleted: string[] = [];
+    server.use(http.delete('/api/v3/montage_layouts/:id', ({ params }) => {
+      deleted.push(String(params.id));
+      return new HttpResponse(null, { status: 204 });
+    }));
     await mount();
 
     await screen.findByTestId('montage-classic-grid');
     // Legacy `save_layout` is open to any user; only `delete_layout` calls
-    // `enoperm()`.
+    // `enoperm()`. The button is still there, and answers with that modal.
     expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Delete layout' })).toBeNull();
-    expect(screen.getByLabelText('Layout')).toBeInTheDocument();
+    const select = screen.getByRole('combobox', { name: 'Layout' });
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Night wall' })).toBeInTheDocument());
+    await user.selectOptions(select, 'saved:12');
+    await user.click(screen.getByRole('button', { name: 'Delete layout' }));
+
+    const dialog = await screen.findByRole('dialog', { name: 'ZoneMinder Error' });
+    expect(dialog).toHaveTextContent('You do not have permissions to access this resource.');
+    await user.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(deleted).toEqual([]);
   });
 
   it('lists presets then saved layouts and re-columns the wall on choice', async () => {
@@ -293,12 +310,12 @@ describe('ClassicMontagePage', () => {
 
     await screen.findByTestId('montage-classic-grid');
     await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
-    // Legacy shows an inline Name field, not a prompt(); it opens seeded
-    // with the current layout's name.
+    // Legacy shows an inline Name field, not a prompt(); it opens empty.
     const nameField = await screen.findByRole('textbox', { name: 'Layout name' });
-    await user.clear(nameField);
+    expect(nameField).toHaveValue('');
+    expect(nameField).toHaveAttribute('placeholder', 'Enter new name for layout if desired');
     await user.type(nameField, 'Morning wall');
-    await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(body).toBeDefined());
     expect(body!.name).toBe('Morning wall');
@@ -307,6 +324,52 @@ describe('ClassicMontagePage', () => {
 
     // Edit mode closes again once the layout is stored.
     await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument());
+  });
+
+  it('Save with the Name empty overwrites the selected layout instead of adding one', async () => {
+    const user = userEvent.setup();
+    stub();
+    const posts: unknown[] = [];
+    const patches: Array<{ id: string; body: Record<string, unknown> }> = [];
+    server.use(
+      http.post('/api/v3/montage_layouts', async ({ request }) => {
+        posts.push(await request.json());
+        return HttpResponse.json({ id: 44, name: 'x', user_id: 7, positions: SAVED_POSITIONS });
+      }),
+      http.patch('/api/v3/montage_layouts/:id', async ({ params, request }) => {
+        patches.push({ id: String(params.id), body: (await request.json()) as Record<string, unknown> });
+        return HttpResponse.json({ id: 12, name: 'Night wall', user_id: 7, positions: SAVED_POSITIONS });
+      }),
+    );
+    await mount();
+
+    const select = await screen.findByRole('combobox', { name: 'Layout' });
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Night wall' })).toBeInTheDocument());
+    await user.selectOptions(select, 'saved:12');
+    await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
+    // The layout is this user's: no "you may not edit" notice.
+    expect(screen.queryByRole('alert')).toBeNull();
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(patches).toHaveLength(1));
+    expect(patches[0].id).toBe('12');
+    expect(patches[0].body).not.toHaveProperty('name');
+    expect(JSON.parse(String(patches[0].body.positions))).toHaveProperty('gridStack');
+    expect(posts).toEqual([]);
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Edit Layout' })).toBeInTheDocument());
+  });
+
+  it('Edit Layout on a preset says it cannot be overwritten, and an empty Save is refused', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'You may not edit this layout, but you can create a new one from it. Please give it a name.');
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/cannot edit the built in layouts/));
   });
 
   it('Edit Layout resizes a tile on the 48-column canvas and saves its gridStack', async () => {
@@ -334,7 +397,7 @@ describe('ClassicMontagePage', () => {
     await waitFor(() => expect(screen.getByTestId('montage-classic-cell-1')).toHaveStyle({ gridColumn: '1 / span 24' }));
 
     await user.type(await screen.findByRole('textbox', { name: 'Layout name' }), 'Wide left');
-    await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
 
     await waitFor(() => expect(body).toBeDefined());
     const positions = JSON.parse(String(body!.positions));
@@ -359,9 +422,9 @@ describe('ClassicMontagePage', () => {
     await user.click(screen.getByRole('button', { name: 'Edit Layout' }));
     // Legacy `save_layout` refuses ZM_PRESET_LAYOUT_NAMES outright.
     await user.type(await screen.findByRole('textbox', { name: 'Layout name' }), '4 Wide');
-    await user.click(await screen.findByRole('button', { name: 'Save Layout' }));
+    await user.click(await screen.findByRole('button', { name: 'Save' }));
 
-    expect(await screen.findByRole('alert')).toHaveTextContent(/built in layouts/i);
+    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/conflicts with the built in layouts/i));
     expect(posts).toEqual([]);
   });
 
@@ -380,7 +443,6 @@ describe('ClassicMontagePage', () => {
   it('Delete layout is disabled on a preset and DELETEs a saved one after confirm', async () => {
     const user = userEvent.setup();
     stub();
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     const deleted: string[] = [];
     server.use(
       http.delete('/api/v3/montage_layouts/:id', ({ params }) => {
@@ -398,7 +460,13 @@ describe('ClassicMontagePage', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: 'Delete layout' })).toBeEnabled());
 
     await user.click(screen.getByRole('button', { name: 'Delete layout' }));
+    // Legacy's Bootstrap delconfirm modal, not window.confirm.
+    const dialog = await screen.findByRole('dialog', { name: 'Delete Confirmation' });
+    expect(dialog).toHaveTextContent('Are you sure you wish to delete current layout?');
+    expect(deleted).toEqual([]);
+    await user.click(within(dialog).getByRole('button', { name: 'Delete' }));
     await waitFor(() => expect(deleted).toEqual(['12']));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 
   it('switches the player protocol into every cell', async () => {
@@ -436,5 +504,127 @@ describe('ClassicMontagePage', () => {
     await waitFor(() => expect(screen.getByTestId('montage-classic-cell-1')).toBeInTheDocument());
     expect(screen.queryByTestId('montage-classic-cell-2')).toBeNull();
     expect(useMonitorFilterStore.getState().groupIds).toEqual([5]);
+  });
+});
+
+describe('ClassicMontagePage — Deleted monitors', () => {
+  it('shows a soft-deleted monitor on the wall once Status holds Deleted', async () => {
+    const user = userEvent.setup();
+    stub();
+    server.use(http.get('/api/v3/monitors', ({ request }) => {
+      const withDeleted = new URL(request.url).searchParams.get('include_deleted') === 'true';
+      return HttpResponse.json(paged(withDeleted ? [...MONITORS, mon(99, { name: 'Old Gate', deleted: 1 })] : MONITORS));
+    }));
+    await mount();
+    expect(screen.queryByTestId('montage-classic-cell-99')).toBeNull();
+    await pickChosen(user, 'Status', 'Deleted');
+    // Legacy's `(… AND Status IN …) OR Deleted=true`: only the deleted monitor remains.
+    await waitFor(() => expect(screen.getByTestId('montage-classic-cell-99')).toBeInTheDocument());
+    expect(screen.queryByTestId('montage-classic-cell-1')).toBeNull();
+  });
+});
+
+describe('ClassicMontagePage — old-format layouts', () => {
+  it('lists a pre-2024 layout and opens Error reading Layout when it is chosen', async () => {
+    const user = userEvent.setup();
+    stub({ layouts: [
+      { id: 12, name: 'Night wall', user_id: 7, positions: SAVED_POSITIONS },
+      { id: 15, name: 'Old wall', user_id: 7, positions: '{ "mId1":{"width":"50%"} }' },
+    ] });
+    await mount();
+
+    const select = await screen.findByRole('combobox', { name: 'Layout' });
+    await waitFor(() => expect(within(select).getByRole('option', { name: 'Old wall' })).toBeInTheDocument());
+    await user.selectOptions(select, 'saved:15');
+    const dialog = await screen.findByRole('dialog', { name: 'Error reading Layout' });
+    expect(dialog).toHaveTextContent('It is necessary to place monitors again and resave the Layout.');
+    await user.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!);
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(screen.getByTestId('montage-classic-grid')).toHaveAttribute('data-columns', '4');
+  });
+});
+
+describe('ClassicMontagePage — viewing timeout', () => {
+  it('stops every stream after ZM_WEB_VIEWING_TIMEOUT and asks, then starts them again', async () => {
+    const user = userEvent.setup();
+    stub();
+    server.use(http.get('/api/v3/configs', () => HttpResponse.json(paged([
+      { id: 1, name: 'ZM_WEB_VIEWING_TIMEOUT', value: '1' },
+    ]))));
+    await mount();
+    await screen.findByTestId('stream-1');
+
+    const dialog = await screen.findByRole('dialog', { name: 'Are you still watching?' }, { timeout: 3000 });
+    expect(screen.queryByTestId('stream-1')).toBeNull();
+    expect(screen.getByTestId('montage-classic-stopped-1')).toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Yes' }));
+    await waitFor(() => expect(screen.getByTestId('stream-1')).toBeInTheDocument());
+  });
+});
+
+describe('ClassicMontagePage — header flip and URL params', () => {
+  afterEach(() => { useMontageStore.setState({ montagePanelOpen: true }); });
+
+  it('the #mfbflip icon folds the filter + controls panel and remembers it', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    const flip = screen.getByRole('button', { name: 'Hide filters' });
+    expect(flip).toHaveAttribute('aria-expanded', 'true');
+    expect(screen.getByRole('combobox', { name: 'Layout' })).toBeInTheDocument();
+
+    await user.click(flip);
+    expect(screen.queryByRole('combobox', { name: 'Layout' })).toBeNull();
+    expect(screen.getByRole('button', { name: 'Show filters' })).toHaveAttribute('aria-expanded', 'false');
+    expect(useMontageStore.getState().montagePanelOpen).toBe(false);
+    // The wall stays.
+    expect(screen.getByTestId('montage-classic-grid')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Show filters' }));
+    expect(screen.getByRole('combobox', { name: 'Layout' })).toBeInTheDocument();
+  });
+
+  it('?header=0 leaves the whole band out (kiosk)', async () => {
+    mockSearch = { header: '0' };
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    expect(screen.queryByRole('button', { name: 'Hide filters' })).toBeNull();
+    expect(screen.queryByRole('combobox', { name: 'Layout' })).toBeNull();
+  });
+
+  it('?layout= selects that MontageLayouts row once the list loads', async () => {
+    mockSearch = { layout: 12 };
+    stub();
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Layout' })).toHaveValue('saved:12'));
+    expect(useMontageStore.getState().classicLayoutId).toBe('saved:12');
+  });
+
+  it('?layout= naming a legacy preset row picks the built-in preset', async () => {
+    mockSearch = { layout: 3 };
+    stub({ layouts: [
+      { id: 3, name: '4 Wide', user_id: 0, positions: '{ "default":{"float":"left", "width":"25%"} }' },
+      { id: 12, name: 'Night wall', user_id: 7, positions: SAVED_POSITIONS },
+    ] });
+    await mount();
+
+    await waitFor(() => expect(screen.getByRole('combobox', { name: 'Layout' })).toHaveValue('preset:4w'));
+  });
+
+  it('?show_zones=1 and ?status_position= override the saved choices', async () => {
+    mockSearch = { show_zones: 1, status_position: 'outsideImgBottom' };
+    stub();
+    await mount();
+
+    await screen.findByTestId('montage-classic-grid');
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Show Zones' })).toHaveAttribute('aria-pressed', 'true'));
+    expect(screen.getByRole('combobox', { name: 'Monitor status position' })).toHaveValue('outside');
+    expect(await screen.findByTestId('montage-classic-status-1')).toBeInTheDocument();
   });
 });

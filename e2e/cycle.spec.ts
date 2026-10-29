@@ -19,7 +19,7 @@ test.describe('Cycle', () => {
       // underneath the assertions.
       // WebKit lets the video stage sit over the transport bar, so the hit
       // test finds the stage; the button itself is visible and enabled.
-      await page.getByRole('button', { name: /^pause cycling$/i }).click({ force: true });
+      await page.getByRole('button', { name: /^pause cycl(e|ing)$/i }).click({ force: true });
       await expect(visibleText(page, 'e2e-Front Door')).toBeVisible();
 
       await page.getByRole('button', { name: /^next monitor$/i }).click({ force: true });
@@ -35,7 +35,7 @@ test.describe('Cycle', () => {
       await gotoSkin(page, '/cycle', skin);
       // WebKit lets the video stage sit over the transport bar, so the hit
       // test finds the stage; the button itself is visible and enabled.
-      await page.getByRole('button', { name: /^pause cycling$/i }).click({ force: true });
+      await page.getByRole('button', { name: /^pause cycl(e|ing)$/i }).click({ force: true });
 
       await page.getByRole('button', { name: 'e2e-Garage', exact: true }).click({ force: true });
       await expect(visibleText(page, 'e2e-Garage')).toBeVisible();

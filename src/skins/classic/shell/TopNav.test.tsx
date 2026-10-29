@@ -5,7 +5,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -48,11 +48,18 @@ function configRows(overrides: Record<string, string> = {}) {
   }));
 }
 let configOverrides: Record<string, string> = {};
+let states: Array<{ id: number; name: string; is_active: number }> = [];
 
 const server = setupServer(
   http.get('/api/v3/system/status', () => HttpResponse.json({ running: true, daemons: [] })),
+  http.get('/api/v3/states', () => HttpResponse.json({
+    items: states.map((st) => ({ ...st, definition: '' })),
+    total: states.length, per_page: 200, current_page: 1, last_page: 1,
+  })),
   http.get('/api/v3/auth/logout', () => { logoutCalls += 1; return new HttpResponse(null, { status: 204 }); }),
   http.get('/api/v3/me', () => HttpResponse.json({ kind: 'NOT_FOUND' }, { status: 404 })),
+  // No MenuItems rows: the navbar keeps its built-in list.
+  http.get('/api/v3/system/menu', () => HttpResponse.json([])),
   http.get('/api/v3/configs', () => HttpResponse.json({
     items: configRows(configOverrides), total: 1, per_page: 1000, current_page: 1, last_page: 1,
   })),
@@ -63,11 +70,12 @@ const server = setupServer(
     });
   }),
 );
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 afterEach(() => {
   server.resetHandlers();
   pathname = '/';
   logoutCalls = 0;
+  states = [];
   mockNavigate.mockReset();
   logTotals = {};
   configOverrides = {};
@@ -100,11 +108,59 @@ describe('ClassicTopNav', () => {
     expect(within(nav).getByRole('link', { name: 'Audit Events Report' })).toHaveAttribute('href', '/audit');
   });
 
-  it('shows the signed-in user and a log-out verb', () => {
+  it('shows the signed-in user as the account link that opens the logout modal', async () => {
     signIn(undefined, 'operator');
     renderWithProviders(<ClassicTopNav />);
-    expect(screen.getByText('operator')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Log out' })).toBeInTheDocument();
+    // No stand-alone log-out verb with builtin auth: legacy logs out from the modal.
+    expect(screen.queryByRole('button', { name: 'Log out' })).toBeNull();
+    await userEvent.click(screen.getByRole('button', { name: 'operator' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText("Current login is 'operator'")).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Logout' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+  });
+
+  it('lists the other logged-in PHP sessions for a System viewer, decoded from the Sessions rows', async () => {
+    signIn(undefined, 'admin');
+    server.use(http.get('/api/v3/sessions', () => HttpResponse.json({
+      items: [
+        { id: 'a', access: Math.floor(Date.now() / 1000) - 30, data: 'remoteAddr|s:12:"192.168.0.10";username|s:3:"bob";user|a:1:{s:2:"Id";i:7;}' },
+        { id: 'b', access: Math.floor(Date.now() / 1000) - 10, data: 'username|s:3:"eve";last_time|i:1;' },
+      ],
+      total: 2, per_page: 100, current_page: 1, last_page: 1,
+    })));
+    renderWithProviders(<ClassicTopNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Other logged in users:')).toBeInTheDocument();
+    const bob = await within(dialog).findByRole('link', { name: 'bob' });
+    // The router is stubbed here; the route's `uid` search param is validated in its own test.
+    expect(bob).toHaveAttribute('href', '/settings/users');
+    expect(within(dialog).getByText('192.168.0.10')).toBeInTheDocument();
+    // A session with `last_time` is dead and left out.
+    expect(within(dialog).queryByText('eve')).toBeNull();
+  });
+
+  it('hides the sessions table and the Config button when neither applies', async () => {
+    signIn({ system: 'None' } as Partial<UserPerms>, 'viewer');
+    renderWithProviders(<ClassicTopNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'viewer' }));
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).queryByText('Other logged in users:')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'Config' })).toBeNull();
+  });
+
+  it('offers Config to the own user page when ZM_USER_SELF_EDIT is on', async () => {
+    signIn(undefined, 'admin');
+    server.use(http.get('/api/v3/configs', () => HttpResponse.json({
+      items: [{ id: 1, name: 'ZM_USER_SELF_EDIT', value: '1', type: 'boolean', category: 'system', readonly: 0, private: 0, system: 0, source: 'db' }],
+      total: 1, per_page: 1000, current_page: 1, last_page: 1,
+    })));
+    renderWithProviders(<ClassicTopNav />);
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'Config' }));
+    await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith(expect.objectContaining({ to: '/settings/users' })));
   });
 
   it('omits the user chip when the token carries no name', () => {
@@ -159,6 +215,27 @@ describe('ClassicTopNav', () => {
     expect(await screen.findByRole('button', { name: 'Run state: Running. Change run state' })).toBeInTheDocument();
   });
 
+  it('names the active saved state on the button, as legacy runtimeStatus() does', async () => {
+    states = [{ id: 1, name: 'default', is_active: 0 }, { id: 2, name: 'Away', is_active: 1 }];
+    signIn();
+    renderWithProviders(<ClassicTopNav />);
+    expect(await screen.findByRole('button', { name: 'Run state: Away. Change run state' })).toHaveTextContent('Away');
+  });
+
+  it('reads Running, not "default", while the default state is active', async () => {
+    states = [{ id: 1, name: 'default', is_active: 1 }];
+    signIn();
+    renderWithProviders(<ClassicTopNav />);
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Run state:/ })).toHaveTextContent('Running'));
+  });
+
+  it('shows the status as text, with no button, to a System View user', async () => {
+    signIn({ system: 'View' });
+    renderWithProviders(<ClassicTopNav />);
+    await waitFor(() => expect(screen.getByTestId('classic-run-state')).toHaveTextContent('Running'));
+    expect(screen.queryByRole('button', { name: /Run state/ })).toBeNull();
+  });
+
   it('marks only the current page with aria-current', () => {
     pathname = '/events/28876';
     signIn();
@@ -186,7 +263,8 @@ describe('ClassicTopNav', () => {
   it('calls the backend, clears the session and routes to /login on log out', async () => {
     signIn();
     renderWithProviders(<ClassicTopNav />);
-    await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Logout' }));
 
     await waitFor(() => expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' }));
     expect(logoutCalls).toBe(1);
@@ -197,10 +275,37 @@ describe('ClassicTopNav', () => {
     signIn();
     server.use(http.get('/api/v3/auth/logout', () => HttpResponse.error()));
     renderWithProviders(<ClassicTopNav />);
-    await userEvent.click(screen.getByRole('button', { name: 'Log out' }));
+    await userEvent.click(screen.getByRole('button', { name: 'admin' }));
+    await userEvent.click(await screen.findByRole('button', { name: 'Logout' }));
 
     await waitFor(() => expect(useAuthStore.getState().isAuthenticated).toBe(false));
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/login' });
+  });
+});
+
+describe('ClassicTopNav — the operator\'s menu (Options → Menu)', () => {
+  it('follows the MenuItems rows: order, hidden entries, custom labels and links', async () => {
+    signIn();
+    server.use(http.get('/api/v3/system/menu', () => HttpResponse.json([
+      { id: 5, menu_key: 'Events', enabled: true, label: null, sort_order: 10, icon: null, icon_type: 'material', link: null },
+      { id: 1, menu_key: 'Console', enabled: true, label: 'Home', sort_order: 20, icon: null, icon_type: 'material', link: null },
+      { id: 9, menu_key: 'Wiki', enabled: true, label: null, sort_order: 30, icon: null, icon_type: 'none', link: 'https://wiki.zoneminder.com' },
+      { id: 12, menu_key: 'Map', enabled: true, label: null, sort_order: 40, icon: null, icon_type: 'material', link: null },
+      { id: 13, menu_key: 'Intercom', enabled: true, label: null, sort_order: 50, icon: null, icon_type: 'none', link: null },
+    ])));
+    renderWithProviders(<ClassicTopNav />);
+    const nav = screen.getByRole('navigation', { name: 'Main' });
+    await waitFor(() => expect(within(nav).getByRole('link', { name: 'Home' })).toBeInTheDocument());
+    const names = within(nav).getAllByRole('link').map((l) => l.textContent);
+    expect(names).toEqual(['Events', 'Home', 'Wiki']);
+    expect(within(nav).getByRole('link', { name: 'Home' })).toHaveAttribute('href', '/');
+    const wiki = within(nav).getByRole('link', { name: 'Wiki' });
+    expect(wiki).toHaveAttribute('href', 'https://wiki.zoneminder.com');
+    expect(wiki).toHaveAttribute('target', '_blank');
+    // Groups and the rest are hidden rows; Map has no page here; a custom
+    // key with no link would be legacy's `?view=Intercom`, which we cannot serve.
+    expect(within(nav).queryByRole('link', { name: 'Groups' })).toBeNull();
+    expect(within(nav).queryByRole('link', { name: 'Intercom' })).toBeNull();
   });
 });
 

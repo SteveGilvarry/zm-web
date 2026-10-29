@@ -21,11 +21,13 @@
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { describe, expect, it, beforeAll, afterAll } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { useAuthStore } from '@/stores/auth';
-import { TABS } from '@/features/monitors/editor/fields';
+import { TABS, columnFields } from '@/features/monitors/editor/fields';
+import { CLASSIC_TABS } from '@/features/monitors/editor/classicFields';
 import { MONITOR_CREATE_DEFAULTS } from './monitors-crud';
+import { LEGACY_NEW_MONITOR } from '@/features/monitors/editor/newMonitor';
 import { MONITOR_ENUMS } from './monitors';
 
 /* ------------------------------------------------------------------------ */
@@ -142,6 +144,54 @@ const CALLS: Record<string, Record<string, Call>> = {
     listEventData: { args: [{ event_id: 1 }] },
     getEventData: { args: [1] },
   },
+  eventVideos: {
+    listEventVideos: { args: [1] },
+    generateEventVideo: { args: [1, {}] },
+    deleteEventVideo: { args: [1, 'a.mp4'] },
+    getEventVideoFileUrl: { url: [1, 'a.mp4'] },
+    exportEvents: { args: [{ ids: [1] }] },
+    listMediaJobs: { args: [] },
+    getMediaJob: { args: [1] },
+    deleteMediaJob: { args: [1] },
+  },
+  encoderTemplates: {
+    listEncoderTemplates: { args: [] },
+    getEncoderTemplate: { args: [1] },
+    createEncoderTemplate: { args: [{ encoder: 'libx264', name: 'n', params: '' }] },
+    updateEncoderTemplate: { args: [1, { name: 'n' }] },
+    deleteEncoderTemplate: { args: [1] },
+  },
+  menuItems: {
+    listMenuItems: { args: [] },
+    getSystemMenu: { args: [] },
+    getMenuItem: { args: [1] },
+    createMenuItem: { args: [{ menu_key: 'Console' }] },
+    updateMenuItem: { args: [1, { enabled: false }] },
+    deleteMenuItem: { args: [1] },
+  },
+  monitorActions: {
+    listMonitorActions: { args: [1] },
+    listMonitorActionTargets: { args: [1] },
+    getMonitorAction: { args: [1, 2] },
+    createMonitorAction: { args: [1, { target_monitor_id: 2, action_type: 'LightOn' }] },
+    updateMonitorAction: { args: [1, 2, { enabled: false }] },
+    deleteMonitorAction: { args: [1, 2] },
+    runMonitorAction: { args: [1, 2] },
+  },
+  notifications: {
+    listNotifications: { args: [] },
+    getNotification: { args: [1] },
+    createNotification: { args: [{ token: 't', platform: 'web' }] },
+    updateNotification: { args: [1, { interval: 60 }] },
+    deleteNotification: { args: [1] },
+  },
+  roles: {
+    listRoles: { args: [] },
+    getRole: { args: [1] },
+    createRole: { args: [{ name: 'r' }] },
+    updateRole: { args: [1, { name: 'r' }] },
+    deleteRole: { args: [1] },
+  },
   eventSummaries: {
     listEventSummaries: { args: [] },
     getEventSummary: { args: [1] },
@@ -159,7 +209,6 @@ const CALLS: Record<string, Record<string, Call>> = {
   frames: {
     listFrames: { args: [{ event_id: 1 }] },
     getAllFramesForEvent: { args: [1] },
-    getFrameImageUrl: { url: [1] },
     getEventFrameImageUrl: { url: [1, 'alarm'] },
   },
   groups: {
@@ -188,9 +237,11 @@ const CALLS: Record<string, Record<string, Call>> = {
   },
   logs: {
     listLogs: { args: [] },
+    listLogComponents: { args: [] },
     getLog: { args: [1] },
     clearLogs: { args: [] },
     isLogMinLevel: 'pure',
+    isLogSortField: 'pure',
     levelLabel: 'pure',
     levelColor: 'pure',
     levelRowTint: 'pure',
@@ -198,6 +249,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   'monitors-crud': {
     toCreatePayload: 'pure',
     createMonitor: { args: [{ name: 'm', storage_id: 1 }] },
+    postMonitor: { args: [MONITOR_CREATE_DEFAULTS] },
     cloneMonitor: { args: [1] },
     deleteMonitor: { args: [1] },
     patchMonitor: { args: [1, { name: 'm' }] },
@@ -205,6 +257,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   monitors: {
     canonicalEnum: 'pure',
     getMonitors: { args: [] },
+    getAllMonitors: { args: [{ include_deleted: true }] },
     getMonitor: { args: [1] },
     updateMonitor: { args: [1, { name: 'm' }] },
     deleteMonitor: { args: [1] },
@@ -220,6 +273,7 @@ const CALLS: Record<string, Record<string, Call>> = {
   monitorStatus: {
     getMonitorStatuses: { args: [] },
     getMonitorStatus: { args: [1] },
+    getAudioLevel: { args: [1] },
   },
   monitorsPermissions: {
     listMonitorsPermissions: { args: [] },
@@ -253,6 +307,12 @@ const CALLS: Record<string, Record<string, Call>> = {
     clearPreset: { args: [1, 2] },
     moveRelative: { args: [1, {}] },
     moveAbsolute: { args: [1, {}] },
+    getLightStatus: { args: [1] },
+    light: { args: [1, 'on'] },
+    indicatorLight: { args: [1, 'off'] },
+    playAudio: { args: [1, 1] },
+    stopAudio: { args: [1] },
+    audioVolume: { args: [1, 'up'] },
   },
   reports: {
     listReports: { args: [] },
@@ -260,6 +320,10 @@ const CALLS: Record<string, Record<string, Call>> = {
     createReport: { args: [{ name: 'r' }] },
     updateReport: { args: [1, { name: 'r' }] },
     deleteReport: { args: [1] },
+    getEventAudit: { args: [] },
+  },
+  sessions: {
+    listSessions: { args: [] },
   },
   servers: {
     listServers: { args: [] },
@@ -283,6 +347,10 @@ const CALLS: Record<string, Record<string, Call>> = {
     },
     deleteServer: { args: [1] },
   },
+  stats: {
+    listStats: { args: [{ event_id: 1, frame_id: 2 }] },
+    getAllStatsForEvent: { args: [1] },
+  },
   states: {
     listStates: { args: [] },
     getState: { args: [1] },
@@ -301,6 +369,7 @@ const CALLS: Record<string, Record<string, Call>> = {
     deleteStorage: { args: [1] },
   },
   system: {
+    answerPrivacyStatement: { args: [true] },
     getVersion: { args: [] },
     getDaemons: { args: [] },
     getDaemon: { args: ['zmc'] },
@@ -439,7 +508,7 @@ const server = setupServer(
 
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterAll(() => {
   server.close();
@@ -506,18 +575,41 @@ describe('API wrappers match the OpenAPI paths', () => {
 
 describe('monitor editor fields match UpdateMonitorRequest', () => {
   const update = schemas.UpdateMonitorRequest.properties!;
-  const fields = TABS.flatMap((t) => t.fields).filter((f) => f.kind !== 'group');
+  // Both skins' catalogues edit the same draft, so both are held to the schema.
+  const fields = columnFields([...TABS, ...CLASSIC_TABS]);
 
   it('every field key is a request property', () => {
     const unknown = fields.map((f) => f.key).filter((k) => !(k in update));
     expect(unknown).toEqual([]);
   });
 
-  for (const f of fields.filter((f) => f.kind === 'select' && f.options)) {
-    it(`${f.key} options are members of the request schema`, () => {
+  // Request properties neither editor offers, each for a reason, so a new
+  // column the request starts accepting fails here until someone places it.
+  const NOT_EDITED: Record<string, string> = {
+    analysis_image_opacity: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection_model: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection_nms_threshold: 'in no legacy form and read by no 1.39.41 daemon',
+    object_detection_object_threshold: 'in no legacy form and read by no 1.39.41 daemon',
+    enabled: 'monitor.php has no Enabled row since Capturing replaced it; the console toggles it',
+    rtsp_describe: 'gone from monitor.php in 1.39',
+    sequence: 'set by the console’s drag-to-sort',
+    triggers: 'X10 only, which is not built',
+    zone_count: 'kept by the zone editor',
+  };
+
+  it('every request property is edited by a catalogue or listed as not edited', () => {
+    const edited = new Set(fields.map((f) => f.key));
+    const missing = Object.keys(update).filter((k) => !edited.has(k) && !(k in NOT_EDITED));
+    expect(missing).toEqual([]);
+    expect(Object.keys(NOT_EDITED).filter((k) => edited.has(k) || !(k in update))).toEqual([]);
+  });
+
+  for (const f of fields.filter((f) => (f.kind === 'select' || f.kind === 'radio') && f.options)) {
+    it(`${f.key} (${f.label}) options are members of the request schema`, () => {
       const schema = resolve(update[f.key]);
       expect(schema, `${f.key} has no resolvable schema`).toBeDefined();
-      const values = f.options!.map((o) => o.value);
+      const values = [...f.options!, ...(f.storedOnlyOptions ?? [])].map((o) => o.value);
       if (schema!.enum) {
         const bad = values.filter((v) => !schema!.enum!.includes(v));
         expect(bad, `${f.key} options outside enum ${JSON.stringify(schema!.enum)}`).toEqual([]);
@@ -558,8 +650,19 @@ describe('MONITOR_CREATE_DEFAULTS match CreateMonitorRequest', () => {
     expect(bad).toEqual([]);
   });
 
+  it('the legacy new-monitor overrides are request properties with enum-valid values', () => {
+    const bad: string[] = [];
+    for (const [k, v] of Object.entries(LEGACY_NEW_MONITOR)) {
+      if (!(k in props)) { bad.push(`${k} unknown`); continue; }
+      const e = resolve(props[k])?.enum;
+      if (e && v != null && !e.includes(v)) bad.push(`${k}=${String(v)}`);
+    }
+    expect(bad).toEqual([]);
+  });
+
   it('deleted is the boolean the request schema wants', () => {
-    expect(resolve(props.deleted)?.type).toBe('boolean');
+    // Nullable since the 2026-10-19 build; the default is still a boolean.
+    expect(resolve(props.deleted)?.type).toContain('boolean');
     expect(typeof MONITOR_CREATE_DEFAULTS.deleted).toBe('boolean');
   });
 });
@@ -579,7 +682,7 @@ describe('MONITOR_ENUMS mirror the request enums', () => {
 
 describe('monitor editor field metadata matches the request schema', () => {
   const update = schemas.UpdateMonitorRequest.properties!;
-  const fields = TABS.flatMap((t) => t.fields).filter((f) => f.kind !== 'group');
+  const fields = columnFields([...TABS, ...CLASSIC_TABS]);
   const types = resolve(update.type)!.enum as string[];
 
   it('selects with a null option are nullable in the schema', () => {

@@ -19,8 +19,8 @@ export interface VersionStateInput {
 export type VersionStatus = 'db-upgrade' | 'current' | 'update-available';
 
 /**
- * `getZMVersionHTML` (functions.php:1055-1090), minus the reminder dropdown:
- * a database behind the code is an error you must fix before using
+ * `getZMVersionHTML` (functions.php:1055-1090); the reminder dropdown is
+ * `VersionReminder.tsx`. A database behind the code is an error you must fix before using
  * ZoneMinder; a newer release with reminders due is a warning; anything else
  * is plain.
  */
@@ -35,4 +35,31 @@ export function versionState(input: VersionStateInput): { tone: StatTone; status
     return { tone: 'normal', status: 'current' };
   }
   return { tone: 'warn', status: 'update-available' };
+}
+
+export type ReminderOption = 'ignore' | 'hour' | 'day' | 'week' | 'month' | 'never';
+
+const SECONDS: Partial<Record<ReminderOption, number>> = {
+  hour: 60 * 60,
+  day: 24 * 60 * 60,
+  week: 7 * 24 * 60 * 60,
+  // Legacy's `case` list leaves 'month' out, so the item does nothing there;
+  // its own arithmetic says 30 days, which is what it plainly meant.
+  month: 30 * 24 * 60 * 60,
+};
+
+/**
+ * The config row each menu item writes (includes/actions/version.php):
+ * Ignore copies `ZM_DYN_LAST_VERSION` into `ZM_DYN_CURR_VERSION`, the
+ * reminders push `ZM_DYN_NEXT_REMINDER` out, Never turns
+ * `ZM_CHECK_FOR_UPDATES` off.
+ */
+export function reminderWrite(
+  option: ReminderOption,
+  lastVersion: string,
+  nowSeconds: number,
+): { name: string; value: string } {
+  if (option === 'ignore') return { name: 'ZM_DYN_CURR_VERSION', value: lastVersion };
+  if (option === 'never') return { name: 'ZM_CHECK_FOR_UPDATES', value: '0' };
+  return { name: 'ZM_DYN_NEXT_REMINDER', value: String(nowSeconds + (SECONDS[option] ?? 0)) };
 }

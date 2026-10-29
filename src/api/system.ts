@@ -112,6 +112,19 @@ export async function getHealthCheck(): Promise<{ status: string }> {
   return apiGet('/server/health_check');
 }
 
+/**
+ * Legacy's privacy statement (`privacy.php`): shown while `ZM_SHOW_PRIVACY`
+ * is on; the answer sets `ZM_TELEMETRY_DATA` and clears the flag (zm-api#189).
+ */
+export interface PrivacyResponse {
+  show_privacy?: boolean | null;
+  telemetry?: boolean | null;
+}
+
+export async function answerPrivacyStatement(accept: boolean): Promise<PrivacyResponse> {
+  return apiPost<{ accept: boolean }, PrivacyResponse>('/system/privacy', { accept });
+}
+
 export async function systemLogRotate(): Promise<void> {
   return apiPost('/system/logrot');
 }

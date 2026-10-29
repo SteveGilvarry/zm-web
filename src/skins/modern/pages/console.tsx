@@ -6,7 +6,11 @@ import { isOrientationRotated } from '@/types';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
-import { ConsoleStatusLine } from '../components/ConsoleStatusLine';
+import type { TFunction } from 'i18next';
+import { ConsoleStatusLine, type StatusReading } from '../components/ConsoleStatusLine';
+import { storageTone, type StorageArea } from '@/features/storage/useStorageAreas';
+import type { SystemStats } from '@/api/system';
+import { storageUsageTitle } from '@/features/storage/storageUsage';
 import { ActivityRail } from '../components/ActivityRail';
 import { MonitorThumbnail } from '@/components/console/MonitorThumbnail';
 import { EventsFeed } from '@/components/console/EventsFeed';
@@ -47,6 +51,7 @@ export default function ConsolePage() {
     daemons,
     isSystemRunning,
     systemStats,
+    storageAreas,
     loading,
   } = data;
 
@@ -95,25 +100,16 @@ export default function ConsolePage() {
             // Host telemetry only when ZoneMinder is configured to show it —
             // `ZM_WEB_SHOW_SERVER_STATS` is off on installs where operators
             // are not meant to see the server's health.
-            ...(showServerStats
-              ? [{
-                  label: t('Disk'),
-                  value: systemStats?.disk_usage_percent != null
-                    ? `${systemStats.disk_usage_percent.toFixed(0)}%`
-                    : '—',
-                  tone: systemStats?.disk_usage_percent == null
-                    ? 'normal' as const
-                    : systemStats.disk_usage_percent > 90
-                      ? 'danger' as const
-                      : systemStats.disk_usage_percent > 75
-                        ? 'warn' as const
-                        : 'normal' as const,
-                }]
-              : []),
+            ...(showServerStats ? [diskReading(storageAreas, systemStats, t)] : []),
           ]}
           filterPanel={<MonitorFilterBar monitors={monitors} onChange={noop} />}
           systemPanel={
-            <SystemStatus daemons={daemons} isRunning={isSystemRunning} stats={systemStats} />
+            <SystemStatus
+              daemons={daemons}
+              isRunning={isSystemRunning}
+              stats={systemStats}
+              storageAreas={storageAreas}
+            />
           }
         />
 
@@ -162,6 +158,37 @@ export default function ConsolePage() {
       <SkinHint />
     </AppShell>
   );
+}
+
+/**
+ * The status line's Disk reading: the fullest enabled storage area, coloured
+ * at legacy's storage thresholds (warning over 95 %, danger over 98 %). The
+ * hover text lists every area the way the classic strip's tooltips do; the
+ * System disclosure has the same list laid out. On a backend without
+ * per-area filesystem figures it reads the host disk from `/system/status`
+ * instead, and a dash when that is missing too.
+ */
+function diskReading(
+  areas: StorageArea[],
+  stats: SystemStats | undefined,
+  t: TFunction,
+): StatusReading {
+  const measured = areas.filter((a) => a.usage.measured);
+  if (measured.length === 0) {
+    const pct = stats?.disk_usage_percent;
+    return pct == null
+      ? { label: t('Disk'), value: '—' }
+      : { label: t('Disk'), value: `${pct.toFixed(0)}%`, tone: storageTone(pct) };
+  }
+  const fullest = measured.reduce((a, b) => (b.usage.percent > a.usage.percent ? b : a));
+  return {
+    label: t('Disk'),
+    value: `${fullest.usage.percent}%`,
+    tone: fullest.tone,
+    title: measured
+      .map((a) => `${a.storage.name}: ${a.usage.percent}% (${storageUsageTitle(a.usage, t)})`)
+      .join('\n'),
+  };
 }
 
 /* ------------------------------------------------------------------------ */

@@ -7,16 +7,27 @@
  * the whole route table, renders each URL in the modern skin and checks the
  * page it was supposed to reach actually painted inside the shell.
  */
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import { screen, within } from '@testing-library/react';
 
 import { createMemoryHistory, createRouter } from '@tanstack/react-router';
 
 import { renderRoute } from '@/test/renderRoute';
-import { setupMockServer } from '@/test/msw/server';
+import { http, HttpResponse } from 'msw/http';
+import { server, setupMockServer } from '@/test/msw/server';
 import { routeTree } from '@/routeTree.gen';
 
 setupMockServer();
+
+// Endpoints the shared handlers do not cover yet (roles, menu, encoder templates).
+beforeEach(() => {
+  const empty = { items: [], total: 0, per_page: 1000, current_page: 1, last_page: 1 };
+  server.use(
+    http.get('/api/v3/roles', () => HttpResponse.json(empty)),
+    http.get('/api/v3/menu-items', () => HttpResponse.json([])),
+    http.get('/api/v3/encoder-templates', () => HttpResponse.json([])),
+  );
+});
 
 /** A URL per route, with the heading the modern skin puts in the header. */
 const ROUTES: Array<{ id: string; path: string; heading: RegExp; anonymous?: true }> = [
@@ -29,6 +40,8 @@ const ROUTES: Array<{ id: string; path: string; heading: RegExp; anonymous?: tru
   { id: '/events/', path: '/events', heading: /^Events$/ },
   { id: '/events/$eventId', path: '/events/101', heading: /^Event-101$/ },
   { id: '/events/$eventId_/frames', path: '/events/101/frames', heading: /Frames/ },
+  { id: '/events/$eventId_/frames_/$frameId', path: '/events/101/frames/1', heading: /^Frame 101-1$/ },
+  { id: '/events/$eventId_/stats', path: '/events/101/stats', heading: /^Stats — Event 101/ },
   { id: '/filters/', path: '/filters', heading: /^Filters$/ },
   { id: '/groups/', path: '/groups', heading: /^Groups$/ },
   { id: '/logs/', path: '/logs', heading: /^Log$/ },
@@ -39,6 +52,7 @@ const ROUTES: Array<{ id: string; path: string; heading: RegExp; anonymous?: tru
   { id: '/montagereview/', path: '/montagereview', heading: /^Montage Review$/ },
   { id: '/reports/', path: '/reports', heading: /^Reports$/ },
   { id: '/reports/$reportId', path: '/reports/1', heading: /^Report$/ },
+  { id: '/timeline/', path: '/timeline', heading: /^Timeline$/ },
   { id: '/settings/', path: '/settings', heading: /^System Settings$/ },
   { id: '/settings/ai/classes', path: '/settings/ai/classes', heading: /^AI$/ },
   { id: '/settings/ai/datasets', path: '/settings/ai/datasets', heading: /^AI$/ },
@@ -49,6 +63,11 @@ const ROUTES: Array<{ id: string; path: string; heading: RegExp; anonymous?: tru
   { id: '/settings/state', path: '/settings/state', heading: /^Run State$/ },
   { id: '/settings/storage', path: '/settings/storage', heading: /^Storage Management$/ },
   { id: '/settings/users', path: '/settings/users', heading: /^User Management$/ },
+  { id: '/settings/roles', path: '/settings/roles', heading: /^Roles$/ },
+  { id: '/settings/roles_/$roleId', path: '/settings/roles/0', heading: /^New Role$/ },
+  { id: '/settings/encoder-templates', path: '/settings/encoder-templates', heading: /^Encoder Templates$/ },
+  { id: '/settings/menu', path: '/settings/menu', heading: /^Menu$/ },
+  { id: '/settings/privacy', path: '/settings/privacy', heading: /^Privacy$/ },
 ];
 
 describe('route table', () => {

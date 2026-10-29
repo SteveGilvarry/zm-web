@@ -6,7 +6,8 @@ import tseslint from 'typescript-eslint'
 import { defineConfig, globalIgnores } from 'eslint/config'
 
 export default defineConfig([
-  globalIgnores(['dist', 'coverage', 'test-results', 'playwright-report']),
+  // .claude holds agent worktrees: full checkouts that lint on their own.
+  globalIgnores(['dist', 'coverage', 'test-results', 'playwright-report', '.claude']),
   {
     files: ['**/*.{ts,tsx}'],
     extends: [
@@ -24,7 +25,7 @@ export default defineConfig([
     // Playwright specs and config are Node, not React. The fixture API names
     // its injector `use`, which the React-Compiler hooks rules read as a hook
     // call in a non-component function; and fast-refresh has no meaning here.
-    files: ['e2e/**/*.{ts,tsx}', 'playwright.config.ts', 'vite.config.ts', 'vitest.config.ts', 'scripts/**/*.mjs'],
+    files: ['e2e/**/*.{ts,tsx}', 'playwright.config.ts', 'vite.config.ts', 'vitest.config.ts', 'i18next.config.ts', 'scripts/**/*.mjs'],
     languageOptions: {
       globals: { ...globals.node },
     },

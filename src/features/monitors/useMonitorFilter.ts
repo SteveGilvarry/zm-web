@@ -1,10 +1,11 @@
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { listGroups, listGroupMonitors, type Group } from '@/api/groups';
+import { getAllMonitors } from '@/api/monitors';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
-import type { Monitor } from '@/types';
-import { filterMonitors } from './filterMonitors';
+import { isDeleted, type Monitor } from '@/types';
+import { DELETED_TOKEN, filterMonitors } from './filterMonitors';
 
 export interface MonitorFilterResult {
   /** `monitors` with every chip's selections applied. */
@@ -57,11 +58,27 @@ export function useMonitorFilter(monitors: Monitor[]): MonitorFilterResult {
     return map;
   }, [groupMonitors]);
 
+  // Soft-deleted monitors are fetched only while the Status chip holds
+  // Deleted (same query the classic row uses), and appended to the page's
+  // own list, which stays the live monitors.
+  const wantDeleted = status.includes(DELETED_TOKEN);
+  const deletedQ = useQuery({
+    queryKey: ['monitors', 'all', { include_deleted: true }],
+    queryFn: () => getAllMonitors({ include_deleted: true }),
+    enabled: isAuthenticated && wantDeleted,
+  });
+  const deletedRows = deletedQ.data;
+  const pool = useMemo(() => {
+    if (!deletedRows || !wantDeleted) return monitors;
+    const live = new Set(monitors.map((m) => m.id));
+    return [...monitors, ...deletedRows.filter((m) => isDeleted(m) && !live.has(m.id))];
+  }, [monitors, deletedRows, wantDeleted]);
+
   const filtered = useMemo(
-    () => filterMonitors(monitors, {
+    () => filterMonitors(pool, {
       groupIds, capturing, analysing, recording, status, source, monitorIds,
     }, groupMembership),
-    [monitors, groupIds, capturing, analysing, recording, status, source, monitorIds, groupMembership],
+    [pool, groupIds, capturing, analysing, recording, status, source, monitorIds, groupMembership],
   );
 
   return {

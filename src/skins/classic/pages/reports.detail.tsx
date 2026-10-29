@@ -157,7 +157,7 @@ function ReportDetailBody({
                   min={0}
                   value={f.interval}
                   onChange={(e) => f.setInterval(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                  placeholder={t('minutes (blank = one-off)')}
+                  placeholder={t('seconds (blank = one-off)')}
                   className={classicInput}
                 />
               </td>
@@ -207,13 +207,24 @@ function ReportChart({ filterId }: { filterId: number | null }) {
   if (chart.buckets.length === 0) {
     return (
       <p className="py-8 text-center text-sm text-zinc-500" data-testid="report-chart-no-data">
-        {t('No matching events in the most recent 500.')}
+        {chart.mode === 'server'
+          ? t('No events match this filter.')
+          : t('No matching events in the most recent 500.')}
       </p>
     );
   }
   return (
-    <div dir="ltr">
-      <EventsPerHourChart buckets={chart.buckets} />
+    <div className="space-y-1">
+      <div dir="ltr">
+        <EventsPerHourChart buckets={chart.buckets} />
+      </div>
+      {chart.mode === 'client' ? (
+        <p className="text-xs text-zinc-500">{t('This filter is evaluated in the browser, over the most recent 500 events.')}</p>
+      ) : chart.charted < chart.matched && (
+        <p className="text-xs text-zinc-500">
+          {t('Charted the first {{charted}} of {{matched}} matching events.', { charted: chart.charted, matched: chart.matched })}
+        </p>
+      )}
     </div>
   );
 }

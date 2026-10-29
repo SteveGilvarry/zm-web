@@ -1,13 +1,12 @@
 /**
- * Classic Options — the paths `settings.options.test.tsx` leaves out: the
- * in-category search, the "All" escape hatch, inline editing and its PUT,
- * the unsaved/Save-all flow, reset-to-default, the help toggle, the
- * read-only render and the backend-error state.
+ * Classic Options — the legacy form: every option drawn in place, one
+ * Save per tab, radios for a short choice, the "(?)" help, masked and
+ * read-only rows, the viewer render and the backend-error state.
  */
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -22,6 +21,7 @@ vi.mock('@/skins/registry', () => ({
     modern: { id: 'modern', name: 'Modern', description: 'A live wall and dense tables.', colorSchemes: ['light', 'dark'] },
     classic: { id: 'classic', name: 'Classic ZoneMinder', description: 'Legacy tables.', colorSchemes: ['light'] },
   },
+  skinIds: ['modern', 'classic'],
   useSkin: () => ({ id: 'classic', name: 'Classic ZoneMinder', description: 'Legacy tables.', colorSchemes: ['light'] }),
 }));
 
@@ -88,7 +88,7 @@ function seed(configs: unknown[] = CONFIGS) {
   );
 }
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   useAuthStore.setState({
     accessToken: 't', refreshToken: 't', isAuthenticated: true,
@@ -111,140 +111,135 @@ async function mount() {
 }
 
 describe('ClassicSettingsOptionsPage — extra paths', () => {
-  it('narrows the table with the in-category search and counts the matches', async () => {
+  it('draws every option in place, labelled without ZM_, prompt underneath', async () => {
     seed();
-    const user = userEvent.setup();
     await mount();
-    await screen.findByText('ZM_OPT_USE_AUTH');
-    expect(screen.getByText('3 configs')).toBeInTheDocument();
 
-    const box = screen.getByPlaceholderText('Search in system...');
-    await user.type(box, 'HASH');
-
-    await waitFor(() => expect(screen.queryByText('ZM_OPT_USE_AUTH')).toBeNull());
-    expect(screen.getByText('ZM_AUTH_HASH_IPS')).toBeInTheDocument();
-    expect(screen.getByText('1 config')).toBeInTheDocument();
+    const auth = await screen.findByLabelText('OPT_USE_AUTH');
+    expect(auth).toHaveAttribute('type', 'checkbox');
+    expect(auth).toBeChecked();
+    expect(screen.getByLabelText('AUTH_HASH_IPS')).not.toBeChecked();
+    expect(screen.queryByText('ZM_OPT_USE_AUTH')).toBeNull();
+    expect(screen.getByText('Authenticate user logins')).toBeInTheDocument();
+    // No search, no paging: legacy draws the whole tab.
+    expect(screen.queryByRole('searchbox')).toBeNull();
   });
 
-  it('says so when nothing matches the search', async () => {
+  it('saves every edited row of the tab with the one Save at the top', async () => {
     seed();
     const user = userEvent.setup();
     await mount();
-    await screen.findByText('ZM_OPT_USE_AUTH');
 
-    await user.type(screen.getByPlaceholderText('Search in system...'), 'zzz-no-such-config');
-    expect(await screen.findByText('No configs match your search')).toBeInTheDocument();
+    await user.click(await screen.findByLabelText('OPT_USE_AUTH'));
+    await user.click(screen.getByLabelText('AUTH_HASH_IPS'));
+    expect(screen.getByText(/^2 unsaved change/)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: 'Save' })).toHaveLength(1);
+    await user.click(screen.getByRole('button', { name: 'Save' }));
+
+    await waitFor(() => expect(puts).toHaveLength(2));
+    expect(puts).toEqual([
+      { name: 'ZM_OPT_USE_AUTH', body: { value: '0' } },
+      { name: 'ZM_AUTH_HASH_IPS', body: { value: '1' } },
+    ]);
   });
 
-  it('drops the category filter from the URL through the All button', async () => {
+  it('forgets a row typed back to its stored value', async () => {
     seed();
     const user = userEvent.setup();
     await mount();
-    await screen.findByText('ZM_OPT_USE_AUTH');
 
-    await user.click(screen.getByRole('button', { name: 'All' }));
-    expect(mockSearch.category).toBeUndefined();
-  });
-
-  it('edits a boolean value inline and PUTs it', async () => {
-    seed();
-    const user = userEvent.setup();
-    await mount();
-    await screen.findByText('ZM_OPT_USE_AUTH');
-
-    // The value cell is click-to-edit.
-    await user.click(screen.getAllByTitle('1')[0]);
-    const box = await screen.findByRole('checkbox');
-    expect(box).toBeChecked();
+    const box = await screen.findByLabelText('OPT_USE_AUTH');
     await user.click(box);
-    await user.click(screen.getAllByRole('button', { name: 'Save' })[0]);
-
-    await waitFor(() => expect(puts).toHaveLength(1));
-    expect(puts[0]).toEqual({ name: 'ZM_OPT_USE_AUTH', body: { value: '0' } });
+    expect(screen.getByText(/^1 unsaved change/)).toBeInTheDocument();
+    await user.click(box);
+    expect(screen.queryByText(/unsaved change/)).toBeNull();
   });
 
-  it('abandons an inline edit on Cancel', async () => {
+  it('asks before leaving a tab with unsaved rows, and stays when told to', async () => {
+    seed();
+    const confirm = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+    await mount();
+
+    await user.click(await screen.findByLabelText('OPT_USE_AUTH'));
+    const rail = screen.getByRole('navigation', { name: 'Options' });
+    await user.click(within(rail).getByRole('button', { name: 'This Session' }));
+
+    expect(confirm).toHaveBeenCalledWith('Discard 1 unsaved change?');
+    expect(mockSearch.category).toBe('system');
+    expect(screen.getByLabelText('OPT_USE_AUTH')).not.toBeChecked();
+  });
+
+  it('draws radios for a choice of three or fewer and a select above that', async () => {
+    seed([
+      { id: 4, name: 'ZM_AUTH_TYPE', value: 'builtin', type: 'string', category: 'system', readonly: 0, private: 0, hint: 'builtin|remote', prompt: 'What is used to authenticate' },
+      { id: 5, name: 'ZM_LOG_LEVEL', value: 'info', type: 'string', category: 'system', readonly: 0, private: 0, hint: 'debug|info|warning|error', prompt: 'Log level' },
+    ]);
+    const user = userEvent.setup();
+    await mount();
+
+    const group = await screen.findByRole('radiogroup');
+    expect(within(group).getByRole('radio', { name: 'builtin' })).toBeChecked();
+    await user.click(within(group).getByRole('radio', { name: 'remote' }));
+    expect(within(group).getByRole('radio', { name: 'remote' })).toBeChecked();
+    expect(screen.getByLabelText('LOG_LEVEL').tagName).toBe('SELECT');
+  });
+
+  it('opens the help text from the "(?)" link', async () => {
     seed();
     const user = userEvent.setup();
     await mount();
-    await screen.findByText('ZM_OPT_USE_AUTH');
 
-    await user.click(screen.getAllByTitle('1')[0]);
-    await screen.findByRole('checkbox');
-    await user.click(screen.getByRole('button', { name: 'Cancel' }));
-
-    await waitFor(() => expect(screen.queryByRole('checkbox')).toBeNull());
-    expect(puts).toEqual([]);
+    await user.click(await screen.findByRole('button', { name: 'Help for ZM_OPT_USE_AUTH' }));
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Turn this off only on a trusted network.')).toBeInTheDocument();
   });
 
-  it('toggles the per-row help text', async () => {
-    seed();
-    const user = userEvent.setup();
-    await mount();
-    await screen.findByText('ZM_OPT_USE_AUTH');
-
-    const help = screen.getByRole('button', { name: 'Show help' });
-    expect(help).toHaveAttribute('aria-expanded', 'false');
-    await user.click(help);
-
-    expect(screen.getByText('Turn this off only on a trusted network.')).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: 'Hide help' }));
-    expect(screen.queryByText('Turn this off only on a trusted network.')).toBeNull();
-  });
-
-  it('offers reset-to-default only for a row that has drifted', async () => {
-    seed();
-    await mount();
-    await screen.findByText('ZM_OPT_USE_AUTH');
-
-    // ZM_OPT_USE_AUTH is '1' with default 'yes' — already at its default.
-    expect(screen.queryByRole('button', { name: 'Reset ZM_OPT_USE_AUTH to default' })).toBeNull();
-    // ZM_AUTH_HASH_IPS is '0' with default 'yes' — drifted, so it can be reset.
-    expect(screen.getByRole('button', { name: 'Reset ZM_AUTH_HASH_IPS to default' })).toBeInTheDocument();
-  });
-
-  it('masks a private config and marks a read-only row', async () => {
+  it('masks a private option and disables a read-only one', async () => {
     seed();
     await mount();
 
-    const secret = (await screen.findByText('ZM_DB_PASS')).closest('tr')!;
-    expect(within(secret).getByText('(read-only)')).toBeInTheDocument();
-    expect(within(secret).getByText('••••••••')).toBeInTheDocument();
-    expect(secret.textContent).not.toContain('hunter2');
+    const secret = await screen.findByLabelText('DB_PASS');
+    expect(secret).toHaveAttribute('type', 'password');
+    expect(secret).toHaveAttribute('autocomplete', 'new-password');
+    expect(secret).toBeDisabled();
   });
 
-  it('renders every row read-only for a user without system:Edit', async () => {
+  it('disables a System row as legacy does', async () => {
+    seed([{ id: 6, name: 'ZM_PATH_FFMPEG', value: '/usr/bin/ffmpeg', type: 'string', category: 'system', readonly: 0, private: 0, system: 1, prompt: 'Path to ffmpeg' }]);
+    await mount();
+
+    expect(await screen.findByLabelText('PATH_FFMPEG')).toBeDisabled();
+  });
+
+  it('disables every input and Save for a user without system:Edit, and withholds private values', async () => {
     useAuthStore.setState({ user: VIEWER });
+    seed([
+      ...CONFIGS,
+      { id: 7, name: 'ZM_AUTH_HASH_SECRET', value: 'abc123', type: 'string', category: 'system', readonly: 0, private: 1, prompt: 'Secret for encoding hashed authentication information' },
+    ]);
+    await mount();
+
+    expect(await screen.findByLabelText('OPT_USE_AUTH')).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled();
+    expect(screen.getByLabelText('AUTH_HASH_SECRET')).toHaveValue('');
+    expect(screen.getAllByText('This value is private and is shown only to users who can edit System settings.')).toHaveLength(2);
+  });
+
+  it('opens on System when no tab is asked for', async () => {
+    delete mockSearch.category;
     seed();
     await mount();
 
-    await screen.findByText('ZM_OPT_USE_AUTH');
-    expect(screen.getAllByText('(read-only)')).toHaveLength(3);
-    expect(screen.queryByRole('button', { name: /^Save/ })).toBeNull();
+    expect(await screen.findByLabelText('OPT_USE_AUTH')).toBeInTheDocument();
+    const rail = screen.getByRole('navigation', { name: 'Options' });
+    expect(within(rail).getByRole('button', { name: 'System' })).toHaveAttribute('aria-current', 'page');
   });
 
-  // Documented, not endorsed: when /configs fails the category list is empty,
-  // so `selectedCategory` falls back to null and the page shows the Display
-  // tab's skin chooser. The QueryState error branch never renders.
-  it('falls back to the Display tab when the config fetch fails', async () => {
+  it('reports a failed config fetch instead of hiding it', async () => {
+    delete mockSearch.category;
     server.use(
       http.get('/api/v3/system/status', () => HttpResponse.json({ running: false, daemons: [] })),
-      http.get('/api/v3/host/getVersion', () => HttpResponse.json({ version: '1.37.0', api_version: '3.0' })),
-      http.get('/api/v3/daemons', () => HttpResponse.json({ daemons: [] })),
-      http.get('/api/v3/configs/:name', ({ params }) =>
-        HttpResponse.json({ id: 0, name: params.name, value: '', type: 'boolean', category: 'x10', readonly: 0, private: 0, system: 0 })),
-      http.get('/api/v3/configs', () =>
-        HttpResponse.json({ kind: 'DATABASE_ERROR', error_message: 'Config table locked' }, { status: 500 })),
-    );
-    await mount();
-
-    expect(await screen.findByText('Stopped')).toBeInTheDocument();
-    expect(screen.queryByRole('table')).toBeNull();
-  });
-
-  it('does the same when the backend is unreachable', async () => {
-    server.use(
-      http.get('/api/v3/system/status', () => HttpResponse.json({ running: true, daemons: [] })),
       http.get('/api/v3/host/getVersion', () => HttpResponse.json({ version: '1.37.0', api_version: '3.0' })),
       http.get('/api/v3/daemons', () => HttpResponse.json({ daemons: [] })),
       http.get('/api/v3/configs/:name', ({ params }) =>
@@ -253,8 +248,7 @@ describe('ClassicSettingsOptionsPage — extra paths', () => {
     );
     await mount();
 
-    expect(await screen.findByText('Classic ZoneMinder')).toBeInTheDocument();
-    expect(screen.queryByRole('alert')).toBeNull();
+    expect(await screen.findByText('Cannot reach the server.')).toBeInTheDocument();
   });
 
   it('lists the version table under the Version tab', async () => {
@@ -271,5 +265,6 @@ describe('ClassicSettingsOptionsPage — extra paths', () => {
     expect(within(table).getByRole('rowheader', { name: 'Database version' })).toBeInTheDocument();
     expect(within(table).getAllByText('1.37.0')).toHaveLength(2);
     expect(within(table).getByText('3.0')).toBeInTheDocument();
+    expect(screen.getByLabelText('DYN_DB_VERSION')).toHaveValue('1.37.0');
   });
 });

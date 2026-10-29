@@ -1,32 +1,39 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
 import { useTranslation } from 'react-i18next';
 
 import { AppShell } from '@/skins/AppShell';
+import { ConfirmDialog } from '@/components/common/ConfirmDialog';
 import { QueryState } from '@/components/common/QueryState';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { useDocumentTitle } from '@/skins/modern/layouts/useDocumentTitle';
 import {
+  REPORTS_ALL_PAGE_SIZE,
+  REPORTS_PAGE_SIZES,
   useCreateReportForm,
   useReportsListPage,
 } from '@/features/reports/useReportsListPage';
 import { useDateTimeFormat } from '@/features/config/useDateTimeFormat';
 import {
-  ClassicButton, ClassicPageTitle, ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead, ClassicToolbar,
+  ClassicButton, ClassicClearableInput, ClassicPageTitle, ClassicPager, ClassicTable, ClassicTbody, ClassicTd, ClassicTh, ClassicThead, ClassicToolbar,
 } from '@/skins/classic/components/events/primitives';
 import { classicInput, classicLink, classicSelect } from '@/skins/classic/components/events/styles';
 
 /**
- * Reports list — classic skin. "+ New" toolbar, inline legacy form table,
- * white bootstrap table (Name, Filter, Start, End, Interval). Same data as
- * the modern skin via `useReportsListPage`.
+ * Reports list — classic skin, legacy `?view=reports`: Back / Refresh / Add
+ * New Report / Delete toolbar, then the bootstrap table (mark, Id, Name,
+ * Starting, Ending, Interval). Interval prints as stored, in seconds.
+ * Description is not in `ReportResponse`, so that column is left out.
+ * Same data as the modern skin via `useReportsListPage`.
  */
 export default function ClassicReportsListPage() {
   const { t } = useTranslation();
   useDocumentTitle(t('Reports'));
   const s = useReportsListPage();
   const { formatDateTime } = useDateTimeFormat();
-  const formatStamp = (iso?: string | null) => (iso && formatDateTime(iso)) || '—';
-  const { reports, filters, filterLookup, showCreate } = s;
+  const [confirming, setConfirming] = useState(false);
+  const formatStamp = (iso?: string | null) => (iso && formatDateTime(iso)) || '';
+  const { reports, filters, showCreate, selectedIds } = s;
 
   if (!s.isAuthenticated) return null;
 
@@ -36,37 +43,88 @@ export default function ClassicReportsListPage() {
         <div className="max-w-screen-2xl mx-auto space-y-3">
           <ClassicPageTitle>{t('Reports')}</ClassicPageTitle>
 
-          <RequirePerm feature="events" level="Edit">
-            <ClassicToolbar>
-              <ClassicButton tone="primary" onClick={s.toggleCreate} aria-expanded={showCreate}>
-                {showCreate ? t('Cancel') : t('+ New')}
+          <ClassicToolbar
+            end={(
+              <ClassicClearableInput
+                type="search"
+                value={s.search}
+                onChange={s.setSearch}
+                placeholder={t('Search')}
+                ariaLabel={t('Search')}
+                className="w-56"
+              />
+            )}
+          >
+            <ClassicButton onClick={() => window.history.back()} aria-label={t('Back')} title={t('Back')}>←</ClassicButton>
+            <ClassicButton onClick={s.refetch} aria-label={t('Refresh')} title={t('Refresh')}>⟳</ClassicButton>
+            <RequirePerm feature="events" level="Edit">
+              <ClassicButton
+                onClick={s.toggleCreate}
+                aria-expanded={showCreate}
+                aria-label={t('Add New Report')}
+                title={t('Add New Report')}
+              >
+                +
               </ClassicButton>
-            </ClassicToolbar>
-            {showCreate && <CreateReportForm filters={filters} onCreated={s.onCreated} />}
-          </RequirePerm>
+              <ClassicButton
+                tone="danger"
+                disabled={selectedIds.size === 0 || s.isDeleting}
+                onClick={() => setConfirming(true)}
+                aria-label={t('Delete')}
+                title={t('Delete')}
+              >
+                {t('Delete')}
+              </ClassicButton>
+            </RequirePerm>
+          </ClassicToolbar>
+          {showCreate && (
+            <RequirePerm feature="events" level="Edit">
+              <CreateReportForm filters={filters} onCreated={s.onCreated} onCancel={s.toggleCreate} />
+            </RequirePerm>
+          )}
 
           <QueryState
             isLoading={s.isLoading}
             isError={s.isError}
             error={s.error}
             onRetry={s.refetch}
-            empty={reports.length === 0}
-            emptyMessage={t('No reports yet. Create one to start.')}
+            empty={s.filteredReports.length === 0}
+            emptyMessage={t('No matching records found')}
           >
             <ClassicTable testId="reports-table">
               <ClassicThead>
                 <tr>
+                  <ClassicTh center className="w-8">
+                    <input
+                      type="checkbox"
+                      aria-label={t('Select all')}
+                      checked={reports.length > 0 && selectedIds.size === reports.length}
+                      onChange={s.toggleAll}
+                    />
+                  </ClassicTh>
+                  <ClassicTh>{t('Id')}</ClassicTh>
                   <ClassicTh>{t('Name')}</ClassicTh>
-                  <ClassicTh>{t('Filter')}</ClassicTh>
-                  <ClassicTh>{t('Start')}</ClassicTh>
-                  <ClassicTh>{t('End')}</ClassicTh>
+                  <ClassicTh>{t('Starting')}</ClassicTh>
+                  <ClassicTh>{t('Ending')}</ClassicTh>
                   <ClassicTh>{t('Interval')}</ClassicTh>
-                  <ClassicTh center />
                 </tr>
               </ClassicThead>
               <ClassicTbody>
-                {reports.map((r) => (
+                {s.pageRows.map((r) => (
                   <tr key={r.id} data-testid={`report-row-${r.id}`}>
+                    <ClassicTd center>
+                      <input
+                        type="checkbox"
+                        aria-label={t('Mark {{name}}', { name: r.name || `#${r.id}` })}
+                        checked={selectedIds.has(r.id)}
+                        onChange={() => s.toggleSelected(r.id)}
+                      />
+                    </ClassicTd>
+                    <ClassicTd>
+                      <Link to="/reports/$reportId" params={{ reportId: String(r.id) }} className={classicLink}>
+                        {r.id}
+                      </Link>
+                    </ClassicTd>
                     <ClassicTd>
                       <Link
                         to="/reports/$reportId"
@@ -76,37 +134,41 @@ export default function ClassicReportsListPage() {
                         {r.name || <span className="italic text-zinc-500">{t('untitled')}</span>}
                       </Link>
                     </ClassicTd>
-                    <ClassicTd>
-                      {r.filter_id != null ? (filterLookup.get(r.filter_id) ?? `#${r.filter_id}`) : '—'}
-                    </ClassicTd>
                     <ClassicTd className="whitespace-nowrap">{formatStamp(r.start_date_time)}</ClassicTd>
                     <ClassicTd className="whitespace-nowrap">{formatStamp(r.end_date_time)}</ClassicTd>
-                    <ClassicTd className="whitespace-nowrap">
-                      {r.interval != null ? t('{{count}} min', { count: r.interval }) : t('one-off')}
-                    </ClassicTd>
-                    <ClassicTd center className="whitespace-nowrap">
-                      <RequirePerm feature="events" level="Edit">
-                        <ClassicButton
-                          tone="danger"
-                          size="sm"
-                          aria-label={t('Delete report')}
-                          onClick={() => {
-                            if (confirm(t('Delete report "{{name}}"?', { name: r.name ?? `#${r.id}` }))) {
-                              s.remove(r.id);
-                            }
-                          }}
-                        >
-                          {t('Delete')}
-                        </ClassicButton>
-                      </RequirePerm>
-                    </ClassicTd>
+                    <ClassicTd className="whitespace-nowrap tabular-nums">{r.interval ?? ''}</ClassicTd>
                   </tr>
                 ))}
               </ClassicTbody>
             </ClassicTable>
+            <ClassicPager
+              page={s.page}
+              pageSize={s.pageSize === REPORTS_ALL_PAGE_SIZE ? Math.max(s.filteredReports.length, 1) : s.pageSize}
+              total={s.filteredReports.length}
+              totalPages={s.totalPages}
+              pageSizeOptions={REPORTS_PAGE_SIZES}
+              pageSizeLabel={(n) => (n === REPORTS_ALL_PAGE_SIZE ? t('All') : String(n))}
+              onPage={s.setPage}
+              onPageSize={s.setPageSize}
+              shown={s.pageRows.length}
+            />
           </QueryState>
         </div>
       </main>
+
+      <ConfirmDialog
+        isOpen={confirming}
+        onClose={() => setConfirming(false)}
+        onConfirm={() => {
+          s.removeSelected();
+          setConfirming(false);
+        }}
+        title={t('Delete')}
+        message={t('Are you sure you wish to delete the selected reports?')}
+        confirmText={t('Delete')}
+        variant="danger"
+        isLoading={s.isDeleting}
+      />
     </AppShell>
   );
 }
@@ -117,9 +179,11 @@ const valueCell = 'px-3 py-2 align-middle border-b border-[#dee2e6]';
 function CreateReportForm({
   filters,
   onCreated,
+  onCancel,
 }: {
   filters: Array<{ id: number; name: string }>;
   onCreated: () => void;
+  onCancel: () => void;
 }) {
   const { t } = useTranslation();
   const f = useCreateReportForm(onCreated);
@@ -191,7 +255,7 @@ function CreateReportForm({
                 min={0}
                 value={f.interval}
                 onChange={(e) => f.setInterval(e.target.value === '' ? '' : parseInt(e.target.value, 10))}
-                placeholder={t('minutes (blank = one-off)')}
+                placeholder={t('seconds (blank = one-off)')}
                 className={classicInput}
               />
             </td>
@@ -200,6 +264,7 @@ function CreateReportForm({
       </table>
       <div className="flex items-center justify-end gap-2 p-2">
         <ClassicButton type="submit" tone="primary" disabled={f.pending}>{t('Save')}</ClassicButton>
+        <ClassicButton onClick={onCancel}>{t('Cancel')}</ClassicButton>
       </div>
     </form>
   );

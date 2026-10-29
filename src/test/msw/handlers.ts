@@ -1,4 +1,4 @@
-import { http, HttpResponse, type HttpHandler } from 'msw';
+import { http, HttpResponse, type HttpHandler } from 'msw/http';
 
 import { useAuthStore } from '@/stores/auth';
 import { PERM_FEATURES } from '@/features/auth/perms';
@@ -133,8 +133,8 @@ function seed(): MockDb {
       makeEvent({ id: 103, monitor_id: 1, name: 'Event-103', notes: 'delivery van' }),
     ],
     frames: [
-      makeFrame({ id: 1, event_id: 101, frame_id: 1, delta: '0.00' }),
-      makeFrame({ id: 2, event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.00' }),
+      makeFrame({ event_id: 101, frame_id: 1, delta: '0.00' }),
+      makeFrame({ event_id: 101, frame_id: 2, type: 'Alarm', score: 88, delta: '1.00' }),
     ],
     tags: [makeTag({ id: 1, name: 'Important' })],
     eventTags: [],
@@ -477,16 +477,9 @@ const events: HttpHandler[] = [
       status: 200,
       headers: { 'Content-Type': 'image/jpeg' },
     })),
-  // Per-frame JPEGs: `/frames/{id}/image` and `/events/{id}/frames/{fid}/image`.
-  // `fid` is a frame number or one of ZoneMinder's names (`alarm`, `snapshot`);
-  // an unknown one 404s, which is what an event with no alarm frame answers.
-  http.get(`${API}/frames/:id/image`, ({ params }) =>
-    db.frames.some((f) => f.id === Number(params.id))
-      ? HttpResponse.arrayBuffer(new Uint8Array([0xff, 0xd8, 0xff, 0xd9]).buffer, {
-        status: 200,
-        headers: { 'Content-Type': 'image/jpeg' },
-      })
-      : notFound()),
+  // Per-frame JPEGs: `/events/{id}/frames/{fid}/image` (the only route since
+  // `Frames.Id` went). `fid` is a frame number or one of ZoneMinder's names
+  // (`alarm`, `snapshot`); an unknown one 404s, as an event with no alarm frame answers.
   http.get(`${API}/events/:id/frames/:fid/image`, ({ params }) => {
     const fid = String(params.fid);
     const frames = db.frames.filter((f) => f.event_id === Number(params.id));
@@ -526,6 +519,8 @@ const events: HttpHandler[] = [
     const rows = eventId ? db.frames.filter((f) => f.event_id === eventId) : db.frames;
     return HttpResponse.json(pageOf(request, rows));
   }),
+  // No Stats rows by default; a test that wants them overrides this.
+  http.get(`${API}/stats`, ({ request }) => HttpResponse.json(pageOf(request, []))),
   http.get(`${API}/event-data`, ({ request }) => HttpResponse.json(pageOf(request, []))),
   http.get(`${API}/event-summaries`, ({ request }) => HttpResponse.json(pageOf(request, []))),
   http.get(`${API}/event-summaries/:id`, ({ params }) =>
@@ -758,7 +753,13 @@ function logSeconds(timeKey: string): number | null {
 function filteredLogs(url: URL): LogEntry[] {
   const component = url.searchParams.get('component');
   const minLevel = url.searchParams.get('min_level');
-  const level = num(url.searchParams.get('level'));
+  // `level` and `ids` are comma lists (zm-api#142).
+  const list = (k: string) => {
+    const raw = url.searchParams.get(k);
+    return raw == null ? null : new Set(raw.split(',').map(Number));
+  };
+  const levels = list('level');
+  const ids = list('ids');
   const search = url.searchParams.get('search');
   const start = num(url.searchParams.get('start'));
   const end = num(url.searchParams.get('end'));
@@ -766,7 +767,8 @@ function filteredLogs(url: URL): LogEntry[] {
   return db.logs.filter((l) => {
     if (component && l.component !== component) return false;
     if (minLevel && l.level > (MIN_LEVEL_CEILING[minLevel] ?? 9)) return false;
-    if (level != null && l.level !== level) return false;
+    if (levels && !levels.has(l.level)) return false;
+    if (ids && !ids.has(l.id)) return false;
     if (search && !l.message.toLowerCase().includes(search.toLowerCase())) return false;
     if (serverId != null && l.server_id !== serverId) return false;
     const at = logSeconds(l.time_key);
@@ -780,13 +782,36 @@ const misc: HttpHandler[] = [
   http.get(`${API}/logs`, ({ request }) => {
     const url = new URL(request.url);
     let rows = filteredLogs(url);
-    // `sort` orders on time_key; desc (newest first) is the default.
-    if (url.searchParams.get('sort') === 'asc') {
-      rows = rows.slice().sort((a, b) => (logSeconds(a.time_key) ?? 0) - (logSeconds(b.time_key) ?? 0));
+    // `sort_by` picks the column (default time), `sort` the direction;
+    // desc (newest first) is the default. With no sort_by and no sort the
+    // fixture order stands.
+    const sortBy = url.searchParams.get('sort_by') ?? 'time';
+    const dir = url.searchParams.get('sort') === 'asc' ? 1 : -1;
+    if (url.searchParams.has('sort_by') || dir === 1) {
+      const key = (l: LogEntry): string | number => {
+        switch (sortBy) {
+          case 'time': return logSeconds(l.time_key) ?? 0;
+          case 'server_id': return l.server_id ?? 0;
+          default: return (l[sortBy as keyof LogEntry] ?? '') as string | number;
+        }
+      };
+      rows = rows.slice().sort((a, b) => {
+        const ka = key(a); const kb = key(b);
+        return (ka < kb ? -1 : ka > kb ? 1 : 0) * dir;
+      });
     }
-    return HttpResponse.json(pageOf(request, rows));
+    const body = pageOf(request, rows);
+    return HttpResponse.json(url.searchParams.get('unfiltered_total') === 'true'
+      ? { ...body, total_unfiltered: db.logs.length }
+      : body);
   }),
+  // Before `/logs/:id`, or `components` is taken for an id.
+  http.get(`${API}/logs/components`, () =>
+    HttpResponse.json([...new Set(db.logs.map((l) => l.component))].sort())),
   http.delete(`${API}/logs`, ({ request }) => {
+    const url = new URL(request.url);
+    // zm-api answers 400 for an empty ids list rather than clearing everything.
+    if (url.searchParams.get('ids') === '') return HttpResponse.json({ message: 'ids' }, { status: 400 });
     const doomed = new Set(filteredLogs(new URL(request.url)).map((l) => l.id));
     db.logs = db.logs.filter((l) => !doomed.has(l.id));
     return HttpResponse.json({ message: `Deleted ${doomed.size} log entries` });

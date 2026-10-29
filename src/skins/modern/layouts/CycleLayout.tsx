@@ -1,12 +1,16 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type CSSProperties, type ReactNode } from 'react';
 import { Link } from '@tanstack/react-router';
 import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
-  Camera, ChevronLeft, ChevronRight, Filter, Pause, Play, Settings as SettingsIcon, Video,
+  Camera, ChevronLeft, ChevronRight, Filter, Maximize2, Pause, Play, Settings as SettingsIcon, Video,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
+import { Select } from '@/components/common/Select';
+import { heightOptions, SCALE_VALUES, widthOptions } from '@/features/monitors/watchStage';
+import { TileControls } from '@/features/montage/TileControls';
+import { useTileZoom } from '@/features/montage/tileZoom';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
 import { useMonitorFilter } from '@/features/monitors/useMonitorFilter';
@@ -49,10 +53,26 @@ export function CycleLayout({
   }, [filtered, setFilteredMonitors]);
 
   const [stageRef, box] = useMeasuredBox<HTMLDivElement>();
+  // The box the tile buttons zoom and fullscreen (legacy `#imageFeed<id>`).
+  const frameRef = useRef<HTMLDivElement>(null);
+  const zoom = useTileZoom();
 
   if (!cycle.isAuthenticated) return null;
 
   const dims = current ? displayDimensions(current) : { width: 16, height: 9 };
+  const { size } = cycle.stage;
+  // Everything on auto fits the frame; any explicit Width, Height or Scale
+  // sizes the stage as legacy would, scrolling when it is bigger.
+  const sized = size.width !== 'auto' || size.height !== 'auto' || size.scale !== '0';
+  const frameStyle: CSSProperties = sized ? cycle.stage.style : stageFitStyle(box, dims.width, dims.height);
+  const scaleLabel = (v: string): string => {
+    switch (v) {
+      case '0': return t('Auto');
+      case '100': return t('Actual');
+      case 'fit_to_width': return t('Fit to width');
+      default: return t('Max {{size}}', { size: v });
+    }
+  };
 
   return (
     <AppShell title={t('Cycle')}>
@@ -97,7 +117,8 @@ export function CycleLayout({
                       type="button"
                       onClick={() => cycle.setInterval(s)}
                       aria-pressed={intervalS === s}
-                      aria-label={t('{{count}} second', { count: s })}
+                      // "5s" is the name (WCAG 2.5.3); the title spells it out.
+                      title={t('{{count}} second', { count: s })}
                       className={clsx(
                         'px-1.5 py-0.5 text-xs font-mono tabular-nums rounded transition-colors',
                         intervalS === s ? 'bg-accent/15 text-accent' : 'text-fg-dim hover:text-fg',
@@ -124,6 +145,27 @@ export function CycleLayout({
                 </div>
               </>
             )}
+
+            <ToolbarDisclosure
+              label={t('Size')}
+              icon={Maximize2}
+              count={[size.width !== 'auto', size.height !== 'auto', size.scale !== '0'].filter(Boolean).length}
+              align="end"
+            >
+              {/* Legacy cycle.php's Width / Height / Scale; each resets the
+                  other side as cycle.js does. */}
+              <div className="flex flex-col gap-3 min-w-[12rem]">
+                <Select label={t('Width')} size="sm" value={size.width} onChange={(e) => cycle.stage.setWidth(e.target.value)}>
+                  {widthOptions(monitors).map((v) => <option key={v} value={v}>{v === 'auto' ? t('auto') : v}</option>)}
+                </Select>
+                <Select label={t('Height')} size="sm" value={size.height} onChange={(e) => cycle.stage.setHeight(e.target.value)}>
+                  {heightOptions(monitors).map((v) => <option key={v} value={v}>{v === 'auto' ? t('auto') : v}</option>)}
+                </Select>
+                <Select label={t('Scale')} size="sm" value={size.scale} onChange={(e) => cycle.stage.setScale(e.target.value)}>
+                  {SCALE_VALUES.map((v) => <option key={v} value={v}>{scaleLabel(v)}</option>)}
+                </Select>
+              </div>
+            </ToolbarDisclosure>
 
             <ToolbarDisclosure label={t('Filters')} icon={Filter} count={activeCount} align="end">
               <MonitorFilterBar monitors={cycle.allMonitors} onChange={noop} />
@@ -158,11 +200,22 @@ export function CycleLayout({
               <RequirePerm feature="stream" level="View" fallback="message">
                 <div
                   ref={stageRef}
-                  className="flex-1 min-h-0 p-2 flex items-center justify-center"
+                  className={clsx('flex-1 min-h-0 p-2 flex', sized ? 'overflow-auto' : 'items-center justify-center')}
                   dir="ltr"
                 >
-                  <div className="relative" style={stageFitStyle(box, dims.width, dims.height)}>
-                    {renderStage(current, viewMode)}
+                  <div
+                    ref={frameRef}
+                    data-testid="cycle-stage"
+                    className={clsx('group relative overflow-hidden shrink-0', sized && 'm-auto')}
+                    style={frameStyle}
+                    {...zoom.gestures}
+                  >
+                    <div className="absolute inset-0" style={zoom.style}>
+                      {renderStage(current, viewMode)}
+                    </div>
+                    {/* Zoom, fullscreen, watch and edit, on hover — legacy
+                        getStreamHTML's button block. */}
+                    <TileControls monitorId={current.id} targetRef={frameRef} zoom={zoom} />
                   </div>
                 </div>
               </RequirePerm>

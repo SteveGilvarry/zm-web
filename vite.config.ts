@@ -30,11 +30,11 @@ export default defineConfig(({ mode }) => {
   ],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(import.meta.dirname, './src'),
     },
   },
   build: {
-    rollupOptions: {
+    rolldownOptions: {
       output: {
         // Split the framework out of the entry chunk. Pages are already lazy
         // (one chunk each, hls.js its own), but everything shared still
@@ -45,12 +45,15 @@ export default defineConfig(({ mode }) => {
         // by every application change.
         // Matched on the resolved path, not the package name: the app
         // imports `react-dom/client`, which the name form does not catch —
-        // it left 130 kB of react-dom in the entry chunk.
-        manualChunks(id) {
-          if (!id.includes('node_modules')) return;
-          if (/node_modules\/(react|react-dom|scheduler)\//.test(id)) return 'react';
-          if (id.includes('node_modules/@tanstack/')) return 'tanstack';
-          if (/node_modules\/(i18next|react-i18next)/.test(id)) return 'i18n';
+        // it left 130 kB of react-dom in the entry chunk. Vite 8 bundles with
+        // Rolldown, whose `codeSplitting.groups` replaces `manualChunks`;
+        // anything no group matches falls back to automatic splitting.
+        codeSplitting: {
+          groups: [
+            { name: 'react', test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/, priority: 20 },
+            { name: 'tanstack', test: /node_modules[\\/]@tanstack[\\/]/, priority: 10 },
+            { name: 'i18n', test: /node_modules[\\/](i18next|react-i18next)/, priority: 10 },
+          ],
         },
       },
     },

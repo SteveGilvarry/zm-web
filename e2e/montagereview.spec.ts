@@ -25,7 +25,8 @@ test.describe('Montage Review', () => {
       await gotoSkin(page, '/montagereview', skin);
 
       await expect(reviewTransport(page, skin)).toBeVisible();
-      await expect(page.getByText(/timeline/i).first()).toBeVisible();
+      // Legacy's timeline has no caption; the lane itself is the proof.
+      await expect(page.getByTestId('review-timeline')).toBeVisible();
       for (const name of ['e2e-Front Door', 'e2e-Driveway', 'e2e-Garage', 'e2e-PTZ Dome']) {
         await expect(visibleText(page, name)).toBeVisible();
       }
@@ -36,8 +37,15 @@ test.describe('Montage Review', () => {
     }) => {
       await gotoSkin(page, '/montagereview', skin);
 
+      // The page's own 1 h load may still be answering when the click lands,
+      // so wait for the request that carries a day, not for the next one.
+      const windowMs = (url: string) => {
+        const q = new URL(url).searchParams;
+        return Date.parse(q.get('end_time') ?? '') - Date.parse(q.get('start_time') ?? '');
+      };
       const pending = page.waitForResponse(
-        (r) => /\/api\/v3\/events(\?|$)/.test(r.url()) && r.request().method() === 'GET',
+        (r) => /\/api\/v3\/events(\?|$)/.test(r.url()) && r.request().method() === 'GET'
+          && windowMs(r.url()) > 20 * 60 * 60 * 1000,
         { timeout: 20_000 },
       );
       await page.getByRole('button', { name: RANGE_24H[skin] }).click();

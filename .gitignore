@@ -50,6 +50,7 @@ test-results/
 playwright-report/
 .playwright/
 coverage/
+.vitest/
 
 # Playwright storage state minted per run by e2e/fixtures.ts
 e2e/.auth/

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createContext, useContext, useState, type ReactNode } from 'react';
@@ -10,6 +10,7 @@ import { useEventPlaybackStore } from '@/stores/eventPlayback';
 import {
   dateInputToStartTime,
   defaultStartTimeLowerBound,
+  searchRule,
   startTimeToDateInput,
   useEventsListPage,
 } from './useEventsListPage';
@@ -36,7 +37,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: null, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => {
   server.resetHandlers();
@@ -169,26 +170,28 @@ describe('useEventsListPage', () => {
     expect(result.current.showDefaultHourHint).toBe(true);
   });
 
-  it('sends the name and notes boxes to the server as query params', async () => {
+  it('sends the search and notes boxes to the server as query params', async () => {
     stub();
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events).toHaveLength(2));
-    expect(eventRequests[0].has('name')).toBe(false);
+    expect(eventRequests[0].has('q')).toBe(false);
 
     act(() => result.current.setSearchQuery('continuous'));
-    // Free text is committed to the URL after a short pause, then refetched.
-    await waitFor(() => expect(eventRequests.at(-1)!.get('name')).toBe('continuous'));
+    // Free text is committed to the URL after a short pause, then refetched
+    // as zm-api's `q` (every column, legacy's table search), not a Name match.
+    await waitFor(() => expect(eventRequests.at(-1)!.get('q')).toBe('continuous'));
+    expect(eventRequests.at(-1)!.has('name')).toBe(false);
     // Narrowing further keeps the seeded hour (legacy keeps its prefilled term too).
     expect(result.current.showDefaultHourHint).toBe(true);
     // Nothing is dropped locally: the page is whatever the server answered.
     expect(result.current.events).toHaveLength(2);
 
     act(() => result.current.setSearchQuery(''));
-    await waitFor(() => expect(eventRequests.at(-1)!.has('name')).toBe(false));
+    await waitFor(() => expect(eventRequests.at(-1)!.has('q')).toBe(false));
     // One event type is a plain `notes` substring on /events.
     act(() => result.current.setNotesFilter(['Motion']));
     await waitFor(() => expect(eventRequests.at(-1)!.get('notes')).toBe('Motion'));
-    expect(eventRequests.at(-1)!.has('name')).toBe(false);
+    expect(eventRequests.at(-1)!.has('q')).toBe(false);
   });
 
   it('ORs several event types through /filters/preview, as legacy does', async () => {
@@ -294,21 +297,45 @@ describe('useEventsListPage', () => {
     await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
     expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toEqual([
       { field: 'monitor_id', op: 'in', value: [1, 2] },
-      { field: 'name', op: 'like', value: '%door%' },
+      // The search box: any text column contains it (preview has no `q`).
+      {
+        match: 'any',
+        rules: [
+          { field: 'name', op: 'like', value: '%door%' },
+          { field: 'cause', op: 'like', value: '%door%' },
+          { field: 'notes', op: 'like', value: '%door%' },
+          { field: 'monitor_name', op: 'like', value: '%door%' },
+        ],
+      },
       { field: 'cause', op: 'like', value: '%Motion%' },
       { field: 'notes', op: 'like', value: '%parcel%' },
     ]);
+  });
+
+  it('searches the id too when the search box holds a number', () => {
+    expect(searchRule('42')).toEqual({
+      match: 'any',
+      rules: [
+        { field: 'id', op: 'eq', value: 42 },
+        { field: 'name', op: 'like', value: '%42%' },
+        { field: 'cause', op: 'like', value: '%42%' },
+        { field: 'notes', op: 'like', value: '%42%' },
+        { field: 'monitor_name', op: 'like', value: '%42%' },
+      ],
+    });
   });
 
   it('resolves a tag to event ids on the group path, where the AST has no tag field', async () => {
     mockSearch = { group: 3, tag: 4 };
     stub();
     let previewBody: Record<string, unknown> | null = null;
+    const tagLookups: string[] = [];
     server.use(
-      http.get('/api/v3/tags/4', () => HttpResponse.json({
-        id: 4, name: 'review', events: [{ id: 9, monitor_id: 1, name: 'Event 9' }],
-        total_events: 1, current_page: 1, last_page: 1, per_page: 1000,
-      })),
+      // The tagged side comes from /events itself (zm-api#136's tag_id).
+      http.get('/api/v3/events', ({ request }) => {
+        tagLookups.push(new URL(request.url).searchParams.get('tag_id') ?? '');
+        return HttpResponse.json({ items: [event(9)], total: 1, per_page: 1000, current_page: 1, last_page: 1 });
+      }),
       http.post('/api/v3/filters/preview', async ({ request }) => {
         previewBody = (await request.json()) as Record<string, unknown>;
         return HttpResponse.json({
@@ -318,9 +345,212 @@ describe('useEventsListPage', () => {
     );
     const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
     await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    expect(tagLookups).toEqual(['4']);
     expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toContainEqual(
       { field: 'id', op: 'in', value: [9] },
     );
+  });
+
+  it('turns No Tag into "not among the tagged events" on the preview path', async () => {
+    mockSearch = { monitor_id: [1, 2], tag: 'none' };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    const tagLookups: string[] = [];
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        tagLookups.push(new URL(request.url).searchParams.get('tag_id') ?? '');
+        return HttpResponse.json({ items: [event(4), event(5)], total: 2, per_page: 1000, current_page: 1, last_page: 1 });
+      }),
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1 });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    // It asks for the tagged events (`any`), the short side of the split.
+    expect(tagLookups).toEqual(['any']);
+    expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toContainEqual(
+      { field: 'id', op: 'not_in', value: [4, 5] },
+    );
+  });
+
+  it('sends several tags, No Tag and Any Tag straight to /events', async () => {
+    mockSearch = { tag: [3, 5] };
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(eventRequests.length).toBeGreaterThan(0));
+    expect(eventRequests.at(-1)!.get('tag_id')).toBe('3,5');
+    expect(result.current.tagFilter).toEqual([3, 5]);
+
+    act(() => result.current.setTagFilter([3, 5, 'any']));
+    // Any Tag on its own: legacy only honours a sentinel as the whole value.
+    await waitFor(() => expect(eventRequests.at(-1)!.get('tag_id')).toBe('any'));
+    expect(result.current.tagFilter).toEqual(['any']);
+
+    act(() => result.current.setTagFilter(['any', 7]));
+    await waitFor(() => expect(eventRequests.at(-1)!.get('tag_id')).toBe('7'));
+
+    act(() => result.current.setTagFilter([7, 'none']));
+    await waitFor(() => expect(eventRequests.at(-1)!.get('tag_id')).toBe('none'));
+    expect(result.current.filterTerms).toContainEqual(
+      expect.objectContaining({ attr: 'Tags', op: '=', val: '0' }),
+    );
+  });
+
+  it('sums the footer over the whole result with totals=true', async () => {
+    stub();
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        eventRequests.push(new URL(request.url).searchParams);
+        return HttpResponse.json({
+          items: [event(1)], total: 900, per_page: 25, current_page: 1, last_page: 36,
+          total_length_seconds: 7200.5, total_disk_space: 5_000_000_000,
+        });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.totals.scope).toBe('all'));
+    expect(eventRequests.at(-1)!.get('totals')).toBe('true');
+    expect(result.current.totals).toEqual({ duration: 7200.5, disk: 5_000_000_000, scope: 'all' });
+  });
+
+  it('falls back to the page sums where the API has no totals', async () => {
+    mockSearch = { monitor_id: [1, 2] };
+    stub();
+    server.use(
+      http.post('/api/v3/filters/preview', () => HttpResponse.json({
+        items: [event(1), event(2)], total: 2, per_page: 25, current_page: 1, last_page: 1,
+      })),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events).toHaveLength(2));
+    expect(result.current.totals).toEqual({ duration: 60, disk: 2 * 1_048_576, scope: 'page' });
+  });
+
+  it('picks several groups and lists the union of their monitors', async () => {
+    mockSearch = { group: [3, 4] };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/v3/groups-monitors', () => HttpResponse.json({
+        items: [
+          { id: 1, group_id: 3, monitor_id: 1 }, { id: 2, group_id: 4, monitor_id: 2 },
+          { id: 3, group_id: 4, monitor_id: 1 }, { id: 4, group_id: 5, monitor_id: 8 },
+        ],
+        total: 4, per_page: 1000, current_page: 1, last_page: 1,
+      })),
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1 });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    expect(result.current.groupFilter).toEqual([3, 4]);
+    expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toContainEqual(
+      { field: 'monitor_id', op: 'in', value: [1, 2] },
+    );
+    expect(result.current.filterTerms).toContainEqual(
+      expect.objectContaining({ attr: 'Group', op: '=', val: '3,4' }),
+    );
+  });
+
+  it('lists a term list from the filter editor through preview, Group and Tags rewritten', async () => {
+    mockSearch = {
+      terms: JSON.stringify([
+        { obr: '0', attr: 'Group', op: '=', val: '3', cbr: '0' },
+        { cnj: 'and', obr: '0', attr: 'Tags', op: '!=', val: '4', cbr: '0' },
+        { cnj: 'and', obr: '0', attr: 'Cause', op: 'LIKE', val: 'Motion', cbr: '0' },
+      ]),
+    };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/v3/events', ({ request }) => {
+        eventRequests.push(new URL(request.url).searchParams);
+        return HttpResponse.json({ items: [event(6)], total: 1, per_page: 1000, current_page: 1, last_page: 1 });
+      }),
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ items: [event(9)], total: 1, per_page: 25, current_page: 1, last_page: 1 });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([9]));
+    expect(result.current.termsMode?.terms).toHaveLength(3);
+    expect(result.current.showDefaultHourHint).toBe(false);
+    // The only /events call is the tag lookup, not a list fetch.
+    expect(eventRequests.map((p) => p.get('tag_id'))).toEqual(['4']);
+    expect(previewBody).toMatchObject({
+      where: {
+        match: 'all',
+        rules: [
+          { field: 'monitor_id', op: 'in', value: [1, 2] },
+          { field: 'id', op: 'not_in', value: [6] },
+          { field: 'cause', op: 'like', value: '%Motion%' },
+        ],
+      },
+      sort: { field: 'start_time', dir: 'asc' },
+    });
+    // Prev / Next cannot replay a term list, so event links carry nothing.
+    expect(result.current.detailSearch).toEqual({});
+    expect(JSON.parse(result.current.filterLinkSearch.terms ?? '[]')).toHaveLength(3);
+
+    act(() => result.current.clearTerms());
+    await waitFor(() => expect(result.current.termsMode).toBeNull());
+  });
+
+  it('opens a saved filter by id and links back to it', async () => {
+    mockSearch = { filter_id: 12 };
+    stub();
+    let previewBody: Record<string, unknown> | null = null;
+    server.use(
+      http.get('/api/v3/filters/12', () => HttpResponse.json({
+        id: 12, name: 'Night motion',
+        query_json: JSON.stringify({ terms: [{ attr: 'MonitorId', op: '=', val: '1' }] }),
+      })),
+      http.post('/api/v3/filters/preview', async ({ request }) => {
+        previewBody = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ items: [event(3)], total: 1, per_page: 25, current_page: 1, last_page: 1 });
+      }),
+    );
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.events.map((e) => e.id)).toEqual([3]));
+    expect(result.current.termsMode).toMatchObject({ filterId: 12, filterName: 'Night motion', reasons: [] });
+    expect(result.current.filterLinkSearch).toEqual({ id: 12 });
+    expect((previewBody as unknown as { where: { rules: unknown[] } }).where.rules).toEqual([
+      { field: 'monitor_id', op: 'eq', value: 1 },
+    ]);
+  });
+
+  it('says why a term list cannot be listed instead of guessing', async () => {
+    mockSearch = { terms: JSON.stringify([{ attr: 'Name', op: '=~', val: '^a' }]) };
+    stub();
+    let previewCalls = 0;
+    server.use(http.post('/api/v3/filters/preview', () => {
+      previewCalls += 1;
+      return HttpResponse.json({ items: [], total: 0, per_page: 25, current_page: 1, last_page: 1 });
+    }));
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    await waitFor(() => expect(result.current.termsMode?.reasons.length).toBeGreaterThan(0));
+    expect(previewCalls).toBe(0);
+  });
+
+  it('carries the filters, with the seeded hour made explicit, to the timeline', async () => {
+    mockSearch = { monitor_id: 1, page: 3, page_size: 50 };
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    expect(result.current.timelineSearch).toEqual({ monitor_id: 1 });
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
+  });
+
+  it('puts the seeded last hour on the timeline link of a plain landing', async () => {
+    stub();
+    const { result } = renderHook(() => useEventsListPage(), { wrapper: wrapper() });
+    expect(result.current.timelineSearch.start).toBe(result.current.dateInputValue);
+    expect(result.current.timelineSearch.start).not.toBe('');
+    await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
 
   it('exposes the active filters as ZoneMinder terms for the Filter button', async () => {
@@ -331,7 +561,7 @@ describe('useEventsListPage', () => {
       { obr: '0', attr: 'MonitorId', op: '=', val: '7', cbr: '0' },
       { cnj: 'and', obr: '0', attr: 'Archived', op: '=', val: '1', cbr: '0' },
     ]);
-    expect(JSON.parse(result.current.filterLinkSearch.terms)).toHaveLength(2);
+    expect(JSON.parse(result.current.filterLinkSearch.terms ?? '')).toHaveLength(2);
     await waitFor(() => expect(result.current.isLoading).toBe(false));
   });
 

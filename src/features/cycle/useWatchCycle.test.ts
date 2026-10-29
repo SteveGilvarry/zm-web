@@ -7,6 +7,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { act, renderHook } from '@testing-library/react';
 import type { Monitor } from '@/types';
+import { useWatchPrefsStore } from '@/stores/watchPrefs';
 
 const navigate = vi.fn();
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => navigate }));
@@ -20,6 +21,7 @@ const m = (id: number): Monitor =>
   ({ id, name: `Cam ${id}`, capturing: 'Always', width: 1920, height: 1080, orientation: 'ROTATE_0' }) as unknown as Monitor;
 
 afterEach(() => {
+  useWatchPrefsStore.setState({ cyclePeriodS: null });
   navigate.mockClear();
   vi.useRealTimers();
 });
@@ -46,7 +48,7 @@ describe('useWatchCycle — rotation', () => {
     // The page rebuilds this list every render (it is a `.filter()` over the
     // filter row's survivors); the rotation must survive that.
     const { result, rerender } = renderHook(
-      ({ id }: { id: number }) => useWatchCycle(id, [m(1), m(2), m(3)].map((x) => ({ ...x })), true),
+      ({ id }: { id: number }) => useWatchCycle(id, [m(1), m(2), m(3)].map((x) => ({ ...x })), true, { autoStart: true }),
       { initialProps: { id: 1 } },
     );
 
@@ -81,10 +83,80 @@ describe('useWatchCycle — rotation', () => {
 
   it('holds still while paused', () => {
     vi.useFakeTimers();
-    const { result } = renderHook(() => useWatchCycle(1, [m(1), m(2)], true));
+    const { result } = renderHook(() => useWatchCycle(1, [m(1), m(2)], true, { autoStart: true }));
     act(() => result.current.togglePause());
     act(() => { vi.advanceTimersByTime(30_000); });
     expect(result.current.isPaused).toBe(true);
     expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('opens paused unless the page asked for cycle=true', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useWatchCycle(1, [m(1), m(2)], true));
+    expect(result.current.isPaused).toBe(true);
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(navigate).not.toHaveBeenCalled();
+    act(() => result.current.togglePause());
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(navigate).toHaveBeenCalledWith({ to: '/monitors/$monitorId', params: { monitorId: '2' } });
+  });
+
+  it('only counts down while the stream is playing', () => {
+    vi.useFakeTimers();
+    const { result, rerender } = renderHook(
+      ({ playing }: { playing: boolean }) => useWatchCycle(1, [m(1), m(2)], true, { autoStart: true, playing }),
+      { initialProps: { playing: false } },
+    );
+    act(() => { vi.advanceTimersByTime(5_000); });
+    expect(result.current.countdown).toBe(10);
+    rerender({ playing: true });
+    act(() => { vi.advanceTimersByTime(4_000); });
+    expect(result.current.countdown).toBe(6);
+    // Stopped again (idle prompt, hidden tab, Stop): the number holds.
+    rerender({ playing: false });
+    act(() => { vi.advanceTimersByTime(20_000); });
+    expect(result.current.countdown).toBe(6);
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('skips a monitor whose stream failed', () => {
+    vi.useFakeTimers();
+    renderHook(() => useWatchCycle(1, [m(1), m(2)], true, { autoStart: true, playing: false, failed: true }));
+    act(() => { vi.advanceTimersByTime(1_000); });
+    expect(navigate).toHaveBeenCalledWith({ to: '/monitors/$monitorId', params: { monitorId: '2' } });
+  });
+
+  it('stops the rotation when a monitor pill is clicked', () => {
+    vi.useFakeTimers();
+    const { result } = renderHook(() => useWatchCycle(1, [m(1), m(2), m(3)], true, { autoStart: true }));
+    act(() => result.current.jumpTo(2));
+    expect(result.current.isPaused).toBe(true);
+    expect(navigate).toHaveBeenCalledWith({ to: '/monitors/$monitorId', params: { monitorId: '3' } });
+    navigate.mockClear();
+    act(() => { vi.advanceTimersByTime(30_000); });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
+  it('remembers the period across mounts, as zmCyclePeriod does', () => {
+    const first = renderHook(() => useWatchCycle(1, [m(1), m(2)], true));
+    act(() => first.result.current.setInterval(30));
+    first.unmount();
+    expect(useWatchPrefsStore.getState().cyclePeriodS).toBe(30);
+    const second = renderHook(() => useWatchCycle(1, [m(1), m(2)], true));
+    expect(second.result.current.intervalS).toBe(30);
+  });
+
+  it('follows a navigation it did not make instead of bouncing back', () => {
+    vi.useFakeTimers();
+    const list = [m(1), m(2), m(3)];
+    const { result, rerender } = renderHook(
+      ({ id }: { id: number }) => useWatchCycle(id, list, true, { autoStart: true }),
+      { initialProps: { id: 1 } },
+    );
+    rerender({ id: 3 });
+    expect(navigate).not.toHaveBeenCalled();
+    expect(result.current.current?.id).toBe(3);
+    act(() => { vi.advanceTimersByTime(10_000); });
+    expect(navigate).toHaveBeenCalledWith({ to: '/monitors/$monitorId', params: { monitorId: '1' } });
   });
 });

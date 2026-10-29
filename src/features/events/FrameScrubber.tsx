@@ -4,7 +4,12 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import { ChevronLeft, ChevronRight, Zap } from 'lucide-react';
 import { getAllFramesForEvent, type Frame } from '@/api/frames';
-import { alarmRuns, isAlarmFrame, SCRUBBER_LABEL_COUNT } from './alarmCues';
+import { isAlarmFrame, SCRUBBER_LABEL_COUNT } from './alarmCues';
+import { levelGraphBands, levelGraphPoints, levelGraphScoreAt, levelGraphSeries } from './levelGraph';
+
+/** The graph's own coordinate box; the SVG stretches it over the track. */
+const GRAPH_W = 1000;
+const GRAPH_H = 48;
 
 interface FrameScrubberProps {
   eventId: number;
@@ -24,10 +29,10 @@ interface FrameScrubberProps {
 
 /**
  * Per-frame scrubber backed by `/api/v3/frames?event_id=…`, after legacy's
- * `#progressBar`: ten wall-clock labels across the track, an `alarmCue` span
- * per alarm stretch whose height follows its score, and a hover indicator
- * showing the time of day under the pointer. Non-alarm frames stay as thin
- * ticks so single-frame stepping still has a grid to read.
+ * `#progressBar`: ten wall-clock labels across the track, the 1.39.41 level
+ * graph (each frame's motion score as a line, alarm periods shaded behind
+ * it), and a hover indicator reading the time of day and the score under
+ * the pointer.
  *
  * Three ways to navigate: click anywhere on the track to jump there, drag to
  * scrub, or use the prev / next-frame buttons for single-step inspection.
@@ -62,14 +67,8 @@ export function FrameScrubber({
     : 0;
   const trackLength = Math.max(durationSec, Number.isFinite(lastDelta) ? lastDelta : 0, 0.001);
 
-  // Highest score across the event, so the alarm spans' heights read relative
-  // to this event's own peak.
-  const maxScore = useMemo(
-    () => sortedFrames.reduce((m, f) => Math.max(m, f.score), 0),
-    [sortedFrames],
-  );
-
-  const runs = useMemo(() => alarmRuns(sortedFrames), [sortedFrames]);
+  const series = useMemo(() => levelGraphSeries(sortedFrames, trackLength), [sortedFrames, trackLength]);
+  const bands = useMemo(() => levelGraphBands(series.samples, trackLength), [series, trackLength]);
 
   // Find the frame whose delta is closest to the current playhead.
   const activeIndex = useMemo(() => {
@@ -121,6 +120,7 @@ export function FrameScrubber({
   const clockAt = (seconds: number): string | null =>
     startTime ? new Date(startTime.getTime() + seconds * 1000).toLocaleTimeString() : null;
 
+  const hoverScore = hoverSec == null ? null : levelGraphScoreAt(series, hoverSec);
   const hoverPct = hoverSec == null ? 0 : Math.max(0, Math.min(100, (hoverSec / trackLength) * 100));
 
   return (
@@ -168,41 +168,51 @@ export function FrameScrubber({
             onPointerDown={handlePointerDown}
             onPointerMove={handlePointerMove}
             onPointerLeave={() => setHoverSec(null)}
-            className="relative h-8 rounded border border-border-subtle bg-bg-sunken overflow-hidden cursor-crosshair select-none"
+            className="relative h-12 rounded border border-border-subtle bg-bg-sunken overflow-hidden cursor-crosshair select-none"
             style={{ touchAction: 'none' }}
           >
-            {/* Alarm spans — legacy's `alarmCue`, hanging from the top with a
-                height that follows the stretch's score. */}
-            {runs.map((run) => (
-              <div
-                key={run.start}
-                data-testid="alarm-cue"
-                data-score={run.score}
-                className="absolute top-0 bg-warn/60 pointer-events-none"
-                style={{
-                  left: `${(run.start / trackLength) * 100}%`,
-                  width: `${Math.max(0.4, ((run.end - run.start) / trackLength) * 100)}%`,
-                  // Legacy sets the span's height to the score in pixels on a
-                  // 16 px bar; against the event's own peak it reads the same
-                  // way at any bar height, and a scoreless run stays flat.
-                  height: `${maxScore > 0 ? Math.min(100, (run.score / maxScore) * 100) : 0}%`,
-                }}
-              />
-            ))}
-
-            {/* Frame ticks for everything that is not an alarm: the grid the
-                step buttons move along. */}
-            {sortedFrames.map((f, i) => (
-              (isAlarmFrame(f) && i !== activeIndex) ? null : (
-                <FrameTick
-                  key={f.id}
-                  frame={f}
-                  maxScore={maxScore}
-                  isActive={i === activeIndex}
-                  leftPct={(parseFloat(f.delta) / trackLength) * 100}
+            {/* Legacy's level graph (1.39.41 `LevelGraph.js`): alarm
+                periods as a pale wash, the motion score as a line scaled
+                to this event's own peak. */}
+            <svg
+              data-testid="level-graph"
+              viewBox={`0 0 ${GRAPH_W} ${GRAPH_H}`}
+              preserveAspectRatio="none"
+              aria-hidden
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            >
+              {bands.map((b) => (
+                <rect
+                  key={b.start}
+                  data-testid="level-graph-band"
+                  x={(b.start / trackLength) * GRAPH_W}
+                  y={0}
+                  width={Math.max(1, ((b.end - b.start) / trackLength) * GRAPH_W)}
+                  height={GRAPH_H}
+                  fill="var(--warn)"
+                  fillOpacity={0.25}
                 />
-              )
-            ))}
+              ))}
+              {series.hasScores && (
+                <polyline
+                  data-testid="level-graph-motion"
+                  points={levelGraphPoints(series.samples, trackLength, series.motionMax, GRAPH_W, GRAPH_H)}
+                  fill="none"
+                  stroke="var(--fg-muted)"
+                  strokeWidth={1.5}
+                  strokeLinejoin="round"
+                  vectorEffect="non-scaling-stroke"
+                />
+              )}
+            </svg>
+
+            {/* The active frame: where the step buttons sit. */}
+            {activeFrame && (
+              <FrameTick
+                frame={activeFrame}
+                leftPct={(parseFloat(activeFrame.delta) / trackLength) * 100}
+              />
+            )}
 
             {/* Hover indicator — legacy's `#indicator`, labelled with the
                 wall-clock time under the pointer. */}
@@ -215,6 +225,7 @@ export function FrameScrubber({
               >
                 <span className="absolute top-0 start-1 whitespace-nowrap text-xs font-mono tabular-nums text-fg bg-surface/80 px-0.5">
                   {clockAt(hoverSec) ?? t('{{seconds}}s', { seconds: Math.round(hoverSec) })}
+                  {hoverScore != null && <> &mdash; {t('motion {{score}}', { score: hoverScore })}</>}
                 </span>
               </div>
             )}
@@ -249,36 +260,14 @@ export function FrameScrubber({
   );
 }
 
-interface FrameTickProps {
-  frame: Frame;
-  maxScore: number;
-  isActive: boolean;
-  leftPct: number;
-}
-
-function FrameTick({ frame, maxScore, isActive, leftPct }: FrameTickProps) {
-  const isAlarm = isAlarmFrame(frame);
-  // Intensity 0..1 by score / maxScore — high-motion stretches read through
-  // opacity rather than a second hue, so the only colour on the track is the
-  // one that means "alarm".
-  const intensity = maxScore > 0 ? Math.min(1, frame.score / maxScore) : 0;
-
+/** The playhead's frame, as a mark on the graph. */
+function FrameTick({ frame, leftPct }: { frame: Frame; leftPct: number }) {
   return (
     <div
-      className="absolute top-0 bottom-0 w-px pointer-events-none"
-      style={{
-        left: `${Math.max(0, Math.min(100, leftPct))}%`,
-        background: isActive
-          ? 'var(--fg)'
-          : isAlarm
-            ? 'var(--warn)'
-            : 'var(--fg-dim)',
-        opacity: isActive
-          ? 1
-          : isAlarm
-            ? 0.45 + 0.55 * intensity
-            : 0.25 + 0.4 * intensity,
-      }}
+      data-testid="active-frame-tick"
+      data-frame-id={frame.frame_id}
+      className="absolute top-0 bottom-0 w-px pointer-events-none bg-fg"
+      style={{ left: `${Math.max(0, Math.min(100, leftPct))}%` }}
     />
   );
 }

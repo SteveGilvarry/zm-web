@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll, afterAll, afterEach } from 'vitest';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import {
   EVENT_SORT_FIELDS,
@@ -27,12 +27,42 @@ beforeAll(() => {
     user: null,
     isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
   server.close();
   useAuthStore.getState().clearAuth();
+});
+
+describe('getEvents — zm-api#136 additions', () => {
+  it('sends tag_op, totals and the three new sort fields, and surfaces the totals', async () => {
+    let url: URL | undefined;
+    server.use(
+      http.get('*/api/v3/events', ({ request }) => {
+        url = new URL(request.url);
+        return HttpResponse.json({
+          items: [], total: 0, current_page: 1, per_page: 25, last_page: 1,
+          total_disk_space: 62_000_000_000, total_length_seconds: 2_406_647,
+        });
+      }),
+    );
+    const page = await getEvents({ tag_id: 'none', tag_op: 'not_in', totals: true, sort: 'disk_space', direction: 'desc' });
+    expect(url?.searchParams.get('tag_id')).toBe('none');
+    expect(url?.searchParams.get('tag_op')).toBe('not_in');
+    expect(url?.searchParams.get('totals')).toBe('true');
+    expect(url?.searchParams.get('sort')).toBe('disk_space');
+    expect(page.total_disk_space).toBe(62_000_000_000);
+    expect(page.total_length_seconds).toBe(2_406_647);
+  });
+
+  it('maps the legacy Archived / Emailed / DiskSpace sort columns', () => {
+    expect(legacySortFieldToApi('Archived')).toBe('archived');
+    expect(legacySortFieldToApi('Emailed')).toBe('emailed');
+    expect(legacySortFieldToApi('DiskSpace')).toBe('disk_space');
+    expect(legacySortFieldToApi('Tags')).toBe('start_time');
+    for (const f of ['archived', 'emailed', 'disk_space']) expect(EVENT_SORT_FIELDS).toContain(f);
+  });
 });
 
 describe('getEvents', () => {
@@ -99,7 +129,7 @@ describe('EventSortField', () => {
       expect(isEventSortField(f)).toBe(true);
       expect(EVENT_SORT_FIELDS).toContain(f);
     }
-    expect(isEventSortField('disk_space')).toBe(false);
+    expect(isEventSortField('tags')).toBe(false);
   });
 
   it('maps the legacy sort-field names onto them', () => {
@@ -108,7 +138,7 @@ describe('EventSortField', () => {
     expect(legacySortFieldToApi('Frames')).toBe('frames');
     expect(legacySortFieldToApi('MonitorName')).toBe('monitor_id');
     // Still no backend column for these two.
-    expect(legacySortFieldToApi('DiskSpace')).toBe('start_time');
+    expect(legacySortFieldToApi('Tags')).toBe('start_time');
   });
 });
 

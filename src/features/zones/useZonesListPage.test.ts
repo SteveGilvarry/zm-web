@@ -2,9 +2,9 @@
  * `useZonesListPage` — legacy `?view=zones&mid=`: the zone table for one
  * monitor plus the "Mark" checkboxes and their bulk delete.
  */
-import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
+import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
@@ -12,6 +12,14 @@ import { useAuthStore } from '@/stores/auth';
 import { useToastStore } from '@/components/common/toastStore';
 import { makeZone } from '@/test/fixtures';
 import { useZonesListPage } from './useZonesListPage';
+
+const navigate = vi.fn();
+/** What `useSearch` answers — the `?zid=` a test lands on. */
+let routeSearch: Record<string, unknown> = {};
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => navigate,
+  useSearch: () => routeSearch,
+}));
 
 const paged = (items: unknown[]) =>
   HttpResponse.json({ items, total: items.length, per_page: 100, current_page: 1, last_page: 1 });
@@ -21,7 +29,14 @@ let deleted: number[] = [];
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
+});
+beforeEach(() => {
+  routeSearch = {};
+  navigate.mockClear();
+  server.use(http.get('/api/v3/monitor-status', () => paged([
+    { monitor_id: 4, status: 'Connected', capture_fps: '12.00', analysis_fps: '0', capture_bandwidth: 0, updated_on: '2026-10-18T00:00:00Z' },
+  ])));
 });
 afterEach(() => {
   server.resetHandlers();
@@ -279,5 +294,61 @@ describe('useZonesListPage — editor target', () => {
 
     act(() => result.current.closeEditor());
     expect(result.current.editing).toBeNull();
+  });
+});
+
+describe('useZonesListPage — legacy order and status', () => {
+  it('lists the zones largest first, measured from the polygon', async () => {
+    stubMonitor();
+    stubZones([
+      zone(1, 'Small', { coords: '0,0 10,0 10,10 0,10', area: 999_999 }),
+      zone(2, 'Large', { coords: '0,0 500,0 500,500 0,500', area: 1 }),
+      zone(3, 'Medium', { coords: '0,0 100,0 100,100 0,100' }),
+    ]);
+    const { result } = await mount();
+    await waitFor(() => expect(result.current.view).not.toBeNull());
+    await waitFor(() => expect(result.current.zones.map((z) => z.name)).toEqual(['Large', 'Medium', 'Small']));
+  });
+
+  it('carries the monitor\'s runtime state for the status line', async () => {
+    stubMonitor();
+    stubZones();
+    const { result } = await mount();
+    await waitFor(() => expect(result.current.runtime?.status).toBe('Connected'));
+    expect(result.current.runtime?.captureFpsRaw).toBe('12.00');
+  });
+});
+
+describe('useZonesListPage — ?zid= in the URL', () => {
+  it('opens the zone the URL names, 0 meaning new as in legacy links', async () => {
+    stubMonitor();
+    stubZones();
+    routeSearch = { zid: '2' };
+    const { result, rerender } = await mount();
+    expect(result.current.editing).toBe(2);
+
+    routeSearch = { zid: '0' };
+    rerender();
+    expect(result.current.editing).toBe('new');
+
+    // Back to the list (the browser's Back drops ?zid=).
+    routeSearch = {};
+    rerender();
+    expect(result.current.editing).toBeNull();
+  });
+
+  it('writes the open zone into ?zid= and removes it on close, keeping other params', async () => {
+    stubMonitor();
+    stubZones();
+    const { result } = await mount();
+
+    act(() => result.current.openEditor(3));
+    const open = navigate.mock.calls.at(-1)![0] as { to: string; search: (p: Record<string, unknown>) => Record<string, unknown> };
+    expect(open.to).toBe('.');
+    expect(open.search({ skin: 'classic' })).toEqual({ skin: 'classic', zid: 3 });
+
+    act(() => result.current.closeEditor());
+    const close = navigate.mock.calls.at(-1)![0] as { search: (p: Record<string, unknown>) => Record<string, unknown> };
+    expect(close.search({ skin: 'classic', zid: 3 })).toEqual({ skin: 'classic' });
   });
 });

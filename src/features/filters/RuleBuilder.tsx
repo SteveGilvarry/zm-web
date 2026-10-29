@@ -17,6 +17,7 @@ import {
   splitTagIds, SERVER_CURRENT, SERVER_NONE, TAG_ANY, TAG_NONE,
   type FilterAttrKind,
 } from './attrs';
+import { exclusivePick } from '@/features/events/tagFilter';
 import { bracketCount } from './tree';
 import { newTerm, normaliseTerms } from './terms';
 import { useFilterAttrLabels, useFilterOpLabels, useWeekdayLabels } from './labels';
@@ -26,9 +27,19 @@ interface RuleBuilderProps {
   monitors: Monitor[];
   storage: ZmStorage[];
   onChange: (q: FilterQuery) => void;
+  /** `classic` leaves the first row's conjunction cell blank, as legacy does. */
+  variant?: 'modern' | 'classic';
 }
 
-const BRACKET_CHOICES = [0, 1, 2, 3];
+/**
+ * Legacy's bracket menus (Filter.php:1015-1021): only shown once there are
+ * more than two terms, offering 0…n−2 brackets. A count already saved above
+ * that stays on offer, so loading a filter never rewrites it.
+ */
+function bracketChoices(termCount: number, current: number): number[] {
+  const max = Math.max(termCount - 2, current, 0);
+  return Array.from({ length: max + 1 }, (_, n) => n);
+}
 
 /**
  * Rule-row builder on ZoneMinder terms:
@@ -37,7 +48,7 @@ const BRACKET_CHOICES = [0, 1, 2, 3];
  * preview cannot model sit under their own group so the operator knows
  * "List matches" will be best-effort for them (the daemon still honours them).
  */
-export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderProps) {
+export function RuleBuilder({ query, monitors, storage, onChange, variant = 'modern' }: RuleBuilderProps) {
   const { t } = useTranslation();
   const attrLabels = useFilterAttrLabels();
   const opLabels = useFilterOpLabels();
@@ -53,6 +64,7 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
   const addTerm = () => setTerms([...query.terms, newTerm(monitors)]);
 
   const select = 'px-2 py-1 text-xs bg-surface border border-border-subtle rounded text-fg focus:outline-none focus:border-accent transition-colors';
+  const showBrackets = query.terms.length > 2;
 
   return (
     <div className="space-y-2">
@@ -72,7 +84,8 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
           <div key={i} className="flex items-center gap-1.5 flex-wrap" data-testid="filter-term">
             {i === 0 ? (
               <span className="w-12 text-end text-xs text-fg-dim">
-                {t('where')}
+                {/* Legacy's first row has an empty conjunction cell (Filter.php:1080). */}
+                {variant === 'classic' ? '' : t('where')}
               </span>
             ) : (
               <select
@@ -86,16 +99,18 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               </select>
             )}
 
-            <select
-              aria-label={t('Open brackets')}
-              value={bracketCount(term.obr)}
-              onChange={(e) => updateTerm(i, { obr: e.target.value })}
-              className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
-            >
-              {BRACKET_CHOICES.map((n) => (
-                <option key={n} value={n}>{n === 0 ? '(' : '('.repeat(n)}</option>
-              ))}
-            </select>
+            {showBrackets ? (
+              <select
+                aria-label={t('Open brackets')}
+                value={bracketCount(term.obr)}
+                onChange={(e) => updateTerm(i, { obr: e.target.value })}
+                className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
+              >
+                {bracketChoices(query.terms.length, bracketCount(term.obr)).map((n) => (
+                  <option key={n} value={n}>{'('.repeat(n)}</option>
+                ))}
+              </select>
+            ) : <span className="w-10" aria-hidden />}
 
             <select
               aria-label={t('Attribute')}
@@ -104,11 +119,10 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
                 const attr = e.target.value as FilterAttr;
                 const nextKind = attrMeta(attr)?.kind ?? 'string';
                 const allowed = OPS_BY_KIND[nextKind];
-                updateTerm(i, {
-                  attr,
-                  op: allowed.includes(term.op) ? term.op : allowed[0],
-                  val: '',
-                });
+                updateTerm(i, attr === 'Archived'
+                  // Legacy's Archived term is always "equal to" one of its two states.
+                  ? { attr, op: '=', val: '0' }
+                  : { attr, op: allowed.includes(term.op) ? term.op : allowed[0], val: '' });
               }}
               className={select}
             >
@@ -125,16 +139,22 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               </optgroup>
             </select>
 
-            <select
-              aria-label={t('Operator')}
-              value={term.op}
-              onChange={(e) => updateTerm(i, { op: e.target.value as FilterOp })}
-              className={clsx(select, 'font-mono')}
-            >
-              {(opChoices.includes(term.op) ? opChoices : [term.op, ...opChoices]).map((op) => (
-                <option key={op} value={op} title={opLabels[op]}>{op}</option>
-              ))}
-            </select>
+            {/* Archived reads "equal to" with no operator menu (Filter.php:1085). */}
+            {term.attr === 'Archived' && term.op === '=' ? (
+              <span className="px-2 py-1 text-xs text-fg-muted" data-testid="fixed-operator">{opLabels['=']}</span>
+            ) : (
+              <select
+                aria-label={t('Operator')}
+                value={term.op}
+                onChange={(e) => updateTerm(i, { op: e.target.value as FilterOp })}
+                className={select}
+              >
+                {/* Legacy's operator menu names them in words (Filter::opTypes). */}
+                {(opChoices.includes(term.op) ? opChoices : [term.op, ...opChoices]).map((op) => (
+                  <option key={op} value={op} title={op}>{opLabels[op] ?? op}</option>
+                ))}
+              </select>
+            )}
 
             <ValueInput
               term={term}
@@ -144,16 +164,18 @@ export function RuleBuilder({ query, monitors, storage, onChange }: RuleBuilderP
               onChange={(val) => updateTerm(i, { val })}
             />
 
-            <select
-              aria-label={t('Close brackets')}
-              value={bracketCount(term.cbr)}
-              onChange={(e) => updateTerm(i, { cbr: e.target.value })}
-              className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
-            >
-              {BRACKET_CHOICES.map((n) => (
-                <option key={n} value={n}>{n === 0 ? ')' : ')'.repeat(n)}</option>
-              ))}
-            </select>
+            {showBrackets ? (
+              <select
+                aria-label={t('Close brackets')}
+                value={bracketCount(term.cbr)}
+                onChange={(e) => updateTerm(i, { cbr: e.target.value })}
+                className="w-10 px-1 py-1 text-xs font-mono bg-surface border border-border-subtle rounded text-fg-muted focus:outline-none focus:border-accent transition-colors"
+              >
+                {bracketChoices(query.terms.length, bracketCount(term.cbr)).map((n) => (
+                  <option key={n} value={n}>{')'.repeat(n)}</option>
+                ))}
+              </select>
+            ) : <span className="w-10" aria-hidden />}
 
             <button
               type="button"
@@ -257,6 +279,15 @@ function ValueInput({
       </select>
     );
   }
+  if (kind === 'bool' && term.attr === 'Archived') {
+    // Legacy's `$archiveTypes`: Unarchived / Archived, nothing else.
+    return (
+      <select aria-label={label} value={value === '1' ? '1' : '0'} onChange={(e) => onChange(e.target.value)} className={cls}>
+        <option value="0">{t('Unarchived')}</option>
+        <option value="1">{t('Archived')}</option>
+      </select>
+    );
+  }
   if (kind === 'bool') {
     return (
       <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
@@ -347,15 +378,20 @@ function TagsValue({ value, label, cls, onChange }: ValueCellProps) {
     staleTime: 60_000,
   });
   const tags = [...(data?.items ?? [])].sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  // Read with `decode_multi` tolerance (bare id, comma list, JSON array).
   const selected = splitTagIds(value);
 
+  // Written as the comma list both executors split (FilterTerm.php:135,
+  // Filter.pm:330); one tag is a bare id, which legacy's editor reads back
+  // with `json_decode` (Filter.php:1092). No Tag / Any Tag only work as the
+  // whole value (FilterTerm.php:468), so a sentinel is kept on its own.
   return (
     <select
       multiple
       aria-label={label}
       value={selected}
       onChange={(e) => onChange(
-        Array.from(e.target.selectedOptions, (o) => o.value).join(','),
+        exclusivePick(selected, Array.from(e.target.selectedOptions, (o) => o.value), [TAG_NONE, TAG_ANY]).join(','),
       )}
       className={clsx(cls, 'h-20')}
     >
@@ -375,9 +411,18 @@ function GroupValue({ value, label, cls, onChange }: ValueCellProps) {
     queryFn: () => listGroups(LOOKUP_PAGE),
     staleTime: 60_000,
   });
+  // Legacy's Group value is a multi-select read with `decode_multi`
+  // (Filter.php:1307) and split on commas by both executors, so several
+  // groups travel as a comma list; empty means "All Groups".
   return (
-    <select aria-label={label} value={value} onChange={(e) => onChange(e.target.value)} className={cls}>
-      <option value="">{t('— select —')}</option>
+    <select
+      multiple
+      aria-label={label}
+      title={t('All Groups')}
+      value={splitTagIds(value)}
+      onChange={(e) => onChange(Array.from(e.target.selectedOptions, (o) => o.value).join(','))}
+      className={clsx(cls, 'h-20')}
+    >
       {(data?.items ?? []).map((g) => (
         <option key={g.id} value={String(g.id)}>{g.name}</option>
       ))}

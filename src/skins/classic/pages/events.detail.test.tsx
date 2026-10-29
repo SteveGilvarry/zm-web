@@ -6,7 +6,7 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach, beforeEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import type { ReactNode } from 'react';
 import { renderWithProviders } from '@/test/render';
@@ -16,7 +16,10 @@ import { useEventPlaybackStore } from '@/stores/eventPlayback';
 /* ---------------------------------------------------------------- router */
 
 const mockNavigate = vi.fn();
+/** Whether the router has an entry behind this page — legacy's `document.referrer`. */
+let canGoBack = true;
 vi.mock('@tanstack/react-router', () => ({
+  useCanGoBack: () => canGoBack,
   useSearch: () => ({}),
   useNavigate: () => mockNavigate,
   Link: ({
@@ -72,17 +75,31 @@ const MONITOR = {
 
 const server = setupServer();
 let calls: Array<{ method: string; path: string; body?: unknown }> = [];
+/** Query strings of the event-audit requests (the missing-files check). */
+let auditCalls: string[] = [];
 
 interface StubOptions {
   event?: Record<string, unknown> | null;
   eventData?: unknown[];
   neighbours?: unknown[];
   recommendedMode?: string;
+  /** Event ids the event audit reports with no file on disk. */
+  missing?: number[];
 }
 
 function stub(options: StubOptions = {}) {
-  const { event = EVENT, eventData = [], neighbours = [], recommendedMode = 'direct' } = options;
+  const { event = EVENT, eventData = [], neighbours = [], recommendedMode = 'direct', missing = [] } = options;
   server.use(
+    http.get('/api/v3/reports/event-audit', ({ request }) => {
+      auditCalls.push(new URL(request.url).search);
+      return HttpResponse.json({
+        start: '', end: '',
+        monitors: [{ monitor_id: 1, event_count: 1, first_event_id: 4242, last_event_id: 4242, missing_files: missing, zero_size: [] }],
+      });
+    }),
+    http.get('/api/v3/events/:id/videos', () => HttpResponse.json([
+      { name: '4242-video.mp4', format: 'mp4', size_bytes: 1024, recorded: true },
+    ])),
     http.get('/api/v3/events/:id/info', () => HttpResponse.json({
       duration_seconds: 30, codec: 'h264', recommended_mode: recommendedMode,
     })),
@@ -132,7 +149,7 @@ function signIn(perms: unknown = ALL_EDIT) {
   });
 }
 
-beforeAll(() => { server.listen({ onUnhandledRequest: 'error' }); });
+beforeAll(() => { server.listen({ onUnhandledFrame: 'error' }); });
 beforeEach(() => {
   signIn();
   useEventPlaybackStore.setState({ replayMode: 'none', scaleByMonitor: {}, showStats: false, rate: 1 });
@@ -140,9 +157,10 @@ beforeEach(() => {
 afterEach(() => {
   server.resetHandlers();
   calls = [];
+  auditCalls = [];
   mockNavigate.mockReset();
   useEventPlaybackStore.getState().setShowStats(false);
-  useEventPlaybackStore.getState().setShowZones(false);
+  useEventPlaybackStore.setState({ zonesByMonitor: {} });
   useEventPlaybackStore.getState().setRate(1);
 });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -170,8 +188,8 @@ describe('ClassicEventDetailPage — chrome', () => {
     expect(screen.getByRole('button', { name: 'Refresh' })).toBeInTheDocument();
     expect(screen.getByLabelText('Replay mode')).toBeInTheDocument();
     expect(screen.getByLabelText('Scale')).toBeInTheDocument();
-    // Stream quality and Codec are informational only on recorded playback.
-    expect(screen.getByLabelText('Stream quality')).toBeDisabled();
+    // Legacy hides Stream quality whenever a video tag plays (event.php:255).
+    expect(screen.queryByLabelText('Stream quality')).not.toBeInTheDocument();
     // Codec forces the container (legacy `&codec=`); MJPEG is listed but
     // unselectable because zm-api serves no such endpoint.
     expect(screen.getByLabelText('Codec')).toHaveValue('auto');
@@ -179,15 +197,41 @@ describe('ClassicEventDetailPage — chrome', () => {
     expect(screen.getByLabelText('Playback speed')).toHaveValue('1');
   });
 
-  it('changes the playback rate and reports it in the status line', async () => {
+  it('puts the Rate select in the replay status, as 1.39.41 does', async () => {
     const user = userEvent.setup();
     stub();
     await mountAndSettle();
 
-    await user.selectOptions(screen.getByLabelText('Playback speed'), '2');
+    const status = screen.getByTestId('event-replay-status');
+    const rate = within(status).getByLabelText('Playback speed');
+    await user.selectOptions(rate, '2');
     expect(useEventPlaybackStore.getState().rate).toBe(2);
-    // "2x" is also an <option>; the status line is the bold one.
-    await waitFor(() => expect(screen.getAllByText('2x').some((el) => el.tagName === 'B')).toBe(true));
+    expect(rate).toHaveValue('2');
+  });
+
+  it('lays out the monitor name, DVR buttons and replay status as one row', async () => {
+    stub();
+    await mountAndSettle();
+    const row = screen.getByTestId('event-controls');
+    expect(within(row).getByTestId('event-monitor-status')).toHaveTextContent('(ID=1)');
+    expect(within(row).getByRole('button', { name: 'Previous event' })).toBeInTheDocument();
+    expect(within(row).getByTestId('event-replay-status')).toBeInTheDocument();
+  });
+
+  it('heads the stats column with the tag input, and keeps it when the stats are hidden', async () => {
+    const user = userEvent.setup();
+    useEventPlaybackStore.getState().setShowStats(true);
+    stub();
+    await mountAndSettle();
+    const panel = screen.getByTestId('event-stats-panel');
+    const tags = screen.getByTestId('event-tags');
+    // The tags come first in the same column as the stats table.
+    expect(tags.compareDocumentPosition(panel) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(tags.parentElement).toBe(panel.parentElement?.parentElement);
+
+    await user.click(screen.getByRole('button', { name: 'Stats' }));
+    expect(screen.queryByTestId('event-stats-panel')).not.toBeInTheDocument();
+    expect(screen.getByTestId('event-tags')).toBeInTheDocument();
   });
 
   it('links Frames and Montage Review from the toolbar', async () => {
@@ -238,19 +282,28 @@ describe('ClassicEventDetailPage — stats and data', () => {
     const stats = screen.getByTestId('event-stats-panel');
     const row = (label: string) =>
       within(stats).getByRole('rowheader', { name: label }).closest('tr')!;
-    expect(within(row('Id')).getByText('4242')).toBeInTheDocument();
+    // Legacy's rows, in its order (event.js.php eventDataStrings).
+    expect(within(stats).getAllByRole('rowheader').map((th) => th.textContent)).toEqual([
+      'Name', 'Monitor', 'Cause', 'Notes', 'Start Time', 'End Time', 'Duration', 'Frames', 'Score',
+      'Resolution', 'Disk Space', 'Path', 'Info',
+    ]);
+    expect(row('Name')).toHaveTextContent(/\(Id:4242\)$/);
+    expect(row('Monitor')).toHaveTextContent('(1) Front Door');
+    expect(within(row('Monitor')).getByRole('link', { name: 'Live' })).toHaveAttribute('href', '/monitors/1');
+    expect(within(row('Monitor')).getByRole('link', { name: 'Edit' })).toHaveAttribute('href', '/monitors/1?edit=true');
+    expect(within(row('Monitor')).getByRole('link', { name: 'All Events' }).getAttribute('href'))
+      .toMatch(/^\/events\?.*monitor_id=1/);
     expect(within(row('Cause')).getByText('Motion')).toBeInTheDocument();
     expect(within(row('Notes')).getByText('parcel at the door')).toBeInTheDocument();
-    expect(within(row('Frames')).getByText('100')).toBeInTheDocument();
-    expect(within(row('Alarm Frames')).getByText('5')).toBeInTheDocument();
-    expect(within(row('Max. Score')).getByText('44')).toBeInTheDocument();
-    expect(within(row('Disk Space')).getByText('1.0 MB')).toBeInTheDocument();
-    expect(within(row('Archived')).getByText('No')).toBeInTheDocument();
-    expect(within(row('Emailed')).getByText('Yes')).toBeInTheDocument();
+    expect(row('Frames')).toHaveTextContent('100 Alarm:5');
+    for (const link of within(row('Frames')).getAllByRole('link')) {
+      expect(link).toHaveAttribute('href', '/events/4242/frames');
+    }
+    expect(within(row('Score')).getByRole('link', { name: 'Max:44' })).toHaveAttribute('href', '/events/4242/frames/0');
+    expect(row('Score')).toHaveTextContent(/^ScoreTotal:\d+ Max:44 Avg:\d+$/);
     expect(within(row('Resolution')).getByText('1920x1080')).toBeInTheDocument();
-    await waitFor(() => expect(screen.getByTestId('event-storage')).toHaveTextContent('Default'));
-    expect(within(row('Monitor')).getByRole('link', { name: 'Front Door' }))
-      .toHaveAttribute('href', '/monitors/1');
+    await waitFor(() => expect(screen.getByTestId('event-storage')).toHaveTextContent('1.0 MB on Default'));
+    expect(row('Info')).toHaveTextContent('Archived:No, Emailed:Yes');
   });
 
   it('renders the Event_Data rows when the backend has any', async () => {
@@ -262,7 +315,8 @@ describe('ClassicEventDetailPage — stats and data', () => {
     await mountAndSettle();
 
     const table = await screen.findByTestId('event-data-table');
-    expect(within(table).getByText('12')).toBeInTheDocument();
+    // Legacy's two columns; the frame number is not one of them.
+    expect(within(table).getAllByRole('columnheader').map((th) => th.textContent)).toEqual(['Timestamp', 'Data']);
     expect(within(table).getByText('{"label":"person"}')).toBeInTheDocument();
   });
 
@@ -281,7 +335,8 @@ describe('ClassicEventDetailPage — stats and data', () => {
     expect(zones).toHaveAttribute('aria-pressed', 'false');
     await user.click(zones);
     expect(screen.getByRole('button', { name: 'Zones' })).toHaveAttribute('aria-pressed', 'true');
-    expect(useEventPlaybackStore.getState().showZones).toBe(true);
+    // Remembered for this event's monitor only.
+    expect(useEventPlaybackStore.getState().zonesByMonitor).toEqual({ 1: true });
   });
 });
 
@@ -291,8 +346,9 @@ describe('ClassicEventDetailPage — mutations', () => {
     stub();
     await mountAndSettle();
 
+    // Legacy's two buttons: only the one that applies is live.
     const archive = screen.getByRole('button', { name: 'Archive' });
-    expect(archive).toHaveAttribute('aria-pressed', 'false');
+    expect(screen.getByRole('button', { name: 'Unarchive' })).toBeDisabled();
     await user.click(archive);
 
     await waitFor(() => expect(calls).toHaveLength(1));
@@ -305,6 +361,7 @@ describe('ClassicEventDetailPage — mutations', () => {
     stub({ event: { ...EVENT, archived: 1 } });
     await mountAndSettle();
 
+    expect(screen.getByRole('button', { name: 'Archive' })).toBeDisabled();
     await user.click(screen.getByRole('button', { name: 'Unarchive' }));
     await waitFor(() => expect(calls).toHaveLength(1));
     expect(calls[0].body).toMatchObject({ archived: false });
@@ -372,11 +429,26 @@ describe('ClassicEventDetailPage — mutations', () => {
 });
 
 describe('ClassicEventDetailPage — DVR transport', () => {
-  it('disables Prev / Next when there is no neighbour', async () => {
+  it('disables Prev with no neighbour, and has Next say there are no more events', async () => {
+    const user = userEvent.setup();
     stub();
     await mountAndSettle();
     expect(screen.getByRole('button', { name: 'Previous event' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'Next event' })).toBeDisabled();
+    // Legacy keeps Next live and answers it with "No more events".
+    await user.click(screen.getByRole('button', { name: 'Next event' }));
+    expect(screen.getByTestId('event-replay-message')).toHaveTextContent('No more events');
+    expect(mockNavigate).not.toHaveBeenCalled();
+  });
+
+  it('greys Back when there is nowhere to go back to', async () => {
+    canGoBack = false;
+    try {
+      stub();
+      await mountAndSettle();
+      expect(screen.getByRole('button', { name: 'Back' })).toBeDisabled();
+    } finally {
+      canGoBack = true;
+    }
   });
 
   it('navigates to the neighbouring event when one exists', async () => {
@@ -734,6 +806,17 @@ describe('ClassicEventDetailPage — the picture and its overlay', () => {
     expect(within(overlay).queryByRole('link', { name: 'Edit monitor' })).toBeNull();
   });
 
+  it('sets the volume from the slider beside Mute, unmuting on the way up', async () => {
+    stub();
+    await mountAndSettle();
+    const { fireEvent } = await import('@testing-library/react');
+    const video = document.querySelector('video')!;
+    video.muted = true;
+    fireEvent.change(screen.getByLabelText('Volume'), { target: { value: '0.4' } });
+    expect(video.volume).toBeCloseTo(0.4);
+    expect(video.muted).toBe(false);
+  });
+
   it('reads Mode from the transport, not from the replay-mode select', async () => {
     stub();
     await mountAndSettle();
@@ -778,9 +861,9 @@ describe('ClassicEventDetailPage — tag shortcuts', () => {
       }),
     );
     await mountAndSettle();
-    await waitFor(() => expect(screen.getByRole('button', { name: /Tag & Next/ })).toBeEnabled());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Apply the last tag, then play the next event' })).toBeEnabled());
 
-    await user.click(screen.getByRole('button', { name: /Tag & Next/ }));
+    await user.click(screen.getByRole('button', { name: 'Apply the last tag, then play the next event' }));
 
     // `person` is already on the event, so `vehicle` is the first free tag.
     await waitFor(() => expect(attached).toEqual({ event_id: 4242, tag_id: 6 }));
@@ -804,10 +887,63 @@ describe('ClassicEventDetailPage — tag shortcuts', () => {
 
     await user.keyboard('{ArrowDown}');
     expect(screen.getByTestId('tag-input')).toHaveFocus();
+    // …and opens the dropdown on an empty input, as legacy's showDropdown does.
+    expect(within(await screen.findByTestId('tag-suggestions')).getByText('vehicle')).toBeInTheDocument();
 
     // Typing targets are exempt from the shortcuts, so step back off first.
     await user.click(document.body);
     await user.keyboard('{Control>}{ArrowDown}{/Control}');
     await waitFor(() => expect(attached).toEqual({ event_id: 4242, tag_id: 6 }));
+  });
+});
+
+describe('ClassicEventDetailPage — files, export and video', () => {
+  it('prints the Path row and links Max to the frame zm-api names', async () => {
+    stub({ event: { ...EVENT, path: '/var/cache/zoneminder/events/1/2026-08-21/4242', max_score_frame_id: 17 } });
+    await mountAndSettle();
+    await userEvent.setup().click(screen.getByRole('button', { name: 'Stats' }));
+    expect(await screen.findByTestId('event-path')).toHaveTextContent('/var/cache/zoneminder/events/1/2026-08-21/4242');
+    expect(screen.getByRole('link', { name: 'Max:44' })).toHaveAttribute('href', '/events/4242/frames/17');
+  });
+
+  it('warns, as legacy does, when the audit finds no files for the event', async () => {
+    stub({ event: { ...EVENT, path: '/var/cache/zoneminder/events/1/2026-08-21/4242' }, missing: [4242] });
+    await mountAndSettle();
+    expect(await screen.findByTestId('event-missing-files')).toHaveTextContent(
+      'Event was not found at /var/cache/zoneminder/events/1/2026-08-21/4242. It is unlikely that playback will be possible.',
+    );
+    // One audit request, over exactly the event's own window and monitor.
+    expect(auditCalls).toHaveLength(1);
+    const q = new URLSearchParams(auditCalls[0]);
+    expect(Object.fromEntries(q)).toEqual({ start: '2026-08-21T12:00:00Z', end: '2026-08-21T12:00:30Z', monitor_id: '1' });
+  });
+
+  it('says nothing when the files are there', async () => {
+    stub();
+    await mountAndSettle();
+    await waitFor(() => expect(auditCalls).toHaveLength(1));
+    expect(screen.queryByTestId('event-missing-files')).toBeNull();
+  });
+
+  it('Export opens the export dialog on this event', async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    await user.click(screen.getByRole('button', { name: 'Export' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Export Options' });
+    expect(dialog).toHaveTextContent('Export the following 1 event:');
+    expect(within(dialog).getByText('Front Door')).toBeInTheDocument();
+  });
+
+  it("Generate Video opens the video dialog with the event's files", async () => {
+    const user = userEvent.setup();
+    stub();
+    await mountAndSettle();
+    await user.click(screen.getByRole('button', { name: 'Generate Video' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Video' });
+    expect(await within(dialog).findByText('4242-video.mp4')).toBeInTheDocument();
+    // The footer's Close, as legacy's modal-footer has one beside the corner ×.
+    await user.click(within(dialog).getAllByRole('button', { name: 'Close' }).at(-1)!);
+    expect(screen.queryByRole('dialog', { name: 'Video' })).toBeNull();
   });
 });

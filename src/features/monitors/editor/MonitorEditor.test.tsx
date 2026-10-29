@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { screen, fireEvent, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -30,7 +30,7 @@ beforeAll(() => {
   useAuthStore.setState({
     accessToken: 'test', refreshToken: 'test', user: { iat: 0, exp: 0, user: 'admin' }, isAuthenticated: true,
   });
-  server.listen({ onUnhandledRequest: 'bypass' });
+  server.listen({ onUnhandledFrame: 'bypass' });
 });
 afterEach(() => server.resetHandlers());
 afterAll(() => {
@@ -198,13 +198,94 @@ describe('MonitorEditor — save', () => {
 
     renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
     await user.tripleClick(screen.getByDisplayValue('Front Door'));
-    await user.keyboard('Driveway');
+    await user.keyboard('Gatehouse');
     // Leave General so the jump-back is observable.
     await user.click(screen.getByRole('button', { name: /^mqtt$/i }));
     await user.click(screen.getByRole('button', { name: /^save 1$/i }));
 
     await waitFor(() => expect(screen.getByRole('heading', { name: /^general$/i })).toBeInTheDocument());
     expect(screen.getByRole('alert')).toHaveTextContent(/already exists/i);
+  });
+});
+
+describe('MonitorEditor — legacy validateForm', () => {
+  it('refuses another monitor’s name before it reaches the API', async () => {
+    let patched = false;
+    server.use(http.patch('/api/v3/monitors/1', () => { patched = true; return HttpResponse.json(monitor); }));
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
+    await user.tripleClick(screen.getByDisplayValue('Front Door'));
+    await user.keyboard('Driveway');
+    await user.click(screen.getByRole('button', { name: /^mqtt$/i }));
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Duplicate Monitor Name');
+    expect(screen.getByRole('heading', { name: /^general$/i })).toBeInTheDocument();
+    expect(patched).toBe(false);
+  });
+
+  it('moves credentials typed into the FFmpeg URL into Username and Password', async () => {
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, path: '' } as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const path = screen.getByRole('textbox', { name: 'Source path' });
+    fireEvent.change(path, { target: { value: 'rtsp://admin:p%40ss@10.0.0.9/live' } });
+    expect(path).toHaveValue('rtsp://10.0.0.9/live');
+    expect(screen.getByRole('textbox', { name: 'Username' })).toHaveValue('admin');
+    await user.click(screen.getByRole('button', { name: /^save \d+$/i }));
+    await waitFor(() => expect(captured()).toMatchObject({ path: 'rtsp://10.0.0.9/live', user: 'admin', pass: 'p@ss' }));
+  });
+
+  it('asks before saving a recording monitor that stores neither JPEGs nor video', async () => {
+    const captured = patchSpy();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, save_jpe_gs: 0, video_writer: 1 } as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    await user.selectOptions(screen.getByRole('combobox', { name: 'Video writer' }), '0');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    expect(confirmSpy).toHaveBeenCalledWith('SaveJPEGs and VideoWriter are both set to disabled.  Nothing will be recorded!');
+    expect(captured()).toBeNull();
+    confirmSpy.mockRestore();
+  });
+
+  it('keeps Pre Event Count within a set Maximum Image Buffer Size', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, pre_event_count: 5, max_image_buffer_count: 10 } as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^buffers$/i }));
+    const pre = screen.getByRole('spinbutton', { name: 'Pre-event frames' });
+    fireEvent.change(pre, { target: { value: '20' } });
+    expect(screen.getByRole('spinbutton', { name: 'Max image buffer (frames)' })).toHaveValue(20);
+  });
+});
+
+describe('MonitorEditor — rows legacy has that modern lacked', () => {
+  it('restores a deleted monitor with deleted: false', async () => {
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, deleted: true } as unknown as Monitor} onClose={() => {}} />);
+    await user.click(screen.getByRole('checkbox', { name: 'Restore this deleted monitor' }));
+    // Still offered after ticking, until the save lands.
+    expect(screen.getByRole('checkbox', { name: 'Restore this deleted monitor' })).toBeChecked();
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    await waitFor(() => expect(captured()).toEqual({ deleted: false }));
+  });
+
+  it('is not offered on a live monitor; Triggers reads None available', () => {
+    renderWithProviders(<MonitorEditor monitor={monitor} onClose={() => {}} />);
+    expect(screen.queryByRole('checkbox', { name: 'Restore this deleted monitor' })).not.toBeInTheDocument();
+    expect(screen.getByText('None available')).toBeInTheDocument();
+  });
+
+  it('Buffers shows the estimated RAM and follows the buffer sizes', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MonitorEditor monitor={{ ...monitor, colours: 4, image_buffer_count: 3, pre_event_count: 5, max_image_buffer_count: 0 } as Monitor} onClose={() => {}} />,
+    );
+    await user.click(screen.getByRole('button', { name: /^buffers$/i }));
+    expect(screen.getByTestId('estimated-ram')).toHaveTextContent('Min: 63.28MB Max: Unlimited');
+    fireEvent.change(screen.getByRole('spinbutton', { name: 'Max image buffer (frames)' }), { target: { value: '121' } });
+    expect(screen.getByTestId('estimated-ram')).toHaveTextContent('Max: 1GB');
   });
 });
 
@@ -337,19 +418,6 @@ describe('MonitorEditor — type-dependent Source tab', () => {
     expect(screen.queryByText('Source path')).not.toBeInTheDocument();
   });
 
-  it('Remote swaps the Method list with the protocol and reveals RTSP describe', async () => {
-    const user = userEvent.setup();
-    renderWithProviders(<MonitorEditor monitor={{ ...monitor, type: 'Remote', protocol: 'http', method: 'simple' }} onClose={() => {}} />);
-    await user.click(screen.getByRole('button', { name: /^source$/i }));
-
-    expect(screen.getByRole('option', { name: 'JPEG tags' })).toBeInTheDocument();
-    expect(screen.queryByText('RTSP describe')).not.toBeInTheDocument();
-
-    fireEvent.change(screen.getByDisplayValue('HTTP'), { target: { value: 'rtsp' } });
-    expect(screen.getByRole('option', { name: 'RTP/Unicast' })).toBeInTheDocument();
-    expect(screen.getByText('RTSP describe')).toBeInTheDocument();
-  });
-
   it('WebSite shows only the URL, size and refresh — no image adjustments', async () => {
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={{ ...monitor, type: 'WebSite' }} onClose={() => {}} />);
@@ -456,6 +524,21 @@ describe('MonitorEditor — General relationships', () => {
     await waitFor(() => expect(captured()).toEqual({ linked_monitors: '2' }));
   });
 
+  it('keeps a Linked Monitors expression as typed instead of replacing it with an id list', async () => {
+    const user = userEvent.setup();
+    const captured = patchSpy();
+    renderWithProviders(<MonitorEditor monitor={{ ...monitor, linked_monitors: '2&(3|4)' }} onClose={() => {}} />);
+
+    const box = await screen.findByRole('textbox', { name: 'Linked monitors expression' });
+    expect(box).toHaveValue('2&(3|4)');
+    // The checkbox helper stands down for an expression.
+    expect(screen.queryByLabelText(/Driveway/)).not.toBeInTheDocument();
+    await user.clear(box);
+    await user.type(box, '2|4');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    await waitFor(() => expect(captured()).toEqual({ linked_monitors: '2|4' }));
+  });
+
   it('Return location lists saved PTZ presets after None / Home', async () => {
     const user = userEvent.setup();
     renderWithProviders(<MonitorEditor monitor={{ ...monitor, return_location: 3 }} onClose={() => {}} />);
@@ -538,7 +621,8 @@ describe('MonitorEditor — record as the API returns it', () => {
     expect((screen.getByDisplayValue('1x') as HTMLSelectElement).value).toBe('100');
     // Default scale "Auto" is stored as '0'; Default event view "Auto" is the enum member.
     const autos = screen.getAllByDisplayValue('Auto') as HTMLSelectElement[];
-    expect(autos.map((s) => s.value).sort()).toEqual(['0', 'auto']);
+    // Plus Default player, whose Auto is legacy's ''.
+    expect(autos.map((s) => s.value).sort()).toEqual(['', '0', 'auto']);
 
     await user.click(screen.getByRole('button', { name: /^timestamp$/i }));
     expect((screen.getByDisplayValue('Default') as HTMLSelectElement).value).toBe('2');
@@ -620,5 +704,104 @@ describe('MonitorEditor — record as the API returns it', () => {
     expect(screen.getByText(/1 unsaved change/i)).toBeInTheDocument();
     const text = screen.getAllByRole('textbox').find((el) => /^#[0-9a-f]{6}$/i.test((el as HTMLInputElement).value));
     expect(text).toBeDefined();
+  });
+});
+
+describe('MonitorEditor — Remote protocol after the RTSP removal', () => {
+  const remote = (protocol: string) =>
+    ({ ...monitor, type: 'Remote', protocol, method: protocol === 'rtsp' ? 'rtpRtsp' : 'simple' }) as unknown as Monitor;
+
+  it('offers only HTTP to an http monitor', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={remote('http')} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const protocol = screen.getByRole('combobox', { name: /^protocol$/i }) as HTMLSelectElement;
+    expect(Array.from(protocol.options).map((o) => o.value)).toEqual(['http']);
+    expect(screen.queryByText(/RTSP support has been removed/)).not.toBeInTheDocument();
+  });
+
+  it('keeps rtsp, marked removed, with the warning, on a monitor stored as rtsp', async () => {
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={remote('rtsp')} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    const protocol = screen.getByRole('combobox', { name: /^protocol$/i }) as HTMLSelectElement;
+    expect(protocol.value).toBe('rtsp');
+    expect(Array.from(protocol.options).map((o) => o.textContent)).toEqual(['HTTP', 'RTSP (removed)']);
+    expect(screen.getByText(/RTSP support has been removed/)).toBeInTheDocument();
+    // Switching to http keeps the old option until the save lands.
+    await user.selectOptions(protocol, 'http');
+    expect(Array.from(protocol.options).map((o) => o.value)).toEqual(['http', 'rtsp']);
+  });
+});
+
+describe('MonitorEditor — create mode (Add / Clone)', () => {
+  it('posts the whole draft over the seed, then attaches the chosen groups', async () => {
+    const { newMonitorSeed } = await import('./newMonitor');
+    let body: Record<string, unknown> | null = null;
+    const attached: unknown[] = [];
+    server.use(
+      http.post('/api/v3/monitors', async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>;
+        return HttpResponse.json({ ...body, id: 70 });
+      }),
+      http.post('/api/v3/groups-monitors', async ({ request }) => {
+        attached.push(await request.json());
+        return HttpResponse.json({ id: 1 });
+      }),
+    );
+    const onCreated = vi.fn();
+    const onClose = vi.fn();
+    const user = userEvent.setup();
+    renderWithProviders(
+      <MonitorEditor seed={newMonitorSeed([{ id: 69, name: 'X' } as Monitor])} onClose={onClose} onCreated={onCreated} />,
+    );
+    expect(screen.getByRole('dialog', { name: 'Add monitor' })).toBeInTheDocument();
+    // No Watch / Zones / Delete for a monitor that does not exist yet.
+    expect(screen.queryByRole('button', { name: /^delete$/i })).not.toBeInTheDocument();
+    expect(screen.getByDisplayValue('Monitor-70')).toBeInTheDocument();
+    await user.click(await screen.findByRole('checkbox', { name: 'Back' }));
+    await user.click(screen.getByRole('button', { name: /^buffers$/i }));
+    expect(screen.getByRole('spinbutton', { name: /^max image buffer/i })).toHaveValue(121);
+    await user.click(screen.getByRole('button', { name: /^source$/i }));
+    await user.type(screen.getByRole('textbox', { name: 'Source path' }), 'rtsp://10.0.0.70/live');
+
+    await user.click(screen.getByRole('button', { name: /^create monitor$/i }));
+    await waitFor(() => expect(onCreated).toHaveBeenCalledWith(expect.objectContaining({ id: 70 })));
+    expect(body).toMatchObject({ name: 'Monitor-70', max_image_buffer_count: 121, deleted: false });
+    // Untyped secrets fall back to the seed's blanks rather than null.
+    expect(body!.pass).toBe('');
+    expect(attached).toEqual([{ group_id: 2, monitor_id: 70 }]);
+    expect(onClose).toHaveBeenCalled();
+  });
+});
+
+describe('MonitorEditor — event commands need System edit', () => {
+  const withCommands = { ...monitor, event_start_command: '/usr/bin/notify start' } as unknown as Monitor;
+
+  it('renders them read-only with the reason for a user without System edit', async () => {
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'op', perms: { monitors: 'Edit', system: 'View' } } });
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={withCommands} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    const start = screen.getByRole('textbox', { name: /event start command/i }) as HTMLInputElement;
+    expect(start.readOnly).toBe(true);
+    expect(start).toHaveAttribute('title', 'Requires System edit permission');
+    expect(start.value).toBe('/usr/bin/notify start');
+    expect((screen.getByRole('textbox', { name: /event end command/i }) as HTMLInputElement).readOnly).toBe(true);
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin' } });
+  });
+
+  it('stays editable for a System editor', async () => {
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin', perms: { monitors: 'Edit', system: 'Edit' } } });
+    const captured = patchSpy();
+    const user = userEvent.setup();
+    renderWithProviders(<MonitorEditor monitor={withCommands} onClose={() => {}} />);
+    await user.click(screen.getByRole('button', { name: /^recording$/i }));
+    const end = screen.getByRole('textbox', { name: /event end command/i }) as HTMLInputElement;
+    expect(end.readOnly).toBe(false);
+    await user.type(end, '/bin/true');
+    await user.click(screen.getByRole('button', { name: /^save 1$/i }));
+    await waitFor(() => expect(captured()).toEqual({ event_end_command: '/bin/true' }));
+    useAuthStore.setState({ user: { iat: 0, exp: 0, user: 'admin' } });
   });
 });

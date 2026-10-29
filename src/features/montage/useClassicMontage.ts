@@ -5,6 +5,7 @@ import {
   createMontageLayout,
   deleteMontageLayout,
   listMontageLayouts,
+  updateMontageLayout,
   type MontageLayout,
 } from '@/api/montageLayouts';
 import { useAuthStore } from '@/stores/auth';
@@ -53,16 +54,34 @@ export interface ClassicMontageState {
   /** The wall element, so Save can measure the tiles the way legacy does. */
   gridRef: (el: HTMLDivElement | null) => void;
   /**
-   * Legacy's inline Name field: seeded from the layout being edited, saved
-   * with `save()`. Empty means "keep the current layout's name".
+   * Legacy's inline Name field ("Enter new name for layout if desired").
+   * Starts empty. Empty saves over the selected layout; a name creates a
+   * new one.
    */
   saveName: string;
   setSaveName: (name: string) => void;
-  /** Why the last save was refused (preset name, someone else's layout). */
+  /**
+   * What legacy would `alert()`: why the last save was refused, or, on
+   * Edit Layout, that this layout cannot be overwritten.
+   */
   saveError: string | null;
-  /** Save the current arrangement under `saveName`. */
+  /** Legacy `save_layout`: update the selected layout or create a new one. */
   save: () => void;
+  /** Legacy `delete_layout`: the confirm modal, or `enoperm()` without System Edit. */
   remove: () => void;
+  /** The Delete Confirmation modal is open. */
+  deleteConfirmOpen: boolean;
+  confirmDelete: () => void;
+  cancelDelete: () => void;
+  /** The "You do not have permissions" modal is open (legacy `enoperm`). */
+  noPermOpen: boolean;
+  closeNoPerm: () => void;
+  /**
+   * Legacy's "Error reading Layout" modal: the selected row predates the
+   * gridstack format, so the wall falls back to four across.
+   */
+  layoutErrorOpen: boolean;
+  closeLayoutError: () => void;
   /** Legacy gates Delete on System Edit; Save is open to any user. */
   canDelete: boolean;
   busy: boolean;
@@ -79,6 +98,9 @@ export interface ClassicMontageState {
   setRatioFor: (monitorId: number, ratio: string) => void;
   protocol: StreamProtocol;
   setProtocol: (p: StreamProtocol) => void;
+  /** Legacy `#mfbflip`: the filter + controls panel is showing. */
+  panelOpen: boolean;
+  setPanelOpen: (open: boolean) => void;
   stage: {
     size: StageSize;
     setWidth: (v: string) => void;
@@ -102,12 +124,37 @@ export function presetColumnsFromName(name: string): number | null {
 }
 
 /**
+ * A legacy `zmMontageLayout` row id → this select's value. Legacy's presets
+ * are rows too (`Freeform` is the old name of `Auto`), so a preset row maps
+ * to the built-in preset of that name; any other row maps to itself when it
+ * is one the select lists. Null when the id names nothing usable.
+ */
+export function layoutValueForRow(
+  rows: Array<Pick<MontageLayout, 'id' | 'name'>>,
+  listedIds: ReadonlySet<number>,
+  id: number,
+): string | null {
+  const row = rows.find((r) => r.id === id);
+  if (!row) return null;
+  const name = (row.name === 'Freeform' ? 'Auto' : row.name).trim().toLowerCase();
+  const preset = MONTAGE_PRESETS.find((p) => p.label.toLowerCase() === name);
+  if (preset) return `preset:${preset.id}`;
+  return listedIds.has(row.id) ? `saved:${row.id}` : null;
+}
+
+export interface ClassicMontageOptions {
+  /** `?layout=` (legacy `zmMontageLayout`): select this row once the list loads. */
+  urlLayoutId?: number;
+}
+
+/**
  * Legacy montage.php controls over the classic flat grid: the Layout select
  * (presets + saved rows, shared with legacy through `layoutFormat.ts`),
  * Edit / Save / Delete layout, monitor-status position, and Width / Height /
  * Scale for the cells.
  */
-export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageState {
+export function useClassicMontage(visibleMonitors: Monitor[], options: ClassicMontageOptions = {}): ClassicMontageState {
+  const { urlLayoutId } = options;
   const { t } = useTranslation();
   const { isAuthenticated, user } = useAuthStore();
   const toast = useToast();
@@ -118,6 +165,7 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     classicLayoutId, setClassicLayoutId, showZones, setShowZones,
     montageStage: size, setMontageStage: setSize,
     montageRatio, setMontageRatio, montageRatioById, setMontageRatioFor,
+    montagePanelOpen, setMontagePanelOpen,
   } = useMontageStore();
 
   const [editMode, setEditMode] = useState(false);
@@ -126,6 +174,8 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
   const gridRef = useCallback((el: HTMLDivElement | null) => { gridEl.current = el; }, []);
   const [saveName, setSaveName] = useState('');
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [noPermOpen, setNoPermOpen] = useState(false);
 
   const layoutsQ = useQuery({
     queryKey: QUERY_KEY,
@@ -139,21 +189,55 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
       .filter((l): l is MontageLayout & { parsed: NonNullable<ReturnType<typeof parsePositions>> } => l.parsed != null)
       .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
   }, [layoutsQ.data]);
+  // Rows saved before May 2024 (no `gridStack`): legacy still lists them and
+  // opens "Error reading Layout" when one is chosen. Preset rows have no
+  // positions either, but the built-in presets stand in for them.
+  const unreadable = useMemo(() => (layoutsQ.data?.items ?? []).filter((l) =>
+    parsePositions(l.positions) == null && !isPresetLayoutName(l.name === 'Freeform' ? 'Auto' : l.name),
+  ), [layoutsQ.data]);
+
+  // `?layout=` wins over the remembered choice and becomes it, as legacy
+  // writes `zmMontageLayout` back to its session. Applied once per value.
+  const appliedUrlLayout = useRef<number | undefined>(undefined);
+  useEffect(() => {
+    if (urlLayoutId == null || !layoutsQ.isSuccess || appliedUrlLayout.current === urlLayoutId) return;
+    appliedUrlLayout.current = urlLayoutId;
+    const listed = new Set([...saved, ...unreadable].map((l) => l.id));
+    const value = layoutValueForRow(layoutsQ.data.items, listed, urlLayoutId);
+    if (value) setClassicLayoutId(value);
+  }, [urlLayoutId, layoutsQ.isSuccess, layoutsQ.data, saved, unreadable, setClassicLayoutId]);
 
   const layoutOptions: ClassicLayoutOption[] = [
     ...MONTAGE_PRESETS.map((p) => ({
       value: `preset:${p.id}`,
       label: p.columns == null ? t('Auto') : t('{{n}} Wide', { n: p.columns }),
     })),
-    ...saved.map((l) => ({ value: `saved:${l.id}`, label: l.name })),
+    // Legacy orders the custom rows by lower(Name), readable or not.
+    ...[...saved, ...unreadable]
+      .sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()))
+      .map((l) => ({ value: `saved:${l.id}`, label: l.name })),
   ];
 
   const activeSaved = classicLayoutId.startsWith('saved:')
     ? saved.find((l) => `saved:${l.id}` === classicLayoutId)
     : undefined;
+  const activeUnreadable = classicLayoutId.startsWith('saved:')
+    ? unreadable.find((l) => `saved:${l.id}` === classicLayoutId)
+    : undefined;
+  // The selected custom row, readable or not: what Save overwrites and
+  // Delete removes.
+  const activeRow: MontageLayout | undefined = activeSaved ?? activeUnreadable;
+  // Legacy's "Error reading Layout" modal is up while an old-format row is
+  // selected, until it is closed.
+  const [layoutErrorDismissed, setLayoutErrorDismissed] = useState<number | null>(null);
+  const layoutErrorOpen = activeUnreadable != null && layoutErrorDismissed !== activeUnreadable.id;
   // A persisted saved layout can be deleted from another tab or another
   // session; once the list has loaded without it, fall back to Auto.
-  const layoutId = classicLayoutId.startsWith('saved:') && layoutsQ.isSuccess && !activeSaved
+  // A remembered preset legacy does not have (an older build offered 5, 20
+  // and 32 Wide) falls back the same way.
+  const unknownPreset = classicLayoutId.startsWith('preset:')
+    && !MONTAGE_PRESETS.some((p) => `preset:${p.id}` === classicLayoutId);
+  const layoutId = unknownPreset || (classicLayoutId.startsWith('saved:') && layoutsQ.isSuccess && !activeRow)
     ? `preset:${DEFAULT_PRESET_ID}`
     : classicLayoutId;
   const preset = MONTAGE_PRESETS.find((p) => `preset:${p.id}` === layoutId);
@@ -181,7 +265,11 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
 
   const columns = preset
     ? (preset.columns ?? autoColumns(monitors.length))
-    : (activeSaved ? (presetColumnsFromName(activeSaved.name) ?? autoColumns(monitors.length)) : autoColumns(monitors.length));
+    : activeSaved
+      ? (presetColumnsFromName(activeSaved.name) ?? autoColumns(monitors.length))
+      // An old-format row: legacy's CUSTOM branch gives every tile gs-w 12,
+      // four to a row.
+      : activeUnreadable ? 4 : autoColumns(monitors.length);
 
   // Tile geometry, legacy's `Positions.gridStack`. A saved layout keeps the
   // widths (and the gaps) it was saved with; a preset only needs one while
@@ -201,18 +289,18 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
   );
 
   const invalidate = () => qc.invalidateQueries({ queryKey: QUERY_KEY });
-  const createMutation = useMutation({
-    mutationFn: (name: string) => {
+  // Legacy `actions/montage.php` Save: a typed Name makes a new row, an
+  // empty one saves over the selected layout (`zmMontageLayout`).
+  const saveMutation = useMutation({
+    mutationFn: (target: { name: string } | { id: number }) => {
       const ratios: Record<number, string> = {};
       for (const m of monitors) ratios[m.id] = montageRatioById[m.id] ?? montageRatio;
       // y/h come off the rendered wall in 4 px rows, as gridstack's
       // `sizeToContent` would have measured them.
       const saved = measureItems(gridEl.current, items);
-      return createMontageLayout({
-        name,
-        positions: serialiseGridStackPositions(saved, statusPosition, ratios),
-        user_id: user?.uid ?? 0,
-      });
+      const positions = serialiseGridStackPositions(saved, statusPosition, ratios);
+      if ('id' in target) return updateMontageLayout(target.id, { positions });
+      return createMontageLayout({ name: target.name, positions, user_id: user?.uid ?? 0 });
     },
     onSuccess: (created) => {
       invalidate();
@@ -229,6 +317,7 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     mutationFn: (id: number) => deleteMontageLayout(id),
     onSuccess: () => {
       invalidate();
+      setDeleteConfirmOpen(false);
       setClassicLayoutId(`preset:${DEFAULT_PRESET_ID}`);
       toast.success(t('Layout deleted'));
     },
@@ -240,6 +329,7 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     setDraftItems(null);
     setEditMode(false);
     setSaveError(null);
+    setLayoutErrorDismissed(null);
   };
 
   const reorder = (fromId: number, toId: number) => {
@@ -252,39 +342,45 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     if (next !== items) setDraftItems(next);
   };
 
-  // Legacy `save_layout`: any user may save their own layout. What is
-  // refused is a preset name, and renaming-in-place someone else's layout
-  // without System Edit.
+  // Legacy `save_layout`: any user may save their own layout. A typed name
+  // creates a new one unless it is a preset name. An empty name overwrites
+  // the selected layout, which is refused for a preset and, without System
+  // Edit, for someone else's layout (legacy's server refuses that one).
   const save = () => {
     const typed = saveName.trim();
-    const name = typed || activeSaved?.name || '';
-    if (!name) {
-      setSaveError(t('Please give the layout a name.'));
+    if (typed) {
+      if (isPresetLayoutName(typed)) {
+        setSaveError(t('You cannot use that name. It conflicts with the built in layouts. Please give the layout a new name.'));
+        return;
+      }
+      setSaveError(null);
+      saveMutation.mutate({ name: typed });
       return;
     }
-    if (isPresetLayoutName(name)) {
-      setSaveError(t('You cannot use that name. It conflicts with the built in layouts.'));
+    if (!activeRow) {
+      setSaveError(t('You cannot edit the built in layouts. Please give the layout a new name.'));
       return;
     }
-    if (!typed && activeSaved && user?.uid != null && activeSaved.user_id !== user.uid && !can('system', 'Edit')) {
+    if (user?.uid != null && activeRow.user_id !== user.uid && !can('system', 'Edit')) {
       setSaveError(t("You cannot edit someone else's layouts. Please give the layout a new name."));
       return;
     }
     setSaveError(null);
-    createMutation.mutate(name);
+    saveMutation.mutate({ id: activeRow.id });
   };
   const remove = () => {
-    if (!activeSaved) return;
-    if (window.confirm(t('Delete layout "{{name}}"?', { name: activeSaved.name }))) {
-      deleteMutation.mutate(activeSaved.id);
+    if (!can('system', 'Edit')) {
+      setNoPermOpen(true);
+      return;
     }
+    if (activeRow) setDeleteConfirmOpen(true);
   };
 
   return {
     layoutId,
     setLayoutId,
     layoutOptions,
-    isSavedLayout: !!activeSaved,
+    isSavedLayout: !!activeRow,
     columns,
     monitors,
     // Presets lay out on the plain column grid until Edit Layout starts.
@@ -292,8 +388,11 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     editMode,
     beginEdit: () => {
       setEditMode(true);
-      setSaveName(activeSaved?.name ?? '');
-      setSaveError(null);
+      setSaveName('');
+      // Legacy `edit_layout` alerts when the layout is a preset (UserId 0)
+      // or someone else's; Save then needs a new name.
+      const mine = activeRow && user?.uid != null && activeRow.user_id === user.uid;
+      setSaveError(mine ? null : t('You may not edit this layout, but you can create a new one from it. Please give it a name.'));
     },
     cancelEdit: () => {
       setEditMode(false);
@@ -309,8 +408,15 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     saveError,
     save,
     remove,
+    deleteConfirmOpen,
+    confirmDelete: () => { if (activeRow) deleteMutation.mutate(activeRow.id); },
+    cancelDelete: () => setDeleteConfirmOpen(false),
+    noPermOpen,
+    closeNoPerm: () => setNoPermOpen(false),
+    layoutErrorOpen,
+    closeLayoutError: () => setLayoutErrorDismissed(activeUnreadable?.id ?? null),
     canDelete: can('system', 'Edit'),
-    busy: createMutation.isPending || deleteMutation.isPending,
+    busy: saveMutation.isPending || deleteMutation.isPending,
     statusPosition,
     setStatusPosition,
     showZones,
@@ -321,6 +427,8 @@ export function useClassicMontage(visibleMonitors: Monitor[]): ClassicMontageSta
     setRatioFor: setMontageRatioFor,
     protocol,
     setProtocol,
+    panelOpen: montagePanelOpen,
+    setPanelOpen: setMontagePanelOpen,
     stage: {
       size,
       // Read the live store rather than this render's `size` so two setters

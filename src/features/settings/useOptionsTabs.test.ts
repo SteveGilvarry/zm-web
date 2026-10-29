@@ -7,7 +7,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
 import { configListHandler } from '@/test/msw/handlers';
 import { renderHook, waitFor } from '@testing-library/react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
@@ -24,7 +24,7 @@ const CATEGORIES = [
 const server = setupServer();
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => { server.resetHandlers(); categoryRequests = 0; });
 afterAll(() => { server.close(); useAuthStore.getState().clearAuth(); });
@@ -56,8 +56,8 @@ describe('useOptionsTabs', () => {
     await waitFor(() => expect(result.current.some((tab) => tab.kind === 'category')).toBe(true));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'system', 'api', 'servers', 'storage', 'web', 'control', 'users', 'groups',
-      'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'display', 'system', 'api', 'servers', 'storage', 'web', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'menu', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
     expect(result.current.find((tab) => tab.key === 'system'))
       .toEqual({ kind: 'category', key: 'system', category: 'system' });
@@ -93,8 +93,8 @@ describe('useOptionsTabs', () => {
     await new Promise((r) => setTimeout(r, 30));
 
     expect(result.current.map((tab) => tab.key)).toEqual([
-      'display', 'api', 'servers', 'storage', 'control', 'users', 'groups',
-      'ai_datasets', 'ai_models', 'ai_classes', 'state',
+      'display', 'api', 'servers', 'storage', 'users', 'roles', 'groups', 'control',
+      'encoderTemplates', 'privacy', 'menu', 'ai_datasets', 'ai_models', 'ai_classes', 'state',
     ]);
   });
 

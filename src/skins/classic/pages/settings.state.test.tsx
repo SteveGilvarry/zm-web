@@ -7,7 +7,7 @@ import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest
 import type { ReactNode } from 'react';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { renderWithProviders } from '@/test/render';
 import { useAuthStore } from '@/stores/auth';
@@ -39,7 +39,7 @@ function signIn(user: unknown = ADMIN) {
 }
 
 const server = setupServer();
-beforeAll(() => server.listen({ onUnhandledRequest: 'error' }));
+beforeAll(() => server.listen({ onUnhandledFrame: 'error' }));
 afterEach(() => {
   server.resetHandlers();
   useToastStore.getState().clear();
@@ -143,7 +143,8 @@ describe('ClassicSettingsStatePage', () => {
     const user = userEvent.setup();
     await mount();
 
-    const toggle = await screen.findByRole('button', { name: 'Show definition of Away' });
+    // The name starts with the visible monitor count (WCAG 2.5.3).
+    const toggle = await screen.findByRole('button', { name: '2 monitors, Show definition of Away' });
     expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await user.click(toggle);
     expect(toggle).toHaveAttribute('aria-expanded', 'true');

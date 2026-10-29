@@ -1,11 +1,13 @@
 import { useMemo, useState } from 'react';
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { getStorageList, createStorage, updateStorage, deleteStorage, STORAGE_SCHEMES } from '@/api/storage';
 import { listServers } from '@/api/servers';
 import { previewFilter } from '@/api/filters';
 import { useAuthStore } from '@/stores/auth';
 import { useToast } from '@/components/common/toastStore';
 import type { ZmStorage } from '@/types';
+import { storageUsage, type StorageUsage } from './storageUsage';
+import { storageTone, type StorageTone } from './useStorageAreas';
 
 export const STORAGE_TYPES = ['local', 's3fs'];
 export { STORAGE_SCHEMES };
@@ -19,7 +21,7 @@ export interface StorageFormData {
   scheme: string;
   server_id: number | null;
   url: string;
-  /** Legacy's StorageDoDelete radio. Create-time only — see `toStorageCreatePayload`. */
+  /** Legacy's StorageDoDelete radio; sent on create and update (zm-api#185). */
   do_delete: number;
 }
 
@@ -31,12 +33,18 @@ export interface StorageRow {
   /** Name from `/servers` for `serverId`, or null when it resolves to nothing. */
   serverName: string | null;
   /**
-   * `disk_space` as a share (0-100) of the largest figure in the list. The API
-   * gives bytes on the store and no filesystem total, so this is a comparison
-   * between the listed stores — never a percentage of the disk. Null when the
-   * backend has no cached figure for the row.
+   * How full the area's filesystem is, the way legacy's Disk Space column
+   * reads it (`_options_storage.php:47-52`), from zm-api#145's `filesystem`.
+   * `measured` is false when zm-api has no figures for the path.
    */
-  diskPercent: number | null;
+  usage: StorageUsage;
+  /** Legacy's storage thresholds (warning over 95 %, danger over 98 %). */
+  tone: StorageTone;
+  /**
+   * Events stored here (legacy `Storage::EventCount()`), null until counted.
+   * Legacy disables the row's Mark while it is non-zero.
+   */
+  eventCount: number | null;
 }
 
 /** ZoneMinder stores "any server" as 0; the picker and the list treat it as none. */
@@ -68,11 +76,7 @@ export function toStoragePayload(form: StorageFormData) {
   };
 }
 
-/**
- * Create body: everything above plus `do_delete`, which only
- * `CreateStorageRequest` carries. A PATCH that includes it answers 200 and
- * leaves the column alone, so the update path deliberately never sends it.
- */
+/** The write body with `do_delete`; create and update both take it (zm-api#185). */
 export function toStorageCreatePayload(form: StorageFormData) {
   return { ...toStoragePayload(form), do_delete: form.do_delete };
 }
@@ -115,21 +119,37 @@ export function useStoragePage() {
     );
   }, [storageItems, searchQuery]);
 
+  // One count per listed area, the same `/filters/preview` the delete guard uses.
+  const countQs = useQueries({
+    queries: filteredItems.map((storage) => ({
+      queryKey: ['storage-usage', storage.id],
+      queryFn: () =>
+        previewFilter(
+          { where: { field: 'storage_id', op: 'eq', value: storage.id }, limit: null },
+          { page: 1, page_size: 1 },
+        ),
+      enabled: isAuthenticated,
+      staleTime: 60_000,
+    })),
+  });
+  const eventCounts = countQs.map((q) => q.data?.total ?? null);
+  const eventCountsKey = eventCounts.join(',');
+
   const rows = useMemo<StorageRow[]>(() => {
-    const largest = Math.max(0, ...filteredItems.map((s) => s.disk_space ?? 0));
-    return filteredItems.map((storage) => {
+    const counts = eventCountsKey.split(',').map((v) => (v === '' ? null : Number(v)));
+    return filteredItems.map((storage, i) => {
       const serverId = normalizeServerId(storage.server_id);
+      const usage = storageUsage(storage);
       return {
         storage,
         serverId,
         serverName: servers.find((srv) => srv.id === serverId)?.name ?? null,
-        diskPercent:
-          storage.disk_space == null || largest <= 0
-            ? null
-            : Math.round((storage.disk_space / largest) * 100),
+        usage,
+        tone: storageTone(usage.percent),
+        eventCount: counts[i] ?? null,
       };
     });
-  }, [filteredItems, servers]);
+  }, [filteredItems, servers, eventCountsKey]);
 
   // Modal state
   const [modalOpen, setModalOpen] = useState(false);
@@ -259,7 +279,7 @@ export function useStoragePage() {
 
   const submitForm = () => {
     if (editingStorage) {
-      updateMutation.mutate({ id: editingStorage.id, data: toStoragePayload(formData) });
+      updateMutation.mutate({ id: editingStorage.id, data: toStorageCreatePayload(formData) });
     } else {
       createMutation.mutate(toStorageCreatePayload(formData));
     }
@@ -312,8 +332,6 @@ export function useStoragePage() {
     setField,
     toggleFormEnabled,
     toggleFormDoDelete,
-    /** True while editing: `UpdateStorageRequest` has no `do_delete`. */
-    doDeleteLocked: editingStorage !== null,
     openCreate,
     openEdit,
     closeModal,

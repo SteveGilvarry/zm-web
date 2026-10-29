@@ -1,12 +1,13 @@
 import { describe, expect, it, vi, beforeAll, afterAll, afterEach } from 'vitest';
 import { configListHandler } from '@/test/msw/handlers';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import { setupServer } from 'msw/node';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { createElement, type ReactNode } from 'react';
 import { useAuthStore } from '@/stores/auth';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
+import { useMonitorFilterRowStore } from '@/stores/monitorFilterRow';
 import { useToastStore } from '@/components/common/toastStore';
 import { useConsoleColumnsStore } from './consoleColumns';
 
@@ -69,13 +70,14 @@ const server = setupServer(
 );
 beforeAll(() => {
   useAuthStore.setState({ accessToken: 't', refreshToken: 't', user: null, isAuthenticated: true });
-  server.listen({ onUnhandledRequest: 'error' });
+  server.listen({ onUnhandledFrame: 'error' });
 });
 afterEach(() => {
   server.resetHandlers();
   patched.length = 0; deleted.length = 0; navigate.mockClear();
   mockSearch = {};
   useMonitorFilterStore.getState().reset();
+  useMonitorFilterRowStore.getState().reset();
   useConsoleColumnsStore.getState().reset();
   useToastStore.getState().clear();
 });
@@ -150,18 +152,32 @@ describe('useClassicConsolePage', () => {
     act(() => result.current.toggleSelected(1));
     act(() => result.current.cloneSelected());
     await waitFor(() => expect(result.current.addOpen).toBe(true));
-    expect(result.current.cloneSeed?.from).toBe('Cam 1');
-    expect(result.current.cloneSeed?.values.name).toBe('Clone of Cam 1');
-    expect(result.current.cloneSeed?.values.path).toBe('rtsp://10.0.0.1/h264');
+    expect(result.current.editorSeed?.clonedFrom).toBe('Cam 1');
+    expect(result.current.editorSeed?.groupsFrom).toBe(1);
+    expect(result.current.editorSeed?.values.name).toBe('Clone of Cam 1');
+    expect(result.current.editorSeed?.values.path).toBe('rtsp://10.0.0.1/h264');
     act(() => result.current.closeAdd());
-    expect(result.current.cloneSeed).toBeNull();
+    expect(result.current.editorSeed).toBeNull();
+    expect(result.current.addOpen).toBe(false);
   });
 
-  it('footer scope: one visible row → monitor_id, a lone group filter → group, otherwise everything', () => {
-    expect(eventsScopeFor([4], { values: { groupId: '' } as never, activeCount: 0 })).toEqual({ monitor_id: 4 });
-    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 1 })).toEqual({ group: 9 });
-    expect(eventsScopeFor([1, 2], { values: { groupId: '9' } as never, activeCount: 2 })).toEqual({});
+  it('footer scope: the visible ids once the table is narrowed, nothing when it is not', () => {
+    expect(eventsScopeFor([4], false)).toEqual({ monitor_id: 4 });
+    expect(eventsScopeFor([1, 2], true)).toEqual({ monitor_id: [1, 2] });
+    expect(eventsScopeFor([1, 2, 3], false)).toEqual({});
+    expect(eventsScopeFor([], true)).toEqual({});
     expect(cloneName('Cam', ['Cam', 'Clone of Cam'])).toBe('Clone of Clone of Cam');
+  });
+
+  it('keeps sort, page size and search across a remount, as the zmConsoleTable cookie does', async () => {
+    const first = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
+    act(() => first.result.current.toggleSort('name'));
+    act(() => first.result.current.toggleSort('name'));
+    act(() => first.result.current.setPageSize(50));
+    act(() => first.result.current.setSearch('cam'));
+    first.unmount();
+    const second = renderHook(() => useClassicConsolePage(), { wrapper: wrapper() });
+    expect(second.result.current).toMatchObject({ sortKey: 'name', sortDir: 'desc', pageSize: 50, search: 'cam', page: 1 });
   });
 
   it('reorder renumbers only the monitors whose sequence changed', async () => {

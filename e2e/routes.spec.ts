@@ -51,6 +51,9 @@ const ANCHORS: Record<PageKey, Anchor> = {
   'events.list': (p) => eventLink(p, SEED.events.open).first(),
   'events.detail': (p) => p.locator(`a[href="/events/${SEED.events.withFrames[0]}/frames"]`).first(),
   'events.frames': (p) => p.getByTestId('frames-table'),
+  'events.frame': (p) => p.getByTestId('frame-title').or(p.getByTestId('frame-score')).first(),
+  'events.stats': (p) => p.getByTestId('stats-table'),
+  timeline: (p) => p.getByTestId('timeline-chart'),
   filters: (p) => p.getByRole('button', { name: /add condition/i }),
   // Classic's toolbar is legacy's bare [New]; modern spells it out.
   groups: (p, skin) =>
@@ -59,9 +62,17 @@ const ANCHORS: Record<PageKey, Anchor> = {
   'reports.list': (p) => p.locator(`a[href="/reports/${SEED.report}"]`).first(),
   'reports.detail': (p) => p.getByRole('heading', { name: /events per hour/i }),
   audit: (p) => p.getByTestId(`audit-row-${SEED.monitors.frontDoor}`),
-  'settings.options': (p) => p.getByRole('heading', { name: /appearance/i }),
+  // Classic opens on legacy's System tab: one form, one Save.
+  'settings.options': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('form', { name: 'Options' })
+      : p.getByRole('heading', { name: /appearance/i }),
   'settings.users': (p) => p.getByText(SEED.viewer.username).first(),
-  'settings.servers': (p) => p.getByRole('button', { name: /^edit e2e-server-1$/i }),
+  // Classic opens the server modal from any cell of the row, as legacy does.
+  'settings.servers': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('button', { name: 'e2e-server-1', exact: true })
+      : p.getByRole('button', { name: /^edit e2e-server-1$/i }),
   // Classic hangs the edit form off the name itself, as legacy does.
   'settings.storage': (p, skin) =>
     skin === 'classic'
@@ -73,6 +84,20 @@ const ANCHORS: Record<PageKey, Anchor> = {
     p.getByRole('checkbox', { name: `API enabled for ${SEED.viewer.username}` }),
   // Opens on Datasets; the stock COCO row is what a fresh schema ships.
   'settings.ai': (p) => p.getByRole('row', { name: /COCO/ }).first(),
+  'settings.roles': (p, skin) =>
+    p.getByRole('button', { name: skin === 'classic' ? /^add new role$/i : /^add role$/i }),
+  'settings.roles.edit': (p, skin) =>
+    p.getByRole('button', { name: skin === 'classic' ? /^back$/i : /^back to roles$/i }),
+  'settings.encoderTemplates': (p, skin) =>
+    p.getByRole('button', { name: skin === 'classic' ? /^add new template$/i : /^add template$/i }),
+  'settings.menu': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('button', { name: /^add$/i })
+      : p.getByRole('button', { name: /^add entry$/i }),
+  'settings.privacy': (p, skin) =>
+    skin === 'classic'
+      ? p.getByRole('combobox', { name: /privacy/i })
+      : p.getByRole('button', { name: /^accept$/i }),
 };
 
 test.describe('Route happy paths', () => {

@@ -3,7 +3,7 @@ import { clsx } from 'clsx';
 import { useTranslation } from 'react-i18next';
 import {
   Pause, Play, Radio, Calendar, FastForward, Filter,
-  ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2,
+  ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2, Download,
 } from 'lucide-react';
 import { AppShell } from '@/skins/AppShell';
 import { QueryState } from '@/components/common/QueryState';
@@ -11,7 +11,9 @@ import { StreamCell } from '@/components/common/StreamCell';
 import { RequirePerm } from '@/features/auth/RequirePerm';
 import { MontageReviewCell } from '@/features/montagereview/MontageReviewCell';
 import { MontageReviewTimeline } from '@/features/montagereview/MontageReviewTimeline';
-import { MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
+import { ReviewDownloadVideo } from '@/features/montagereview/ReviewDownloadVideo';
+import { Chip, MonitorFilterBar } from '@/features/monitors/MonitorFilterBar';
+import { REVIEW_ANY_TAG, REVIEW_NO_TAG } from '@/features/montagereview/useReviewEvents';
 import { useMonitorFilter } from '@/features/monitors/useMonitorFilter';
 import {
   useReviewRangePresets,
@@ -19,6 +21,7 @@ import {
   reviewGridColumns,
   useMontageReviewPage,
   useReviewNotesOptions,
+  toLocalInputValue,
   type ReviewRangePreset,
 } from '@/features/montagereview/useMontageReviewPage';
 import { ToolbarDisclosure } from '../components/ToolbarDisclosure';
@@ -62,7 +65,7 @@ export default function MontageReviewPage() {
   const eventFilterCount = [
     page.filters.archived !== 'all',
     page.filters.tagIds.length > 0,
-    page.filters.notes !== '',
+    page.filters.notes.length > 0,
   ].filter(Boolean).length;
   useEffect(() => {
     setFilteredMonitors(filtered);
@@ -136,9 +139,52 @@ export default function MontageReviewPage() {
               >
                 <Maximize2 size={14} aria-hidden />
               </button>
-              <span className={clsx('text-xs font-mono tabular-nums whitespace-nowrap', preset === 'custom' ? 'text-fg' : 'text-fg-dim')}>
-                {fmt(clock.rangeStart)} – {fmt(clock.rangeEnd)}
-              </span>
+              {/* The window itself opens the From / To inputs (legacy's
+                  Date Time >= / <=, capped at 24 h when edited). */}
+              <ToolbarDisclosure label={`${fmt(clock.rangeStart)} – ${fmt(clock.rangeEnd)}`} icon={Calendar}>
+                <div className="flex flex-col gap-2">
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('From')}
+                    <input
+                      type="datetime-local"
+                      step={1}
+                      value={toLocalInputValue(clock.rangeStart)}
+                      onChange={(e) => page.setRangeBound('start', new Date(e.target.value))}
+                      className={selectField}
+                    />
+                  </label>
+                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    {t('To')}
+                    <input
+                      type="datetime-local"
+                      step={1}
+                      value={toLocalInputValue(clock.rangeEnd)}
+                      onChange={(e) => page.setRangeBound('end', new Date(e.target.value))}
+                      className={selectField}
+                    />
+                  </label>
+                  <p className="text-xs text-fg-faint">{t('Editing one end keeps the window within 24 hours.')}</p>
+                </div>
+              </ToolbarDisclosure>
+              <ReviewDownloadVideo
+                monitors={page.selectedMonitors}
+                rangeStart={clock.rangeStart}
+                rangeEnd={clock.rangeEnd}
+                filters={page.filters}
+                variant="modern"
+                trigger={(open) => (
+                  <button
+                    type="button"
+                    onClick={open}
+                    disabled={page.selectedMonitors.length === 0}
+                    aria-label={t('Download Video')}
+                    title={t('Download the videos of the events in this window')}
+                    className={toolBtn}
+                  >
+                    <Download size={14} aria-hidden />
+                  </button>
+                )}
+              />
               {page.fitEventsEmpty && (
                 <span role="status" className="text-xs text-warn">
                   {t('No events to fit')}
@@ -200,34 +246,32 @@ export default function MontageReviewPage() {
                       <option value="archived">{t('Archived Only')}</option>
                     </select>
                   </label>
-                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                  {/* Legacy's Tags and Notes are multi-selects; an empty
+                      selection is every event. */}
+                  <div className="flex flex-col gap-1 text-xs text-fg-dim">
                     {t('Tags')}
-                    <select
-                      aria-label={t('Tags')}
-                      value={page.filters.tagIds[0] != null ? String(page.filters.tagIds[0]) : ''}
-                      onChange={(e) => page.setFilters({ tagIds: e.target.value ? [Number(e.target.value)] : [] })}
-                      className={selectField}
-                    >
-                      <option value="">{t('All Tags')}</option>
-                      {page.tags.map((tag) => (
-                        <option key={tag.id} value={tag.id}>{tag.name}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label className="flex flex-col gap-1 text-xs text-fg-dim">
+                    <Chip
+                      label={t('Tags')}
+                      emptyLabel={t('All Tags')}
+                      options={[
+                        { value: String(REVIEW_NO_TAG), label: t('No Tag') },
+                        { value: String(REVIEW_ANY_TAG), label: t('Any Tag') },
+                        ...page.tags.map((tag) => ({ value: String(tag.id), label: tag.name })),
+                      ]}
+                      selected={page.filters.tagIds.map(String)}
+                      onChange={(next) => page.setFilters({ tagIds: next.map(Number) })}
+                    />
+                  </div>
+                  <div className="flex flex-col gap-1 text-xs text-fg-dim">
                     {t('Notes')}
-                    <select
-                      aria-label={t('Notes')}
-                      value={page.filters.notes}
-                      onChange={(e) => page.setFilters({ notes: e.target.value })}
-                      className={selectField}
-                    >
-                      <option value="">{t('Any')}</option>
-                      {notesOptions.map((o) => (
-                        <option key={o.value} value={o.value}>{o.label}</option>
-                      ))}
-                    </select>
-                  </label>
+                    <Chip
+                      label={t('Notes')}
+                      emptyLabel={t('Any')}
+                      options={notesOptions}
+                      selected={page.filters.notes}
+                      onChange={(next) => page.setFilters({ notes: next })}
+                    />
+                  </div>
                 </div>
               </div>
             </ToolbarDisclosure>
@@ -266,7 +310,12 @@ export default function MontageReviewPage() {
             <RequirePerm feature={isLive ? 'stream' : 'events'} level="View" fallback="message">
               <div
                 dir="ltr"
-                className="flex-1 min-h-0 overflow-auto p-2 grid gap-2 content-start"
+                // `auto-rows-max`: inside this fixed-height scroller Chrome
+                // sizes auto rows to fit the box, not the cells, and cells
+                // with an aspect ratio (portrait cameras especially) then
+                // overlap the row below. Max-content rows let the wall scroll.
+                className="flex-1 min-h-0 overflow-auto p-2 grid gap-2 content-start auto-rows-max"
+                data-testid="review-modern-grid"
                 style={{
                   gridTemplateColumns: `repeat(${reviewGridColumns(selectedMonitors.length)}, minmax(0, 1fr))`,
                 }}

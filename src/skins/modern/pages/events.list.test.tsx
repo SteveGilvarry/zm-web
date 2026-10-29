@@ -10,7 +10,7 @@
 import { describe, expect, it, vi, afterEach } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 import type { PaginatedResponse, ZmEvent } from '@/types';
 
 import { renderRoute } from '@/test/renderRoute';
@@ -72,7 +72,7 @@ async function openFilters(user: ReturnType<typeof userEvent.setup>) {
 
 /** The Monitor chip's button — its accessible name carries the count. */
 function monitorChip() {
-  return screen.getByRole('button', { name: /^Monitor filter/ });
+  return screen.getByRole('button', { name: /^Monitor (All Monitors|\d+ active)$/ });
 }
 
 /** Open the Monitor chip and tick each named monitor. */
@@ -179,7 +179,7 @@ describe('EventsListPage — modern skin', () => {
     );
     renderRoute(
       '/events?monitor_id=2&archived=true&sort=max_score&dir=desc' +
-        '&page=2&page_size=5&start=2026-08-01T00:00&end=2026-08-02T12:30',
+        '&page=2&page_size=5&start=2026-08-01T00:00',
     );
     await screen.findByRole('link', { name: 'Download video for event 102' });
 
@@ -193,7 +193,21 @@ describe('EventsListPage — modern skin', () => {
     expect(q.get('page_size')).toBe('5');
     // Local wall-clock in the URL, full ISO on the wire.
     expect(q.get('start_time')).toBe(new Date('2026-08-01T00:00').toISOString().replace(/\.\d{3}Z$/, 'Z'));
-    expect(q.get('end_time')).toBe(new Date('2026-08-02T12:30').toISOString().replace(/\.\d{3}Z$/, 'Z'));
+  });
+
+  it('bounds the start time from above, as legacy\'s Start Date/Time <= does', async () => {
+    let body: unknown = null;
+    server.use(http.post('/api/v3/filters/preview', async ({ request }) => {
+      body = await request.json();
+      return HttpResponse.json(paginated([makeEvent({ id: 101 })]));
+    }));
+    renderRoute('/events?monitor_id=1&end=2026-08-02T12:30');
+    await rows();
+    // `/events` can only bound the end time, which drops events still
+    // recording; preview says `start_time <=`.
+    expect(JSON.stringify(body)).toContain(JSON.stringify({
+      field: 'start_time', op: 'lte', value: new Date('2026-08-02T12:30').toISOString().replace(/\.\d{3}Z$/, 'Z'),
+    }));
   });
 
   it('reflects the URL in every filter control', async () => {
@@ -201,7 +215,7 @@ describe('EventsListPage — modern skin', () => {
     renderRoute('/events?monitor_id=2&cause=Forced%20Web&q=Event&page_size=5&sort=id&dir=desc&group=1');
     await screen.findByRole('link', { name: 'Download video for event 102' });
 
-    expect(monitorChip()).toHaveAccessibleName(/1 selected/);
+    expect(monitorChip()).toHaveAccessibleName(/1 active/);
     expect(screen.getByRole('combobox', { name: 'Events per page' })).toHaveValue('5');
     // Two of the URL's filters are behind the disclosure, and the button
     // counts them so they are never applied invisibly.
@@ -209,8 +223,8 @@ describe('EventsListPage — modern skin', () => {
     await openFilters(userEvent.setup());
     // An <input list=…> is a combobox, not a textbox.
     expect(screen.getByRole('combobox', { name: 'Cause' })).toHaveValue('Forced Web');
-    expect(screen.getByRole('combobox', { name: 'Group' })).toHaveValue('1');
-    expect(screen.getByRole('textbox', { name: 'Name contains' })).toHaveValue('Event');
+    expect(screen.getByRole('button', { name: 'Group 1 active' })).toBeInTheDocument();
+    expect(screen.getByRole('searchbox', { name: 'Search events' })).toHaveValue('Event');
     expect(screen.getByRole('button', { name: 'Id, sorted descending' })).toHaveAttribute(
       'aria-pressed',
       'true',
@@ -224,7 +238,7 @@ describe('EventsListPage — modern skin', () => {
 
     await openFilters(userEvent.setup());
     // Legacy's Notes term is a fixed list of event types, not free text.
-    expect(screen.getByRole('button', { name: 'Event Type filter, 1 selected' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Event Type 1 active' })).toBeInTheDocument();
     await waitFor(() => expect(urls.at(-1)!.searchParams.get('notes')).toBe('detected'));
     // No "within this page" caveat: the total is the filtered total.
     expect(screen.queryByText(/within this page/)).toBeNull();
@@ -237,7 +251,7 @@ describe('EventsListPage — modern skin', () => {
     await rows();
 
     await openFilters(user);
-    await user.click(screen.getByRole('button', { name: 'Event Type filter' }));
+    await user.click(screen.getByRole('button', { name: 'Event Type Any' }));
     await user.click(screen.getByRole('checkbox', { name: 'Motion' }));
     await user.click(screen.getByRole('checkbox', { name: 'Linked' }));
     await waitFor(
@@ -256,11 +270,34 @@ describe('EventsListPage — modern skin', () => {
     renderRoute('/events?tag=1');
     await rows();
 
-    await openFilters(userEvent.setup());
-    expect(screen.getByRole('combobox', { name: 'Tag' })).toHaveValue('1');
+    const user = userEvent.setup();
+    await openFilters(user);
     await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('1'));
+    await user.click(screen.getByRole('button', { name: 'Tag 1 active' }));
     // Tag counts ride along in the option label.
-    expect(screen.getByRole('option', { name: 'Important (3)' })).toBeInTheDocument();
+    expect(screen.getByRole('checkbox', { name: 'Important (3)' })).toBeChecked();
+    // A second tag ORs in, as legacy's multi-select does.
+    await user.click(screen.getByRole('checkbox', { name: /^Review/ }));
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('1,2'));
+  });
+
+  it('offers No Tag and Any Tag, each on its own', async () => {
+    db.tags = [makeTag({ id: 1, name: 'Important' })];
+    const urls = recordEventQueries();
+    const { router } = renderRoute('/events?tag=1');
+    await rows();
+
+    const user = userEvent.setup();
+    await openFilters(user);
+    await user.click(screen.getByRole('button', { name: 'Tag 1 active' }));
+    await user.click(screen.getByRole('checkbox', { name: 'No Tag' }));
+    await waitFor(() => expect(router.state.location.search).toMatchObject({ tag: 'none' }));
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('none'));
+    expect(screen.getByRole('checkbox', { name: /^Important/ })).not.toBeChecked();
+
+    await user.click(screen.getByRole('checkbox', { name: 'Any Tag' }));
+    await waitFor(() => expect(urls.at(-1)!.searchParams.get('tag_id')).toBe('any'));
+    expect(screen.getByRole('checkbox', { name: 'No Tag' })).not.toBeChecked();
   });
 
   it('runs a group filter through /filters/preview with the group monitors', async () => {
@@ -352,18 +389,21 @@ describe('EventsListPage — modern skin', () => {
       { timeout: 3000 },
     );
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), '1');
+    await user.click(screen.getByRole('button', { name: 'Tag All Tags' }));
+    await user.click(screen.getByRole('checkbox', { name: /^Important/ }));
     await waitFor(() =>
       expect(router.state.location.search).toMatchObject({ tag: 1 }),
     );
 
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), '1');
+    await user.click(screen.getByRole('button', { name: 'Group All Groups' }));
+    await user.click(screen.getByRole('checkbox', { name: 'Outdoor' }));
     await waitFor(() => expect(router.state.location.search).toMatchObject({ group: 1 }));
 
-    // "All" on each select (and an empty Cause box) removes the param again.
+    // Unticking each chip (and an empty Cause box) removes the param again.
+    await user.click(screen.getByRole('checkbox', { name: 'Outdoor' }));
+    await user.click(screen.getByRole('button', { name: 'Tag 1 active' }));
+    await user.click(screen.getByRole('checkbox', { name: /^Important/ }));
     await user.clear(screen.getByRole('combobox', { name: 'Cause' }));
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Tag' }), 'all');
-    await user.selectOptions(screen.getByRole('combobox', { name: 'Group' }), 'all');
     await user.keyboard('{Escape}');
     await pickMonitors(user, 'Driveway');
     await waitFor(() => expect(router.state.location.search).toEqual({}), { timeout: 3000 });
@@ -386,7 +426,7 @@ describe('EventsListPage — modern skin', () => {
     // Both ids ride in the URL, as an array — one id would be a bare number.
     await waitFor(() =>
       expect(router.state.location.search).toEqual({ monitor_id: [1, 2] }));
-    expect(monitorChip()).toHaveAccessibleName(/2 selected/);
+    expect(monitorChip()).toHaveAccessibleName(/2 active/);
 
     // …and several monitors can only be listed through the preview route.
     await waitFor(() => expect(body).toBeDefined());
@@ -460,14 +500,14 @@ describe('EventsListPage — modern skin', () => {
     const { router } = renderRoute('/events');
     await rows();
 
-    await user.type(screen.getByRole('textbox', { name: 'Name contains' }), 'Event-102');
+    await user.type(screen.getByRole('searchbox', { name: 'Search events' }), 'Event-102');
     await waitFor(
       () => expect(router.state.location.search).toMatchObject({ q: 'Event-102' }),
       { timeout: 3000 },
     );
 
     await openFilters(user);
-    await user.click(screen.getByRole('button', { name: 'Event Type filter' }));
+    await user.click(screen.getByRole('button', { name: 'Event Type Any' }));
     await user.click(screen.getByRole('checkbox', { name: 'Motion' }));
     await waitFor(
       () => expect(router.state.location.search).toMatchObject({ q: 'Event-102', notes: 'Motion' }),

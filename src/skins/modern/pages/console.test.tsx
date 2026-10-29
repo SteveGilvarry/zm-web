@@ -10,11 +10,12 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { http, HttpResponse } from 'msw';
+import { http, HttpResponse } from 'msw/http';
 
 import { renderRoute } from '@/test/renderRoute';
 import { db, server, setupMockServer } from '@/test/msw/server';
 import { makeMonitor, makeSystemStatus, makeSystemStats } from '@/test/fixtures';
+import { makeStorageArea } from '@/test/fixtures/storageAreas';
 import { useMonitorFilterStore } from '@/stores/monitorFilter';
 
 setupMockServer();
@@ -79,7 +80,7 @@ function rail(): HTMLElement {
 }
 
 /** Opens one of the status line's disclosures and returns its panel. */
-async function disclose(button: string): Promise<HTMLElement> {
+async function disclose(button: string | RegExp): Promise<HTMLElement> {
   const user = userEvent.setup();
   const line = await screen.findByRole('region', { name: 'Console status' });
   await user.click(within(line).getByRole('button', { name: button }));
@@ -103,7 +104,8 @@ describe('Console — renders with data', () => {
     await expectReading('Events (24h)', '3');
     await expectReading('Alarms', '0');
 
-    // 500 GB of 1 TB used — under the 75% mark, so no colour.
+    // No storage area has filesystem figures in the default fixture, so the
+    // host disk stands in: 500 GB of 1 TB, under the 95% mark, no colour.
     const disk = await expectReading('Disk', '50%');
     expect(disk).not.toHaveClass('text-warn');
     expect(disk).not.toHaveClass('text-danger');
@@ -123,7 +125,7 @@ describe('Console — renders with data', () => {
     await renderConsole();
 
     expect(screen.queryByText('zmc -m 1')).toBeNull();
-    const line = await disclose('System detail');
+    const line = await disclose(/, System detail$/);
 
     await waitFor(() => expect(within(line).getByText('v1.37.64')).toBeInTheDocument());
     expect(within(line).getByText('zmc -m 1')).toBeInTheDocument();
@@ -244,15 +246,28 @@ describe('Console — permissions', () => {
   });
 });
 
+describe('Console — status line names', () => {
+  it('names the system disclosure after the visible run state, then its purpose', async () => {
+    await renderConsole();
+    const line = await screen.findByRole('region', { name: 'Console status' });
+    // WCAG 2.5.3: the name must contain the visible text, "Running" here.
+    expect(within(line).getByRole('button', { name: /System detail$/ })).toHaveAccessibleName(/^(Running|Stopped), System detail$/);
+  });
+});
+
 describe('Console — thumbnail protocol toggle', () => {
   it('starts on WebRTC and switches to HLS then static', async () => {
     const user = userEvent.setup();
     await renderConsole();
 
     const group = screen.getByRole('group', { name: 'Thumbnail mode' });
-    const rtc = within(group).getByRole('button', { name: 'WebRTC live thumbnails' });
-    const hls = within(group).getByRole('button', { name: 'HLS live thumbnails' });
-    const off = within(group).getByRole('button', { name: 'Static thumbnails (no streaming)' });
+    // The visible text is the name (WCAG 2.5.3); the long form is the description.
+    const rtc = within(group).getByRole('button', { name: 'RTC' });
+    const hls = within(group).getByRole('button', { name: 'HLS' });
+    const off = within(group).getByRole('button', { name: 'Off' });
+    expect(rtc).toHaveAccessibleDescription('WebRTC live thumbnails');
+    expect(hls).toHaveAccessibleDescription('HLS live thumbnails');
+    expect(off).toHaveAccessibleDescription('Static thumbnails (no streaming)');
 
     expect(rtc).toHaveAttribute('aria-pressed', 'true');
     expect(hls).toHaveAttribute('aria-pressed', 'false');
@@ -279,7 +294,7 @@ describe('Console — monitor filter bar', () => {
 
     // Both seeded monitors are capturing, so filtering to "disabled" empties
     // the wall without emptying the underlying list.
-    await user.click(screen.getByRole('button', { name: 'Status filter' }));
+    await user.click(screen.getByRole('button', { name: 'Status Any' }));
     await user.click(
       within(screen.getByRole('listbox', { name: 'Status options' }))
         .getByRole('checkbox', { name: 'Disabled' }),
@@ -311,7 +326,7 @@ describe('Console — monitor filter bar', () => {
     expect(within(wall()).queryByRole('link', { name: /Front Door/ })).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /^Filters/ }));
-    expect(screen.getByRole('button', { name: 'Monitor filter, 1 selected' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Monitor 1 active' })).toBeInTheDocument();
   });
 });
 
@@ -322,20 +337,42 @@ describe('Console — live session badges', () => {
     await renderConsole();
 
     // Static thumbnails is the branch that paints the live mark.
-    await user.click(screen.getByRole('button', { name: 'Static thumbnails (no streaming)' }));
+    await user.click(screen.getByRole('button', { name: 'Off' }));
 
     await waitFor(() => expect(within(wall()).getByLabelText('Live')).toBeInTheDocument());
   });
 
   it('shows the disk stats it is given', async () => {
     db.systemStatus = makeSystemStatus({
-      stats: makeSystemStats({ disk_usage_percent: 93, free_disk: 70_000_000_000 }),
+      stats: makeSystemStats({ disk_usage_percent: 99, free_disk: 70_000_000_000 }),
     });
     await renderConsole();
 
-    const disk = await expectReading('Disk', '93%');
-    expect(disk).toBeInTheDocument();
-    // Past 90%: the reading itself is the message, so it takes the danger tone.
+    const disk = await expectReading('Disk', '99%');
+    // Past legacy's 98%: the reading itself is the message, so it takes the danger tone.
     expect(disk).toHaveClass('text-danger');
+  });
+
+  it('reads the fullest storage area once areas report filesystem figures', async () => {
+    const GB = 1024 ** 3;
+    db.storage = [
+      makeStorageArea({ id: 1, name: 'Default', disk_space: 60 * GB }, { total: 200 * GB, usedPercent: 79 }),
+      makeStorageArea({ id: 2, name: 'Archive', disk_space: 10 * GB }, { total: 100 * GB, usedPercent: 96 }),
+      makeStorageArea({ id: 3, name: 'Retired', enabled: 0 }, { usedPercent: 100 }),
+    ];
+    await renderConsole();
+
+    const disk = await expectReading('Disk', '96%');
+    expect(disk).toHaveClass('text-warn');
+    expect(disk.parentElement).toHaveAttribute(
+      'title',
+      'Default: 79% (158.00GB of 200.00GB 60.00GB used by events)\nArchive: 96% (96.00GB of 100.00GB 10.00GB used by events)',
+    );
+
+    const line = await disclose(/, System detail$/);
+    await waitFor(() => expect(within(line).getByText('Archive')).toBeInTheDocument());
+    expect(within(line).getByText('Default')).toBeInTheDocument();
+    expect(within(line).queryByText('Retired')).toBeNull();
+    expect(within(line).getByText('96% used')).toHaveClass('text-warn');
   });
 });
