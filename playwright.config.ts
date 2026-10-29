@@ -42,6 +42,15 @@ export default defineConfig({
   // 5xx twice with backoff before it gives up and paints the error state, and
   // a timeout is a hard failure even for a test marked `test.fail()`.
   timeout: 60_000,
+  // A dead stack must fail in minutes, not hours. With retries 2 and two
+  // workers, a modal over every page (a privacy notice the seed had not
+  // turned off, 2026-10-29) sent 75 tests through three 60 s timeouts each
+  // and the job ran 42 minutes before it was cancelled. Ten failures is
+  // more than any real regression has produced at once; a healthy run of
+  // the seeded suite takes 4-6 minutes, so 20 is the ceiling on a run that
+  // is merely slow.
+  maxFailures: process.env.CI ? 10 : 0,
+  globalTimeout: process.env.CI ? 20 * 60_000 : 0,
   globalSetup: seeded ? './e2e/global-setup.ts' : undefined,
 
   use: {
